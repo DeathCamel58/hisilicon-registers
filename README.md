@@ -1,5 +1,7 @@
 # HiSilicon Registers
 
+You can view the generated documentation site at [hisilicon.randomcpu.com](https://hisilicon.randomcpu.com/)
+
 [![Build Website](https://github.com/DeathCamel58/hisilicon-registers/actions/workflows/python-build.yml/badge.svg)](https://github.com/DeathCamel58/hisilicon-registers/actions/workflows/python-build.yml)
 
 ## What is this?
