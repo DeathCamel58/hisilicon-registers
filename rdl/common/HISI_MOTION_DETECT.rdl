@@ -1,0 +1,574 @@
+`ifndef MOTION_DETECT_RDL
+`define MOTION_DETECT_RDL
+
+regfile eMOTION_DETECT {
+    name = "Motion Detect Unit Registers";
+    desc = "
+    # Overview
+
+    As a high-performance hardware acceleration intellectual property (IP), the motion detect unit (MDU) is used to detect the motion status and video occlusion, implement modeling on the video background, and calculate the information about the object (OBJ) region. The OBJ region is a rectangular motion part of the current frame. By using the advanced eXtensible interface (AXI) master bus, the MDU reads picture information, and writes the updated information about the background, sum of absolute differences (SADs), and OBJ regions. By using the slave advanced high-performance bus (APB), the MDU obtains register configurations.
+
+    ## Function Description
+
+    The MDU provides the following features:
+
+    * Calculates and outputs the SAD in the unit of 8x8 or 16x16.
+    * Detects OBJ regions and outputs the information about the OBJ regions.
+    * Refreshes the background.
+
+    ## Operating Mode
+
+    ### Software and Hardware for Motion Detection
+
+    The software performs the following operations for the pictures to be encoded:
+
+    * Allocates the storage space in the double-data rate (DDR).
+    * Calls the hardware to capture videos or perform scaling.
+    * Schedules multiple motion detection operations, specifies and divides the regions to be detected, and generates addresses.
+
+    The hardware calculates the SADs of input pictures. The details are as follows:
+
+    * Detects OBJ regions based on the SAD and threshold, and refreshes the background
+    * Outputs the information about OBJ regions, background, and SADs based on the settings of the software.
+
+    ### Software and Hardware for Video Occlusion Detection
+    Based on the size of OBJ regions output by the hardware, the software checks whether the occlusion threshold is reached. If the threshold is reached, the background is forbidden to refresh, but motion detection is still performed. When the size of OBJ regions is greater than the occlusion threshold, an occlusion alarm is generated.
+    ";
+
+    /* Fields */
+
+    /* Useful enums to keep from having to keep copying them */
+    enum MD_zero_enable_enum {
+        ENABLE  = 0x0 { desc = "Enable"; };
+        DISABLE = 0x1 { desc = "Disable"; };
+    };
+
+    enum MD_one_enable_enum {
+        ENABLE  = 0x0 { desc = "Enable"; };
+        DISABLE = 0x1 { desc = "Disable"; };
+    };
+
+    reg {
+        name = "Interrupt Status Register";
+
+        field {
+            name = "mdu_bus_err";
+            desc = "Bus read/write error.";
+            sw = r;
+        } mdu_bus_err[31:31];
+
+        field {
+            name = "mdu_cfg_err";
+            desc = "Register configuration error.";
+            sw = r;
+        } mdu_cfg_err[30:30];
+
+        field {
+            name = "mdu_timeout";
+            desc = "MDU timeout interrupt. This interrupt is valid when the timeout detection mode of the MDU is enabled and the working cycle of the MDU is greater than the threshold configured by MDU_TIMEOUT.";
+            sw = r;
+        } mdu_timeout[1:1];
+
+        field {
+            name = "mdu_endofpic";
+            desc = "End of picture indicator of the MDU, active high.";
+            sw = r;
+        } mdu_endofpic[0:0];
+
+    } MDU_INTSTAT @ 0x00;
+
+    reg {
+        name = "Interrupt Enable Register";
+
+        field {
+            name = "mdu_bus_err_en";
+            desc = "BUS read/write error interrupt enable.";
+            encode = MD_one_enable_enum;
+        } mdu_bus_err_en[31:31];
+
+        field {
+            name = "mdu_cfg_err_en";
+            desc = "Register configuration error interrupt enable.";
+            encode = MD_one_enable_enum;
+        } mdu_cfg_err_en[30:30];
+
+        field {
+            name = "mdu_timeout_en";
+            desc = "MDU timeout interrupt enable. When the timeout detection mode of the MDU is enabled and the working cycle of the MDU is greater than the threshold configured by MDU_TIMEOUT, this interrupt is valid.";
+            encode = MD_one_enable_enum;
+        } mdu_timeout_en[1:1];
+
+        field {
+            name = "mdu_endofpic_en";
+            desc = "End of picture interrupt enable of the MDU.";
+            encode = MD_one_enable_enum;
+        } mdu_endofpic_en[0:0];
+
+    } MDU_INTEN @ 0x04;
+
+    reg {
+        name = "Raw Interrupt Register";
+
+        field {
+            name = "mdu_bus_err_raw";
+            desc = "Raw bus read/write error interrupt, active high.";
+            sw = r;
+        } mdu_bus_err_raw[31:31];
+
+        field {
+            name = "mdu_cfg_err_raw";
+            desc = "Raw register configuration error interrupt, active high.";
+            sw = r;
+        } mdu_cfg_err_raw[30:30];
+
+        field {
+            name = "mdu_timeout_raw";
+            desc = "Raw MDU timeout interrupt, active high.";
+            sw = r;
+        } mdu_timeout_raw[1:1];
+
+        field {
+            name = "mdu_endofpic_raw";
+            desc = "Raw end of picture interrupt of the MDU, active high.";
+            sw = r;
+        } mdu_endofpic_raw[0:0];
+
+    } MDU_RAWINT @ 0x08;
+
+    reg {
+        name = "Interrupt Clear Register";
+
+        field {
+            name = "mdu_bus_err_clr";
+            desc = "Bus read/write error clear, active high.";
+        } mdu_bus_err_clr[31:31];
+
+        field {
+            name = "mdu_cfg_err_clr";
+            desc = "Register configuration error clear, active high.";
+        } mdu_cfg_err_clr[30:30];
+
+        field {
+            name = "mdu_timeout_clr";
+            desc = "MDU timeout interrupt clear. When the timeout detection mode of the MDU is enabled and the working cycle of the MDU is greater than the threshold configured by MDU_TIMEOUT, this interrupt is valid.";
+        } mdu_timeout_clr[1:1];
+
+        field {
+            name = "mdu_endofpic_clr";
+            desc = "End of picture indicator clear of the MDU, active high.";
+        } mdu_endofpic_clr[0:0];
+
+    } MDU_INTCLR @ 0x0C;
+
+    reg {
+        name = "Picture Size Configuration Register";
+
+        field {
+            name = "imgheightinpixelsminus1";
+            desc = "Picture height. The value is in the unit of pixel, and the configured value is obtained by subtracting 1 from the actual height. For example, if the picture height is 352 pixels, this field must be set to 351 pixels.";
+        } imgheightinpixelsminus1[28:16];
+
+        field {
+            name = "imgwidthinpixelsminus1";
+            desc = "Picture width. The value is in the unit of pixel, and the configured value is obtained by subtracting 1 from the actual width. For example, if the picture width is 288 pixels, this field must be set to 287 pixels.";
+        } imgwidthinpixelsminus1[12:0];
+
+    } MDU_VEDIMGSIZE @ 0x20;
+
+    reg {
+        name = "Mode Configuration Register";
+
+        field {
+            name = "mcpi_clkgate_en";
+            desc = "Clock gating enable.";
+        } mcpi_clkgate_en[8:8];
+
+        field {
+            name = "mcpi_wrlock_en";
+            desc = "Register configuration lock enable. If this field is enabled, registers cannot be configured even if the MDU is started until the detection ends. This avoids modifications made to registers.";
+        } mcpi_wrlock_en[7:7];
+
+        field {
+            name = "timeout_en";
+            desc = "MDU timeout detection enable. If this field is enabled, the upper limits of the working cycle that is configured using MDU_TIMEOUT by the software can be automatically queried.";
+            encode = MD_one_enable_enum;
+        } timeout_en[6:6];
+
+        enum MD_md_mod_enum {
+            BACKGROUND = 0x0 { desc = "Background Algorithm"; };
+            FRAME_REF  = 0x1 { desc = "Frame Reference Algorithm"; };
+        };
+
+        field {
+            name = "md_mod";
+            desc = "Motion detection mode.";
+            encode = MD_md_mod_enum;
+        } md_mod[5:5];
+
+        field {
+            name = "bg_update_en";
+            desc = "Background refresh enable.";
+            encode = MD_one_enable_enum;
+        } bg_update_en[4:4];
+
+        field {
+            name = "eg_find_en";
+            desc = "
+            Joint detection enable for OBJ regions.
+
+            !!! NOTE
+                If the background algorithm is selected, only the last joint detection based on the background is disabled.
+            ";
+            encode = MD_one_enable_enum;
+        } eg_find_en[3:3];
+
+        field {
+            name = "obj_out_en";
+            desc = "OBJ region output enable. If this field is enabled, MDU_OBJ_ADDR must be configured.";
+            encode = MD_one_enable_enum;
+        } obj_out_en[2:2];
+
+        field {
+            name = "sad_out_en";
+            desc = "SAD output enable. If this field is enabled, MDU_MBSAD_ADDR and MDU_MBSAD_STRIDE must be";
+            encode = MD_one_enable_enum;
+        } sad_out_en[1:1];
+
+        enum MD_sad_mad_sel_enum {
+            BIT_8  = 0x0 { desc = "8 Bits"; };
+            BIT_16 = 0x1 { desc = "16 Bits"; };
+        };
+
+        field {
+            name = "sad_mad_sel";
+            desc = "Number of SAD output bits.";
+            encode = MD_sad_mad_sel_enum;
+        } sad_mad_sel[0:0];
+
+    } MDU_MODE @ 0x24;
+
+    reg {
+        name = "MDU Start Register";
+
+        field {
+            name = "mdu_start";
+            desc = "MDU start control. E.g.: Is the MDU enabled?";
+            encode = MD_one_enable_enum;
+            sw = w;
+        } mdu_start[0:0];
+
+    } MDU_START @ 0x28;
+
+    reg {
+        name = "AXI Outstanding Configuration Register";
+
+        field {
+            name = "axi_outstd_num";
+            desc = "AXI outstanding configuration. The count value is numbered from 0 and the actual value is obtained by adding 1 to the count value.";
+        } axi_outstd_num[2:0];
+
+    } MDU_AXI_OUTSTD_NUM @ 0x2C;
+
+    reg {
+        name = "Luminance Storage Address Register of the Reference Picture";
+
+        field {
+            name = "mdu_ref_yaddr";
+            desc = "Storage address of the Y component of the reference picture. The input raw picture must be Qword-aligned (128 bits). That is, the lower four bits of the address are 0. The hardware automatically sets the lower four bits of the address to 0.";
+        } mdu_ref_yaddr[31:0];
+
+    } MDU_REF_YADDR @ 0x40;
+
+    reg {
+        name = "Luminance Stride Register of the Reference Picture";
+
+        field {
+            name = "mdu_ref_ystride";
+            desc = "Luminance stride, in bytes. The lower four bits of Ystride must be set to 0. This is to ensure that the address is 128-bit-aligned after the picture is wrapped. The hardware automatically sets the lower four bits of Ystride to 0. The stride must be an integral multiple of 64 bytes.";
+        } mdu_ref_ystride[15:0];
+
+    } MDU_REF_YSTRIDE @ 0x44;
+
+    reg {
+        name = "Luminance Storage Address Register of the Current Picture";
+
+        field {
+            name = "mdu_cur_yaddr";
+            desc = "Storage address of the Y component of the raw picture. The input raw picture must be Qword-aligned (128 bits). That is, the lower four bits of the address are 0. The hardware automatically sets the lower four bits of the address to 0.";
+        } mdu_cur_yaddr[31:0];
+
+    } MDU_CUR_YADDR @ 0x48;
+
+    reg {
+        name = "Luminance Stride Register of the Current Picture";
+
+        field {
+            name = "mdu_cur_ystride";
+            desc = "Luminance stride, in bytes. The lower four bits of Ystride must be set to 0. This is to ensure that the address is 128-bit-aligned after the picture is wrapped. The hardware automatically sets the lower four bits of Ystride to 0. The stride must be an integral multiple of 64 bytes.";
+        } mdu_cur_ystride[15:0];
+
+    } MDU_CUR_YSTRIDE @ 0x4C;
+
+    reg {
+        name = "Macroblock SAD Storage Address Register";
+
+        field {
+            name = "mdu_mbsad_addr";
+            desc = "Address for storing the macroblock SAD. The address must be Qword-aligned. Therefore, the lower four bits must be 0.";
+        } mdu_mbsad_addr[31:0];
+
+    } MDU_MBSAD_ADDR @ 0x60;
+
+    reg {
+        name = "Macroblock SAD Storage Stride Register";
+
+        field {
+            name = "mdu_mbsad_stride";
+            desc = "Macroblock SAD stride, in bytes. The stride must be 128-bit-aligned. Therefore, the lower four bits must be 0.";
+        } mdu_mbsad_stride[15:0];
+
+    } MDU_MBSAD_STRIDE @ 0x64;
+
+    reg {
+        name = "Luminance Storage Address Register of the Background Picture";
+
+        field {
+            name = "bg_yaddr";
+            desc = "Background address. The address must be Qword-aligned. Therefore, the lower four bits must be 0.";
+            sw = r;
+        } bg_yaddr[31:0];
+
+    } MDU_BACKGROUND_ADDR @ 0x70;
+
+    reg {
+        name = "Luminance Stride Register of the Background Picture";
+
+        field {
+            name = "bg_ystride";
+            desc = "Background stride, in bytes. The stride must be 128-bit-aligned. Therefore, the lower four bits must be 0.";
+        } bg_ystride[15:0];
+
+    } MDU_BACKGROUND_STRIDE @ 0x74;
+
+    reg {
+        name = "OBJ Region Storage Address Register";
+
+        field {
+            name = "obj_addr";
+            desc = "
+            Address for storing OBJ regions. The address must be Qword-aligned. Therefore, the lower four bits must be 0.
+
+            An OBJ region is stored as follows: The coordinates of the left, top, right, and bottom points of the OBJ region are stored in sequence in four 16-bit spaces. Therefore, two 32-bit DDRs are used to store an OBJ region. When the DDR is allocated by using the software, the minimum DDR size is calculated as follows: 2 x 32 bits x Maximum number of OBJ regions
+            ";
+        } obj_addr[31:0];
+
+    } MDU_OBJ_ADDR @ 0x78;
+
+    reg {
+        name = "Background Refresh Weight Register";
+
+        field {
+            name = "src_weight";
+            desc = "New picture weight.";
+        } src_weight[15:8];
+
+        field {
+            name = "weight_sum_exp_2";
+            desc = "
+            Exponent of 2 to the weighted sum.
+
+            When the MDU generates a new background by overlaying the source picture with the existing background, the following formula is used:
+
+            `(Background pixel x ((1<<weight_sum_exp_2) – src_weight) + Pixel of source picture x bg_weight) >> weight_sum_exp_2)`
+
+            The background weight bg_weight is calculated as follows:
+
+            `((1<<weight_sum_exp_2) – src_weight)`
+
+            The greater the value obtained from background weight bg_weight minus source weight src_weight, the more slowly the background is refreshed.
+
+            The default value is 0x1, and the maximum value is 0x8.
+            ";
+        } weight_sum_exp_2[7:0];
+
+    } MDU_BG_UP_WEIGHT @ 0x7C;
+
+    reg {
+        name = "Macroblock Motion Detection Threshold Register";
+
+        field {
+            name = "mdu_mbsad_th";
+            desc = "Threshold for detecting the motion status of the 4x4 macroblock. All calculations of the MDU are based on the 4x4 macroblock.";
+        } mdu_mbsad_th[15:0];
+
+    } MDU_MBSAD_TH @ 0x80;
+
+    reg {
+        name = "Timeout Upper Limit Register";
+
+        field {
+            name = "mdu_timeout";
+            desc = "Maximum number of working cycles.";
+        } mdu_timeout[31:0];
+
+    } MDU_TIMEOUT @ 0x84;
+
+    reg {
+        name = "SAD Output Window Configuration Register";
+
+        enum MD_sad_wnd_size_enum {
+            SQUARE_8  = 0x0 { desc = "8x8"; };
+            SQUARE_16 = 0x1 { desc = "16x16"; };
+        };
+
+        field {
+            name = "sad_wnd_size";
+            desc = "Size of the SAD output window. The calculations of the MDU are based on the 4x4 macroblock. After the sad_out_en bit of the mode register is enabled, the MDU adds the values of multiple 4x4 macroblocks based on the settings of sad_wnd_size, and outputs the value to the DDR.";
+            encode = MD_sad_wnd_size_enum;
+        } sad_wnd_size[0:0];
+
+    } MDU_WND_SIZE @ 0x90;
+
+    reg {
+        name = "Minimum Window Configuration Register for Boundary Search";
+
+        field {
+            name = "egsearch_timeout";
+            desc = "Boundary search timeout. If the number of points of an OBJ region is greater than the value, the boundary search of the OBJ region stops, and the search for the next region starts.";
+        } egsearch_timeout[31:16];
+
+        field {
+            name = "min_obj_size_h";
+            desc = "Minimum height of the OBJ region. The OBJ region whose height is smaller than this value is not reported. The value 1 of min_obj_size_h indicates a 4x4 macroblock.";
+        } min_obj_size_h[15:8];
+
+        field {
+            name = "min_obj_size_w";
+            desc = "Minimum width of the OBJ region. The OBJ region whose width is smaller than this value is not reported. The value 1 of min_obj_size_w indicates a 4x4 macroblock.";
+        } min_obj_size_w[7:0];
+
+    } MDU_MIN_OBJ_SIZE @ 0x94;
+
+    reg {
+        name = "Maximum Window Configuration Register for Boundary Search";
+
+        field {
+            name = "max_obj_cnt";
+            desc = "Maximum value for detecting the OBJ regions.";
+        } max_obj_cnt[15:0];
+
+    } MDU_MAX_OBJ_CNT @ 0x98;
+
+    reg {
+        name = "OBJ Region Information Readback Register";
+
+        field {
+            name = "max_obj_index";
+            desc = "Maximum OBJ region index. For the statistics register whose name does not contain the digital suffix, the statistics are obtained when the SAD is calculated and the OBJ region is searched for the first time based on the frame reference algorithm or background algorithm.";
+        } max_obj_index[31:16];
+
+        field {
+            name = "obj_cnt";
+            desc = "Number of detected OBJ regions.";
+        } obj_cnt[15:0];
+
+    } MDU_OBJ_CNT @ 0x9C;
+
+    reg {
+        name = "Maximum OBJ Region Readback Register";
+
+        field {
+            name = "max_obj_size";
+            desc = "
+            Maximum size of the OBJ region. This value is used to detect video occlusion. The value is in the unit of pixel.
+
+            The software calculates the percentage of OBJ regions based on this value and compares the value with the size threshold of the OBJ region. If the value is greater than the threshold, the frame occlusion is considered, and the subsequent frames for detecting video occlusion are not used to refresh the background. In addition, the system checks whether the size of the OBJ region is greater than the threshold for consecutive times. If the occlusion time is greater than the time threshold, video occlusion is considered, and an alarm is generated.
+            ";
+        } max_obj_size[31:0];
+
+    } MDU_MAX_OBJ_SIZE @ 0xA0;
+
+    reg {
+        name = "All OBJ Region Readback Register";
+
+        field {
+            name = "max_obj_size";
+            desc = "
+            Total size of all OBJ regions. This value is used to detect whether a camera is sprayed. The working principle is the same as that of the max_obj_size field.
+
+            The MDU adds the sizes of all OBJ regions. The size is in the unit of pixel. The size of each OBJ region is calculated as follows:
+
+            `number of 4x4 macroblocks x 16`
+
+            !!! NOTE
+                * In some cases, the OBJ regions may overlap, and the total size of OBJ regions may be greater than the size of the original picture.
+                * Based on the 4x4 macroblock, the height and width of each OBJ region are calculated as follows:
+                  `Width = (Horizontal coordinate of the right point – Horizontal coordinate of the left point) + 1`
+                  `Height = (Vertical coordinate of the bottom point – Vertical coordinate of the top point) + 1`
+            ";
+            sw = r;
+        } total_obj_size[31:0];
+
+    } MDU_TOTAL_OBJ_SIZE @ 0xA4;
+
+    reg {
+        name = "Motion Pixel Statistics Register for Frame";
+
+        field {
+            name = "move_pix_cnt";
+            desc = "
+            Number of motion pixels of an entire frame. This value can be used to detect video occlusion. The working principle is the same as that of the max_obj_size field.
+
+            !!! NOTE
+                The value of this register is based on pixels. Therefore, the register value may be different from the value of total_obj_size.
+            ";
+            sw = r;
+        } move_pix_cnt[31:0];
+
+    } MDU_MOVE_PIX_CNT @ 0xA8;
+
+    reg {
+        name = "OBJ Region Information Readback Register Based on Background";
+
+        field {
+            name = "max_obj_index1";
+            desc = "Index of the maximum OBJ region based on the background. The registers with the suffix 1 indicate statistics registers. The statistics are obtained when the background algorithm is used and the SAD is calculated and the OBJ region is searched for the second time.";
+            sw = r;
+        } max_obj_index1[31:16];
+
+        field {
+            name = "obj_cnt1";
+            desc = "Number of detected OBJ regions based on the background.";
+            sw = r;
+        } obj_cnt1[15:0];
+
+    } MDU_OBJ_CNT1 @ 0xAC;
+
+    reg {
+        name = "OBJ Region Readback Register Based on Background";
+
+        field {
+            name = "max_obj_size1";
+            desc = "
+            Maximum size of the OBJ region based on the background. This value is used to detect video occlusion, and is in the unit of pixel.
+
+            The software calculates the percentage of OBJ regions based on this value and compares the value with the size threshold of the OBJ region. If the value is greater than the threshold, the frame occlusion is considered, and the subsequent frames for detecting video occlusion are not used to refresh the background. In addition, the system checks whether the size of the OBJ region is greater than the threshold for consecutive times. If the occlusion time is greater than the time threshold, video occlusion is considered, and an alarm is generated.
+            ";
+            sw = r;
+        } max_obj_size1[31:0];
+
+    } MDU_MAX_OBJ_SIZE1 @ 0xB0;
+
+    reg {
+        name = "Motion Pixel Statistics Register for a Frame Based on Background";
+
+        field {
+            name = "move_pix_cnt1";
+            desc = "Number of motion pixels of an entire frame based on the background. This value can be used to detect video occlusion. The working principle is the same as that of the max_obj_size field.";
+            sw = r;
+        } move_pix_cnt1[31:0];
+
+    } MDU_MOVE_PIX_CNT1 @ 0xB4;
+
+};
+`endif
