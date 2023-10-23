@@ -1,0 +1,123 @@
+`ifndef WDG_RDL
+`define WDG_RDL
+
+regfile eWDG {
+    name = "Watchdog Registers";
+    desc = "The watchdog is based on the [`ARM SP805`](https://developer.arm.com/documentation/ddi0270/b/) device.";
+
+    /* Fields */
+
+    reg {
+        name = "Initial Count Value Register";
+
+        field {
+            name = "wdg_load";
+            desc = "Initial count value of the watchdog counter.";
+        } wdg_load[0:31];
+
+    } GLOBAL_CONFIG @ 0x000;
+
+    reg {
+        name = "Current Count Value Register";
+        desc = "It is used to read the current count value of the internal counter of the watchdog.";
+
+        field {
+            name = "wdogvalue";
+            desc = "Current count value of the watchdog counter.";
+
+            // TODO: Maybe set this to a counter type?
+            //       This will allow us to mark this as decrementing.
+        } wdogvalue[0:31];
+
+    } WDG_VALUE @ 0x004;
+
+    reg {
+        name = "Watchdog Control Register";
+        desc = "It is used to enable or disable the watchdog and control the interrupt and reset functions of the watchdog.";
+
+        enum enabled_enum {
+            DISABLED = 0x0 { desc = "Disabled"; };
+            ENABLED  = 0x1 { desc = "Enabled"; };
+        };
+
+        field {
+            name = "inten";
+            desc = "The counter, interrupt and watchdog status.";
+            encode = enabled_enum;
+        } inten[0:0];
+
+        field {
+            name = "resen";
+            desc = "Output enable of the watchdog reset signal.";
+            encode = enabled_enum;
+        } resen[1:1];
+
+    } WDG_CONTROL @ 0x008;
+
+    reg {
+        name = "Interrupt Clear Register";
+        desc = "Used to clear watchdog interrupts so the watchdog can reload an initial value for counting. This register is write-only. When a value is written to this register, the watchdog interrupts are cleared. No written value is recorded in this register and no default reset value is defined.";
+
+        field {
+            name = "wdg_intclr";
+            desc = "Writing any value to this register clears the watchdog interrupts and enables the watchdog to reload an initial count value from WDG_LOAD to restart counting. ";
+        } wdg_intclr[0:31];
+
+    } WDG_INTCLR @ 0x00C;
+
+    reg {
+        name = "Raw Interrupt Status Register";
+        desc = "It shows the raw interrupt status of the watchdog.";
+
+        enum wdogris_enum {
+            NO_INTERRUPT = 0x0 { desc = "No Interrupt"; };
+            INTERRUPT    = 0x1 { desc = "Interrupt"; };
+        };
+
+        field {
+            name = "wdogris";
+            desc = "Status of the raw interrupts of the watchdog. When the count value reaches 0, this bit is set to 1.";
+            encode = wdogris_enum;
+        } wdogris[0:0];
+
+    } WDG_RIS @ 0x010;
+
+    reg {
+        name = "Masked Interrupt Status Register";
+        desc = "It shows the masked interrupt status of the watchdog.";
+
+        enum wdogmis_enum {
+            NO_INTERRUPT = 0x0 { desc = "No Interrupt; Or Interrupt is Masked"; };
+            INTERRUPT    = 0x1 { desc = "Interrupt"; };
+        };
+
+        field {
+            name = "wdogmis";
+            desc = "Status of the masked interrupts of the watchdog.";
+            encode = wdogmis_enum;
+        } wdogmis[0:0];
+
+    } WDG_MIS @ 0x014;
+
+    reg {
+        name = "Lock Register";
+        desc = "Used to control the write and read permissions for the watchdog registers.";
+
+        field {
+            name = "wdg_lock";
+            desc = "
+            Writing 0x1ACC_E551 to this register enables the write permission for all the registers.
+
+            Writing other values disables the write permission for all the registers.
+
+            When this register is read, the lock status rather than the written value of this register is returned.
+
+            * `0x0`: The write permission is available (unlocked).
+            * `0x1`: The write permission is unavailable (locked).
+            ";
+        } wdg_lock[0:31];
+
+    } WDG_LOCK @ 0xC00;
+
+};
+`endif
