@@ -1,0 +1,362 @@
+`ifndef SFC_RDL
+`define SFC_RDL
+
+regfile eSFC {
+    name = "System Flash Controller Registers";
+    desc = "
+    HiSilicon uses a custom storage flash controller. This is a controller that facilitates NAND data access over SPI.
+
+    The SDK uses a driver called `hisfc350` (same name for U-Boot and Linux) to drive this IP block.
+
+    The serial peripheral interface flash controller (SFC) is a SPI flash controller. The SFC provides an AHB slave interface on the service side to control access to the SPI flash through the AHB channel and provides an AHB master interface to read and write to the SPI flash in direct memory access (DMA) mode.
+
+    ![SFC](assets/sfc-block-diagram.png)
+
+    ## Performing an Operation
+
+    ### How to read flash memory by using registers in query mode.
+
+    ![Reading flash memory](assets/sfc-read-op.png)
+
+    ### How to write flash memory by using registers in interrupt mode.
+
+    ![Writing flash memory](assets/sfc-write-op.png)
+
+    ### How to execute other operations in register mode.
+
+    ![Other Operations](assets/sfc-other-ops.png)
+    ";
+
+    /* Useful enums to keep from having to keep copying them */
+    enum SFC_zero_enable_enum {
+        ENABLE  = 0x0 { desc = "Enable"; };
+        DISABLE = 0x1 { desc = "Disable"; };
+    };
+
+    enum SFC_one_enable_enum {
+        ENABLE  = 0x0 { desc = "Enable"; };
+        DISABLE = 0x1 { desc = "Disable"; };
+    };
+
+    /* Fields */
+
+    reg {
+        name = "Global Configuration Register";
+
+        enum mode_enum {
+            MODE0 = 0x0 { desc = "Mode 0"; };
+            MODE3 = 0x1 { desc = "Mode 3"; };
+        };
+
+        field {
+            name = "mode";
+            desc = "SPI mode configuration";
+            encode = mode_enum;
+        } mode[0:0];
+
+        field {
+            name = "wp_en";
+            desc = "Enable hardware write protection. The WP pin is forcibly pulled down when enabled.";
+            encode = SFC_one_enable_enum;
+        } wp_en[1:1];
+
+        enum flash_addr_mode_enum {
+            BYTE_3 = 0x0 { desc = "3 byte address mode"; };
+            BYTE_4 = 0x1 { desc = "4 byte address mode"; };
+        };
+
+        field {
+            name = "flash_addr_mode";
+            desc = "SPI address mode. The write operation is invalid when CMD.start is 1.";
+            encode = flash_addr_mode_enum;
+        } flash_addr_mode[2:2];
+
+    } GLOBAL_CONFIG @ 0x0100;
+
+    reg {
+        name = "Global Configuration Register";
+
+        enum timing_zero_seven_enum {
+            CYCLE_1 = 0x0 { desc = "1 Cycle"; };
+            CYCLES_2 = 0x1 { desc = "2 Cycles"; };
+            CYCLES_3 = 0x2 { desc = "3 Cycles"; };
+            CYCLES_4 = 0x3 { desc = "4 Cycles"; };
+            CYCLES_5 = 0x4 { desc = "5 Cycles"; };
+            CYCLES_6 = 0x5 { desc = "6 Cycles"; };
+            CYCLES_7 = 0x6 { desc = "7 Cycles"; };
+            CYCLES_8 = 0x7 { desc = "8 Cycles"; };
+        };
+
+        enum timing_zero_fifteen_enum {
+            CYCLE_1 = 0x0 { desc = "1 Cycle"; };
+            CYCLES_2 = 0x1 { desc = "2 Cycles"; };
+            CYCLES_3 = 0x2 { desc = "3 Cycles"; };
+            CYCLES_4 = 0x3 { desc = "4 Cycles"; };
+            CYCLES_5 = 0x4 { desc = "5 Cycles"; };
+            CYCLES_6 = 0x5 { desc = "6 Cycles"; };
+            CYCLES_7 = 0x6 { desc = "7 Cycles"; };
+            CYCLES_8 = 0x7 { desc = "8 Cycles"; };
+            CYCLES_9 = 0x8 { desc = "9 Cycles"; };
+            CYCLES_10 = 0x9 { desc = "10 Cycles"; };
+            CYCLES_11 = 0xA { desc = "11 Cycles"; };
+            CYCLES_12 = 0xB { desc = "12 Cycles"; };
+            CYCLES_13 = 0xC { desc = "13 Cycles"; };
+            CYCLES_14 = 0xD { desc = "14 Cycles"; };
+            CYCLES_15 = 0xE { desc = "15 Cycles"; };
+            CYCLES_16 = 0xF { desc = "16 Cycles"; };
+        };
+
+        field {
+            name = "tshsl";
+            desc = "Indicates the deselect time of the CS. It is equal to the interval between two flash operations.";
+            encode = timing_zero_fifteen_enum;
+        } tshsl[0:3];
+
+        field {
+            name = "tcss";
+            desc = "Set the setup time of the CS.";
+            encode = timing_zero_seven_enum;
+        } tcss[8:10];
+
+        field {
+            name = "tcsh";
+            desc = "Set the CS hold time.";
+            encode = timing_zero_seven_enum;
+        } tcsh[12:14];
+
+    } TIMING @ 0x0110;
+
+    reg {
+        name = "Interrupt Raw Status Register";
+
+        enum complete_1_enum {
+            INCOMPLETE = 0x0 { desc = "The operation is not complete"; };
+            COMPLETE   = 0x1 { desc = "The operation is complete"; };
+        };
+
+        field {
+            name = "cmd_op_end_raw_status";
+            desc = "Raw interrupt status of instruction operation end (not masked)";
+            encode = complete_1_enum;
+        } cmd_op_end_raw_status[0:0];
+
+        field {
+            name = "dma_done_int_raw_status";
+            desc = "Raw status of DMA operation done interrupt (not masked)";
+            encode = complete_1_enum;
+        } dma_done_int_raw_status[1:1];
+
+    } INT_RAW_STATUS @ 0x0120;
+
+    reg {
+        name = "Interrupt Raw Status Register";
+
+        enum complete_1_enum {
+            INCOMPLETE = 0x0 { desc = "The operation is not complete"; };
+            COMPLETE   = 0x1 { desc = "The operation is complete"; };
+        };
+
+        field {
+            name = "cmd_op_end_status";
+            desc = "Interrupt status of instruction operation end (masked)";
+            encode = complete_1_enum;
+        } cmd_op_end_status[0:0];
+
+        field {
+            name = "dma_done_int_status";
+            desc = "Raw status of DMA operation done interrupt (masked)";
+            encode = complete_1_enum;
+        } dma_done_int_status[1:1];
+
+    } INT_STATUS @ 0x0124;
+
+    reg {
+        name = "Interrupt Mask Register";
+
+        enum masked_0_enum {
+            MASKED     = 0x0 { desc = "Masked"; };
+            NOT_MASKED = 0x1 { desc = "Not Masked"; };
+        };
+
+        field {
+            name = "cmd_op_end_int_mask";
+            desc = "Instruction operation end interrupt mask bit";
+            encode = masked_0_enum;
+        } cmd_op_end_int_mask[0:0];
+
+        field {
+            name = "dma_done_int_mask";
+            desc = "DMA operation done interrupt mask bit";
+            encode = masked_0_enum;
+        } dma_done_int_mask[1:1];
+
+    } INT_MASK @ 0x0128;
+
+    reg {
+        name = "Interrupt Clear Register";
+
+        enum cleared_1_enum {
+            MASKED     = 0x0 { desc = "Masked"; };
+            NOT_MASKED = 0x1 { desc = "Not Masked"; };
+        };
+
+        field {
+            name = "cmd_op_end_int_clr";
+            desc = "
+            Instruction operation end interrupt clear bit. Writing 1 to this bit clears `cmd_op_end_status` and `cmd_op_end_raw_status`.
+
+            !!! tip
+                After a clear operation is complete, this bit returns 0 automatically.
+            ";
+            encode = cleared_1_enum;
+        } cmd_op_end_int_clr[0:0];
+
+        field {
+            name = "dma_done_int_mask";
+            desc = "
+            DMA done interrupt clear bit. Writing 1 to this bit clears `dma_done_status` and `dma_done_raw_status`.
+
+            !!! tip
+                After a clear operation is complete, this bit returns 0 automatically.
+            ";
+            encode = cleared_1_enum;
+        } dma_done_int_mask[1:1];
+
+    } INT_CLEAR @ 0x012C;
+
+    reg {
+        name = "Version Register";
+
+        enum version_enum {
+            THREE_HUNDRED_FIFTY = 0x350 { desc = "Version 350"; };
+            // TODO: Add other versions as I run across them
+        };
+
+        field {
+            name = "VERSION";
+            desc = "
+            SFC Version Number
+
+            !!! tip
+                I've only observed `0x350` in the wild.
+            ";
+            encode = version_enum;
+        } VERSION[0:31];
+
+    } VERSION @ 0x01F8;
+
+    reg {
+        name = "Version Register Compatability Register";
+
+        enum version_sel_enum {
+            EARLIER = 0x0 { desc = "Old Register Group"; };
+            NEW     = 0x1 { desc = "New Register Group"; };
+        };
+
+        field {
+            name = "VERSION_SEL";
+            desc = "SFC Register Compatibility";
+            encode = version_sel_enum;
+        } VERSION_SEL[0:0];
+
+    } VERSION_SEL @ 0x01FC;
+
+    reg {
+        name = "Bus Operation Configuration Register 1";
+
+        enum mem_if_type_enum {
+            STANDARD = 0x0 { desc = "Standard SPI Interface"; };
+            DI_DO    = 0x1 { desc = "Dual-Input/Dual-Output SPI"; };
+            DIO      = 0x2 { desc = "Dual-IO SPI"; };
+            FDIO     = 0x3 { desc = "Full DIO SPI"; };
+            QI_DO    = 0x5 { desc = "Quad-Input/Dual-Output SPI"; };
+            QIO      = 0x6 { desc = "Quad-IO SPI"; };
+            FQIO     = 0x7 { desc = "Full QIO SPI"; };
+        };
+
+        enum dummy_bytes_enum {
+            DUMMY_0 = 0x0 { desc = "1 Byte"; };
+            DUMMY_1 = 0x1 { desc = "1 Bytes"; };
+            DUMMY_2 = 0x2 { desc = "2 Bytes"; };
+            DUMMY_3 = 0x3 { desc = "3 Bytes"; };
+            DUMMY_4 = 0x4 { desc = "4 Bytes"; };
+            DUMMY_5 = 0x5 { desc = "5 Bytes"; };
+            DUMMY_6 = 0x6 { desc = "6 Bytes"; };
+            DUMMY_7 = 0x7 { desc = "7 Bytes"; };
+        };
+
+        field {
+            name = "rd_mem_if_type";
+            desc = "Bus read operation specifies the type of the connected SPI flash interface.";
+            encode = mem_if_type_enum;
+        } rd_mem_if_type[0:2];
+
+        field {
+            name = "rd_dummy_bytes";
+            desc = "Dummy byte of the bus read operation.";
+            encode = dummy_bytes_enum;
+        } rd_dummy_bytes[3:5];
+
+        enum rd_prefetch_cnt_enum {
+            PREFETCH_NONE         = 0x0 { desc = "Not prefetched"; };
+            PREFETCH_ONE_CYCLE    = 0x1 { desc = "Prefetch the data in 1 clock cycle"; };
+            PREFETCH_TWO_CYCLES   = 0x2 { desc = "Prefetch the data in 2 clock cycles"; };
+            PREFETCH_THREE_CYCLES = 0x3 { desc = "Prefetch the data in 3 clock cycles"; };
+        };
+
+        field {
+            name = "rd_prefetch_cnt";
+            desc = "Clock cycle for prefetching data when the flash memory is accessed at a variable data length through the bus.";
+            encode = rd_prefetch_cnt_enum;
+        } rd_prefetch_cnt[6:7];
+
+        field {
+            name = "rd_ins";
+            desc = "Read Instruction";
+        } rd_ins[8:15];
+
+        field {
+            name = "wr_mem_if_type";
+            desc = "Bus write operation specifies the type of the connected SPI flash interface.";
+            encode = mem_if_type_enum;
+        } wr_mem_if_type[16:18];
+
+        field {
+            name = "wr_dummy_bytes";
+            desc = "Dummy byte of the bus write operation .";
+            encode = dummy_bytes_enum;
+        } wr_dummy_bytes[19:21];
+
+        field {
+            name = "wr_ins";
+            desc = "Write Instruction";
+        } wr_ins[22:29];
+
+        field {
+            name = "wr_enable";
+            desc = "Bus write control. Ignore the bus write operation. ";
+            encode = SFC_one_enable_enum;
+        } wr_enable[30:30];
+
+        field {
+            name = "rd_enable";
+            desc = "Bus read control. Ignore the bus read operation.";
+            encode = SFC_one_enable_enum;
+        } rd_enable[31:31];
+
+    } BUS_CONFIG1 @ 0x0200;
+
+    reg {
+        name = "Bus Operation Configuration Register 2";
+
+        field {
+            name = "reserved";
+            desc = "Reserved. The value 0 must be written to this bit.";
+        } reserved[0:2];
+
+    } BUS_CONFIG2 @ 0x0204;
+
+    // TODO: Document remaining registers
+
+};
+`endif

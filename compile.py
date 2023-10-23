@@ -26,11 +26,16 @@ def get_rdl_folders():
 
 def process_chip(chip):
     """
-    Compiles each chip, and appends them to the `roots` array
+    Compiles each chip in a chip folder, and appends them to the `roots` array
     :param chip: The chip folder name
     :return: None
     """
-    print("Processing RDL file at rdl/%s/%s.rdl" % (chip, chip))
+    print("Processing RDL files in rdl/%s" % chip)
+
+    chips = []
+    with open("rdl/%s/chips.txt" % chip) as chip_file:
+        for line in chip_file:
+            chips.append(line.replace("\n", ""))
 
     # Include all the RDL files in the chip's directory
     rdl_files = os.listdir("rdl/%s" % chip)
@@ -41,13 +46,15 @@ def process_chip(chip):
         else:
             rdl_files.pop(i)
 
-    rdl = RDLCompiler()
-
     try:
-        rdl.compile_file("rdl/%s/%s.rdl" % (chip, chip), rdl_files)
+        for chip_file in chips:
+            rdl = RDLCompiler()
 
-        root = rdl.elaborate()
-        roots.append(root)
+            print("Processing chip file at rdl/%s/%s.rdl" % (chip, chip_file))
+            rdl.compile_file("rdl/%s/%s.rdl" % (chip, chip_file), rdl_files)
+
+            root = rdl.elaborate()
+            roots.append(root)
     except RDLCompileError as e:
         print(e)
         exit(1)
