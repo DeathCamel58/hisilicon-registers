@@ -53,13 +53,11 @@ def process_chip(chip):
         if rdl_files[i] != "%s.rdl" % chip:
             includes.append("rdl/%s/%s" % (chip, rdl_files[i]))
 
-    print("Including files: %s" % includes)
-
     try:
         for chip_file in chips:
             rdl = RDLCompiler()
 
-            print("Processing chip file at rdl/%s/%s.rdl" % (chip, chip_file))
+            print("\tProcessing chip file at rdl/%s/%s.rdl" % (chip, chip_file))
             rdl.compile_file("rdl/%s/%s.rdl" % (chip, chip_file), includes)
 
             root = rdl.elaborate()
