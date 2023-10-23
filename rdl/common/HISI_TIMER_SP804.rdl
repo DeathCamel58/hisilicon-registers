@@ -1,0 +1,188 @@
+`ifndef HISI_TIMER_SP804_RDL
+`define HISI_TIMER_SP804_RDL
+
+regfile eHISI_TIMER_SP804 {
+    name = "Timer Registers";
+    desc = "The timer is based on the [`ARM SP804`](https://developer.arm.com/documentation/ddi0271/latest/) device.";
+
+    /* Fields */
+
+    reg {
+        name = "Initial Count Value Register";
+
+        field {
+            name = "timerx_load";
+            desc = "
+            Used to set the initial count value of each timer. Each timer has one such register.
+
+            !!! NOTE
+                * The minimum valid value written to TIMERx_LOAD is 1.
+                * When the value 0 is written to TIMERx_LOAD, the dual-timer module generates an interrupt immediately.
+
+                If values are written to TIMERx_BGLOAD and TIMERx_LOAD before the rising edge of TIMCLK enabled by TIMCLKENx reaches, the count value of the next rising edge of TIMCLK is changed to the value written to TIMERx_LOAD. As the value of TIMERx_BGLOAD changes when data is written to TIMERx_LOAD, the value returned after TIMERx_BGLOAD is read is the latest value that is written to TIMERx_LOAD and TIMERx_BGLOAD. When the timer works in periodic mode and the count value decreases to 0, the initial value is loaded from TIMERx_BGLOAD to continue counting.
+            ";
+        } timerx_load[0:31];
+
+    } TIMERx_LOAD @ 0x000;
+
+    reg {
+        name = "Current Count Value Register";
+        desc = "
+        Shows the current value of the counter that is decremented. After a value is written to TIMERx_LOAD, TIMERx_VALUE immediately shows the newly loaded value of the counter in the PCLK domain without waiting for the clock edge of TIMCLK enabled by TIMCLKENx.
+
+        !!! NOTE
+            When a timer is in 16-bit mode, the 16 upper bits of the 32-bit TIMERx_VALUE are not set to 0 automatically. If the timer is switched from 32-bit mode to 16-bit mode and no data is written to TIMERx_LOAD, the upper 16 bits of TIMERx_VALUE may be non-zero.
+        ";
+
+        field {
+            name = "timerx_value";
+            desc = "Current count value of the timer.";
+
+            // TODO: Maybe set this to a counter type?
+            //       This will allow us to mark this as decrementing.
+        } timerx_value[0:31];
+
+    } TIMERx_VALUE @ 0x04;
+
+    reg {
+        name = "Timer Control Register";
+        desc = "
+        !!! NOTE
+            When the periodic mode is selected, TIMERx_CONTROL[timermode] must be set to 1 and TIMERx_CONTROL[oneshot] must be set to 0.
+        ";
+
+        enum oneshot_enum {
+            PERIODIC = 0x0 { desc = "Periodic Mode or Free Running Mode"; };
+            ONE_SHOT = 0x1 { desc = "One Shot Mode"; };
+        };
+
+        field {
+            name = "oneshot";
+            desc = "Count mode select.";
+            encode = oneshot_enum;
+        } oneshot[0:0];
+
+        enum timersize_enum {
+            BIT_16 = 0x0 { desc = "16 Bit Counter"; };
+            BIT_32 = 0x1 { desc = "32 Bit Counter"; };
+        };
+
+        field {
+            name = "timersize";
+            desc = "Counter select.";
+            encode = timersize_enum;
+        } timersize[1:1];
+
+        enum timerpre_enum {
+            PRESCALE_NONE      = 0x0 { desc = "The clock frequency of the timer isn't divided."; };
+            PRESCALE_4         = 0x1 { desc = "The clock frequency of the timer is divided by 16."; };
+            PRESCALE_8         = 0x2 { desc = "The clock frequency of the timer is divided by 256."; };
+            PRESCALE_UNDEFINED = 0x3 { desc = "The clock frequency of the timer is divided by 256."; };
+        };
+
+        field {
+            name = "timerpre";
+            desc = "Prescaling factor configuration.";
+            encode = timerpre_enum;
+        } timerpre[2:3];
+
+        enum intenable_enum {
+            MASKED     = 0x0 { desc = "Masked"; };
+            NOT_MASKED = 0x1 { desc = "Not Masked"; };
+        };
+
+        field {
+            name = "intenable";
+            desc = "Raw interrupt mask.";
+            encode = intenable_enum;
+        } intenable[5:5];
+
+        enum timermode_enum {
+            FREE_RUNNING = 0x0 { desc = "Free Running Mode"; };
+            PERIODIC     = 0x1 { desc = "Periodic Mode"; };
+        };
+
+        field {
+            name = "timermode";
+            desc = "Timer count mode.";
+            encode = timermode_enum;
+        } timermode[6:6];
+
+        enum timeren_enum {
+            DISABLED = 0x0 { desc = "Disabled"; };
+            ENABLED  = 0x1 { desc = "Enabled"; };
+        };
+
+        field {
+            name = "timeren";
+            desc = "Timer enable.";
+            encode = timeren_enum;
+        } timeren[7:7];
+
+    } TIMERx_CONTROL @ 0x08;
+
+    reg {
+        name = "Interrupt Clear Register";
+        desc = "The interrupt status of a counter is cleared after any operation is performed on this register.";
+
+        field {
+            name = "timerx_intclr";
+            desc = "Writing this register clears the output interrupt.";
+        } timerx_intclr[0:31];
+
+    } TIMERx_INTCLR @ 0x0C;
+
+    reg {
+        name = "Raw Interrupt Status Register";
+
+        enum timerx_ris_enum {
+            NO_INTERRUPT = 0x0 { desc = "No Interrupt"; };
+            INTERRUPT    = 0x1 { desc = "Interrupt"; };
+        };
+
+        field {
+            name = "timerx_ris";
+            desc = "Raw interrupt status.";
+            encode = timerx_ris_enum;
+        } timerx_ris[0:0];
+
+    } TIMERx_RIS @ 0x10;
+
+    reg {
+        name = "Masked Interrupt Status Register";
+
+        enum timerx_mis_enum {
+            NO_INTERRUPT = 0x0 { desc = "No Interrupt; Or Interrupt is Masked"; };
+            INTERRUPT    = 0x1 { desc = "Interrupt"; };
+        };
+
+        field {
+            name = "timerx_mis";
+            desc = "Masked interrupt status.";
+            encode = timerx_mis_enum;
+        } timerx_mis[0:0];
+
+    } TIMERx_MIS @ 0x14;
+
+    reg {
+        name = "Periodic Initial Count Value Register";
+        desc = "
+        The TIMERx_BGLOAD register contains the initial count value of the timer. This register is used to reload an initial count value when the count value of the timer reaches 0 in periodic mode.
+
+        In addition, this register provides another method of accessing TIMERx_LOAD. The difference is that after a value is written to TIMERx_BGLOAD, the timer does not count starting from the input value immediately.
+        ";
+
+        field {
+            name = "timerx_bgload";
+            desc = "
+            Initial count value
+
+            !!! NOTE
+                Note: This register differs from TIMERx_LOAD. For details, see the descriptions of TIMERx_LOAD.
+            ";
+        } timerx_bgload[0:31];
+
+    } TIMERx_BGLOAD @ 0x18;
+
+};
+`endif
