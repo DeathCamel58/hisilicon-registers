@@ -8,7 +8,7 @@ roots = []
 
 def get_rdl_folders():
     """
-    Gets all of the RDL chip folders
+    Gets all the RDL chip folders
     :return: The list chip names
     """
     folders = os.listdir("rdl")
@@ -18,6 +18,10 @@ def get_rdl_folders():
         print("\tNo RDL folders found!")
         exit(1)
     else:
+        # Remove the `common` folder, as this is only an include folder
+        for i in range(len(folders) - 1, -1, -1):
+            if folders[i] == "common":
+                folders.pop(i)
         for folder in folders:
             print("\t%s" % folder)
 
@@ -37,21 +41,26 @@ def process_chip(chip):
         for line in chip_file:
             chips.append(line.replace("\n", ""))
 
+    # Include all the common RDL files
+    includes = os.listdir("rdl/common")
+    for i in range(len(includes) - 1, -1, -1):
+        includes[i] = "rdl/common/%s" % includes[i]
+
     # Include all the RDL files in the chip's directory
     rdl_files = os.listdir("rdl/%s" % chip)
     for i in range(len(rdl_files) - 1, -1, -1):
         # Fix the filename of the RDL files, and remove the base RDL file from the array
         if rdl_files[i] != "%s.rdl" % chip:
-            rdl_files[i] = "rdl/%s/%s" % (chip, rdl_files[i])
-        else:
-            rdl_files.pop(i)
+            includes.append("rdl/%s/%s" % (chip, rdl_files[i]))
+
+    print("Including files: %s" % includes)
 
     try:
         for chip_file in chips:
             rdl = RDLCompiler()
 
             print("Processing chip file at rdl/%s/%s.rdl" % (chip, chip_file))
-            rdl.compile_file("rdl/%s/%s.rdl" % (chip, chip_file), rdl_files)
+            rdl.compile_file("rdl/%s/%s.rdl" % (chip, chip_file), includes)
 
             root = rdl.elaborate()
             roots.append(root)
