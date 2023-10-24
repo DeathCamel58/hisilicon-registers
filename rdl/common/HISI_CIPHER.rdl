@@ -1,0 +1,775 @@
+`ifndef HISI_CIPHER_RDL
+`define HISI_CIPHER_RDL
+
+regfile eHISI_CIPHER {
+    name = "CIPHER Registers";
+    desc = "
+    The CIPHER module is an encryption and decryption module that uses the data encryption standard (DES), 3DES, and advanced encryption standard (AES) algorithms. The DES or 3DES algorithm is based on the FIPS46-3 standard, whereas the AES algorithm is based on the FIPS 197 standard. The operating modes of the DES or 3DES algorithm comply with the FIPS-81 standard and the operating modes of the AES algorithm comply with the NIST special800-38a standard.
+
+    The CIPHER module can encrypt or decrypt a large amount of data effectively. In addition, it encrypts and decrypts one or multiple blocks at a time.
+    
+    ## Features
+    * Supports the AES key length of 128 bits, 192 bit, or 256 bits.
+    *Supports the DES key length of 64 bits.
+    *Supports 3-key and 2-key modes for the 3DES algorithm.
+    *Supports the operating modes of electronic codebook (ECB), cipher block chaining (CBC), 1-/8-/128-cipher feedback (CFB), 128-output feedback (OFB), and counter (CTR) for the AES algorithm. These operating modes comply with the NIST special800-38a standard.
+    *Supports the operating modes of ECB, CBC, 1/8/64-CFB, and 1/8/64-OFB for the DES or 3DES algorithm. These operating modes comply with the FIPS-81 standard.
+    *Encrypts and decrypts one or multiple blocks at a time in ECB, CBC, CFB, or OFB operating mode.
+    *Encrypts and decrypts a block at a time in CTR operating mode of the AES algorithm.
+    *Supports the functions of interrupt status query, interrupt mask, and interrupt clear.
+    *Supports the function of forcible abort.
+    *Adjusts the byte sequences of the input data (including the block input, vector input, and key) and the output data (including the block output and vector output).
+
+    ## Function Description
+
+    The operating modes of the DES or 3DES algorithm comply with the FIPS-81 standard and the operating modes of the AES algorithm comply with the NIST special800-38a standard. For the DES, 3DES, and AES algorithms, the ECB, CBC, and CFB operating modes are the same, whereas the CTR and OFB operating modes are different. Note that the CTR operating mode is exclusive for the AES algorithm only.
+
+    ### 3DES Algorithm
+
+    The 3DES algorithm supports both 3-key and 2-key operations. The 2-key operation can be regarded as a simplified 3-key operation. To be specific, for the 2-key operation, key 3 is replaced with key 1.
+
+    ![The 3DES encryption of the 3-key operation and the 2-key operation.](assets/cipher-3des-encryption.png)
+    ![The 3DES decryption of the 3-key operation and the 2-key operation.](assets/cipher-3des-encryption.png)
+
+    ### ECB Mode
+
+    In ECB mode, the encryption and decryption algorithms are directly applied to the block data. In addition, the operation of each block is independent. With this feature, the plain text encryption and cipher text decryption can be performed concurrently.
+
+    ![The ECB mode of the AES and DES algorithms](assets/cipher-ecb-aes-des.png)
+    ![The ECB mode of the 3DES algorithms](assets/cipher-ecb-3des.png)
+
+    ### CBC Mode
+
+    In CBC mode, the encryption operation is performed only after the encrypted input plain text block is exclusive-ORed with the input vector (IV). In addition, each plain text block is encrypted based on the processing result (namely, cipher text) of the previous plain text block. Therefore, encryption operations cannot be performed concurrently in CBC mode. The decryption operation, however, is independent of output plain text of the previous block. Therefore, decryption operations can be performed concurrently.
+
+    ![The CBC mode of the AES and DES algorithms](assets/cipher-cbc-aes-des.png)
+    ![The CBC mode of the 3DES algorithm](assets/cipher-cbc-edes.png)
+
+    ### CFB Mode
+
+    The CFB mode is used to convert a block cipher into a stream cipher. This mode is implemented by selecting the operation bits of the CFB. The shift operation bits are represented by s in either of the following cases:
+
+    * For the DES or 3DES algorithm, s bits can be 1 bit, 8 bits, or 64 bits.
+    * For the AES algorithm, s bits can be 1 bit, 8 bits, or 128 bits.
+
+    ![The s-bit CFB mode of the AES and DES algorithm](assets/cipher-cfb-aes-des.png)
+    ![The s-bit CFB mode of the 3DES algorithm](assets/cipher-cfb-3des.png)
+
+    ### OFB Mode
+
+    In OFB mode, IVs serve as the inputs during encryption. If a same key is used repeatedly, different IVs must be used to ensure operation security. The s bits can be the following values:
+
+    * For the DES or 3DES algorithm, s bits can be 1 bit, 8 bits, or 64 bits.
+    * For the AES algorithm, s bits must be 128 bits.
+
+    ![The OFB mode of the AES algorithm](assets/cipher-ofb-aes.png)
+    ![The s-bit OFB mode of the DES algorithm](assets/cipher-ofb-des.png)
+    ![The s-bit OFB mode of the 3DES algorithm](assets/cipher-ofb-3des.png)
+
+    ### CTR Mode
+
+    In CTR mode, different data is input to the CIPHER module by using the AES algorithm to ensure the security of data processing. Such data can be the count value CTRn. Therefore, CTRn also ensures the security of the CTR mode.
+
+    !!! NOTE
+        CTRn is obtained in accumulative mode.
+
+    ![The CTR mode of the AES algorithm](assets/cipher-ctr-aes.png)
+
+    TODO: Determine if this is a hisi IP, or a ARM IP.
+    ";
+
+    /* Fields */
+
+    enum CIPHER_one_enable_enum {
+        ENABLE  = 0x0 { desc = "Enable"; };
+        DISABLE = 0x1 { desc = "Disable"; };
+    };
+
+    reg {
+        name = "Input Register 0";
+        desc = "
+        * Assume that the AES algorithm (CIPHER_CTRL[alg_sel] = 0b10) is selected.
+            * If the 1-CFB operating mode is selected (CIPHER_CTRL bit[5:1] = 0b10010), the least significant bit (LSB) is valid, that is, CIPHER_DIN bit[0] is valid.
+            * If the 8-CFB operating mode is selected (CIPHER_CTRL bit[5:1] = 0b01010), eight lower bits are valid, that is, CIPHER_DIN bit[7:0] are valid.
+            * If the 128-CFB operating mode is selected (CIPHER_CTRL bit[5:1] = 0b00010 or 0b11010), 128 bits are valid.
+            * In other operating modes, 128 bits are valid.
+        * Assume that the DES or the 3DES algorithm is selected (CIPHER_CTRL[alg_sel] = 0b00, 0b01, or 0b11).
+            * If the 1-CFB or 1-OFB operating mode is selected (CIPHER_CTRL bit[5:1] = 0b10010 or 0b10011), the LSB is valid, that is, CIPHER_DIN bit[0] is valid.
+            * If the 8-CFB or 8-OFB operating mode is selected (CIPHER_CTRL bit[5:1] = 0b01010 or 0b01011), eight lower bits are valid, that is, CIPHER_DIN bit[7:0] are valid.
+            * For the 64-CFB or 64-OFB operating mode (CIPHER_CTRL bit[5:1] = 0b00010, 0b11010, 0b00011, or 0b11011), 64 lower bits are valid, that is, CIPHER_DIN bit[63:0] is valid.
+            * In other operating modes, 64 lower bits are valid, that is, CIPHER_DIN bit[63:0] are valid.
+
+        !!! NOTE
+            If the multi-block operation is selected (CIPHER_CTRL[cipher_mode] = 0b1), CIPHER_DIN need not to be configured.
+            If the single-block operation is selected (CIPHER_CTRL[cipher_mode] = 0b0), CIPHER_DIN must be configured.
+        ";
+
+        field {
+            name = "cipher_din_0";
+            desc = "Bits 31:0 of data";
+        } cipher_din_0[0:31];
+
+    } CIPHER_DIN_0 @ 0x000;
+
+    reg {
+        name = "Input Register 1";
+        desc = "Refer to CIPHER_DIN_0";
+
+        field {
+            name = "cipher_din_1";
+            desc = "Bits 63:32 of data";
+        } cipher_din_1[0:31];
+
+    } CIPHER_DIN_1 @ 0x004;
+
+    reg {
+        name = "Input Register 2";
+        desc = "Refer to CIPHER_DIN_0";
+
+        field {
+            name = "cipher_din_2";
+            desc = "Bits 95:64 of data";
+        } cipher_din_2[0:31];
+
+    } CIPHER_DIN_2 @ 0x008;
+
+    reg {
+        name = "Input Register 3";
+        desc = "Refer to CIPHER_DIN_0";
+
+        field {
+            name = "cipher_din_3";
+            desc = "Bits 127:96 of data";
+        } cipher_din_3[0:31];
+
+    } CIPHER_DIN_3 @ 0x00C;
+
+    reg {
+        name = "Vector Block Input Register 0";
+        desc = "
+        Note the following points when configuring this register:
+
+        * Assume that the single-block operation (CIPHER_CTRL bit[cipher_mode] = 0b0) is selected and the selected mode (CIPHER_CTRL[mode]=0b001, 0b010, 0b011, or 0b100) is not ECB mode.
+            * If you do not need to configure the input vector (CIPHER_CTRL[ivin_sel] = 0b0), CIPHER_IVIN is not required to configure.
+            * If you want to configure the input vector (CIPHER_CTRL[ivin_sel] = 0b1), CIPHER_IVIN must be configured. If the AES algorithm is selected (CIPHER_CTRL [alg_sel] = 0b10), CIPHER_IVIN bit[127:0] are valid. If the DES or 3DES algorithm is selected (CIPHER_CTRL[alg_sel] = 0b00, 0b01, or 0b11), 64 lower bits are valid, that is, CIPHER_IVIN bit[63:0] are valid.
+        * Assume that the multi-block operation is selected (CIPHER_CTRL bit[cipher_mode] = 0b1) and the selected mode is not ECB mode (CIPHER_CTRL[mode]=0b001, 0b010, or 0b011).
+            * If you do not need to configure the input vector (CIPHER_CTRL[ivin_sel] = 0b0), CIPHER_IVIN is not required to configure, because the input vector of the first block operation is unrelated to the value of CIPHER_IVIN.
+            * If you need to configure the input vector (CIPHER_CTRL[ivin_sel] = 0b1), CIPHER_IVIN must be configured, because the input vector of the first block operation is obtained from CIPHER_IVIN.
+        ";
+
+        field {
+            name = "cipher_ivin_0";
+            desc = "Bits 31:0 of data";
+        } cipher_ivin_0[0:31];
+
+    } CIPHER_IVIN_0 @ 0x010;
+
+    reg {
+        name = "Vector Block Input Register 1";
+        desc = "Refer to CIPHER_IVIN_0";
+
+        field {
+            name = "cipher_ivin_1";
+            desc = "Bits 31:0 of data";
+        } cipher_ivin_1[0:31];
+
+    } CIPHER_IVIN_1 @ 0x014;
+
+    reg {
+        name = "Vector Block Input Register 2";
+        desc = "Refer to CIPHER_IVIN_0";
+
+        field {
+            name = "cipher_ivin_2";
+            desc = "Bits 95:64 of data";
+        } cipher_ivin_2[0:31];
+
+    } CIPHER_IVIN_2 @ 0x018;
+
+    reg {
+        name = "Vector Block Input Register 3";
+        desc = "Refer to CIPHER_IVIN_0";
+
+        field {
+            name = "cipher_ivin_3";
+            desc = "Bits 127:96 of data";
+        } cipher_ivin_3[0:31];
+
+    } CIPHER_IVIN_3 @ 0x01C;
+
+    reg {
+        name = "Key Input Register 0";
+        desc = "
+        Note the following points when configuring this register:
+
+        * Assume that the DES algorithm is selected (CIPHER_CTRL[alg_sel] = 0b00 or 0b11), the 64 lower bits are valid, that is, CIPHER_KEY[63:0] are valid.
+        * Assume that the 3DES algorithm is selected (CIPHER_CTRL[alg_sel] = 0b01). If the three-key operation is selected (CIPHER_CTRL[key_length] = 0b00, 0b01, 0b10), 192 lower bits are valid.
+            * CIPHER_KEY bit[63:0] indicates the first key.
+            * CIPHER_KEY bit[127:64] indicates the second key.
+            * CIPHER_KEY bit[191:128] indicates the third key.
+        * If the two-key operation is selected (CIPHER_CTRL[key_length] = 0b11), 128 lower bits are valid.
+            * CIPHER_KEY bit[63:0] indicates the first key.
+            * CIPHER_KEY bit[127:64] indicates the second key.
+        * Assume that the AES algorithm is selected (CIPHER_CTRL[alg_sel] = 0b10).
+            * If the 128-bit key operation is selected (CIPHER_CTRL[key_length] = 0b00 or 0b11), 128 lower bits are valid, that is, CIPHER_KEY bit[127:0] are valid.
+            * If the 192-bit key operation is selected (CIPHER_CTRL[key_length] = 0b01), 192 lower bits are valid, that is, CIPHER_KEY bit[191:0] are valid.
+            * If the 256-bit key operation is selected (CIPHER_CTRL[key_length] = 0b10), 256 lower bits are valid.
+        ";
+
+        field {
+            name = "cipher_key_0";
+            desc = "Bits 31:0 of data";
+        } cipher_key_0[0:31];
+
+    } CIPHER_KEY_0 @ 0x020;
+
+    reg {
+        name = "Key Input Register 1";
+        desc = "Refer to CIPHER_KEY_0";
+
+        field {
+            name = "cipher_key_1";
+            desc = "Bits 63:32 of data";
+        } cipher_key_1[0:31];
+
+    } CIPHER_KEY_1 @ 0x024;
+
+    reg {
+        name = "Key Input Register 2";
+        desc = "Refer to CIPHER_KEY_0";
+
+        field {
+            name = "cipher_key_2";
+            desc = "Bits 95:64 of data";
+        } cipher_key_2[0:31];
+
+    } CIPHER_KEY_2 @ 0x028;
+
+    reg {
+        name = "Key Input Register 3";
+        desc = "Refer to CIPHER_KEY_0";
+
+        field {
+            name = "cipher_key_3";
+            desc = "Bits 127:96 of data";
+        } cipher_key_3[0:31];
+
+    } CIPHER_KEY_3 @ 0x02C;
+
+    reg {
+        name = "Key Input Register 4";
+        desc = "Refer to CIPHER_KEY_0";
+
+        field {
+            name = "cipher_key_4";
+            desc = "Bits 159:128 of data";
+        } cipher_key_4[0:31];
+
+    } CIPHER_KEY_4 @ 0x030;
+
+    reg {
+        name = "Key Input Register 5";
+        desc = "Refer to CIPHER_KEY_0";
+
+        field {
+            name = "cipher_key_5";
+            desc = "Bits 191:160 of data";
+        } cipher_key_5[0:31];
+
+    } CIPHER_KEY_5 @ 0x034;
+
+    reg {
+        name = "Key Input Register 6";
+        desc = "Refer to CIPHER_KEY_0";
+
+        field {
+            name = "cipher_key_6";
+            desc = "Bits 223:192 of data";
+        } cipher_key_6[0:31];
+
+    } CIPHER_KEY_6 @ 0x038;
+
+    reg {
+        name = "Key Input Register 7";
+        desc = "Refer to CIPHER_KEY_0";
+
+        field {
+            name = "cipher_key_7";
+            desc = "Bits 255:224 of data";
+        } cipher_key_7[0:31];
+
+    } CIPHER_KEY_7 @ 0x03C;
+
+    reg {
+        name = "Output Register 0";
+        desc = "
+        Note the following points when configuring this register:
+
+        If the single-block operation is selected (CIPHER_CTRL[cipher_mode] = 0b0), the data read from CIPHER_DOUT is the result of the single-block operation. The result of the AES algorithm is different from that of the DES or 3DES algorithm.
+
+        * Assume that the AES algorithm (CIPHER_CTRL[alg_sel] = 0b10) is selected.
+            * If the 1-CFB mode is selected (CIPHER_CTRL bit[5:1] = 0b10010), the LSB is valid, that is, CIPHER_DOUT bit[0] is valid.
+            * If the 8-CFB mode is selected (CIPHER_CTRL bit[5:1] = 0b01010), eight lower bits are valid, that is, CIPHER_DOUT bit[7:0] are valid.
+            * If the 128-CFB operating mode is selected (CIPHER_CTRL bit[5:1] = 0b00010 or 0b11010), 128 bits are valid.
+            * In other operating modes, 128 bits are valid.
+        * Assume that the DES or the 3DES algorithm is selected (CIPHER_CTRL[alg_sel] = 0b00, 0b01, or 0b11).
+            * If the 1-CFB or 1-OFB mode is selected (CIPHER_CTRL bit[5:1] = 0b10010 or 0b10011), the LSB is valid, that is, CIPHER_DOUT bit[0] is valid.
+            * If the 8-CFB or 8-OFB operating mode is selected (CIPHER_CTRL bit[5:1] = 0b01010 or 0b01011), eight lower bits are valid, that is, CIPHER_DOUT bit[7:0] are valid.
+            * If the 64-CFB or 64-OFB operating mode is selected (CIPHER_CTRL bit[5:1] = 0b00010, 0b00011, 0b11010, or 0b11011), 64 lower bits are valid, that is, CIPHER_DOUT bit[63:0] are valid.
+            * In other operating modes, 64 lower bits are valid, that is, CIPHER_DOUT bit[63:0] are valid.
+        ";
+
+        field {
+            name = "cipher_dout_0";
+            desc = "Bits 31:0 of data";
+            sw = r;
+        } cipher_dout_0[0:31];
+
+    } CIPHER_DOUT_0 @ 0x040;
+
+    reg {
+        name = "Output Register 1";
+        desc = "Refer to CIPHER_DOUT_0";
+
+        field {
+            name = "cipher_dout_1";
+            desc = "Bits 63:32 of data";
+            sw = r;
+        } cipher_dout_1[0:31];
+
+    } CIPHER_DOUT_1 @ 0x044;
+
+    reg {
+        name = "Output Register 2";
+        desc = "Refer to CIPHER_DOUT_0";
+
+        field {
+            name = "cipher_dout_2";
+            desc = "Bits 63:32 of data";
+            sw = r;
+        } cipher_dout_2[0:31];
+
+    } CIPHER_DOUT_2 @ 0x048;
+
+    reg {
+        name = "Output Register 3";
+        desc = "Refer to CIPHER_DOUT_0";
+
+        field {
+            name = "cipher_dout_3";
+            desc = "Bits 63:32 of data";
+            sw = r;
+        } cipher_dout_3[0:31];
+
+    } CIPHER_DOUT_3 @ 0x04C;
+
+    reg {
+        name = "Operation Complete Vector Output Register 0";
+        desc = "
+        Note the following points when configuring this register:
+
+        * If the ECB or CTR operating mode is selected (CIPHER_CTRL[mode] = 0b000, 0b100, 0b101, 0b110, or 0b111), CIPHER_IVOUT can be ignored.
+        * Assume that the single-block operation is selected (CIPHER_CTRL[cipher_mode] = 0b0), the data of CIPHER_IVOUT is the vector output of the block that can be regarded as the vector input of the next block operation of the same data packet.
+            * If the AES algorithm is selected (CIPHER_CTRL[alg_sel] = 0b10), 128 bits are valid.
+            * If the DES or 3DES algorithm is selected (CIPHER_CTRL[cipher_mode] = 0b00, 0b01, or 0b11), 64 lower bits are valid, that is, CIPHER_IVOUT bit[63:0] are valid.
+        * Assume that the multi-block operation is selected (CIPHER_CTRL[ivin_sel] = 0b1), the data read from CIPHER_IVOUT is the vector output of the last block operation.
+            * If the AES algorithm is selected (CIPHER_CTRL[cipher_mode] = 0b10), 128 bits are valid.
+            * If the DES or 3DES algorithm is selected (CIPHER_CTRL[cipher_mode] = 0b00, 0b01, or 0b11), 64 lower bits are valid, that is, CIPHER_IVOUT bit[63:0] are valid.
+
+        !!! NOTE
+            Vector output after the operation of the CIPHER module is complete. It can be ignored in ECB or CTR operating mode. Each address maps to a 32-bit data segment.
+        ";
+
+        field {
+            name = "cipher_ivout_0";
+            desc = "Bits 31:0 of data";
+            sw = r;
+        } cipher_ivout_0[0:31];
+
+    } CIPHER_IVOUT_0 @ 0x050;
+
+    reg {
+        name = "Operation Complete Vector Output Register 1";
+        desc = "Refer to CIPHER_IVOUT_0";
+
+        field {
+            name = "cipher_ivout_1";
+            desc = "Bits 63:32 of data";
+            sw = r;
+        } cipher_ivout_1[0:31];
+
+    } CIPHER_IVOUT_1 @ 0x054;
+
+    reg {
+        name = "Operation Complete Vector Output Register 2";
+        desc = "Refer to CIPHER_IVOUT_0";
+
+        field {
+            name = "cipher_ivout_2";
+            desc = "Bits 95:64 of data";
+            sw = r;
+        } cipher_ivout_2[0:31];
+
+    } CIPHER_IVOUT_2 @ 0x058;
+
+    reg {
+        name = "Operation Complete Vector Output Register 3";
+        desc = "Refer to CIPHER_IVOUT_0";
+
+        field {
+            name = "cipher_ivout_3";
+            desc = "Bits 127:96 of data";
+            sw = r;
+        } cipher_ivout_3[0:31];
+
+    } CIPHER_IVOUT_3 @ 0x05C;
+
+    reg {
+        name = "Control Register";
+        desc = "
+        Note the following points when configuring this register:
+
+        * Configure this register before configuring others registers of the CIPHER module.
+        * The multi-block operation is not supported in the CTR operating mode of the AES algorithm. That is, when the CTR mode of the AES algorithm is selected, CIPHER_CTRL[cipher_mode] cannot be set to 1.
+        * In other operating modes except the CFB mode of the AES algorithm, CIPHER_CTRL[width] cannot be set to 01 or 10.
+        * In other operating modes except the CFB and OFB modes of the DES or 3DES algorithm, CIPHER_CTRL[width] cannot be set to 01 or 10.
+        * CIPHER_CTRL[byte_seq_reg] and CIPHER_CTRL[byte_seq_ram] are used to adjust the byte sequences of the data in the configuration register and result register. If the data (such as the data processed through the DES algorithm) is transmitted to the CIPHER module as character streams, the byte sequences must be adjusted. For example, the text 7654321 maps to the number 0x3736_3534_3332_3120. After data is received as characters, the data is stored in the memory in the following sequences:
+            * The data stored in the 0x0 address is 0x3435_3637.
+            * The data stored in the 0x4 address is 0x2031_3233.
+
+        !!! NOTE
+            Assume that the data is stored starting from the offset address of 0x0. In this case, both the byte_seq_ram and byte_seq_reg bits must be set to 1.
+        ";
+
+        enum byte_adjust_enum {
+            NO_ADJUST = 0x0 { desc = "Do not adjust"; };
+            ADJUST    = 0x1 { desc = "Adjust"; };
+        };
+
+        field {
+            name = "byte_seq_ram";
+            desc = "Controls whether to adjust the byte sequences of the data stored in the memory address space.";
+            encode = byte_adjust_enum;
+        } byte_seq_ram[14:14];
+
+        field {
+            name = "byte_seq_reg";
+            desc = "
+            Controls whether to adjust the byte sequences of the data configured by input data registers or read from output data registers.
+
+            The input data registers include CIPHER_KEY, CIPHER_IVIN, and CIPHER_DIN. The output data registers include CIPHER_IVOUT and CIPHER_DOUT.
+            ";
+            encode = byte_adjust_enum;
+        } byte_seq_reg[13:13];
+
+        enum dest_addr_set_enum {
+            START_END_SAME      = 0x0 { desc = "The start addresses for storing the block data to be processed and the block data of operation results are the same, so SRC_START_ADDR and DEST_START_ADDR need not to be configured."; };
+            START_END_DIFFERENT = 0x1 { desc = "The start addresses for storing the block data to be processed and the block data of operation results are different, so SRC_START_ADDR and DEST_START_ADDR need to be configured."; };
+        };
+
+        field {
+            name = "dest_addr_set";
+            desc = "Controls the starting addresses of the off-chip memory for storing the block data to be processed and the block data of operation results.";
+            encode = dest_addr_set_enum;
+        } dest_addr_set[12:12];
+
+        enum cipher_mode_enum {
+            SINGLE_BLOCK = 0x0 { desc = "Single-block operation"; };
+            MULTI_BLOCK  = 0x1 { desc = "Multi-block operation"; };
+        };
+
+        field {
+            name = "cipher_mode";
+            desc = "Cipher mode selection of the CIPHER module.";
+            encode = cipher_mode_enum;
+        } cipher_mode[11:11];
+
+        enum ivin_sel_enum {
+            NO_CONFIGURE = 0x0 { desc = "CIPHER_IVIN need not to be configured."; };
+            CONFIGURE    = 0x1 { desc = "CIPHER_IVIN must be configured."; };
+        };
+
+        field {
+            name = "ivin_sel";
+            desc = "Input selection of CIPHER_IVIN.";
+            encode = ivin_sel_enum;
+        } ivin_sel[10:10];
+
+        enum alg_sel_enum {
+            DES   = 0x0 { desc = "DES Algorithm"; };
+            DES_3 = 0x1 { desc = "3DES Algorithm"; };
+            AES   = 0x2 { desc = "AES Algorithm"; };
+            DES_2 = 0x3 { desc = "DES Algorithm"; };
+        };
+
+        field {
+            name = "alg_sel";
+            desc = "Algorithm selection.";
+            encode = alg_sel_enum;
+        } alg_sel[8:9];
+
+        field {
+            name = "key_length";
+            desc = "
+            Key length selection.
+
+            For the AES algorithm:
+
+            * `0x0`: 128-bit key
+            * `0x1`: 192-bit key
+            * `0x2`: 256-bit key
+            * `0x3`: 128-bit key
+
+            For the DES algorithm:
+
+            * `0x0`: 3-key
+            * `0x1`: 3-key
+            * `0x2`: 3-key
+            * `0x3`: 2-key
+            ";
+        } key_length[6:7];
+
+        field {
+            name = "width";
+            desc = "
+            Bit width selection.
+
+            For the DES or 3DES algorithm:
+
+            * `0x0`: 64 bits
+            * `0x1`: 8 bits
+            * `0x2`: 1 bits
+            * `0x3`: 64 bits
+
+            For the AES algorithm:
+
+            * `0x0`: 128 bits
+            * `0x1`: 8 bits
+            * `0x2`: 1 bits
+            * `0x3`: 128 bits
+            ";
+        } width[4:5];
+
+        field {
+            name = "mode";
+            desc = "
+            Operating mode selection.
+
+            For the AES algorithm:
+
+            * `0x0`: ECB mode
+            * `0x1`: CBC mode
+            * `0x2`: CFB mode
+            * `0x3`: OFB mode
+            * `0x4`: CTR mode
+            * Others: ECB mode
+
+            For the DES algorithm:
+
+            * `0x0`: ECB mode
+            * `0x1`: CBC mode
+            * `0x2`: CFB mode
+            * `0x3`: OFB mode
+            * Others: ECB mode
+            ";
+        } mode[1:3];
+
+        enum decrypt_enum {
+            ENCRYPT = 0x0 { desc = "Encrypt"; };
+            DECRYPT = 0x1 { desc = "Decrypt"; };
+        };
+
+        field {
+            name = "decrypt";
+            desc = "Encryption/decryption selection.";
+            encode = decrypt_enum;
+        } decrypt[0:0];
+
+    } CIPHER_CTRL @ 0x060;
+
+    reg {
+        name = "Masked Interrupt Register";
+        desc = "It is the interrupt register that is generated after the interrupt status register INT_CIPHER_STATUS is masked by the interrupt mask register INT_MASK.";
+
+        enum int_error_enum {
+            NO_ERROR = 0x0 { desc = "No error occurs"; };
+            ERROR    = 0x1 { desc = "An error occurs"; };
+        };
+
+        field {
+            name = "int_error";
+            desc = "Error interrupt status. An error occurs when the CIPHER module accesses the bus or the bus is accessed in non-word mode.";
+            encode = int_error_enum;
+            sw = r;
+        } int_error[1:1];
+
+        enum int_done_enum {
+            NOT_COMPLETE = 0x0 { desc = "Encrypt"; };
+            COMPLETE     = 0x1 { desc = "Decrypt"; };
+        };
+
+        field {
+            name = "int_done";
+            desc = "CIPHER operation complete interrupt.";
+            encode = int_done_enum;
+            sw = r;
+        } int_done[0:0];
+
+    } INT_CIPHER @ 0x064;
+
+    reg {
+        name = "Operation Status Indicator Register";
+
+        enum cipher_busy_enum {
+            AVAILABLE = 0x0 { desc = "No CIPHER operation is performed."; };
+            BUSY      = 0x1 { desc = "A CIPHER operation is performed."; };
+        };
+
+        field {
+            name = "cipher_busy";
+            desc = "CIPHER operation status.";
+            encode = cipher_busy_enum;
+            sw = r;
+        } cipher_busy[0:0];
+
+    } CIPHER_BUSY @ 0x068;
+
+    reg {
+        name = "Operation Start/End Control Signal Register";
+        desc = "
+        * If 0x0000_0001 is written to CIPHER_ST, the CIPHER module starts an operation.
+        * If 0x0000_0000 is written to CIPHER_ST, the CIPHER module stops running.
+        * In addition, when the multi-block operation is selected ( CIPHER_CTRL bit[11] = 0b1), the CIPHER module stops running after the read or write operation is complete if the bus is being read or written. Otherwise, the module stops running immediately when the hardware reads the value 0x0000_0000.
+        ";
+
+        enum cipher_st_enum {
+            END   = 0x0 { desc = "An operation of the CIPHER module ends."; };
+            START = 0x1 { desc = "An operation of the CIPHER module starts."; };
+        };
+
+        field {
+            name = "cipher_st";
+            desc = "Operation start/end control signal of the CIPHER module.";
+            encode = cipher_st_enum;
+        } cipher_st[0:0];
+
+    } CIPHER_ST @ 0x06C;
+
+    reg {
+        name = "Storage Memory Address Register";
+        desc = "
+        SRC_START_ADDR is the start address register of the off-chip memory for storing the block data to be processed.
+
+        If the multi-block operation is selected (CIPHER_CTRL[cipher_mode] = 0b1), SRC_START_ADDR must be configured before the CIPHER module is enabled.
+        ";
+
+        field {
+            name = "src_start_addr";
+            desc = "Start address of the off-chip memory for storing the block data to be processed.";
+        } src_start_addr[0:31];
+
+    } SRC_START_ADDR @ 0x070;
+
+    reg {
+        name = "Data Length Register";
+        desc = "
+        * If the multi-block operation is selected (CIPHER_CTRL[cipher_mode] = 0b1), MEM_LENGTH must be configured before the CIPHER module is enabled.
+        * Assume that the AES algorithm is selected.
+            * If the ECB, CBC, OFB, or CTR operating mode is selected (CIPHER_CTRL[mode] = 0b000, 0b001, 0b011, 0b100, 0b101, 0b110, or 0b111), the value of mem_length must be an integer multiple of 4.
+            * If the 128-CFB operating mode is selected (CIPHER_CTRL[mode] = 0b010 and CIPHER_CTRL [width] = 0b00 or 0b11), the value of mem_length must be an integer multiple of 4.
+            * If the 8-CFB operating mode is selected (CIPHER_CTRL[mode] = 0b010 and CIPHER_CTRL[width] = 0b01), the value of mem_length is not restricted. The data must be stuffed to upper bits. The valid data is valid starting from lower bits. For example, if mem_length is set to 0x0000_0001, it indicates that the data of only one address is valid and the data is represented by data[31:0]. If only one byte of the actual data is valid, that is, data[7:0] are valid, other data is stuffed data and only eight lower bits are valid. If only two bytes are valid, that is, data[15:0] are valid, other data is stuffed data and only 16 lower bits are valid. The rest can be deduced by analogy.
+            * If the 1-CFB operating mode is selected (CIPHER_CTRL[mode] = 0b010 and CIPHER_CTRL[width] = 0b10), the value of mem_length is not restricted. The data, however, must be stuffed to upper bits. The valid data is valid starting from lower bits. For example, if mem_length is set to 0x0000_0001, it indicates that the data of only one address is valid and the data is represented by data[31:0]. If only one bit of the actual data is valid, that is, data[0] is valid, other data is stuffed data and only the LSB is valid. If only two bits are valid, that is, data[1:0] are valid, other data is stuffed data and only two lower bits are valid. The rest can be deduced by analogy.
+        * Assume that the DES or 3DES algorithm is selected.
+            * If the ECB or CBC operating mode is selected (CIPHER_CTRL[mode] = 0b000, 0b001, 0b100, 0b101, 0b110, or 0b111), the value of mem_length must be an even.
+            * If the 64-CFB or 64-OFB operating mode is selected (CIPHER_CTRL[mode] = 0b010 or 0b011 and CIPHER_CTRL[width] = 0b00 or 0b11), the value of mem_length must be an even.
+            * If the 8-CFB or 8-OFB operating mode is selected (CIPHER_CTRL[mode] = 0b010 or 0b011 and CIPHER_CTRL[width] = 0b01), the value of mem_length is not restricted. The data, however, must be stuffed to upper bits. The valid data is valid starting from lower bits. For example, if mem_length is set to 0x0000_0001, it indicates that the data of only one address is valid and the data is represented by data[31:0]. If only one byte of the actual data is valid, that is, data[7:0] are valid, other data is stuffed data and only eight lower bits are valid. If only two bytes are valid, that is, data[15:0] are valid, other data is stuffed data and only 16 lower bits are valid. The rest can be deduced by analogy.
+            * If the 1-CFB or 8-OFB operating mode is selected (CIPHER_CTRL[mode] = 0b010 or 0b011 and CIPHER_CTRL[width] = 0b10), the value of mem_length is not restricted. The data, however, must be stuffed to upper bits. The valid data is valid starting from lower bits. For example, if mem_length is set to 0x0000_0001, it indicates that the data of only one address is valid and the data is represented by data[31:0]. If only one bit of the actual data is valid, that is, data[0] is valid, other data is stuffed data and only the LSB is valid. If only two bits are valid, that is, data[1:0] are valid, other data is stuffed data and only two lower bits are valid. The rest can be deduced by analogy.
+        ";
+
+        field {
+            name = "mem_length";
+            desc = "Length of the block data to be processed (measured by 32 bits).";
+        } mem_length[0:31];
+
+    } MEM_LENGTH @ 0x074;
+
+    reg {
+        name = "Start Address Register";
+        desc = "
+        DEST_START_ADDR is the start address register of the off-chip memory for storing operation results by blocks.
+
+        * If the start addresses for storing the block data to be processed and the block data of operation results are the same, that is CIPHER_CTRL[dest_addr_set] = 0b0, DEST_START_ADDR need not to be configured.
+        * If the start addresses for storing the block data to be processed and the block data of operation results are different (CIPHER_CTRL[dest_addr_set] = 0b1), DEST_START_ADDR must be configured.
+        ";
+
+        field {
+            name = "dest_start_addr";
+            desc = "Start address of the off-chip memory for storing the operation results by blocks.";
+        } dest_start_addr[0:31];
+
+    } DEST_START_ADDR @ 0x078;
+
+    reg {
+        name = "Interrupt Mask Register";
+        desc = "
+        Used to control whether to mask the interrupt status register, thus determining whether to generate interrupts. When different values are written to INT_MASK, the following cases occur:
+
+        * After 0x0000_0003 is written to INT_MASK, the CIPHER module masks the status of INT_CIPHER_STATUS. That is, no interrupt is generated (INT_CIPHER bit[1:0] = 0b00).
+        * After 0x0000_0001 is written to INT_MASK, the CIPHER module masks the status of the int_done_status bit of INT_CIPHER_STATUS, so the status does not trigger any interrupt. That is, INT_CIPHER[int_done] is set to 0b0.
+        * After 0x0000_0002 is written to INT_CIPHER_STATUS, the CIPHER module masks the status of the int_error_status bit of INT_CIPHER_STATUS, so the status does not trigger any interrupt. That is, INT_CIPHER[int_error] is set to 0b0.
+        ";
+
+        enum interrupt_enum {
+            INTERRUPT    = 0x0 { desc = "An interrupt is generated"; };
+            NO_INTERRUPT = 0x1 { desc = "No interrupt is generated"; };
+        };
+
+        field {
+            name = "int_error_mask";
+            desc = "Mask control of int_error.";
+            encode = interrupt_enum;
+        } int_error_mask[1:1];
+
+        field {
+            name = "int_done_mask";
+            desc = "Mask control of int_done.";
+            encode = interrupt_enum;
+        } int_done_mask[0:0];
+
+    } INT_MASK @ 0x07C;
+
+    reg {
+        name = "Interrupt Status Register";
+        desc = "
+        Writing 1 clears this register. When different values are written to INT_CIPHER_STATUS, the following cases occur:
+
+        * After 0x0000_0001 is written to INT_CIPHER_STATUS, the CIPHER module clears the error interrupt.
+        * After 0x0000_0002 is written to INT_CIPHER_STATUS, the CIPHER module clears the operation complete interrupt.
+        * After 0x0000_0003 is written to INT_CIPHER_STATUS, the CIPHER module clears the error interrupt and operation complete interrupt.
+        ";
+
+        enum int_error_status_enum {
+            NO_ERROR = 0x0 { desc = "No error occurs."; };
+            ERROR    = 0x1 { desc = "An error occurs."; };
+        };
+
+        field {
+            name = "int_error_status";
+            desc = "Error interrupt status. An error occurs when the advanced high-performance bus (AHB) is accessed through the master interface of the CIPHER module or the slave interface is accessed in non-word mode.";
+            encode = int_error_status_enum;
+        } int_error_status[1:1];
+
+        enum int_done_status_enum {
+            NOT_COMPLETE = 0x0 { desc = "The operation is not complete."; };
+            COMPLETE     = 0x1 { desc = "The operation is complete."; };
+        };
+
+        field {
+            name = "int_done_status";
+            desc = "CIPHER operation complete interrupt status.";
+            encode = int_done_status_enum;
+        } int_done_status[0:0];
+
+    } INT_CIPHER_STATUS @ 0x080;
+};
+`endif
