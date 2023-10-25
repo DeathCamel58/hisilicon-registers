@@ -3,7 +3,7 @@ import os
 from systemrdl import *
 from peakrdl_html import HTMLExporter
 
-roots = []
+roots = {}
 
 
 def get_rdl_folders():
@@ -61,7 +61,7 @@ def process_chip(chip):
             rdl.compile_file("rdl/%s/%s.rdl" % (chip, chip_file), includes)
 
             root = rdl.elaborate()
-            roots.append(root)
+            roots[chip_file] = root
     except RDLCompileError as e:
         print(e)
         exit(1)
@@ -73,6 +73,12 @@ if __name__ == '__main__':
     for folder in folders:
         process_chip(folder)
 
+    # Alphabetize the chips
+    roots = sorted(roots.items())
+    chiparray = []
+    for key, value in roots:
+        chiparray.append(value)
+
     # Generate the documentation site
     exporter = HTMLExporter()
-    exporter.export(roots, "out/web/", title="Hisilicon Registers")
+    exporter.export(chiparray, "out/web/", title="HiSilicon Registers")
