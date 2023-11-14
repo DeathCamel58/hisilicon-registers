@@ -81,4 +81,8 @@ if __name__ == '__main__':
 
     # Generate the documentation site
     exporter = HTMLExporter()
-    exporter.export(chiparray, "out/web/", title="HiSilicon Registers")
+    exporter.export(chiparray,
+                    "out/web/",
+                    title="HiSilicon Registers",
+                    home_url="https://github.com/DeathCamel58/hisilicon-registers",
+                    footer="File an issue on GitHub if you need additional information on any of these chips.")
