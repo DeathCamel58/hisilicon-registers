@@ -80,7 +80,7 @@ if __name__ == '__main__':
         chiparray.append(value)
 
     # Generate the documentation site
-    exporter = HTMLExporter()
+    exporter = HTMLExporter(user_template_dir="webTemplate/")
     exporter.export(chiparray,
                     "out/web/",
                     title="HiSilicon Registers",
