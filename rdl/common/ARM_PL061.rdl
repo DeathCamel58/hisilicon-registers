@@ -1,0 +1,190 @@
+`ifndef ARM_PL061_RDL
+`define ARM_PL061_RDL
+
+regfile eARM_PL061 {
+    name = "ARM PL061";
+    desc = "
+    Each pin can be configured as input or output and these pins are used to generate input signals or output signals for special purposes. As input, each GPIO pin can act as an interrupt source; as output, each GPIO pin can be set to 0 or 1 separately. The GPIO can generate maskable interrupts based on the level or transition value. The general purpose input output interrupt (GPIOINTR) signal provides an indicator to the interrupt controller, indicating that an interrupt occurs.
+
+    ## Features
+
+    Each GPIO pin can be configured as input or output.
+    * As input, each GPIO pin can act as an interrupt source.
+    * As output, each GPIO can be set to 0 or 1 separately
+
+    ## Operating Mode
+
+    ### Interface Reset
+
+    !!! NOTE
+        Although this is based on the PL061, it looks like HiSilicon's implementation may be missing some of the registers. Consult the full PDF documentation of the SoC to find what registers exist.
+
+        * ARM documentation can be found [here](https://developer.arm.com/documentation/ddi0190/b)
+        * Datasheet of ARM PL061 can be found [here](https://documentation-service.arm.com/static/5e8e38e9fd977155116a9267)
+    ";
+
+    /* Fields */
+
+    enum CIPHER_one_enable_enum {
+        ENABLE  = 0x0 { desc = "Enable"; };
+        DISABLE = 0x1 { desc = "Disable"; };
+    };
+
+    reg {
+        name = "GPIO Data Register";
+        desc = "
+        GPIO_DATA is a GPIO data register. It is used to buffer the input or output data. When the corresponding bit of the GPIO_DIR is configured as output, the values written to the GPIO_DATA register are sent to the corresponding pin (note that the pin multiplexing configuration must be correct). If the bit is configured as input, the value of the corresponding input pin is read.
+
+        !!! CAUTION
+            If the corresponding bit of GPIO_DIR is configured as input, the pin value is returned after a valid read; if the corresponding bit is configured as output, the written value is returned after a valid read.
+
+            Through PADDR[9:2], the GPIO_DATA register masks the read and write operations on the register. The register corresponds to 256 address spaces. PADDR[9:2] corresponds to GPIO_DATA[7:0]. When the corresponding bit is high, it can be read or written. When the corresponding bit is low, no operations are supported. For example:
+
+            * If the address is 0x3FC (0b11_1111_1100), the operations on all the eight bits of GPIO_DATA bit[7:0] are valid.
+            * If the address is 0x200 (0b10_0000_0000), only the operation on GPIO_DATA bit[7] is valid.
+        ";
+
+        field {
+            name = "gpio_data";
+            desc = "Indicates the GPIO input data when the GPIO is configured as input; indicates the GPIO output data when the GPIO is configured as output. Each bit can be controlled separately. The register is used together with GPIO_DIR.";
+        } gpio_data[0:7];
+
+    } GPIO_DATA[0x100] @ 0x000;
+
+    reg {
+        name = "GPIO Direction Control Register";
+        desc = "GPIO_DIR is a GPIO direction control register. It is used to configure the direction of each GPIO pin.";
+
+        enum GPIO_DIR_enum {
+            INPUT  = 0x0 { desc = "Input"; };
+            OUTPUT = 0x1 { desc = "Output"; };
+        };
+
+        field {
+            name = "gpio_dir";
+            desc = "GPIO direction control register. Bit[7:0] correspond to GPIO_DATA [7:0] respectively. Each bit can be controlled separately.";
+            encode = GPIO_DIR_enum;
+        } gpio_dir[0:7];
+
+    } GPIO_DIR @ 0x400;
+
+    reg {
+        name = "GPIO Interrupt Trigger Register";
+        desc = "GPIO_IS is a GPIO interrupt trigger register. It is used to configure the interrupt trigger mode.";
+
+        enum GPIO_IS_enum {
+            EDGE  = 0x0 { desc = "Edge sensitive mode"; };
+            LEVEL = 0x1 { desc = "Level sensitive mode"; };
+        };
+
+        field {
+            name = "gpio_is";
+            desc = "GPIO interrupt trigger control register. Bit[7:0] correspond to GPIO_DATA [7:0]. Each bit is controlled separately.";
+            encode = GPIO_IS_enum;
+        } gpio_is[0:7];
+
+    } GPIO_IS @ 0x404;
+
+    reg {
+        name = "GPIO Interrupt Dual-Edge Trigger Register";
+        desc = "GPIO_IBE is a GPIO interrupt dual-edge trigger register. It is used to configure the edge trigger mode of each GPIO pin.";
+
+        enum GPIO_IBE_enum {
+            SINGLE_EDGE = 0x0 { desc = "single-edge-sensitive mode. The GPIO_IEV register controls whether the interrupt is rising-edge-sensitive or falling-edge-sensitive."; };
+            DUAL_EDGE   = 0x1 { desc = "dual-edge-sensitive mode"; };
+        };
+
+        field {
+            name = "gpio_ibe";
+            desc = "GPIO interrupt edge control register. Bit[7:0] correspond to GPIO_DATA [7:0] respectively. Each bit is controlled independently.";
+            encode = GPIO_IBE_enum;
+        } cipher_din_3[0:7];
+
+    } GPIO_IBE @ 0x408;
+
+    reg {
+        name = "GPIO Interrupt Event Register";
+        desc = "GPIO_IEV is a GPIO interrupt event register. It is used to configure the interrupt trigger event of each GPIO pin.";
+
+        enum GPIO_IEV_enum {
+            FALLING = 0x0 { desc = "falling-edge-sensitive mode or low-level-sensitive mode"; };
+            RISING  = 0x1 { desc = "rising-edge-sensitive mode or high-level-sensitive mode"; };
+        };
+
+        field {
+            name = "gpio_iev";
+            desc = "GPIO interrupt trigger event register. Bit[7:0] correspond to GPIO_DATA [7:0]. Each bit is controlled separately.";
+            encode = GPIO_IEV_enum;
+        } cipher_ivin_0[0:7];
+
+    } GPIO_IEV @ 0x40C;
+
+    reg {
+        name = "GPIO Interrupt Mask Register";
+        desc = "GPIO_IE is a GPIO interrupt mask register. It is used to mask GPIO interrupts.";
+
+        enum GPIO_IE_enum {
+            MASKED     = 0x0 { desc = "Masked"; };
+            NOT_MASKED = 0x1 { desc = "Not Masked"; };
+        };
+
+        field {
+            name = "gpio_ie";
+            desc = "GPIO interrupt mask register. Bit[7:0] correspond to GPIO_DATA [7:0]. Each bit is controlled separately.";
+            encode = GPIO_IE_enum;
+        } gpio_ie[0:7];
+
+    } GPIO_IE @ 0x410;
+
+    reg {
+        name = "GPIO Raw Interrupt Status Register";
+        desc = "GPIO_RIS is a GPIO raw interrupt status register. It is used to query the raw interrupt status of each GPIO pin.";
+
+        enum GPIO_RIS_enum {
+            INVALID = 0x0 { desc = "The interrupt is invalid"; };
+            VALID   = 0x1 { desc = "The interrupt is valid"; };
+        };
+
+        field {
+            name = "gpio_ris";
+            desc = "GPIO raw interrupt status register. Bit[7:0] correspond to GPIO_DATA [7:0], indicating the unmasked interrupt status. The status cannot be masked and controlled by the GPIO_IE register.";
+            encode = GPIO_RIS_enum;
+        } gpio_ris[0:7];
+
+    } GPIO_RIS @ 0x414;
+
+    reg {
+        name = "GPIO Masked Interrupt Status Register";
+        desc = "GPIO_MIS is a GPIO masked interrupt status register. It is used to query the masked interrupt status of each GPIO pin.";
+
+        enum GPIO_MIS_enum {
+            INVALID = 0x0 { desc = "The interrupt is invalid"; };
+            VALID   = 0x1 { desc = "The interrupt is valid"; };
+        };
+
+        field {
+            name = "gpio_mis";
+            desc = "GPIO masked interrupt status register. Bit[7:0] correspond to GPIO_DATA [7:0], indicating the masked interrupt status. The status is controlled by the GPIO_IE register.";
+            encode = GPIO_MIS_enum;
+        } gpio_mis[0:7];
+
+    } GPIO_MIS @ 0x418;
+
+    reg {
+        name = "GPIO Interrupt Clear Register";
+        desc = "GPIO_IC is a GPIO interrupt clear register. It is used to clear the interrupts generated by GPIO pins and clear the GPIO_RIS and GPIO_MIS registers. ";
+
+        enum GPIO_IC_enum {
+            NO_EFFECT = 0x0 { desc = "No Effect"; };
+            CLEARED   = 0x1 { desc = "Cleared"; };
+        };
+
+        field {
+            name = "gpio_ic";
+            desc = "GPIO interrupt clear register. Bit[7:0] correspond to GPIO_DATA [7:0]. Each bit is controlled separately. ";
+            encode = GPIO_IC_enum;
+        } cipher_key_1[0:31];
+
+    } GPIO_IC @ 0x41C;
+};
+`endif
