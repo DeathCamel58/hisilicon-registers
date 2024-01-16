@@ -1,0 +1,458 @@
+`ifndef HISI_SPI_RDL
+`define HISI_SPI_RDL
+
+regfile eHISI_SPI {
+    name = "SPI Registers";
+    desc = "
+    The serial peripheral interface (SPI) controller implements serial-to-parallel conversion and parallel-to-serial conversion, and serves as a master to communicate with peripherals in synchronous and serial modes. The SPI controller supports three types of peripheral interfaces including the SPI, TI synchronous serial interface, and MicroWire interface.
+    
+    ## Features
+    !!! CAUTION
+        * Hi3519 V101 has four serial peripheral interfaces (SPIs). SPI0/1/3 supports a chip select (CS), whereas SPI2 supports two CSs.
+        * Hi3519 V101 SPIs are master interfaces. The working reference clock is the APB bus clock. SPI_CLK output by the SPI supports the maximum working frequency of 24.75 MHz.
+
+    The SPI controller has the following features:
+
+    * Supports programmable frequency of the interface clock.
+    * Supports two separate FIFOs. One acts as an RX FIFO and the other one acts as a TX FIFO. Each of them is 16-bit wide and 256-location deep.
+    * Supports programmable serial data frame length: 4 bits to 16 bits.
+    * Provides internal loopback test mode.
+    * Supports the direct memory access (DMA) operation.
+    * Supports three types of peripheral interfaces including the SPI, MicroWire interface, and TI synchronous serial interface.
+    * Supports SPI in full-duplex mode and configurable clock polarity and phase.
+    * Supports MicroWire in half-duplex mode.
+    * Supports TI synchronous serial interface in full-duplex mode.
+
+    ## Function Description
+
+    ![The application block diagram when the SPI is connected to a slave device. The default CS pin SPI_CSN0 is used.](assets/spi-application-block-diagram-single.png)
+
+    !!! NOTE
+        The SPI is based on the [`ARM PL022`](https://developer.arm.com/Processors/PL022) device.
+    ";
+
+    /* Fields */
+
+    enum SPI_zero_enable_enum {
+        ENABLE  = 0x0 { desc = "Enable"; };
+        DISABLE = 0x1 { desc = "Disable"; };
+    };
+
+    enum SPI_one_enable_enum {
+        DISABLE = 0x0 { desc = "Disable"; };
+        ENABLE  = 0x1 { desc = "Enable"; };
+    };
+
+    reg {
+        name = "SPI control register 0";
+
+        enum SPI_dss_enum {
+            FOUR_BIT     = 0x3 { desc = "4 bits"; };
+            FIVE_BIT     = 0x4 { desc = "5 bits"; };
+            SIX_BIT      = 0x5 { desc = "6 bits"; };
+            SEVEN_BIT    = 0x6 { desc = "7 bits"; };
+            EIGHT_BIT    = 0x7 { desc = "8 bits"; };
+            NINE_BIT     = 0x8 { desc = "9 bits"; };
+            TEN_BIT      = 0x9 { desc = "10 bits"; };
+            ELEVEN_BIT   = 0xA { desc = "11 bits"; };
+            TWELVE_BIT   = 0xB { desc = "12 bits"; };
+            THIRTEEN_BIT = 0xC { desc = "13 bits"; };
+            FOURTEEN_BIT = 0xD { desc = "14 bits"; };
+            FIFTEEN_BIT  = 0xE { desc = "15 bits"; };
+            SIXTEEN_BIT  = 0xF { desc = "16 bits"; };
+        };
+
+        field {
+            name = "DSS";
+            desc = "Data width";
+            encode = SPI_dss_enum;
+        } spi_dss[0:3];
+
+        enum SPI_frf_enum {
+            MOTOROLA           = 0x0 { desc = "Motorola SPI frame format"; };
+            TI                 = 0x1 { desc = "TI synchronous serial frame format"; };
+            NATIONAL_MICROWIRE = 0x2 { desc = "National microwire frame format"; };
+        };
+
+        field {
+            name = "FRF";
+            desc = "Frame format select";
+            encode = SPI_frf_enum;
+        } spi_frf[4:5];
+
+        field {
+            name = "SPO";
+            desc = "SPICLKOUT polarity";
+        } spi_spo[6:6];
+
+        field {
+            name = "SPH";
+            desc = "SPICLKOUT phase";
+        } spi_sph[7:7];
+
+        field {
+            name = "SCR";
+            desc = "
+            Serial clock rate, ranging from 0 to 255. The value of the SCR is used to generate the TX and RX bit rates of the SPI. The formula is as follows: FSSPCLK/(CPSDVSR (1 + SCR).
+
+            CPSDVSR is an even ranging from 2 to 254, and it is configured by SPICPSR.
+            ";
+        } spi_scr[8:15];
+
+    } SPI_CR0 @ 0x000;
+
+    reg {
+        name = "SPI control register 1";
+
+        enum SPI_lbm_enum {
+            NORMAL = 0x0 { desc = "A normal serial port operation is enabled"; };
+            CONNECTED = 0x1 { desc = "The output of the TX serial shift register is connected to the input of the RX serial shift register"; };
+        };
+
+        field {
+            name = "LBM";
+            encode = SPI_lbm_enum;
+            desc = "Loopback Mode";
+        } spi_lbm[0:0];
+
+        field {
+            name = "SSE";
+            encode = SPI_one_enable_enum;
+            desc = "SPI enable";
+        } spi_sse[1:1];
+
+        enum SPI_ms_enum {
+            MASTER = 0x1 { desc = "A normal serial port operation is enabled"; };
+        };
+
+        field {
+            name = "MS";
+            encode = SPI_ms_enum;
+            desc = "Master or slave mode. This bit can be changed only when the SPI is disabled.";
+        } spi_ms[2:2];
+
+        enum SPI_big_end_enum {
+            LITTLE = 0x0 { desc = "Little endian"; };
+            BIG    = 0x1 { desc = "Big endian"; };
+        };
+
+        field {
+            name = "BigEnd";
+            encode = SPI_big_end_enum;
+            desc = "Data endian mode";
+        } spi_big_end[4:4];
+
+        enum SPI_mode_altasens_enum {
+            AUTO       = 0x0 { desc = "The CS signal is automatically generated by the chip logic based on the selected timing."; };
+            CONTROLLED = 0x1 { desc = "The CS signal is controlled by the SPI enable when the Motorola SPI frame format is used. If the SPI is enabled, the CS signal is pulled down; otherwise, the CS signal is pulled up."; };
+        };
+
+        field {
+            name = "mode_altasens";
+            encode = SPI_mode_altasens_enum;
+        } spi_mode_altasens[6:6];
+
+        field {
+            name = "WaitVal";
+            desc = "Number of waiting beats between read and write when in the national microwire frame format. When WaitEn is 1 and the frame format is national microwire, WaitVal is valid.";
+        } spi_wait_val[8:14];
+
+        field {
+            name = "WaitEn";
+            encode = SPI_one_enable_enum;
+            desc = "Wait enable. This bit is valid when the SPICR0[FRF] is set to the national microwire frame format.";
+        } spi_wait_en[15:15];
+
+    } SPI_CR1 @ 0x004;
+
+    reg {
+        name = "Data Register";
+
+        field {
+            name = "SPI_DATA";
+            desc = "
+            TX or RX FIFO
+            Read: RX FIFO
+            Write: TX FIFO
+            If the data is less than 16 bits, the data must be aligned to the right. The TX logic ignores the unused upper bits, and the RX logic automatically aligns the data to the right.
+            ";
+        } spi_din_2[0:15];
+
+    } SPI_DR @ 0x008;
+
+    reg {
+        name = "Status Register";
+
+        enum SPI_tfe_enum {
+            NOT_EMPTY = 0x0 { desc = "Not empty"; };
+            EMPTY     = 0x1 { desc = "Empty"; };
+        };
+
+        field {
+            name = "TFE";
+            encode = SPI_tfe_enum;
+            desc = "Whether the TX FIFO is empty";
+        } spi_tfe[0:0];
+
+        enum SPI_tnf_enum {
+            FULL     = 0x0 { desc = "Full"; };
+            NOT_FULL = 0x1 { desc = "Not full"; };
+        };
+
+        field {
+            name = "TNF";
+            encode = SPI_tnf_enum;
+            desc = "Whether the TX FIFO is not full";
+        } spi_tnf[1:1];
+
+        enum SPI_rne_enum {
+            EMPTY     = 0x0 { desc = "Empty"; };
+            NOT_EMPTY = 0x1 { desc = "Not empty"; };
+        };
+
+        field {
+            name = "RNE";
+            encode = SPI_rne_enum;
+            desc = "Whether the RX FIFO is not empty";
+        } spi_rne[2:2];
+
+        enum SPI_rff_enum {
+            NOT_FULL = 0x0 { desc = "Not full"; };
+            FULL     = 0x1 { desc = "Full"; };
+        };
+
+        field {
+            name = "RFF";
+            encode = SPI_rff_enum;
+            desc = "Whether the RX FIFO is full";
+        } spi_rff[3:3];
+
+        enum SPI_bsy_enum {
+            IDLE = 0x0 { desc = "Idle"; };
+            BUSY = 0x1 { desc = "Busy"; };
+        };
+
+        field {
+            name = "BSY";
+            encode = SPI_bsy_enum;
+            desc = "SPI busy flag";
+        } spi_bsy[4:4];
+
+    } SPI_SR @ 0x00C;
+
+    reg {
+        name = "Clock Divider Register";
+
+        field {
+            name = "CPSDVSR";
+            desc = "Clock divider. The value must be an even ranging from 2 to 254. It depends on the frequency of the input clock SPICLK. The LSB is read as 0.";
+        } spi_ivin_0[0:7];
+
+    } SPI_CPSR @ 0x010;
+
+    reg {
+        name = "Interrupt Mask Register";
+        desc = "The value `0` indicates an interrupt is masked and the value `1` indicates an interrupt is not masked.";
+
+        enum SPI_masked_zero_enum {
+            MASKED     = 0x0 { desc = "Masked"; };
+            NOT_MASKED = 0x1 { desc = "Not masked"; };
+        };
+
+        field {
+            name = "RX overflow interrupt mask";
+            encode = SPI_masked_zero_enum;
+            desc = "When not masked, the hardware stream control function is enabled. That is, when the RX FIFO is full, the SPI stops transmitting data.";
+        } SPI_rorim[0:0];
+
+        field {
+            name = "RX timeout interrupt mask";
+            encode = SPI_masked_zero_enum;
+        } SPI_rtim[1:1];
+
+        field {
+            name = "RX FIFO interrupt mask";
+            encode = SPI_masked_zero_enum;
+            desc = "Whether the interrupt is masked when half of less data is left in the RX FIFO";
+        } SPI_rxim[2:2];
+
+        field {
+            name = "TX FIFO interrupt mask";
+            encode = SPI_masked_zero_enum;
+            desc = "Whether the interrupt is masked when half of less data is left in the TX FIFO";
+        } SPI_txim[3:3];
+
+    } SPI_IMSC @ 0x014;
+
+    reg {
+        name = "Raw Interrupt Status Register";
+        desc = "The value `0` indicates no interrupts are generated, and the value `1` indicates interrupts are generated.";
+
+        field {
+            name = "RORIS";
+            desc = "Raw RX Overflow Interrupt Status";
+            sw = r;
+        } SPI_roris[0:0];
+
+        field {
+            name = "RTRIS";
+            desc = "Raw RX Timeout Interrupt Status";
+            sw = r;
+        } SPI_rtris[1:1];
+
+        field {
+            name = "RXRIS";
+            desc = "Raw RX FIFO Interrupt Status";
+            sw = r;
+        } SPI_rxris[2:2];
+
+        field {
+            name = "TXRIS";
+            desc = "Raw TX FIFO Interrupt Status";
+            sw = r;
+        } SPI_txris[3:3];
+
+    } SPI_RIS @ 0x018;
+
+    reg {
+        name = "Masked Interrupt Status Register";
+        desc = "The value `0` indicates no interrupts are generated, and the value `1` indicates interrupts are generated.";
+
+        field {
+            name = "RORMIS";
+            desc = "Masked RX Overflow Interrupt Status";
+            sw = r;
+        } SPI_rormis[0:0];
+
+        field {
+            name = "RTMIS";
+            desc = "Masked RX Timeout Interrupt Status";
+            sw = r;
+        } SPI_rtmis[1:1];
+
+        field {
+            name = "RXMIS";
+            desc = "Masked RX FIFO Interrupt Status";
+            sw = r;
+        } SPI_rxmis[2:2];
+
+        field {
+            name = "TXMIS";
+            desc = "Masked TX FIFO Interrupt Status";
+            sw = r;
+        } SPI_txmis[3:3];
+
+    } SPI_MIS @ 0x01C;
+
+    reg {
+        name = "Interrupt Clear Register";
+        desc = "Writing `1` clears an interrupt, and writing `0` has no effect.";
+
+        field {
+            name = "RORIC";
+            desc = "RX overflow interrupt Clear";
+        } SPI_roric[0:0];
+
+        field {
+            name = "RTIC";
+            desc = "RX timeout interrupt Clear";
+        } SPI_rtic[1:1];
+
+    } SPI_ICR @ 0x020;
+
+    reg {
+        name = "DMA Control Register";
+
+        field {
+            name = "RXDMAE";
+            encode = SPI_one_enable_enum;
+            desc = "DMA RX FIFO Enable";
+        } SPI_rxdmae[0:0];
+
+        field {
+            name = "TXDMAE";
+            encode = SPI_one_enable_enum;
+            desc = "DMA TX FIFO Enable";
+        } SPI_txdmae[1:1];
+
+    } SPI_DMACR @ 0x024;
+
+    reg {
+        name = "TX FIFO Control Register";
+
+        enum SPI_DMATXBRSize_enum {
+            ONE              = 0x0 { desc = "1"; };
+            FOUR             = 0x1 { desc = "4"; };
+            EIGHT            = 0x2 { desc = "8"; };
+            SIXTEEN          = 0x3 { desc = "16"; };
+            THIRTYTWO        = 0x4 { desc = "32"; };
+            SIXTYFOUR        = 0x5 { desc = "64"; };
+            ONETWENTYEIGHT   = 0x6 { desc = "128"; };
+            ONETWENTYEIGHT_2 = 0x7 { desc = "128"; };
+        };
+
+        field {
+            name = "DMATXBRSize";
+            encode = SPI_DMATXBRSize_enum;
+            desc = "Threshold for generating the TX FIFO request DMA transfer burst. That is, when the number of data segments in the TX FIFO is less than or equal to the configured value (256 – DMATXBRSize), DMATXBREQ is valid. The width of the TX FIFO is 16 bits.";
+        } SPI_DMATXBRSize[0:2];
+
+        enum SPI_TXINTSize_enum {
+            ONE         = 0x0 { desc = "1"; };
+            FOUR        = 0x1 { desc = "4"; };
+            EIGHT       = 0x2 { desc = "8"; };
+            SIXTEEN     = 0x3 { desc = "16"; };
+            THIRTYTWO   = 0x4 { desc = "32"; };
+            SIXTYFOUR   = 0x5 { desc = "64"; };
+            SIXTYFOUR_2 = 0x6 { desc = "64"; };
+            SIXTYFOUR_3 = 0x7 { desc = "64"; };
+        };
+
+        field {
+            name = "TXINTSize";
+            encode = SPI_TXINTSize_enum;
+            desc = "Threshold for generating the TX FIFO request interrupt. That is, when the number of data segments in the TX FIFO is less than or equal to the value of TXINTSize, TXRIS is valid.";
+        } SPI_TXINTSize[3:5];
+
+    } SPI_TXFIFOCR @ 0x028;
+
+    reg {
+        name = "RX FIFO Control Register";
+
+        enum SPI_DMARXBRSize_enum {
+            ONE            = 0x0 { desc = "1"; };
+            FOUR           = 0x1 { desc = "4"; };
+            EIGHT          = 0x2 { desc = "8"; };
+            SIXTEEN        = 0x3 { desc = "16"; };
+            THIRTYTWO      = 0x4 { desc = "32"; };
+            SIXTYFOUR      = 0x5 { desc = "64"; };
+            ONETWENTYEIGHT = 0x6 { desc = "128"; };
+            TWOTWENTYFOUR  = 0x7 { desc = "224"; };
+        };
+
+        field {
+            name = "DMARXBRSize";
+            encode = SPI_DMARXBRSize_enum;
+            desc = "Burst transfer threshold. When this threshold is reached, the RX FIFO asks the DMA to perform a burst transfer. That is, when number of data segments in the TX FIFO is less than or equal to the value of DMARXBRSize, DMARXBREQ is valid.";
+        } SPI_DMARXBRSize[0:2];
+
+        enum SPI_RXINTSize_enum {
+            ONE         = 0x0 { desc = "1"; };
+            FOUR        = 0x1 { desc = "4"; };
+            EIGHT       = 0x2 { desc = "8"; };
+            SIXTEEN     = 0x3 { desc = "16"; };
+            THIRTYTWO   = 0x4 { desc = "32"; };
+            SIXTYFOUR   = 0x5 { desc = "64"; };
+            SIXTYFOUR_2 = 0x6 { desc = "64"; };
+            SIXTYFOUR_3 = 0x7 { desc = "64"; };
+        };
+
+        field {
+            name = "RXINTSize";
+            encode = SPI_RXINTSize_enum;
+            desc = "Threshold for generating the RX FIFO request interrupt. That is, when the number of data segments in the TX FIFO is less than or equal to the configured value (256 – RXINTSize), RXRIS is valid. The width of the RX FIFO is 16 bits.";
+        } SPI_RXINTSize[3:5];
+
+    } SPI_RXFIFOCR @ 0x02C;
+};
+`endif
