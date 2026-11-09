@@ -36,6 +36,15 @@ regfile eHISI_CIPHER_MC {
         4. All counters are 16 bits.
 
         !!! NOTE
+            Verified on hardware (hardware verified 2026-11-09, Hi3520D, linux driver hi3520d-cipher.c; passes the kernel randomized crypto self-tests CRYPTO_SELFTESTS_FULL for ecb/cbc/ctr(aes), ecb/cbc(des), ecb/cbc(des3_ede) on the DMA channels):
+
+            * Counters: after a request of K nodes the driver writes K to IEMPTY_CNT, OFULL_CNT (subtracts) and OBUF_CNT (adds back); writing K to IBUF_CNT starts the request.
+            * Ring: IBUF_NUM = OBUF_NUM = 128 with OBUF_CNT preloaded with 128 works; the hardware wraps its read pointer at NUM. Both nodes of a pair (same index in the input and output queue) carry the same data_len. The maximum data_len used is 0xFFF0 per node.
+            * IV: the IV of a request is taken from iv_start_addr of the node with iv_set (the driver sets iv_set only on the first node of a request, and ivin_sel = 1 for CBC/CTR). After completion the chaining IV is read from CHAN_CIPHER_IVOUT.
+            * Node splitting: every node except the last of a request must hold whole cipher blocks (16 bytes AES, 8 bytes DES). A cipher block split across nodes worked only in simple cases (one ECB 16-byte block split 5 + 11 gave the right ciphertext) but gave wrong data, a wrong output IV or hangs in the chained modes (CBC, CTR, DES) in the self-tests. Treat a split inside a cipher block as unsupported.
+            * Throughput (informational, AES-128, any mode, 4 KiB blocks): about 30 MB/s for a single request and about 40 MB/s with 8 requests in flight; about 10 us CPU cost per request. The rate is fixed (PERI_CRG31 has only a clock gate and a reset). Channel 0 (register mode) measured about 3.6 MB/s.
+
+        !!! NOTE
             Interrupt bit assignment: [7:1] are the INPUT queue interrupts and [15:9] the OUTPUT queue interrupts (hardware verified), the opposite of the data sheet text and as in the vendor code of the sibling SoC. See INT_STATUS.
 
         !!! NOTE
@@ -148,7 +157,7 @@ regfile eHISI_CIPHER_MC {
             * 0x0080-0x008C: channel 7
 
             !!! NOTE
-                Channel n (n = 1..7) is at 0x0020 + (n-1) x 0x10, as in the data sheet. The vendor header macro CIPHER_REG_CHAN_CIPHER_IVOUT(id) = base + 0x0010 + id x 32 does not match this (channel 1 would be at 0x0030 and the stride is 0x20); it looks like a vendor bug, the data sheet layout is kept.
+                Channel n (n = 1..7) is at 0x0020 + (n-1) x 0x10, as in the data sheet. The vendor header macro CIPHER_REG_CHAN_CIPHER_IVOUT(id) = base + 0x0010 + id x 32 does not match this (channel 1 would be at 0x0030 and the stride is 0x20); the vendor macro is wrong (hardware verified 2026-11-09, Hi3520D, linux driver hi3520d-cipher.c): the Linux driver chains CBC/CTR requests by reading the next IV from 0x0020 + (n-1) x 0x10 (4 words, little endian) and passes the kernel randomized chained-request self-tests, so the data sheet layout is correct. For CTR the hardware increments the counter as a 128-bit big-endian value (counter wrap cases pass) and IVOUT returns the next counter.
         ";
         field {
             name = "chan_cipher_ivout";
@@ -163,6 +172,8 @@ regfile eHISI_CIPHER_MC {
         name = "CIPHER_KEY";
         desc = "
             CPU configuration key registers: eight keys (host_key0..host_key7) of eight 32-bit words each. Each channel uses one key (selected by key_adder); several channels can share a key.
+
+            hardware verified 2026-11-09, Hi3520D, linux driver hi3520d-cipher.c: channel n (n = 1..7) can use host key slot n with key_adder = n (CTRL[16:14]); the driver loads key slot = channel id. This works for AES-128/192/256 and DES/3DES. Key words are written as plain little-endian 32-bit words in natural byte order (word i = key bytes [4i..4i+3], little endian) for AES, DES (8 bytes) and 3DES (24 bytes, key_length = 0 = three keys). The same word order applies to CHAN0_CIPHER_DIN / IVIN / DOUT.
 
             DES: CIPHER_KEY[63:0] valid. 3DES, 3 keys: [191:0] (key 1 = [63:0], key 2 = [127:64], key 3 = [191:128]); 2 keys: [127:0]. AES: 128-bit key [127:0], 192-bit [191:0], 256-bit [255:0].
         ";
@@ -243,7 +254,7 @@ regfile eHISI_CIPHER_MC {
 
         reg {
             name = "CHANn_INT_ICNTCFG";
-            desc = "Input queue multi-packet interrupt threshold register. When the count of buffers processed from the input queue reaches the threshold (greater than or equal to it, data sheet wording), an input queue interrupt is reported.";
+            desc = "Input queue multi-packet interrupt threshold register. When the count of buffers processed from the input queue reaches the threshold (greater than or equal to it, data sheet wording '大于等于'), an input queue interrupt is reported. hardware verified 2026-11-09, Hi3520D, linux driver hi3520d-cipher.c: with a threshold of 0 or 1 one processed packet raises the interrupt, with 100 it does not; the driver sets the threshold to the number of nodes of a request to get one interrupt per request.";
             field { name = "int_icnt_cfg"; desc = "Input queue multi-packet interrupt threshold."; reset = 0x0; } int_icnt_cfg[15:0];
         } CHANn_INT_ICNTCFG @ 0x0C;
 
@@ -262,7 +273,7 @@ regfile eHISI_CIPHER_MC {
             field { name = "key_adder"; desc = "ID of the key used by the current channel; any of the keys 0-7."; encode = CIPHER_MC_key_adder_enum; reset = 0x0; } key_adder[16:14];
             field { name = "key_sel"; desc = "Key select."; encode = CIPHER_MC_key_sel_enum; reset = 0x0; } key_sel[13:13];
             field { name = "key_length"; desc = "Key length select (AES / DES differ, see the values)."; encode = CIPHER_MC_key_length_enum; reset = 0x0; } key_length[10:9];
-            field { name = "ivin_sel"; desc = "NOT IN THE DATA SHEET (bit 8 is reserved there): vendor driver bit, new IV select as in CHAN0_CIPHER_CTRL (0 = no new IV, 1 = new IV). Meaning inferred from the vendor code, not verified on hardware."; encode = CIPHER_MC_ivin_sel_enum; reset = 0x0; } ivin_sel[8:8];
+            field { name = "ivin_sel"; desc = "NOT IN THE DATA SHEET (bit 8 is reserved there): vendor driver bit, new IV select as in CHAN0_CIPHER_CTRL (0 = no new IV, 1 = new IV). Meaning inferred from the vendor code; hardware verified 2026-11-09, Hi3520D, linux driver hi3520d-cipher.c: the driver sets it for CBC/CTR so the IV is taken from iv_start_addr of the node with iv_set."; encode = CIPHER_MC_ivin_sel_enum; reset = 0x0; } ivin_sel[8:8];
             field { name = "width"; desc = "Bit width control (DES/3DES and AES differ, see the values)."; encode = CIPHER_MC_width_enum; reset = 0x0; } width[7:6];
             field { name = "alg_sel"; desc = "Algorithm select."; encode = CIPHER_MC_alg_sel_enum; reset = 0x0; } alg_sel[5:4];
             field { name = "mode"; desc = "Operating mode select. AES: ECB, CBC, CFB, OFB, CTR; DES/3DES: ECB, CBC, CFB, OFB; other values select ECB."; encode = CIPHER_MC_mode_enum; reset = 0x0; } mode[3:1];
@@ -365,7 +376,7 @@ NOT IN THE DATA SHEET: register defined only in the vendor driver header product
 
         reg {
             name = "CHANn_INT_OCNTCFG";
-            desc = "Output queue multi-packet interrupt threshold register. When the count of buffers processed in the output queue reaches the threshold (greater than or equal to it, data sheet wording), an output queue interrupt is reported.";
+            desc = "Output queue multi-packet interrupt threshold register. When the count of buffers processed in the output queue reaches the threshold (greater than or equal to it, data sheet wording '大于等于'), an output queue interrupt is reported. hardware verified 2026-11-09, Hi3520D, linux driver hi3520d-cipher.c: OCNTCFG 0 and 1 both fire for one processed packet, 100 does not; the driver sets the threshold to the number of nodes of a request to get one interrupt per request.";
             field { name = "int_ocnt_cfg"; desc = "Output queue multi-packet interrupt threshold."; reset = 0x0; } int_ocnt_cfg[15:0];
         } CHANn_INT_OCNTCFG @ 0x48;
 
@@ -456,7 +467,7 @@ NOT IN THE DATA SHEET: register defined only in the vendor driver header product
 
     reg {
         name = "INT_EN";
-        desc = "Interrupt enable register. Bit 0 is reserved. Bit 31 (int_en) is the master enable of the module: the vendor HAL_Cipher_EnableInt sets it whenever it enables a channel interrupt and HAL_Cipher_DisableInt clears it when no other enable bit is left (hal_cipher.c:874, 927).
+        desc = "Interrupt enable register. Bit 0 is reserved. Bit 31 (int_en) is the master enable of the module: the vendor HAL_Cipher_EnableInt sets it whenever it enables a channel interrupt and HAL_Cipher_DisableInt clears it when no other enable bit is left (hal_cipher.c:874, 927). hardware verified 2026-11-09, Hi3520D, linux driver hi3520d-cipher.c: bit 31 must be set for the IRQ line (SPI 23, GIC 55) to fire; the masked INT_STATUS follows INT_EN.
 
         !!! NOTE
             Input/output bit assignment: HARDWARE VERIFIED on the Hi3520D (channel 1, AES-ECB through the queue, 2026-11-09), contradicting the data sheet text (the data sheet puts the input queue bits at [15:9] and the output queue bits at [7:1]). Bits [7:1] are the INPUT queue interrupts (channel 7..1), bits [15:9] the OUTPUT queue interrupts (channel 7..1), bit 8 is channel 0 done (as in the data sheet). Evidence: with CHAN1_INT_OCNTCFG = 100 and CHAN1_INT_ICNTCFG = 0 one processed packet raised only INT_RAW bit 1 (INT_RAW = 0x2); with both thresholds low INT_RAW = 0x202; the masked INT_STATUS follows INT_EN exactly. This matches the vendor code of the sibling SoC (hal_cipher.c:866-935, HAL_Cipher_EnableInt: `1 << (8 + chnId)` for output, `1 << (0 + chnId)` for input) and the field names here follow it, not the data sheet.";
@@ -480,7 +491,7 @@ NOT IN THE DATA SHEET: register defined only in the vendor driver header product
 
     reg {
         name = "INT_RAW";
-        desc = "Raw interrupt status register. The data sheet access type is RWC (read, write to clear); the clear polarity is not stated and is modelled as write-1-to-clear. The vendor HAL_Cipher_ClrIntState (hal_cipher.c:1003) clears pending bits by writing 1s to this register (drv_cipher.c:878 writes 0xffffffff to clear everything), which supports write-1-to-clear. Bit 0 is reserved.
+        desc = "Raw interrupt status register. The data sheet access type is RWC (read, write to clear); the clear polarity is not stated and is modelled as write-1-to-clear. The vendor HAL_Cipher_ClrIntState (hal_cipher.c:1003) clears pending bits by writing 1s to this register (drv_cipher.c:878 writes 0xffffffff to clear everything), which supports write-1-to-clear. hardware verified 2026-11-09, Hi3520D, linux driver hi3520d-cipher.c: INT_RAW is cleared by writing 1s to the bits (the driver clears with writel(status)). Bit 0 is reserved.
 
         !!! NOTE
             Input/output bit assignment: HARDWARE VERIFIED on the Hi3520D (channel 1, AES-ECB through the queue, 2026-11-09), contradicting the data sheet text (the data sheet puts the input queue bits at [15:9] and the output queue bits at [7:1]). Bits [7:1] are the INPUT queue interrupts (channel 7..1), bits [15:9] the OUTPUT queue interrupts (channel 7..1), bit 8 is channel 0 done (as in the data sheet). Evidence: with CHAN1_INT_OCNTCFG = 100 and CHAN1_INT_ICNTCFG = 0 one processed packet raised only INT_RAW bit 1 (INT_RAW = 0x2); with both thresholds low INT_RAW = 0x202; the masked INT_STATUS follows INT_EN exactly. This matches the vendor code of the sibling SoC (hal_cipher.c:866-935, HAL_Cipher_EnableInt: `1 << (8 + chnId)` for output, `1 << (0 + chnId)` for input) and the field names here follow it, not the data sheet.";
