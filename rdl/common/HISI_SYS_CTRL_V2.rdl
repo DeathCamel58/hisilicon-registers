@@ -1,0 +1,378 @@
+`ifndef HISI_SYS_CTRL_V2_RDL
+`define HISI_SYS_CTRL_V2_RDL
+
+regfile eHISI_SYS_CTRL_V2 {
+    name = "System controller, Hi3518E V20X / Hi3516C V200";
+    desc = "
+    System controller at 0x20050000: SC_CTRL (timer clock selects, remap), SC_SYSRES (soft reset), SOLFINT (software interrupt), SC_LOCKEN (write key), SYSSTAT
+    (boot mode straps) and the chip ID registers SCSYSID0..3. This chip has no PERIPHCTRLn registers here: the peripheral/glue control registers are in the separate
+    MISC block (eHISI_MISC_CTRL at 0x20120000). Layouts differ from the Hi3520D/Hi3516CV100 `eSYS_CTRL`, hence a separate regfile.
+    Data sheet Hi3518E V20X/Hi3516C V200 issue 02, 3.5. SC_GEN0..4 and the snapshot registers are NOT in the data sheet (vendor U-Boot platform.h).
+    ";
+
+    reg {
+        name = "System control register";
+        desc = "Write protection: SC_CTRL and SYSSTAT can only be written after 0x1ACCE551 was written to SC_LOCKEN. Vendor U-Boot start.S sets remapclear (bit 8) after the boot code has been copied; remapstat (bit 9) = 1 at reset (BOOTROM or SPI flash CS0 is remapped to address 0, boot space chosen by BOOT_SEL/BOOTROM_SEL, DS Table 1-4). Timer clock selects: the timers' count clock is 3 MHz (0) or the bus/APB clock (1); vendor U-Boot (platform.h TIME0_CLK_APB) selects the APB clock for timer 0 by setting bit 16. Note: unlike the Hi3520D, only timeren0..3 exist (timers 0-3), there are no wdogenov/modectrl fields. The total reset 0x202 has reserved bit 1 set.
+
+Data sheet 3.5.4.2 SC_CTRL (offset 0x0, printed page 3-54, `hi3518ev200-datasheet.txt` line 25125).";
+
+        enum SC_CTRL_timeren3ov_enum {
+            V_3_MHZ_CLOCK = 0 { name = "V 3 Mhz Clock"; desc = "3 MHz clock"; };
+            BUS_CLOCK = 1 { name = "Bus Clock"; desc = "bus clock"; };
+        };
+
+        field {
+            name = "timeren3ov";
+            desc = "Timer 3 count clock select";
+            sw = rw;
+            hw = r;
+            encode = SC_CTRL_timeren3ov_enum;
+            reset = 0x0;
+        } timeren3ov[22:22];
+
+        enum SC_CTRL_timeren2ov_enum {
+            V_3_MHZ_CLOCK = 0 { name = "V 3 Mhz Clock"; desc = "3 MHz clock"; };
+            BUS_CLOCK = 1 { name = "Bus Clock"; desc = "bus clock"; };
+        };
+
+        field {
+            name = "timeren2ov";
+            desc = "Timer 2 count clock select";
+            sw = rw;
+            hw = r;
+            encode = SC_CTRL_timeren2ov_enum;
+            reset = 0x0;
+        } timeren2ov[20:20];
+
+        enum SC_CTRL_timeren1ov_enum {
+            V_3_MHZ_CLOCK = 0 { name = "V 3 Mhz Clock"; desc = "3 MHz clock"; };
+            BUS_CLOCK = 1 { name = "Bus Clock"; desc = "bus clock"; };
+        };
+
+        field {
+            name = "timeren1ov";
+            desc = "Timer 1 count clock select";
+            sw = rw;
+            hw = r;
+            encode = SC_CTRL_timeren1ov_enum;
+            reset = 0x0;
+        } timeren1ov[18:18];
+
+        enum SC_CTRL_timeren0ov_enum {
+            V_3_MHZ_CLOCK = 0 { name = "V 3 Mhz Clock"; desc = "3 MHz clock"; };
+            BUS_CLOCK = 1 { name = "Bus Clock"; desc = "bus clock"; };
+        };
+
+        field {
+            name = "timeren0ov";
+            desc = "Timer 0 count clock select";
+            sw = rw;
+            hw = r;
+            encode = SC_CTRL_timeren0ov_enum;
+            reset = 0x0;
+        } timeren0ov[16:16];
+
+        enum SC_CTRL_remapstat_enum {
+            ADDRESS_NOT_REMAPPED = 0 { name = "Address Not Remapped"; desc = "The address is not remapped."; };
+            ADDRESS_REMAPPED_BOOTROM = 1 { name = "Address Remapped Bootrom"; desc = "The address is remapped. The BOOTROM, or SFC CS0 is remapped to address 0."; };
+        };
+
+        field {
+            name = "remapstat";
+            desc = "Address remap status";
+            sw = r;
+            hw = w;
+            encode = SC_CTRL_remapstat_enum;
+            reset = 0x1;
+        } remapstat[9:9];
+
+        enum SC_CTRL_remapclear_enum {
+            REMAP_STATUS_RETAINED = 0 { name = "Remap Status Retained"; desc = "The remap status is retained."; };
+            REMAP_STATUS_CLEARED = 1 { name = "Remap Status Cleared"; desc = "The remap status is cleared. For details about the address mapping relationships before and after remapping is cleared, see section 1.3 \"Boot Mode\" and section 1.3.4 \"Address Space Mapping\" in chapter 1."; };
+        };
+
+        field {
+            name = "remapclear";
+            desc = "Address remap clear";
+            sw = rw;
+            hw = r;
+            encode = SC_CTRL_remapclear_enum;
+            reset = 0x0;
+        } remapclear[8:8];
+
+        field {
+            name = "reserved_nz_7_0";
+            desc = "Reserved in the bit table, but the data sheet total reset value of this register has these bits set (reset 0x2).";
+            sw = r;
+            hw = w;
+            reset = 0x2;
+        } reserved_nz_7_0[7:0];
+    } SC_CTRL @ 0x0;
+
+    reg {
+        name = "System soft reset register";
+        desc = "SC_SYSRES is a system soft reset register. When a value is written to this register, the system controller sends a system soft reset request to the reset module. Then the reset module resets the system. Write protection for this register can be enabled by configuring SC_LOCKEN. This register can be written only when write protection is disabled.
+
+Writing any value triggers a global soft reset (all modules except the clock/reset circuits). The data sheet lists SC_SYSRES as key-protected: write the unlock key to SC_LOCKEN first. The reset is released after at least 360 system clock cycles. (Vendor U-Boot reset_cpu writes 0x1 to it.)
+
+Data sheet 3.5.4.2 SC_SYSRES (offset 0x4, printed page 3-55, `hi3518ev200-datasheet.txt` line 25200).";
+
+        field {
+            name = "softresreq";
+            desc = "Writing any value to this register soft-resets the system.";
+            sw = w;
+            hw = r;
+            reset = 0x2;
+        } softresreq[31:0];
+    } SC_SYSRES @ 0x4;
+
+    reg {
+        name = "Software interrupt register";
+        desc = "SOLFINT is a software interrupt register.
+
+Data sheet 3.5.4.2 SOLFINT (offset 0x1C, printed page 3-56, `hi3518ev200-datasheet.txt` line 25224).";
+
+        enum SOLFINT_software_int_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "software_int";
+            desc = "Software interrupt";
+            sw = rw;
+            hw = r;
+            encode = SOLFINT_software_int_enum;
+            reset = 0x0;
+        } software_int[0:0];
+    } SOLFINT @ 0x1C;
+
+    reg {
+        name = "Key register lock register";
+        desc = "SC_LOCKEN is a key register lock registers.
+
+Write 0x1ACCE551 to unlock the key registers (SC_CTRL, SC_SYSRES, SYSSTAT); any other value locks them. The data sheet recommends locking them again after use.
+
+Data sheet 3.5.4.2 SC_LOCKEN (offset 0x44, printed page 3-56, `hi3518ev200-datasheet.txt` line 25252).";
+
+        field {
+            name = "scper_lockl";
+            desc = "Register for locking key system control registers. The key registers include SC_CTRL and SYSSTAT. When 0x1ACC_E551 is written to SC_LOCKEN, the write permission for all registers is enabled; when any other value is written to SC_LOCKEN, the write permission is disabled. Reading this register returns the lock status but not the written value. 0x0000_0000: The write permission is enabled (unlocked). 0x0000_0001: The write permission is disabled (locked).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } scper_lockl[31:0];
+    } SC_LOCKEN @ 0x44;
+
+    reg {
+        name = "System status register (PLL_LOCK)";
+        desc = "SYSSTAT is a system status register (PLL_LOCK).
+
+Boot status sampled at power-on: boot_mode (BOOT_SEL pin: 0 = SPI flash, 1 = eMMC), sfc_device_mode (SHUTTER_TRIG pin: 0 = SPI NOR, 1 = SPI NAND), bit 7 (FLASH_TRIG pin) is the NOR 3/4-byte address mode, the NAND 1/4-wire mode or the eMMC 4/8-wire mode. Vendor U-Boot reads bit 4 (BOOT_FROM_FMC = 0) and bit 7. The data sheet names bit 7 `sfc_emmc_boot_mode`. DS access of sfc_device_mode is RW; kept as in the data sheet.
+
+Data sheet 3.5.4.2 SYSSTAT (offset 0x8C, printed page 3-57, `hi3518ev200-datasheet.txt` line 25284).";
+
+        enum SYSSTAT_bootrom_sel_in_enum {
+            NO = 0 { name = "No"; desc = "no"; };
+            YES = 1 { name = "Yes"; desc = "yes"; };
+        };
+
+        field {
+            name = "bootrom_sel_in";
+            desc = "Whether the system boots from the BOOTROM";
+            sw = r;
+            hw = w;
+            encode = SYSSTAT_bootrom_sel_in_enum;
+            reset = 0x0;
+        } bootrom_sel_in[31:31];
+
+        enum SYSSTAT_arm9_standbywfe_enum {
+            NO = 0 { name = "No"; desc = "no"; };
+            YES = 1 { name = "Yes"; desc = "yes"; };
+        };
+
+        field {
+            name = "arm9_standbywfe";
+            desc = "Whether the ARM9 processor is in wait for event (WFE) status";
+            sw = r;
+            hw = w;
+            encode = SYSSTAT_arm9_standbywfe_enum;
+            reset = 0x0;
+        } arm9_standbywfe[28:28];
+
+        enum SYSSTAT_arm9_standbywfi_enum {
+            NO = 0 { name = "No"; desc = "no"; };
+            YES = 1 { name = "Yes"; desc = "yes"; };
+        };
+
+        field {
+            name = "arm9_standbywfi";
+            desc = "Whether the ARM9 processor is in wait for interrupt (WFI) status";
+            sw = r;
+            hw = w;
+            encode = SYSSTAT_arm9_standbywfi_enum;
+            reset = 0x0;
+        } arm9_standbywfi[26:26];
+
+        field {
+            name = "sfc_emmc_boot_mode";
+            desc = "Boot address mode of the SPI NOR flash when boot_mode and sfc_device_mode are 0 0: 3-byte address mode 1: 4-byte address mode Boot mode of the SPI NAND flash when boot_mode is 0 and sfc_device_mode is 1 0: 1-wire boot mode 1: 4-wire boot mode Embedded multimedia card (eMMC) boot mode when boot_mode is 1 0: 4-wire boot mode 1: 8-wire boot mode";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } sfc_emmc_boot_mode[7:7];
+
+        enum SYSSTAT_boot_mode_enum {
+            CHIP_BOOTS_FROM = 0 { name = "Chip Boots From"; desc = "The chip boots from the SPI flash."; };
+            CHIP_BOOTS_FROM_2 = 1 { name = "Chip Boots From 2"; desc = "The chip boots from the eMMC."; };
+        };
+
+        field {
+            name = "boot_mode";
+            desc = "Chip boot mode";
+            sw = r;
+            hw = w;
+            encode = SYSSTAT_boot_mode_enum;
+            reset = 0x0;
+        } boot_mode[4:4];
+
+        enum SYSSTAT_sfc_device_mode_enum {
+            SPI_NOR_FLASH = 0 { name = "Spi Nor Flash"; desc = "SPI NOR flash"; };
+            SPI_NAND_FLASH = 1 { name = "Spi Nand Flash"; desc = "SPI NAND flash"; };
+        };
+
+        field {
+            name = "sfc_device_mode";
+            desc = "SPI flash select";
+            sw = rw;
+            hw = r;
+            encode = SYSSTAT_sfc_device_mode_enum;
+            reset = 0x0;
+        } sfc_device_mode[3:3];
+    } SYSSTAT @ 0x8C;
+
+    reg {
+        name = "Chip ID register 0";
+        desc = "SCSYSID0 is chip ID register 0.
+
+The chip ID is the 32-bit value {SCSYSID3, SCSYSID2, SCSYSID1, SCSYSID0[7:0]} = 0x3518E200 for Hi3518E V200. SCSYSID0[31:24] (`chipid`) is a version code: 0x01 = Hi3516CV200, 0x02 = Hi3518EV200, 0x03 = Hi3518EV201. The vendor U-Boot identifies the chip as `_HI3518EV200 0x003518e200` (platform.h).
+
+Data sheet 3.5.4.2 SCSYSID0 (offset 0xEE0, printed page 3-58, `hi3518ev200-datasheet.txt` line 25355).";
+
+        field {
+            name = "chipid";
+            desc = "Version 01: Hi3516CV200 02: Hi3518EV200 03: Hi3518EV201 Others values: reserved";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } chipid[31:24];
+
+        field {
+            name = "sysid0";
+            desc = "Reading this register returns 0x00.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } sysid0[7:0];
+    } SCSYSID0 @ 0xEE0;
+
+    reg {
+        name = "Chip ID register 1";
+        desc = "SCSYSID1 is chip ID register 1.
+
+Data sheet 3.5.4.2 SCSYSID1 (offset 0xEE4, printed page 3-58, `hi3518ev200-datasheet.txt` line 25380).";
+        regwidth = 8;
+
+        field {
+            name = "sysid1";
+            desc = "Reading this register returns 0xE2.";
+            sw = r;
+            hw = w;
+            reset = 0xE2;
+        } sysid1[7:0];
+    } SCSYSID1 @ 0xEE4;
+
+    reg {
+        name = "Chip ID register 2";
+        desc = "SCSYSID2 is chip ID register 2.
+
+Data sheet 3.5.4.2 SCSYSID2 (offset 0xEE8, printed page 3-59, `hi3518ev200-datasheet.txt` line 25408).";
+        regwidth = 8;
+
+        field {
+            name = "sysid2";
+            desc = "Reading this register returns 0x18.";
+            sw = r;
+            hw = w;
+            reset = 0x18;
+        } sysid2[7:0];
+    } SCSYSID2 @ 0xEE8;
+
+    reg {
+        name = "Chip ID register 3";
+        desc = "SCSYSID3 is chip ID register 3.
+
+Data sheet 3.5.4.2 SCSYSID3 (offset 0xEEC, printed page 3-59, `hi3518ev200-datasheet.txt` line 25427).";
+        regwidth = 8;
+
+        field {
+            name = "sysid3";
+            desc = "Reading this register returns 0x35.";
+            sw = r;
+            hw = w;
+            reset = 0x35;
+        } sysid3[7:0];
+    } SCSYSID3 @ 0xEEC;
+
+
+    reg {
+        name = "Fast boot snapshot image magic (vendor)";
+        desc = "Not in the data sheet. REG_SNAPSHOT_IMAGE_MAGIC (0x200500A4) of the vendor U-Boot fast boot support.";
+        field { name = "value"; desc = "Software defined"; sw = rw; hw = na; } value[31:0];
+    } SC_SNAPSHOT_MAGIC @ 0xA4;
+
+    reg {
+        name = "Fast boot snapshot image start (vendor)";
+        desc = "Not in the data sheet. REG_SNAPSHOT_IMAGE_START (0x200500A8).";
+        field { name = "value"; desc = "Software defined"; sw = rw; hw = na; } value[31:0];
+    } SC_SNAPSHOT_START @ 0xA8;
+
+    reg {
+        name = "Fast boot snapshot image size (vendor)";
+        desc = "Not in the data sheet. REG_SNAPSHOT_IMAGE_SIZE (0x200500AC).";
+        field { name = "value"; desc = "Software defined"; sw = rw; hw = na; } value[31:0];
+    } SC_SNAPSHOT_SIZE @ 0xAC;
+
+    reg {
+        name = "General purpose register 0 (vendor)";
+        desc = "Not in the data sheet. Scratch register REG_SC_GEN0 of the vendor U-Boot (platform.h). Survives a soft reset of the CPU domain; used by the vendor boot flow as a software communication register.";
+        field { name = "value"; desc = "Software defined"; sw = rw; hw = na; } value[31:0];
+    } SC_GEN0 @ 0x138;
+
+    reg {
+        name = "General purpose register 1 (vendor)";
+        desc = "Not in the data sheet. REG_SC_GEN1 of the vendor U-Boot: the BOOTROM boot handshake flag. The vendor code checks it against CONFIG_START_MAGIC 0x444F574E (ASCII `DOWN`).";
+        field { name = "value"; desc = "Software defined"; sw = rw; hw = na; } value[31:0];
+    } SC_GEN1 @ 0x13C;
+
+    reg {
+        name = "General purpose register 2 (vendor)";
+        desc = "Not in the data sheet. REG_SC_GEN2 of the vendor U-Boot: stack-pointer save slot and the 0x7A696A75 (`ziju`) flag, used when the bootrom runs the vendor boot code for DDR initialisation and training (start.S).";
+        field { name = "value"; desc = "Software defined"; sw = rw; hw = na; } value[31:0];
+    } SC_GEN2 @ 0x140;
+
+    reg {
+        name = "General purpose register 3 (vendor)";
+        desc = "Not in the data sheet. REG_SC_GEN3 of the vendor U-Boot: return address into the bootrom after DDR training (start.S).";
+        field { name = "value"; desc = "Software defined"; sw = rw; hw = na; } value[31:0];
+    } SC_GEN3 @ 0x144;
+
+    reg {
+        name = "General purpose register 4 (vendor)";
+        desc = "Not in the data sheet. REG_SC_GEN4 of the vendor U-Boot (platform.h).";
+        field { name = "value"; desc = "Software defined"; sw = rw; hw = na; } value[31:0];
+    } SC_GEN4 @ 0x148;
+
+};
+
+`endif
