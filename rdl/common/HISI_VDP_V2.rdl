@@ -1,0 +1,2713 @@
+`ifndef HISI_VDP_V2_RDL
+`define HISI_VDP_V2_RDL
+
+// VDP (one video layer, one graphics layer, one BT.656/LCD display channel) of the Hi3518EV200 / Hi3516CV200 (data sheet 9.2).
+regfile eHISI_VDP_V2 {
+    name = "VDP (video display processor, V1 + G2 + DHD1)";
+    desc = "
+    Video display processor (VDP) of the Hi3518E V20X / Hi3516C V200 at 0x205C0000 (data sheet 9.2), VIC interrupt 23: one video layer V1 and one graphics layer G2 (surfaces read from DDR
+    over the MAC), the crossbar mixer CBM2 overlaying them, and one display channel DHD1 with the ITU-R BT.656 / LCD 565 serial digital output interfaces (BT and LCD registers); vertical
+    timing interrupt per channel.
+
+    Register groups (data sheet 9.2.5): 0x0000-0x0034 global (VOCTRL, interrupts, version, VOAXICTRL), 0x0100 VO_MUX, 0x1000-0x120C video layer V1 (control, update, resolution, CBM
+    parameters, positions, background, alpha, CSC, horizontal FIR coefficients, picture addresses/stride), 0x7000-0x70DC graphics layer G2 (control, address/stride, resolution, colour
+    key, mask, palette, positions, CSC), 0xB420-0xB428 CBM background / mixer, 0xC400-0xC4F0 display channel DHD1 (control, sync timing, power, thresholds, start position, state),
+    0xD210-0xD288 BT output clip / dither, 0xD400-0xD408 LCD output.
+
+    This is the VDP generation of the Hi3516CV300 / Hi3519 (V1 / G2 / DHD1 register names); it is NOT the Hi3520D VDP (`eHISI_VDP`, multiple VHD/VSD layers and DATE encoders).
+    Register table: data sheet 9.2.5 / 9.2.6 (`hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` lines 53919-56882), 81 registers transcribed with fields, access types and reset values; vendor driver binary only; no hardware verification.
+    ";
+
+    reg {
+        name = "VO control register";
+        desc = "VOCTRL is a VO control register. It is used to configure the arbitration mode of surface bus requests.
+
+Data sheet 9.2.6 VOCTRL (offset 0x0, printed page 9-79, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 54130).";
+
+        enum VOCTRL_vo_ck_gt_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "vo_ck_gt_en";
+            desc = "VDP clock gating enable";
+            sw = rw;
+            hw = r;
+            encode = VOCTRL_vo_ck_gt_en_enum;
+            reset = 0x0;
+        } vo_ck_gt_en[31:31];
+
+        enum VOCTRL_m0_arb_mode_enum {
+            POLLING = 0 { name = "Polling"; desc = "polling"; };
+            GRAPHICS_LAYER_FIRST = 1 { name = "Graphics Layer First"; desc = "graphics layer first Other values: reserved"; };
+        };
+
+        field {
+            name = "m0_arb_mode";
+            desc = "Arbitration mode of data requests of internal surface buses of VO MAC0";
+            sw = rw;
+            hw = r;
+            encode = VOCTRL_m0_arb_mode_enum;
+            reset = 0x0;
+        } m0_arb_mode[3:0];
+    } VOCTRL @ 0x0;
+
+    reg {
+        name = "VO interrupt status register (read-only)";
+        desc = "VOINTSTA is a VO interrupt status register (read-only).
+
+Data sheet 9.2.6 VOINTSTA (offset 0x4, printed page 9-80, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 54175).";
+
+        enum VOINTSTA_v1_dc_err_int_enum {
+            INTERRUPT_REPORTED = 0 { name = "Interrupt Reported"; desc = "An interrupt is reported."; };
+            NO_INTERRUPT_REPORTED = 1 { name = "No Interrupt Reported"; desc = "No interrupt is reported."; };
+        };
+
+        field {
+            name = "v1_dc_err_int";
+            desc = "V1 chrominance decompression error interrupt";
+            sw = r;
+            hw = w;
+            encode = VOINTSTA_v1_dc_err_int_enum;
+            reset = 0x0;
+        } v1_dc_err_int[19:19];
+
+        enum VOINTSTA_v1_dl_err_int_enum {
+            INTERRUPT_REPORTED = 0 { name = "Interrupt Reported"; desc = "An interrupt is reported."; };
+            NO_INTERRUPT_REPORTED = 1 { name = "No Interrupt Reported"; desc = "No interrupt is reported."; };
+        };
+
+        field {
+            name = "v1_dl_err_int";
+            desc = "V1 luminance decompression error interrupt";
+            sw = r;
+            hw = w;
+            encode = VOINTSTA_v1_dl_err_int_enum;
+            reset = 0x0;
+        } v1_dl_err_int[18:18];
+
+        enum VOINTSTA_vdac0_unload_int_enum {
+            INTERRUPT_REPORTED = 0 { name = "Interrupt Reported"; desc = "An interrupt is reported."; };
+            NO_INTERRUPT_REPORTED = 1 { name = "No Interrupt Reported"; desc = "No interrupt is reported."; };
+        };
+
+        field {
+            name = "vdac0_unload_int";
+            desc = "DAC0 offload interrupt";
+            sw = r;
+            hw = w;
+            encode = VOINTSTA_vdac0_unload_int_enum;
+            reset = 0x0;
+        } vdac0_unload_int[12:12];
+
+        enum VOINTSTA_dhd1uf_int_enum {
+            INTERRUPT_REPORTED = 0 { name = "Interrupt Reported"; desc = "An interrupt is reported."; };
+            NO_INTERRUPT_REPORTED = 1 { name = "No Interrupt Reported"; desc = "No interrupt is reported."; };
+        };
+
+        field {
+            name = "dhd1uf_int";
+            desc = "DHD1 low-bandwidth alarm interrupt";
+            sw = r;
+            hw = w;
+            encode = VOINTSTA_dhd1uf_int_enum;
+            reset = 0x0;
+        } dhd1uf_int[7:7];
+
+        field {
+            name = "reserved_b6";
+            desc = "Reserved in the data sheet; modelled so that the total reset value 0x00000044 of the data sheet header is reproduced (reads 0x1).";
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } reserved_b6[6:6];
+
+        enum VOINTSTA_dhd1vtthd1_int_enum {
+            INTERRUPT_REPORTED = 0 { name = "Interrupt Reported"; desc = "An interrupt is reported."; };
+            NO_INTERRUPT_REPORTED = 1 { name = "No Interrupt Reported"; desc = "No interrupt is reported."; };
+        };
+
+        field {
+            name = "dhd1vtthd1_int";
+            desc = "DHD1 vertical timing interrupt 1";
+            sw = r;
+            hw = w;
+            encode = VOINTSTA_dhd1vtthd1_int_enum;
+            reset = 0x0;
+        } dhd1vtthd1_int[4:4];
+
+        field {
+            name = "reserved_b2";
+            desc = "Reserved in the data sheet; modelled so that the total reset value 0x00000044 of the data sheet header is reproduced (reads 0x1).";
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } reserved_b2[2:2];
+    } VOINTSTA @ 0x4;
+
+    reg {
+        name = "VO masked interrupt status register";
+        desc = "VOMSKINTSTA is a VO masked interrupt status register.
+
+Data sheet 9.2.6 VOMSKINTSTA (offset 0x8, printed page 9-81, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 54238).";
+
+        enum VOMSKINTSTA_v1_dc_err_int_enum {
+            INTERRUPT_REPORTED = 0 { name = "Interrupt Reported"; desc = "An interrupt is reported."; };
+            NO_INTERRUPT_REPORTED = 1 { name = "No Interrupt Reported"; desc = "No interrupt is reported."; };
+        };
+
+        field {
+            name = "v1_dc_err_int";
+            desc = "V1 chrominance decompression error interrupt";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = VOMSKINTSTA_v1_dc_err_int_enum;
+            reset = 0x0;
+        } v1_dc_err_int[19:19];
+
+        enum VOMSKINTSTA_v1_dl_err_int_enum {
+            INTERRUPT_REPORTED = 0 { name = "Interrupt Reported"; desc = "An interrupt is reported."; };
+            NO_INTERRUPT_REPORTED = 1 { name = "No Interrupt Reported"; desc = "No interrupt is reported."; };
+        };
+
+        field {
+            name = "v1_dl_err_int";
+            desc = "V1 luminance decompression error interrupt";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = VOMSKINTSTA_v1_dl_err_int_enum;
+            reset = 0x0;
+        } v1_dl_err_int[18:18];
+
+        enum VOMSKINTSTA_vdac0_unload_int_enum {
+            INTERRUPT_REPORTED = 0 { name = "Interrupt Reported"; desc = "An interrupt is reported."; };
+            NO_INTERRUPT_REPORTED = 1 { name = "No Interrupt Reported"; desc = "No interrupt is reported."; };
+        };
+
+        field {
+            name = "vdac0_unload_int";
+            desc = "DAC0 offload interrupt";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = VOMSKINTSTA_vdac0_unload_int_enum;
+            reset = 0x0;
+        } vdac0_unload_int[12:12];
+
+        enum VOMSKINTSTA_dhd1uf_clr_enum {
+            INTERRUPT_REPORTED = 0 { name = "Interrupt Reported"; desc = "An interrupt is reported."; };
+            NO_INTERRUPT_REPORTED = 1 { name = "No Interrupt Reported"; desc = "No interrupt is reported."; };
+        };
+
+        field {
+            name = "dhd1uf_clr";
+            desc = "DHD1 low-bandwidth alarm interrupt";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = VOMSKINTSTA_dhd1uf_clr_enum;
+            reset = 0x0;
+        } dhd1uf_clr[7:7];
+
+        enum VOMSKINTSTA_dhd1vtthd1_clr_enum {
+            INTERRUPT_REPORTED = 0 { name = "Interrupt Reported"; desc = "An interrupt is reported."; };
+            NO_INTERRUPT_REPORTED = 1 { name = "No Interrupt Reported"; desc = "No interrupt is reported."; };
+        };
+
+        field {
+            name = "dhd1vtthd1_clr";
+            desc = "DHD1 vertical timing interrupt 1";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = VOMSKINTSTA_dhd1vtthd1_clr_enum;
+            reset = 0x0;
+        } dhd1vtthd1_clr[4:4];
+    } VOMSKINTSTA @ 0x8;
+
+    reg {
+        name = "VDP interrupt mask register";
+        desc = "VOINTMSK is a VDP interrupt mask register.
+
+Data sheet 9.2.6 VOINTMSK (offset 0xC, printed page 9-83, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 54311).";
+
+        enum VOINTMSK_v1_dc_err_int_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "v1_dc_err_int";
+            desc = "Mask for the V1 chrominance decompression error interrupt";
+            sw = rw;
+            hw = r;
+            encode = VOINTMSK_v1_dc_err_int_enum;
+            reset = 0x0;
+        } v1_dc_err_int[19:19];
+
+        enum VOINTMSK_v1_dl_err_int_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "v1_dl_err_int";
+            desc = "Mask for the V1 luminance decompression error interrupt";
+            sw = rw;
+            hw = r;
+            encode = VOINTMSK_v1_dl_err_int_enum;
+            reset = 0x0;
+        } v1_dl_err_int[18:18];
+
+        enum VOINTMSK_vdac0_unload_intmsk_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "vdac0_unload_intmsk";
+            desc = "Mask for the DAC0 offload interrupt";
+            sw = rw;
+            hw = r;
+            encode = VOINTMSK_vdac0_unload_intmsk_enum;
+            reset = 0x0;
+        } vdac0_unload_intmsk[12:12];
+
+        enum VOINTMSK_dhd1uf_intmsk_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "dhd1uf_intmsk";
+            desc = "Mask for the DHD1 low-bandwidth alarm interrupt";
+            sw = rw;
+            hw = r;
+            encode = VOINTMSK_dhd1uf_intmsk_enum;
+            reset = 0x0;
+        } dhd1uf_intmsk[7:7];
+
+        enum VOINTMSK_dhd1vtthd1_intmsk_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "dhd1vtthd1_intmsk";
+            desc = "Mask for DHD1 vertical timing interrupt 1";
+            sw = rw;
+            hw = r;
+            encode = VOINTMSK_dhd1vtthd1_intmsk_enum;
+            reset = 0x0;
+        } dhd1vtthd1_intmsk[4:4];
+    } VOINTMSK @ 0xC;
+
+    reg {
+        name = "VDP version register 1";
+        desc = "VDPVERSION1 is VDP version register 1.
+
+Data sheet 9.2.6 VDPVERSION1 (offset 0x10, printed page 9-84, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 54365).";
+
+        field {
+            name = "vdpversion1";
+            desc = "VDP version 1";
+            sw = r;
+            hw = w;
+            reset = 0x76756F76;
+        } vdpversion1[31:0];
+    } VDPVERSION1 @ 0x10;
+
+    reg {
+        name = "VDP version register 2";
+        desc = "VDPVERSION2 is VDP version register 2.
+
+Data sheet 9.2.6 VDPVERSION2 (offset 0x14, printed page 9-84, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 54384).";
+
+        field {
+            name = "vdpversion2";
+            desc = "VDP version 2";
+            sw = r;
+            hw = w;
+            reset = 0x30313134;
+        } vdpversion2[31:0];
+    } VDPVERSION2 @ 0x14;
+
+    reg {
+        name = "VO AXI bus configuration register";
+        desc = "VOAXICTRL is a VO AXI bus configuration register.
+
+Data sheet 9.2.6 VOAXICTRL (offset 0x34, printed page 9-84, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 54403).";
+
+        field {
+            name = "reserved_b31_4";
+            desc = "Reserved in the data sheet; modelled so that the total reset value 0x01110111 of the data sheet header is reproduced (reads 0x00111011).";
+            sw = r;
+            hw = w;
+            reset = 0x00111011;
+        } reserved_b31_4[31:4];
+
+        field {
+            name = "m0_outstd_rid0";
+            desc = "Read ID0 outstanding of AXI master 0. The value ranges from 0 to 7.";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } m0_outstd_rid0[3:0];
+    } VOAXICTRL @ 0x34;
+
+    reg {
+        name = "VO interface multiplexing register";
+        desc = "VO_MUX is a VO interface multiplexing register.
+
+Data sheet 9.2.6 VO_MUX (offset 0x100, printed page 9-85, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 54435).";
+
+        field {
+            name = "digital_sel";
+            desc = "Digital interface data select. The default value is 0. 1: BT.656 Other values: reserved";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } digital_sel[31:28];
+    } VO_MUX @ 0x100;
+
+    reg {
+        name = "V1 configuration register (non-instant register)";
+        desc = "V1_CTRL is a V1 configuration register (non-instant register).
+
+Data sheet 9.2.6 V1_CTRL (offset 0x1000, printed page 9-85, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 54460).";
+
+        enum V1_CTRL_surface_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "surface_en";
+            desc = "Surface enable (non-instant)";
+            sw = rw;
+            hw = r;
+            encode = V1_CTRL_surface_en_enum;
+            reset = 0x0;
+        } surface_en[31:31];
+
+        enum V1_CTRL_crop_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "crop_en";
+            desc = "Crop enable (non-instant)";
+            sw = rw;
+            hw = r;
+            encode = V1_CTRL_crop_en_enum;
+            reset = 0x0;
+        } crop_en[23:23];
+
+        enum V1_CTRL_precharge_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "precharge_en";
+            desc = "Pre-charge enable. This field is valid when the precharge_mode field is 1 (software mode).";
+            sw = rw;
+            hw = r;
+            encode = V1_CTRL_precharge_en_enum;
+            reset = 0x0;
+        } precharge_en[21:21];
+
+        enum V1_CTRL_precharge_mode_enum {
+            HARDWARE_MODE_HARDWARE = 0 { name = "Hardware Mode Hardware"; desc = "hardware mode. Hardware automatically enters the pre-charge status on the frame trailer."; };
+            SOFTWARE_MODE_SOFTWARE = 1 { name = "Software Mode Software"; desc = "software mode. Software controls whether to enter or exit the pre-charge status."; };
+        };
+
+        field {
+            name = "precharge_mode";
+            desc = "Pre-charge mode of the FDR FIFO";
+            sw = rw;
+            hw = r;
+            encode = V1_CTRL_precharge_mode_enum;
+            reset = 0x0;
+        } precharge_mode[20:20];
+
+        enum V1_CTRL_ifir_mode_enum {
+            RESERVED = 0 { name = "Reserved"; desc = "reserved"; };
+            CHROMINANCE_IFIR_REPLICATION = 1 { name = "Chrominance Ifir Replication"; desc = "chrominance IFIR replication mode"; };
+            BILINEAR_INTERPOLATION = 2 { name = "Bilinear Interpolation"; desc = "bilinear interpolation"; };
+            V_16_ORDER_HALF = 3 { name = "V 16 Order Half"; desc = "16-order half-band filtering"; };
+        };
+
+        field {
+            name = "ifir_mode";
+            desc = "Horizontal chrominance IFIR mode";
+            sw = rw;
+            hw = r;
+            encode = V1_CTRL_ifir_mode_enum;
+            reset = 0x0;
+        } ifir_mode[19:18];
+
+        enum V1_CTRL_vup_mode_enum {
+            UPDATE_FRAME = 0 { name = "Update Frame"; desc = "update by frame"; };
+            UPDATE_FIELD = 1 { name = "Update Field"; desc = "update by field"; };
+        };
+
+        field {
+            name = "vup_mode";
+            desc = "Surface coefficient update mode";
+            sw = rw;
+            hw = r;
+            encode = V1_CTRL_vup_mode_enum;
+            reset = 0x0;
+        } vup_mode[17:17];
+
+        enum V1_CTRL_lm_rmode_enum {
+            READ_MODE_BOUND = 0 { name = "Read Mode Bound"; desc = "The read mode is bound to the interface."; };
+            FRAME_BUFFER_DATA = 1 { name = "Frame Buffer Data"; desc = "The frame buffer data is read in progressive mode."; };
+            TOP_FIELD_READ = 2 { name = "Top Field Read"; desc = "The top field is read in interlaced mode."; };
+            BOTTOM_FIELD_READ = 3 { name = "Bottom Field Read"; desc = "The bottom field is read in interlaced mode."; };
+        };
+
+        field {
+            name = "lm_rmode";
+            desc = "Luminance read mode";
+            sw = rw;
+            hw = r;
+            encode = V1_CTRL_lm_rmode_enum;
+            reset = 0x0;
+        } lm_rmode[15:14];
+
+        enum V1_CTRL_chm_rmode_enum {
+            READ_MODE_BOUND = 0 { name = "Read Mode Bound"; desc = "The read mode is bound to the interface."; };
+            FRAME_BUFFER_DATA = 1 { name = "Frame Buffer Data"; desc = "The frame buffer data is read in progressive mode."; };
+            TOP_FIELD_READ = 2 { name = "Top Field Read"; desc = "The top field is read in interlaced mode."; };
+            BOTTOM_FIELD_READ = 3 { name = "Bottom Field Read"; desc = "The bottom field is read in interlaced mode."; };
+        };
+
+        field {
+            name = "chm_rmode";
+            desc = "Chrominance read mode";
+            sw = rw;
+            hw = r;
+            encode = V1_CTRL_chm_rmode_enum;
+            reset = 0x0;
+        } chm_rmode[13:12];
+
+        field {
+            name = "dcmp_en";
+            desc = "Decompression enable";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } dcmp_en[8:8];
+
+        field {
+            name = "time_out";
+            desc = "Timeout period";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } time_out[7:5];
+
+        enum V1_CTRL_ifmt_enum {
+            SPYCBCR400 = 1 { name = "Spycbcr400"; desc = "SPYCbCr400"; };
+            SPYCBCR420 = 3 { name = "Spycbcr420"; desc = "SPYCbCr420"; };
+            SPYCBCR422_OTHER_VALUES = 4 { name = "Spycbcr422 Other Values"; desc = "SPYCbCr422 Other values: reserved"; };
+        };
+
+        field {
+            name = "ifmt";
+            desc = "Format of the input data";
+            sw = rw;
+            hw = r;
+            encode = V1_CTRL_ifmt_enum;
+            reset = 0x0;
+        } ifmt[3:0];
+    } V1_CTRL @ 0x1000;
+
+    reg {
+        name = "V1 channel update enable register";
+        desc = "V1_UPD is a V1 channel update enable register.
+
+Data sheet 9.2.6 V1_UPD (offset 0x1004, printed page 9-87, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 54556).";
+
+        field {
+            name = "regup";
+            desc = "Surface register update. After the registers at this layer are configured, the registers are updated when the value 1 is written to this bit. After the registers are updated, this bit is automatically cleared by the hardware.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            reset = 0x0;
+        } regup[0:0];
+    } V1_UPD @ 0x1004;
+
+    reg {
+        name = "V1 input resolution register (non-instant register)";
+        desc = "V1_IRESO is a V1 input resolution register (non-instant register).
+
+Data sheet 9.2.6 V1_IRESO (offset 0x1028, printed page 9-87, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 54582).";
+
+        field {
+            name = "ih";
+            desc = "Height (in line). The configured value is the actual height minus 1. The frame height is referenced and its unit is line.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ih[23:12];
+
+        field {
+            name = "iw";
+            desc = "Width (in pixel). The configured value is the actual width minus 1.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } iw[11:0];
+    } V1_IRESO @ 0x1028;
+
+    reg {
+        name = "V1 output resolution register (non-instant register)";
+        desc = "V1_ORESO is a V1 output resolution register (non-instant register).
+
+Data sheet 9.2.6 V1_ORESO (offset 0x102C, printed page 9-88, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 54613).";
+
+        field {
+            name = "oh";
+            desc = "Height (in line). The configured value is the actual height minus 1. The frame height is referenced and its unit is line.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } oh[23:12];
+
+        field {
+            name = "ow";
+            desc = "Width (in pixel). The configured value is the actual width minus 1.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ow[11:0];
+    } V1_ORESO @ 0x102C;
+
+    reg {
+        name = "V1 overlay parameter register (non- instant register)";
+        desc = "V1_CBMPARA is a V1 overlay parameter register (non-instant register).
+
+Data sheet 9.2.6 V1_CBMPARA (offset 0x1038, printed page 9-88, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 54636).";
+
+        field {
+            name = "galpha";
+            desc = "Overlay global alpha value. The value ranges from 0 to 255. The value 255 indicates opaque, and the value 0 indicates completely transparent.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } galpha[7:0];
+    } V1_CBMPARA @ 0x1038;
+
+    reg {
+        name = "Horizontal crop coordinate register for the source picture";
+        desc = "V1_CPOS is a horizontal crop coordinate register for the source picture.
+
+Data sheet 9.2.6 V1_CPOS (offset 0x1044, printed page 9-89, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 54668).";
+
+        field {
+            name = "src_xlpos";
+            desc = "End coordinates for horizontally cropping the source picture";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } src_xlpos[23:12];
+
+        field {
+            name = "src_xfpos";
+            desc = "Start coordinates for horizontally cropping the source picture";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } src_xfpos[11:0];
+    } V1_CPOS @ 0x1044;
+
+    reg {
+        name = "V1 surface start position (in the display window) register (non-instant register)";
+        desc = "V1_DFPOS is a V1 surface start position (in the display window) register (non-instant register).
+
+Data sheet 9.2.6 V1_DFPOS (offset 0x1060, printed page 9-89, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 54689).";
+
+        field {
+            name = "disp_yfpos";
+            desc = "Start coordinates of the display column The frame height is referenced and its unit is line.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } disp_yfpos[23:12];
+
+        field {
+            name = "disp_xfpos";
+            desc = "Start coordinates of the display row";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } disp_xfpos[11:0];
+    } V1_DFPOS @ 0x1060;
+
+    reg {
+        name = "V1 surface end position (in the display window) register (non-instant register)";
+        desc = "V1_DLPOS is a V1 surface end position (in the display window) register (non-instant register).
+
+Data sheet 9.2.6 V1_DLPOS (offset 0x1064, printed page 9-90, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 54723).";
+
+        field {
+            name = "disp_ylpos";
+            desc = "End coordinates of the display column The frame height is referenced and its unit is line.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } disp_ylpos[23:12];
+
+        field {
+            name = "disp_xlpos";
+            desc = "End coordinates of the display row";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } disp_xlpos[11:0];
+    } V1_DLPOS @ 0x1064;
+
+    reg {
+        name = "V1 surface content start position (in the display window) register (non-instant register)";
+        desc = "V1_VFPOS is a V1 surface content start position (in the display window) register (non-instant register).
+
+Data sheet 9.2.6 V1_VFPOS (offset 0x1068, printed page 9-90, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 54746).";
+
+        field {
+            name = "video_yfpos";
+            desc = "Start coordinates of the video column The frame height is referenced and its unit is line.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } video_yfpos[23:12];
+
+        field {
+            name = "video_xfpos";
+            desc = "Start coordinates of the video row";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } video_xfpos[11:0];
+    } V1_VFPOS @ 0x1068;
+
+    reg {
+        name = "V1 surface content end position (in the display window) register (non-instant register)";
+        desc = "V1_VLPOS is a V1 surface content end position (in the display window) register (non-instant register).
+
+Data sheet 9.2.6 V1_VLPOS (offset 0x106C, printed page 9-91, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 54780).";
+
+        field {
+            name = "video_ylpos";
+            desc = "End coordinates of the video column The frame height is referenced and its unit is line.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } video_ylpos[23:12];
+
+        field {
+            name = "video_xlpos";
+            desc = "End coordinates of the video row";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } video_xlpos[11:0];
+    } V1_VLPOS @ 0x106C;
+
+    reg {
+        name = "V1 background color register";
+        desc = "V1_BK is a V1 background color register.
+
+Data sheet 9.2.6 V1_BK (offset 0x1070, printed page 9-91, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 54802).";
+
+        field {
+            name = "vbk_y";
+            desc = "Y component";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } vbk_y[29:20];
+
+        field {
+            name = "vbk_cb";
+            desc = "Cb component";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } vbk_cb[19:10];
+
+        field {
+            name = "vbk_cr";
+            desc = "Cr component";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } vbk_cr[9:0];
+    } V1_BK @ 0x1070;
+
+    reg {
+        name = "V1 background filling color alpha register";
+        desc = "V1_ALPHA is a V1 background filling color alpha register.
+
+Data sheet 9.2.6 V1_ALPHA (offset 0x1074, printed page 9-92, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 54836).";
+
+        field {
+            name = "vbk_alpha";
+            desc = "Level 0-255 of the background filling color of the video layer";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } vbk_alpha[7:0];
+    } V1_ALPHA @ 0x1074;
+
+    reg {
+        name = "V1 CSC input DC component register (instant register)";
+        desc = "V1_CSC_IDC is a V1 CSC input DC component register (instant register).
+
+Data sheet 9.2.6 V1_CSC_IDC (offset 0x1080, printed page 9-92, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 54855).";
+
+        enum V1_CSC_IDC_csc_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "csc_en";
+            desc = "CSC enable";
+            sw = rw;
+            hw = r;
+            encode = V1_CSC_IDC_csc_en_enum;
+            reset = 0x0;
+        } csc_en[22:22];
+
+        field {
+            name = "cscidc1";
+            desc = "DC parameter of the input U/G component. The MSB is the signed bit. The value is expressed as a two's complement.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } cscidc1[21:11];
+
+        field {
+            name = "cscidc0";
+            desc = "DC parameter of the input V/B component. The MSB is the signed bit. The value is expressed as a two's complement.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } cscidc0[10:0];
+    } V1_CSC_IDC @ 0x1080;
+
+    reg {
+        name = "V1 CSC output DC component register (instant register)";
+        desc = "V1_CSC_ODC is a V1 CSC output DC component register (instant register).
+
+Data sheet 9.2.6 V1_CSC_ODC (offset 0x1084, printed page 9-93, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 54894).";
+
+        enum V1_CSC_ODC_csc_sign_mode_enum {
+            CSC_OUTPUT_10 = 0 { name = "Csc Output 10"; desc = "The CSC output is a 10-bit unsigned number."; };
+            CSC_OUTPUT_12 = 1 { name = "Csc Output 12"; desc = "The CSC output is a 12-bit signed number."; };
+        };
+
+        field {
+            name = "csc_sign_mode";
+            desc = "CSC output mode";
+            sw = rw;
+            hw = r;
+            encode = V1_CSC_ODC_csc_sign_mode_enum;
+            reset = 0x0;
+        } csc_sign_mode[22:22];
+
+        field {
+            name = "cscodc1";
+            desc = "DC parameter of the output U/G component. The MSB is the signed bit. The value is expressed as a two's complement.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } cscodc1[21:11];
+
+        field {
+            name = "cscodc0";
+            desc = "DC parameter of the output Y/R component. The MSB is the signed bit. The value is expressed as a two's complement.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } cscodc0[10:0];
+    } V1_CSC_ODC @ 0x1084;
+
+    reg {
+        name = "V1 CSC input/output DC component register (instant register)";
+        desc = "V1_CSC_IODC is a V1 CSC input/output DC component register (instant register).
+
+Data sheet 9.2.6 V1_CSC_IODC (offset 0x1088, printed page 9-93, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 54928).";
+
+        field {
+            name = "cscodc2";
+            desc = "DC parameter of the output V/B component. The MSB is the signed bit. The value is expressed as a two's complement.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } cscodc2[21:11];
+
+        field {
+            name = "cscidc2";
+            desc = "DC parameter of the input Y/R component. The MSB is the signed bit. The value is expressed as a two's complement.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } cscidc2[10:0];
+    } V1_CSC_IODC @ 0x1088;
+
+    reg {
+        name = "V1 CSC parameter 0 register (instant register)";
+        desc = "V1_CSC_P0 is a V1 CSC parameter 0 register (instant register).
+
+Data sheet 9.2.6 V1_CSC_P0 (offset 0x108C, printed page 9-94, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 54961).";
+
+        field {
+            name = "cscp01";
+            desc = "5.10 data format that consists of a 1-bit sign part, a 4-bit integer part, and an 8-bit decimal part. The value is expressed as a two's complement.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } cscp01[30:16];
+
+        field {
+            name = "cscp00";
+            desc = "5.10 data format that consists of a 1-bit sign part, a 4-bit integer part, and an 8-bit decimal part. The value is expressed as a two's complement.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } cscp00[14:0];
+    } V1_CSC_P0 @ 0x108C;
+
+    reg {
+        name = "V1 CSC parameter 1 register (instant register)";
+        desc = "V1_CSC_P1 is a V1 CSC parameter 1 register (instant register).
+
+Data sheet 9.2.6 V1_CSC_P1 (offset 0x1090, printed page 9-94, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 54991).";
+
+        field {
+            name = "cscp10";
+            desc = "5.10 data format that consists of a 1-bit sign part, a 4-bit integer part, and an 8-bit decimal part. The value is expressed as a two's complement.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } cscp10[30:16];
+
+        field {
+            name = "cscp02";
+            desc = "5.10 data format that consists of a 1-bit sign part, a 4-bit integer part, and an 8-bit decimal part. The value is expressed as a two's complement.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } cscp02[14:0];
+    } V1_CSC_P1 @ 0x1090;
+
+    reg {
+        name = "V1 CSC parameter 2 register (instant register)";
+        desc = "V1_CSC_P2 is a V1 CSC parameter 2 register (instant register).
+
+Data sheet 9.2.6 V1_CSC_P2 (offset 0x1094, printed page 9-95, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 55025).";
+
+        field {
+            name = "cscp12";
+            desc = "5.10 data format that consists of a 1-bit sign part, a 4-bit integer part, and an 8-bit decimal part. The value is expressed as a two's complement.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } cscp12[30:16];
+
+        field {
+            name = "cscp11";
+            desc = "5.10 data format that consists of a 1-bit sign part, a 4-bit integer part, and an 8-bit decimal part. The value is expressed as a two's complement.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } cscp11[14:0];
+    } V1_CSC_P2 @ 0x1094;
+
+    reg {
+        name = "V1 CSC parameter 3 register (instant register)";
+        desc = "V1_CSC_P3 is a V1 CSC parameter 3 register (instant register).
+
+Data sheet 9.2.6 V1_CSC_P3 (offset 0x1098, printed page 9-95, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 55055).";
+
+        field {
+            name = "cscp21";
+            desc = "5.10 data format that consists of a 1-bit sign part, a 4-bit integer part, and an 8-bit decimal part. The value is expressed as a two's complement.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } cscp21[30:16];
+
+        field {
+            name = "cscp20";
+            desc = "5.10 data format that consists of a 1-bit sign part, a 4-bit integer part, and an 8-bit decimal part. The value is expressed as a two's complement.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } cscp20[14:0];
+    } V1_CSC_P3 @ 0x1098;
+
+    reg {
+        name = "V1 CSC parameter 4 register (instant register)";
+        desc = "V1_CSC_P4 is a V1 CSC parameter 4 register (instant register).
+
+Data sheet 9.2.6 V1_CSC_P4 (offset 0x109C, printed page 9-96, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 55095).";
+
+        field {
+            name = "cscp22";
+            desc = "5.10 data format that consists of a 1-bit sign part, a 4-bit integer part, and an 8-bit decimal part. The value is expressed as a two's complement.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } cscp22[14:0];
+    } V1_CSC_P4 @ 0x109C;
+
+    reg {
+        name = "IFIR filtering coefficient 0/1 register";
+        desc = "V1_IFIRCOEF01 is an IFIR filtering coefficient 0/1 register.
+
+Data sheet 9.2.6 V1_IFIRCOEF01 (offset 0x1180, printed page 9-96, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 55117).";
+
+        field {
+            name = "coef1";
+            desc = "IFIR filtering coefficient 1";
+            sw = rw;
+            hw = r;
+            reset = 0xF;
+        } coef1[25:16];
+
+        field {
+            name = "coef0";
+            desc = "IFIR filtering coefficient 0";
+            sw = rw;
+            hw = r;
+            reset = 0x3F5;
+        } coef0[9:0];
+    } V1_IFIRCOEF01 @ 0x1180;
+
+    reg {
+        name = "IFIR filtering coefficient 2/3 register";
+        desc = "V1_IFIRCOEF23 is an IFIR filtering coefficient 2/3 register.
+
+Data sheet 9.2.6 V1_IFIRCOEF23 (offset 0x1184, printed page 9-97, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 55147).";
+
+        field {
+            name = "coef3";
+            desc = "IFIR filtering coefficient 3";
+            sw = rw;
+            hw = r;
+            reset = 0x1C;
+        } coef3[25:16];
+
+        field {
+            name = "coef2";
+            desc = "IFIR filtering coefficient 2";
+            sw = rw;
+            hw = r;
+            reset = 0x3EC;
+        } coef2[9:0];
+    } V1_IFIRCOEF23 @ 0x1184;
+
+    reg {
+        name = "IFIR filtering coefficient 4/5 register";
+        desc = "V1_IFIRCOEF45 is an IFIR filtering coefficient 4/5 register.
+
+Data sheet 9.2.6 V1_IFIRCOEF45 (offset 0x1188, printed page 9-97, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 55168).";
+
+        field {
+            name = "coef5";
+            desc = "IFIR filtering coefficient 5";
+            sw = rw;
+            hw = r;
+            reset = 0x3D;
+        } coef5[25:16];
+
+        field {
+            name = "coef4";
+            desc = "IFIR filtering coefficient 4";
+            sw = rw;
+            hw = r;
+            reset = 0x3D8;
+        } coef4[9:0];
+    } V1_IFIRCOEF45 @ 0x1188;
+
+    reg {
+        name = "IFIR filtering coefficient 6/7 register";
+        desc = "V1_IFIRCOEF67 is an IFIR filtering coefficient 6/7 register.
+
+Data sheet 9.2.6 V1_IFIRCOEF67 (offset 0x118C, printed page 9-98, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 55200).";
+
+        field {
+            name = "coef7";
+            desc = "IFIR filtering coefficient 7";
+            sw = rw;
+            hw = r;
+            reset = 0x14A;
+        } coef7[25:16];
+
+        field {
+            name = "coef6";
+            desc = "IFIR filtering coefficient 6";
+            sw = rw;
+            hw = r;
+            reset = 0x395;
+        } coef6[9:0];
+    } V1_IFIRCOEF67 @ 0x118C;
+
+    reg {
+        name = "V1 luminance address register";
+        desc = "V1_P0LADDR is a V1 luminance address register.
+
+Data sheet 9.2.6 V1_P0LADDR (offset 0x1204, printed page 9-98, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 55221).";
+
+        field {
+            name = "surface_addr";
+            desc = "Luminance start address for the video layer";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } surface_addr[31:0];
+    } V1_P0LADDR @ 0x1204;
+
+    reg {
+        name = "V1 chrominance address register";
+        desc = "V1_P0CADDR is a V1 chrominance address register.
+
+Data sheet 9.2.6 V1_P0CADDR (offset 0x1208, printed page 9-98, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 55240).";
+
+        field {
+            name = "surface_addr";
+            desc = "Chrominance start address for the video layer";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } surface_addr[31:0];
+    } V1_P0CADDR @ 0x1208;
+
+    reg {
+        name = "V1 stride register";
+        desc = "V1_P0STRIDE is a V1 stride register.
+
+Data sheet 9.2.6 V1_P0STRIDE (offset 0x120C, printed page 9-99, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 55264).";
+
+        field {
+            name = "surface_cstride";
+            desc = "Stride of the chrominance buffer of the video layer (valid in semi- planar format), 128-bit alignment";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } surface_cstride[31:16];
+
+        field {
+            name = "surface_stride";
+            desc = "Stride of the video layer buffer (luminance stride in semi-planar format), 128-bit alignment";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } surface_stride[15:0];
+    } V1_P0STRIDE @ 0x120C;
+
+    reg {
+        name = "G2 configuration register";
+        desc = "G2_CTR is a G2 configuration register (non-instant register).
+
+Data sheet 9.2.6 G2_CTRL (offset 0x7000, printed page 9-99, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 55288).";
+
+        enum G2_CTRL_surface_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "surface_en";
+            desc = "Surface enable (non-instant)";
+            sw = rw;
+            hw = r;
+            encode = G2_CTRL_surface_en_enum;
+            reset = 0x0;
+        } surface_en[31:31];
+
+        field {
+            name = "reserved_b30_28";
+            desc = "Reserved in the data sheet; modelled so that the total reset value 0x40000000 of the data sheet header is reproduced (reads 0x4).";
+            sw = r;
+            hw = w;
+            reset = 0x4;
+        } reserved_b30_28[30:28];
+
+        enum G2_CTRL_upd_mode_enum {
+            UPDATE_FAME = 0 { name = "Update Fame"; desc = "update by fame"; };
+            UPDATE_FIELD = 1 { name = "Update Field"; desc = "update by field"; };
+        };
+
+        field {
+            name = "upd_mode";
+            desc = "Update mode";
+            sw = rw;
+            hw = r;
+            encode = G2_CTRL_upd_mode_enum;
+            reset = 0x0;
+        } upd_mode[27:27];
+
+        enum G2_CTRL_read_mode_enum {
+            READ_MODE_AUTOMATICALLY = 0 { name = "Read Mode Automatically"; desc = "The read mode is automatically selected based on the interface read mode. That is, the progressive read mode is selected in progressive display mode, and the interlaced read mode is selected in interlaced display mode."; };
+            PROGRESSIVE_READ_MODE = 1 { name = "Progressive Read Mode"; desc = "The progressive read mode is selected forcibly."; };
+        };
+
+        field {
+            name = "read_mode";
+            desc = "Data read mode";
+            sw = rw;
+            hw = r;
+            encode = G2_CTRL_read_mode_enum;
+            reset = 0x0;
+        } read_mode[26:26];
+
+        enum G2_CTRL_precharge_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "precharge_en";
+            desc = "Pre-charge enable. This field is valid when the precharge_mode field is 1 (software mode).";
+            sw = rw;
+            hw = r;
+            encode = G2_CTRL_precharge_en_enum;
+            reset = 0x0;
+        } precharge_en[21:21];
+
+        enum G2_CTRL_precharge_mode_enum {
+            HARDWARE_MODE_HARDWARE = 0 { name = "Hardware Mode Hardware"; desc = "hardware mode. Hardware automatically enters the pre-charge status on the frame trailer."; };
+            SOFTWARE_MODE_SOFTWARE = 1 { name = "Software Mode Software"; desc = "software mode. Software controls whether to enter or exit the pre-charge status."; };
+        };
+
+        field {
+            name = "precharge_mode";
+            desc = "Pre-charge mode of the FDR FIFO";
+            sw = rw;
+            hw = r;
+            encode = G2_CTRL_precharge_mode_enum;
+            reset = 0x0;
+        } precharge_mode[20:20];
+
+        enum G2_CTRL_bitext_enum {
+            EXTEND_0S_LOWER = 0 { name = "Extend 0S Lower"; desc = "extend 0s to lower bits"; };
+            EXTEND_VALUE_MSB = 2 { name = "Extend Value Msb"; desc = "extend the value of the MSB to a lower bit"; };
+            EXTEND_VALUES_UPPER = 3 { name = "Extend Values Upper"; desc = "extend the values of upper bits to lower bits Other values: reserved"; };
+        };
+
+        field {
+            name = "bitext";
+            desc = "Bit extend mode of the input bitmap";
+            sw = rw;
+            hw = r;
+            encode = G2_CTRL_bitext_enum;
+            reset = 0x0;
+        } bitext[9:8];
+
+        enum G2_CTRL_ifmt_enum {
+            ARGB4444 = 0x48 { name = "Argb4444"; desc = "ARGB4444"; };
+            ARGB1555 = 0x49 { name = "Argb1555"; desc = "ARGB1555"; };
+            AYCBCR8888_OTHER_VALUES = 0x69 { name = "Aycbcr8888 Other Values"; desc = "AYCbCr8888 Other values: reserved"; };
+        };
+
+        field {
+            name = "ifmt";
+            desc = "Format of the input data";
+            sw = rw;
+            hw = r;
+            encode = G2_CTRL_ifmt_enum;
+            reset = 0x0;
+        } ifmt[7:0];
+    } G2_CTRL @ 0x7000;
+
+    reg {
+        name = "G2 update enable register";
+        desc = "G2_UPD is a G2 update enable register.
+
+Data sheet 9.2.6 G2_UPD (offset 0x7004, printed page 9-101, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 55370).";
+
+        field {
+            name = "regup";
+            desc = "Surface register update. After the registers at this layer are configured, the registers are updated when the value 1 is written to this bit. After updates, this bit is automatically cleared by the hardware.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } regup[0:0];
+    } G2_UPD @ 0x7004;
+
+    reg {
+        name = "G2 address register";
+        desc = "G2_ADDR is a G2 address register. When the horizontal pixel offsets, the address is calculated by following the description of G2_SFPOS.
+
+Data sheet 9.2.6 G2_ADDR (offset 0x7010, printed page 9-101, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 55396).";
+
+        field {
+            name = "surface_addr";
+            desc = "Address for the surface frame buffer";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } surface_addr[31:0];
+    } G2_ADDR @ 0x7010;
+
+    reg {
+        name = "G2 stride register";
+        desc = "G2_STRIDE is a G2 stride register.
+
+Data sheet 9.2.6 G2_STRIDE (offset 0x701C, printed page 9-102, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 55425).";
+
+        field {
+            name = "surface_stride";
+            desc = "Frame buffer stride";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } surface_stride[15:0];
+    } G2_STRIDE @ 0x701C;
+
+    reg {
+        name = "G2 input resolution register (non-instant register)";
+        desc = "G2_IRESO is a G2 input resolution register (non-instant register).
+
+Data sheet 9.2.6 G2_IRESO (offset 0x7020, printed page 9-102, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 55444).";
+
+        field {
+            name = "ih";
+            desc = "Height (in line). The configured value is the actual height minus 1. Note: In interlaced output mode, the actual layer height must be an even number. There is no such limitation in progressive output mode.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ih[23:12];
+
+        field {
+            name = "iw";
+            desc = "Width (in pixel). The configured value is the actual width minus 1. Note: The actual layer width must be an even number.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } iw[11:0];
+    } G2_IRESO @ 0x7020;
+
+    reg {
+        name = "G2 surface read data start position (in the source bitmap) register (non-instant register)";
+        desc = "G2_SFPOS is the graphics layer G2 source first position register (start position of the displayed area inside the source picture).
+
+Data sheet 9.2.6 G2_SFPOS (offset 0x7024, printed page 9-103, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 55491).";
+
+        field {
+            name = "src_xfpos";
+            desc = "Start horizontal coordinate of the source picture. The value 0 indicates the first pixel of a line.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } src_xfpos[6:0];
+    } G2_SFPOS @ 0x7024;
+
+    reg {
+        name = "Overlaying parameter register (non- instant register)";
+        desc = "G2_CBMPARA is a G2 overlay parameter register (non-instant register).
+
+Data sheet 9.2.6 G2_CBMPARA (offset 0x7030, printed page 9-103, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 55513).";
+
+        enum G2_CBMPARA_key_mode_enum {
+            COLOR_REGARDED_AS = 0 { name = "Color Regarded As"; desc = "The color is regarded as the colorkey when the following condition is met: Keymin <= Pixel <= Keymax"; };
+            COLOR_REGARDED_AS_2 = 1 { name = "Color Regarded As 2"; desc = "The color is regarded as the colorkey when either of the following conditions is met: Pixel <= Keymin or Pixel >= Keymax"; };
+        };
+
+        field {
+            name = "key_mode";
+            desc = "Colorkey mode";
+            sw = rw;
+            hw = r;
+            encode = G2_CBMPARA_key_mode_enum;
+            reset = 0x0;
+        } key_mode[15:15];
+
+        enum G2_CBMPARA_key_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "key_en";
+            desc = "Colorkey enable";
+            sw = rw;
+            hw = r;
+            encode = G2_CBMPARA_key_en_enum;
+            reset = 0x0;
+        } key_en[14:14];
+
+        enum G2_CBMPARA_premult_en_enum {
+            NON_PREMULTIPLIED_BITMAP = 0 { name = "Non Premultiplied Bitmap"; desc = "non-premultiplied bitmap"; };
+            PREMULTIPLIED_BITMAP = 1 { name = "Premultiplied Bitmap"; desc = "premultiplied bitmap"; };
+        };
+
+        field {
+            name = "premult_en";
+            desc = "Whether the input bitmap is a premultiplied bitmap";
+            sw = rw;
+            hw = r;
+            encode = G2_CBMPARA_premult_en_enum;
+            reset = 0x0;
+        } premult_en[13:13];
+
+        enum G2_CBMPARA_palpha_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "palpha_en";
+            desc = "Pixel alpha enable";
+            sw = rw;
+            hw = r;
+            encode = G2_CBMPARA_palpha_en_enum;
+            reset = 0x0;
+        } palpha_en[12:12];
+
+        field {
+            name = "galpha";
+            desc = "Overlay global alpha value. The value ranges from 0 to 255. The value 255 indicates opaque, and the value 0 indicates completely transparent.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } galpha[7:0];
+    } G2_CBMPARA @ 0x7030;
+
+    reg {
+        name = "Maximum colorkey value register (non- instant register)";
+        desc = "G2_CKEYMAX is a maximum colorkey value register (non-instant register).
+
+Data sheet 9.2.6 G2_CKEYMAX (offset 0x7034, printed page 9-104, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 55566).";
+
+        field {
+            name = "va0";
+            desc = "Alpha0 value. When the data format is alphaRGB1555 and the alpha value is 0, the alpha0 value is used.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } va0[31:24];
+
+        field {
+            name = "keyr_max";
+            desc = "Maximum value of the colorkey R component";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } keyr_max[23:16];
+
+        field {
+            name = "keyg_max";
+            desc = "Maximum value of the colorkey G component";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } keyg_max[15:8];
+
+        field {
+            name = "keyb_max";
+            desc = "Maximum value of the colorkey B component";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } keyb_max[7:0];
+    } G2_CKEYMAX @ 0x7034;
+
+    reg {
+        name = "Minimum colorkey value register (non- instant register)";
+        desc = "G2_CKEYMIN is a minimum colorkey value register (non-instant register).
+
+Data sheet 9.2.6 G2_CKEYMIN (offset 0x7038, printed page 9-105, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 55599).";
+
+        field {
+            name = "va1";
+            desc = "Alpha1 value. When the data format is alphaRGB1555 and the alpha value is 1, the alpha1 value is used.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } va1[31:24];
+
+        field {
+            name = "keyr_min";
+            desc = "Minimum value of the colorkey R component";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } keyr_min[23:16];
+
+        field {
+            name = "keyg_min";
+            desc = "Minimum value of the colorkey G component";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } keyg_min[15:8];
+
+        field {
+            name = "keyb_min";
+            desc = "Minimum value of the colorkey B component";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } keyb_min[7:0];
+    } G2_CKEYMIN @ 0x7038;
+
+    reg {
+        name = "Colorkey mask value register (non- instant register)";
+        desc = "G2_CMASK is a colorkey mask register (non-instant register). The value 1 indicates that a pixel bit is retained during colorkey comparison; the value 0 indicates that a pixel bit is forcibly set to 0 during color comparison no matter whether the bit is 0 or 1.
+
+Data sheet 9.2.6 G2_CMASK (offset 0x703C, printed page 9-105, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 55625).";
+
+        field {
+            name = "reserved_b31_24";
+            desc = "Reserved in the data sheet; modelled so that the total reset value 0xFFFFFFFF of the data sheet header is reproduced (reads 0xFF).";
+            sw = r;
+            hw = w;
+            reset = 0xFF;
+        } reserved_b31_24[31:24];
+
+        field {
+            name = "kmsk_r";
+            desc = "R component of the masked colorkey";
+            sw = rw;
+            hw = r;
+            reset = 0xFF;
+        } kmsk_r[23:16];
+
+        field {
+            name = "kmsk_g";
+            desc = "G component of the masked colorkey";
+            sw = rw;
+            hw = r;
+            reset = 0xFF;
+        } kmsk_g[15:8];
+
+        field {
+            name = "kmsk_b";
+            desc = "B component of the masked colorkey";
+            sw = rw;
+            hw = r;
+            reset = 0xFF;
+        } kmsk_b[7:0];
+    } G2_CMASK @ 0x703C;
+
+    reg {
+        name = "G2 LUT coefficient address register";
+        desc = "G2_PARAADDR is a G2 LUT coefficient address register.
+
+Data sheet 9.2.6 G2_PARAADDR (offset 0x7040, printed page 9-106, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 55657).";
+
+        field {
+            name = "surface_addr";
+            desc = "Surface LUT coefficient address";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } surface_addr[31:0];
+    } G2_PARAADDR @ 0x7040;
+
+    reg {
+        name = "G2 LUT coefficient update register";
+        desc = "G2_PARAUP is a G2 LUT coefficient update register.
+
+Data sheet 9.2.6 G2_PARAUP (offset 0x7044, printed page 9-106, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 55675).";
+
+        enum G2_PARAUP_gdc_paraup_enum {
+            NOT_UPDATED = 0 { name = "Not Updated"; desc = "not updated"; };
+            UPDATED = 1 { name = "Updated"; desc = "updated"; };
+        };
+
+        field {
+            name = "gdc_paraup";
+            desc = "LUT coefficient update";
+            sw = rw;
+            hw = r;
+            encode = G2_PARAUP_gdc_paraup_enum;
+            reset = 0x0;
+        } gdc_paraup[0:0];
+    } G2_PARAUP @ 0x7044;
+
+    reg {
+        name = "G2 surface start position (in the display window) register (non-instant register)";
+        desc = "G2_DFPOS is a G2 surface start position (in the display window) register (non-instant register). The position unit is pixel.
+
+Data sheet 9.2.6 G2_DFPOS (offset 0x7080, printed page 9-107, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 55714).";
+
+        field {
+            name = "disp_yfpos";
+            desc = "Column start coordinates";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } disp_yfpos[23:12];
+
+        field {
+            name = "disp_xfpos";
+            desc = "Row start coordinates";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } disp_xfpos[11:0];
+    } G2_DFPOS @ 0x7080;
+
+    reg {
+        name = "G2 surface end position (in the display window) register (non-instant register)";
+        desc = "G2_DLPOS is a G2 surface end position (in the display window) register (non-instant register). The position unit is pixel.
+
+Data sheet 9.2.6 G2_DLPOS (offset 0x7084, printed page 9-107, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 55735).";
+
+        field {
+            name = "disp_ylpos";
+            desc = "Column end coordinates";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } disp_ylpos[23:12];
+
+        field {
+            name = "disp_xlpos";
+            desc = "Row end coordinates";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } disp_xlpos[11:0];
+    } G2_DLPOS @ 0x7084;
+
+    reg {
+        name = "G2 surface content start position (in the display window) register (non-instant register)";
+        desc = "G2_VFPOS is a G2 surface content start position (in the display window) register (non-instant register). The position unit is pixel.
+
+Data sheet 9.2.6 G2_VFPOS (offset 0x7088, printed page 9-108, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 55767).";
+
+        field {
+            name = "video_yfpos";
+            desc = "Start coordinates of the graphics column The frame height is referenced and its unit is line.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } video_yfpos[23:12];
+
+        field {
+            name = "video_xfpos";
+            desc = "Start coordinates of the graphics row";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } video_xfpos[11:0];
+    } G2_VFPOS @ 0x7088;
+
+    reg {
+        name = "G2 surface content end position (in the display window) register (non-instant register)";
+        desc = "G2_VLPOS is a G2 surface content end position (in the display window) register (non-instant register). The position unit is pixel.
+
+Data sheet 9.2.6 G2_VLPOS (offset 0x708C, printed page 9-108, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 55790).";
+
+        field {
+            name = "video_ylpos";
+            desc = "End coordinates of the graphics column The frame height is referenced and its unit is line.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } video_ylpos[23:12];
+
+        field {
+            name = "video_xlpos";
+            desc = "End coordinates of the graphics row";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } video_xlpos[11:0];
+    } G2_VLPOS @ 0x708C;
+
+    reg {
+        name = "G2 background color register";
+        desc = "G2_BK is a G2 background color register.
+
+Data sheet 9.2.6 G2_BK (offset 0x7090, printed page 9-109, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 55823).";
+
+        field {
+            name = "vbk_y";
+            desc = "Y component";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } vbk_y[29:20];
+
+        field {
+            name = "vbk_cb";
+            desc = "Cb component";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } vbk_cb[19:10];
+
+        field {
+            name = "vbk_cr";
+            desc = "Cr component";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } vbk_cr[9:0];
+    } G2_BK @ 0x7090;
+
+    reg {
+        name = "G2 background filling color alpha register";
+        desc = "G2_ALPHA is a G2 background filling color alpha register.
+
+Data sheet 9.2.6 G2_ALPHA (offset 0x7094, printed page 9-109, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 55849).";
+
+        field {
+            name = "vbk_alpha";
+            desc = "Level 0-128 of the background filling color of the graphics layer";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } vbk_alpha[7:0];
+    } G2_ALPHA @ 0x7094;
+
+    reg {
+        name = "G2 CSC input DC component register (instant register)";
+        desc = "G2_CSC_IDC is a G2 CSC input DC register (instant register).
+
+Data sheet 9.2.6 G2_CSC_IDC (offset 0x70C0, printed page 9-110, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 55879).";
+
+        enum G2_CSC_IDC_csc_mode_enum {
+            RESERVED = 0 { name = "Reserved"; desc = "reserved"; };
+            YUV2YUV = 1 { name = "Yuv2Yuv"; desc = "YUV2YUV"; };
+            YUV601_RGB = 2 { name = "Yuv601 Rgb"; desc = "YUV601_RGB"; };
+            YUV709_RGB = 3 { name = "Yuv709 Rgb"; desc = "YUV709_RGB"; };
+            YUV2YUV_709_601 = 4 { name = "Yuv2Yuv 709 601"; desc = "YUV2YUV_709_601"; };
+            YUV2YUV_601_709 = 5 { name = "Yuv2Yuv 601 709"; desc = "YUV2YUV_601_709"; };
+            RGB2YUV_601 = 6 { name = "Rgb2Yuv 601"; desc = "RGB2YUV_601"; };
+            RGB2YUV_709 = 7 { name = "Rgb2Yuv 709"; desc = "RGB2YUV_709"; };
+        };
+
+        field {
+            name = "csc_mode";
+            desc = "This field is valid only when the G2 CSC coefficients are fixed.";
+            sw = rw;
+            hw = r;
+            encode = G2_CSC_IDC_csc_mode_enum;
+            reset = 0x0;
+        } csc_mode[25:23];
+
+        enum G2_CSC_IDC_csc_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "csc_en";
+            desc = "CSC enable";
+            sw = rw;
+            hw = r;
+            encode = G2_CSC_IDC_csc_en_enum;
+            reset = 0x0;
+        } csc_en[22:22];
+
+        field {
+            name = "cscidc1";
+            desc = "DC parameter of the input U/G component. The MSB is the signed bit. The value is expressed as a two's complement.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } cscidc1[21:11];
+
+        field {
+            name = "cscidc0";
+            desc = "DC parameter of the input V/B component. The MSB is the signed bit. The value is expressed as a two's complement.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } cscidc0[10:0];
+    } G2_CSC_IDC @ 0x70C0;
+
+    reg {
+        name = "G2 CSC output DC component register (instant register)";
+        desc = "G2_CSC_ODC is a G2 CSC output DC component register (instant register).
+
+Data sheet 9.2.6 G2_CSC_ODC (offset 0x70C4, printed page 9-111, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 55930).";
+
+        enum G2_CSC_ODC_csc_sign_mode_enum {
+            CSC_OUTPUT_10 = 0 { name = "Csc Output 10"; desc = "The CSC output is a 10-bit unsigned number."; };
+            CSC_OUTPUT_12 = 1 { name = "Csc Output 12"; desc = "The CSC output is a 12-bit signed number."; };
+        };
+
+        field {
+            name = "csc_sign_mode";
+            desc = "CSC output mode";
+            sw = rw;
+            hw = r;
+            encode = G2_CSC_ODC_csc_sign_mode_enum;
+            reset = 0x0;
+        } csc_sign_mode[22:22];
+
+        field {
+            name = "cscodc1";
+            desc = "DC parameter of the output U/G component. The MSB is the signed bit. The value is expressed as a two's complement.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } cscodc1[21:11];
+
+        field {
+            name = "cscodc0";
+            desc = "DC parameter of the output Y/R component. The MSB is the signed bit. The value is expressed as a two's complement.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } cscodc0[10:0];
+    } G2_CSC_ODC @ 0x70C4;
+
+    reg {
+        name = "G2 CSC input/output DC component register (instant register)";
+        desc = "G2_CSC_IODC is a G2 CSC input/output DC component register (instant register).
+
+Data sheet 9.2.6 G2_CSC_IODC (offset 0x70C8, printed page 9-111, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 55965).";
+
+        field {
+            name = "cscodc2";
+            desc = "DC parameter of the output V/B component. The MSB is the signed bit. The value is expressed as a two's complement.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } cscodc2[21:11];
+
+        field {
+            name = "cscidc2";
+            desc = "DC parameter of the input Y/R component. The MSB is the signed bit. The value is expressed as a two's complement.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } cscidc2[10:0];
+    } G2_CSC_IODC @ 0x70C8;
+
+    reg {
+        name = "G2 CSC parameter 0 register (instant register)";
+        desc = "G2_CSC_P0 is a G2 CSC parameter 0 register (instant register).
+
+Data sheet 9.2.6 G2_CSC_P0 (offset 0x70CC, printed page 9-112, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 55995).";
+
+        field {
+            name = "cscp01";
+            desc = "5.10 data format that consists of a 1-bit sign part, a 4-bit integer part, and an 8-bit decimal part. The value is expressed as a two's complement.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } cscp01[30:16];
+
+        field {
+            name = "cscp00";
+            desc = "5.10 data format that consists of a 1-bit sign part, a 4-bit integer part, and an 8-bit decimal part. The value is expressed as a two's complement.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } cscp00[14:0];
+    } G2_CSC_P0 @ 0x70CC;
+
+    reg {
+        name = "G2 CSC parameter 1 register (instant register)";
+        desc = "G2_CSC_P1 is a G2 CSC parameter 1 register (instant register).
+
+Data sheet 9.2.6 G2_CSC_P1 (offset 0x70D0, printed page 9-112, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 56025).";
+
+        field {
+            name = "cscp10";
+            desc = "5.10 data format that consists of a 1-bit sign part, a 4-bit integer part, and an 8-bit decimal part. The value is expressed as a two's complement.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } cscp10[30:16];
+
+        field {
+            name = "cscp02";
+            desc = "5.10 data format that consists of a 1-bit sign part, a 4-bit integer part, and an 8-bit decimal part. The value is expressed as a two's complement.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } cscp02[14:0];
+    } G2_CSC_P1 @ 0x70D0;
+
+    reg {
+        name = "G2 CSC parameter 2 register (instant register)";
+        desc = "G2_CSC_P2 is a G2 CSC parameter 2 register (instant register).
+
+Data sheet 9.2.6 G2_CSC_P2 (offset 0x70D4, printed page 9-113, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 56065).";
+
+        field {
+            name = "cscp12";
+            desc = "5.10 data format that consists of a 1-bit sign part, a 4-bit integer part, and an 8-bit decimal part. The value is expressed as a two's complement.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } cscp12[30:16];
+
+        field {
+            name = "cscp11";
+            desc = "5.10 data format that consists of a 1-bit sign part, a 4-bit integer part, and an 8-bit decimal part. The value is expressed as a two's complement.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } cscp11[14:0];
+    } G2_CSC_P2 @ 0x70D4;
+
+    reg {
+        name = "G2 CSC parameter 3 register (instant register)";
+        desc = "G2_CSC_P3 is a G2 CSC parameter 3 register (instant register).
+
+Data sheet 9.2.6 G2_CSC_P3 (offset 0x70D8, printed page 9-113, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 56092).";
+
+        field {
+            name = "cscp21";
+            desc = "5.10 data format that consists of a 1-bit sign part, a 4-bit integer part, and an 8-bit decimal part. The value is expressed as a two's complement.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } cscp21[30:16];
+
+        field {
+            name = "cscp20";
+            desc = "5.10 data format that consists of a 1-bit sign part, a 4-bit integer part, and an 8-bit decimal part. The value is expressed as a two's complement.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } cscp20[14:0];
+    } G2_CSC_P3 @ 0x70D8;
+
+    reg {
+        name = "G2 CSC parameter 4 register (instant register)";
+        desc = "G2_CSC_P4 is a G2 CSC parameter 4 register (instant register).
+
+Data sheet 9.2.6 G2_CSC_P4 (offset 0x70DC, printed page 9-114, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 56132).";
+
+        field {
+            name = "cscp22";
+            desc = "5.10 data format that consists of a 1-bit sign part, a 4-bit integer part, and an 8-bit decimal part. The value is expressed as a two's complement.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } cscp22[14:0];
+    } G2_CSC_P4 @ 0x70DC;
+
+    reg {
+        name = "CBM mixer 2 overlay background color register";
+        desc = "CBM_BKG2 is a CBM mixer 2 overlay background color register.
+
+Data sheet 9.2.6 CBM_BKG2 (offset 0xB420, printed page 9-114, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 56154).";
+
+        field {
+            name = "cbm_bkgy2";
+            desc = "Overlay background color of CBM mixer 2, Y component";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } cbm_bkgy2[29:20];
+
+        field {
+            name = "cbm_bkgcb2";
+            desc = "Overlay background color of CBM mixer 2, Cb component";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } cbm_bkgcb2[19:10];
+
+        field {
+            name = "cbm_bkgcr2";
+            desc = "Overlay background color of CBM mixer 2, Cr component";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } cbm_bkgcr2[9:0];
+    } CBM_BKG2 @ 0xB420;
+
+    reg {
+        name = "CBM mixer 2 priority configuration register";
+        desc = "CBM_MIX2 is a CBM mixer 2 priority configuration register (instant register). The register configuration takes effect only when the vsync signal is valid. mixer_prio_x is overly layer priority x.
+
+Data sheet 9.2.6 CBM_MIX2 (offset 0xB428, printed page 9-115, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 56192).";
+
+        enum CBM_MIX2_mixer_prio1_enum {
+            NO_DRIVE_LAYER = 0 { name = "No Drive Layer"; desc = "no drive layer"; };
+            V1 = 9 { name = "V1"; desc = "V1"; };
+            G2_OTHER_VALUES = 10 { name = "G2 Other Values"; desc = "G2 Other values: reserved"; };
+        };
+
+        field {
+            name = "mixer_prio1";
+            desc = "Drive layer of CBM mixer 2 with priority 1";
+            sw = rw;
+            hw = r;
+            encode = CBM_MIX2_mixer_prio1_enum;
+            reset = 0x0;
+        } mixer_prio1[7:4];
+
+        enum CBM_MIX2_mixer_prio0_enum {
+            NO_DRIVE_LAYER = 0 { name = "No Drive Layer"; desc = "no drive layer"; };
+            V1 = 9 { name = "V1"; desc = "V1"; };
+            G2_OTHER_VALUES = 10 { name = "G2 Other Values"; desc = "G2 Other values: reserved"; };
+        };
+
+        field {
+            name = "mixer_prio0";
+            desc = "Drive layer of CBM mixer 2 with priority 0";
+            sw = rw;
+            hw = r;
+            encode = CBM_MIX2_mixer_prio0_enum;
+            reset = 0x0;
+        } mixer_prio0[3:0];
+    } CBM_MIX2 @ 0xB428;
+
+    reg {
+        name = "DSD1 global control register";
+        desc = "DHD1_CTRL is a DHD1 global control register.
+
+Data sheet 9.2.6 DHD1_CTRL (offset 0xC400, printed page 9-116, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 56231).";
+
+        enum DHD1_CTRL_intf_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "intf_en";
+            desc = "Display interface enable (instant). Data is output over the interface only when this field is enabled.";
+            sw = rw;
+            hw = r;
+            encode = DHD1_CTRL_intf_en_enum;
+            reset = 0x0;
+        } intf_en[31:31];
+
+        enum DHD1_CTRL_cbar_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "cbar_en";
+            desc = "Color bar enable. The color bar is output over the interface when this field is enabled.";
+            sw = rw;
+            hw = r;
+            encode = DHD1_CTRL_cbar_en_enum;
+            reset = 0x0;
+        } cbar_en[30:30];
+
+        enum DHD1_CTRL_cbar_sel_enum {
+            VGA = 0 { name = "Vga"; desc = "VGA"; };
+            YPBPR = 1 { name = "Ypbpr"; desc = "YPbPr"; };
+        };
+
+        field {
+            name = "cbar_sel";
+            desc = "Color space select for the output color bar (instant)";
+            sw = rw;
+            hw = r;
+            encode = DHD1_CTRL_cbar_sel_enum;
+            reset = 0x0;
+        } cbar_sel[29:29];
+
+        enum DHD1_CTRL_precharge_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "precharge_en";
+            desc = "Pre-charge enable. This field is valid when the precharge_mode field is 1 (software mode).";
+            sw = rw;
+            hw = r;
+            encode = DHD1_CTRL_precharge_en_enum;
+            reset = 0x0;
+        } precharge_en[10:10];
+
+        enum DHD1_CTRL_precharge_mode_enum {
+            HARDWARE_MODE_HARDWARE = 0 { name = "Hardware Mode Hardware"; desc = "hardware mode. Hardware automatically enters the pre-charge status in the vertical blanking region."; };
+            SOFTWARE_MODE_SOFTWARE = 1 { name = "Software Mode Software"; desc = "software mode. Software controls whether to enter or exit the pre-charge status."; };
+        };
+
+        field {
+            name = "precharge_mode";
+            desc = "Pre-charge mode of AFIFO";
+            sw = rw;
+            hw = r;
+            encode = DHD1_CTRL_precharge_mode_enum;
+            reset = 0x0;
+        } precharge_mode[9:9];
+
+        enum DHD1_CTRL_iop_enum {
+            INTERLACED_DISPLAY = 0 { name = "Interlaced Display"; desc = "interlaced display"; };
+            PROGRESSIVE_DISPLAY = 1 { name = "Progressive Display"; desc = "progressive display"; };
+        };
+
+        field {
+            name = "iop";
+            desc = "Display mode (non-instant)";
+            sw = rw;
+            hw = r;
+            encode = DHD1_CTRL_iop_enum;
+            reset = 0x0;
+        } iop[4:4];
+
+        field {
+            name = "regup";
+            desc = "Surface register update. After the registers at this layer are configured, the registers are updated when the value 1 is written to this bit. After the registers are updated, this bit is automatically cleared by the hardware.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            reset = 0x0;
+        } regup[0:0];
+    } DHD1_CTRL @ 0xC400;
+
+    reg {
+        name = "Top field vertical sync timing register in interlaced output mode or frame vertical sync timing register in progressive output mode";
+        desc = "DHD1_VSYNC is a top field vertical sync timing register in interlaced output mode or frame vertical sync timing register in progressive output mode. This register is a non-instant register.
+
+Data sheet 9.2.6 DHD1_VSYNC (offset 0xC404, printed page 9-117, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 56301).";
+
+        field {
+            name = "vfb";
+            desc = "In interlaced output mode: top vertical front blanking (TVFB) In progressive output mode: vertical front blanking (VFB)";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } vfb[27:20];
+
+        field {
+            name = "vbb";
+            desc = "In interlaced output mode: top vertical back blanking (TVBB) In progressive output mode: vertical back blanking (VBB)+vertical pulse width (VPW)";
+            sw = rw;
+            hw = r;
+            reset = 0x13;
+        } vbb[19:12];
+
+        field {
+            name = "vact";
+            desc = "In interlaced output mode: height of an active picture on the top field In progressive output mode: height of an active picture in a frame. The configured value is the actual value minus 1.";
+            sw = rw;
+            hw = r;
+            reset = 0x21B;
+        } vact[11:0];
+    } DHD1_VSYNC @ 0xC404;
+
+    reg {
+        name = "Horizontal sync configuration register in interlaced or progressive output mode";
+        desc = "DHD1_HSYNC1 is a horizontal sync configuration register in interlaced or progressive output mode (non-instant register).
+
+Data sheet 9.2.6 DHD1_HSYNC1 (offset 0xC408, printed page 9-117, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 56331).";
+
+        field {
+            name = "hbb";
+            desc = "Horizontal back blanking (HBB), in pixel";
+            sw = rw;
+            hw = r;
+            reset = 0xBF;
+        } hbb[31:16];
+
+        field {
+            name = "hact";
+            desc = "Number of horizontal pixels in an active region";
+            sw = rw;
+            hw = r;
+            reset = 0x77F;
+        } hact[15:0];
+    } DHD1_HSYNC1 @ 0xC408;
+
+    reg {
+        name = "Horizontal sync configuration register in interlaced or progressive output mode (non-instant register)";
+        desc = "DHD1_HSYNC2 is a horizontal sync configuration register in interlaced or progressive output mode (non-instant register).
+
+Data sheet 9.2.6 DHD1_HSYNC2 (offset 0xC40C, printed page 9-118, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 56361).";
+
+        field {
+            name = "hmid";
+            desc = "Bottom vertical sync active pixel (active region)";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } hmid[31:16];
+
+        field {
+            name = "hfb";
+            desc = "HFB, in pixel";
+            sw = rw;
+            hw = r;
+            reset = 0x20F;
+        } hfb[15:0];
+    } DHD1_HSYNC2 @ 0xC40C;
+
+    reg {
+        name = "Bottom field vertical sync timing register in interlaced output mode (non-instant register)";
+        desc = "DHD1_VPLUS is a bottom field vertical sync timing in interlaced output mode (non-instant register).
+
+Data sheet 9.2.6 DHD1_VPLUS (offset 0xC410, printed page 9-118, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 56382).";
+
+        field {
+            name = "bvfb";
+            desc = "Bottom vertical front blanking (BVFB) in interlaced output mode";
+            sw = rw;
+            hw = r;
+            reset = 0x2;
+        } bvfb[27:20];
+
+        field {
+            name = "bvbb";
+            desc = "Bottom vertical back blanking (BVBB)+VPW in interlaced output mode";
+            sw = rw;
+            hw = r;
+            reset = 0x13;
+        } bvbb[19:12];
+
+        field {
+            name = "bvact";
+            desc = "Height of an active picture in the bottom field in interlaced output mode The configured value is the actual value minus 1.";
+            sw = rw;
+            hw = r;
+            reset = 0x21B;
+        } bvact[11:0];
+    } DHD1_VPLUS @ 0xC410;
+
+    reg {
+        name = "Sync signal pulse width register (non- instant register)";
+        desc = "DHD1_PWR is a sync signal pulse width register (non-instant register).
+
+Data sheet 9.2.6 DHD1_PWR (offset 0xC414, printed page 9-119, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 56413).";
+
+        field {
+            name = "vpw";
+            desc = "VPW. The configured value is the actual value minus 1.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } vpw[23:16];
+
+        field {
+            name = "hpw";
+            desc = "Horizontal pulse width (HPW). The configured value is the actual value minus 1.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } hpw[15:0];
+    } DHD1_PWR @ 0xC414;
+
+    reg {
+        name = "Vertical timing threshold register (instant register)";
+        desc = "DHD1_VTTHD3 is a vertical timing threshold register (instant register). It can be used to set two thresholds for generating two interrupts separately.
+
+Data sheet 9.2.6 DHD1_VTTHD3 (offset 0xC418, printed page 9-119, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 56437).";
+
+        enum DHD1_VTTHD3_thd4_mode_enum {
+            FRAME_MODE_THRESHOLD = 0 { name = "Frame Mode Threshold"; desc = "frame mode. The threshold count is by frame."; };
+            FIELD_MODE_THRESHOLD = 1 { name = "Field Mode Threshold"; desc = "field mode. The threshold count is by field during interlaced displaying."; };
+        };
+
+        field {
+            name = "thd4_mode";
+            desc = "Mode of generating threshold 4";
+            sw = rw;
+            hw = r;
+            encode = DHD1_VTTHD3_thd4_mode_enum;
+            reset = 0x0;
+        } thd4_mode[31:31];
+
+        field {
+            name = "vtmgthd4";
+            desc = "Vertical timing threshold 4 for simultaneously triggering DHD and DSD. The start time of the DSD interface timing is later than that of the DHD interface timing and is equal to the number of lines configured in vtmgthd4.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } vtmgthd4[28:16];
+
+        enum DHD1_VTTHD3_thd3_mode_enum {
+            FRAME_MODE_THRESHOLD = 0 { name = "Frame Mode Threshold"; desc = "frame mode. The threshold count is by frame."; };
+            FIELD_MODE_THRESHOLD = 1 { name = "Field Mode Threshold"; desc = "field mode. The threshold count is by field during interlaced displaying."; };
+        };
+
+        field {
+            name = "thd3_mode";
+            desc = "Mode of generating threshold 3";
+            sw = rw;
+            hw = r;
+            encode = DHD1_VTTHD3_thd3_mode_enum;
+            reset = 0x0;
+        } thd3_mode[15:15];
+
+        field {
+            name = "vtmgthd3";
+            desc = "Vertical timing threshold 3. When the vertical timing counter reaches this threshold, the VOINTSTA[dhdvtthd3_int] interrupt is triggered.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } vtmgthd3[12:0];
+    } DHD1_VTTHD3 @ 0xC418;
+
+    reg {
+        name = "Vertical timing threshold register (instant register)";
+        desc = "DHD1_VTTHD is a vertical timing threshold register (instant register). It can be used to set two thresholds for generating two interrupts separately.
+
+Data sheet 9.2.6 DHD1_VTTHD (offset 0xC41C, printed page 9-120, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 56492).";
+
+        enum DHD1_VTTHD_thd2_mode_enum {
+            FRAME_MODE_THRESHOLD = 0 { name = "Frame Mode Threshold"; desc = "frame mode. The threshold count is by frame."; };
+            FIELD_MODE_THRESHOLD = 1 { name = "Field Mode Threshold"; desc = "field mode. The threshold count is by field during interlaced displaying."; };
+        };
+
+        field {
+            name = "thd2_mode";
+            desc = "Mode of generating threshold 2";
+            sw = rw;
+            hw = r;
+            encode = DHD1_VTTHD_thd2_mode_enum;
+            reset = 0x0;
+        } thd2_mode[31:31];
+
+        field {
+            name = "vtmgthd2";
+            desc = "Vertical timing threshold 2. When the vertical timing counter reaches this threshold, the VOINTSTA[dhdvtthd2_int] interrupt is triggered.";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } vtmgthd2[28:16];
+
+        enum DHD1_VTTHD_thd1_mode_enum {
+            FRAME_MODE_THRESHOLD = 0 { name = "Frame Mode Threshold"; desc = "frame mode. The threshold count is by frame."; };
+            FIELD_MODE_THRESHOLD = 1 { name = "Field Mode Threshold"; desc = "field mode. The threshold count is by field during interlaced displaying."; };
+        };
+
+        field {
+            name = "thd1_mode";
+            desc = "Mode of generating threshold 1";
+            sw = rw;
+            hw = r;
+            encode = DHD1_VTTHD_thd1_mode_enum;
+            reset = 0x0;
+        } thd1_mode[15:15];
+
+        field {
+            name = "vtmgthd1";
+            desc = "Vertical timing threshold 1. When the vertical timing counter reaches this threshold, the VOINTSTA[dhdvtthd_int1] interrupt is triggered.";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } vtmgthd1[12:0];
+    } DHD1_VTTHD @ 0xC41C;
+
+    reg {
+        name = "PARA coefficient update pointer threshold register";
+        desc = "DHD1_PARATHDis a PARA coefficient update point threshold register.
+
+Data sheet 9.2.6 DHD1_PARATHD (offset 0xC4B0, printed page 9-121, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 56539).";
+
+        enum DHD1_PARATHD_dfs_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "dfs_en";
+            desc = "DFS enable";
+            sw = rw;
+            hw = r;
+            encode = DHD1_PARATHD_dfs_en_enum;
+            reset = 0x0;
+        } dfs_en[31:31];
+
+        field {
+            name = "para_thd";
+            desc = "PARA coefficient update point threshold. It indicates the line after the vertical back blanking where the update point occurs. This field is valid only after DFS is enabled.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } para_thd[5:0];
+    } DHD1_PARATHD @ 0xC4B0;
+
+    reg {
+        name = "DHD1 start signal start position register";
+        desc = "DHD1_START_POS is a DHD1 start signal start position register.
+
+Data sheet 9.2.6 DHD1_START_POS (offset 0xC4C0, printed page 9-121, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 56566).";
+
+        field {
+            name = "timing_start_pos";
+            desc = "Number of lines before the active region where the timing_gen state machine starts to work";
+            sw = rw;
+            hw = r;
+            reset = 0x8;
+        } timing_start_pos[15:8];
+
+        field {
+            name = "start_pos";
+            desc = "Number of lines before the active region where the start signal is generated in online mode";
+            sw = rw;
+            hw = r;
+            reset = 0x5;
+        } start_pos[7:0];
+    } DHD1_START_POS @ 0xC4C0;
+
+    reg {
+        name = "DHD1 status register";
+        desc = "DHD1_STATE is a DHD1 status register.
+
+Data sheet 9.2.6 DHD1_STATE (offset 0xC4F0, printed page 9-122, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 56600).";
+
+        field {
+            name = "count_int";
+            desc = "DHD1 interrupt count. The count value is increased by 1 each time a vertical timing interrupt is reported.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } count_int[23:16];
+
+        field {
+            name = "vcnt";
+            desc = "Active display line count of DHD1";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } vcnt[15:3];
+
+        enum DHD1_STATE_bottom_field_enum {
+            TOP_FIELD = 0 { name = "Top Field"; desc = "top field"; };
+            BOTTOM_FIELD = 1 { name = "Bottom Field"; desc = "bottom field"; };
+        };
+
+        field {
+            name = "bottom_field";
+            desc = "DHD1 top/bottom field indicator";
+            sw = r;
+            hw = w;
+            encode = DHD1_STATE_bottom_field_enum;
+            reset = 0x1;
+        } bottom_field[2:2];
+
+        enum DHD1_STATE_vblank_enum {
+            ACTIVE_REGION = 0 { name = "Active Region"; desc = "active region"; };
+            BLANKING_REGION = 1 { name = "Blanking Region"; desc = "blanking region"; };
+        };
+
+        field {
+            name = "vblank";
+            desc = "DHD1 blanking region indicator";
+            sw = r;
+            hw = w;
+            encode = DHD1_STATE_vblank_enum;
+            reset = 0x1;
+        } vblank[1:1];
+
+        enum DHD1_STATE_vback_blank_enum {
+            NON_BACK_BLANKING = 0 { name = "Non Back Blanking"; desc = "non-back blanking region"; };
+            BLANKING_REGION = 1 { name = "Blanking Region"; desc = "blanking region"; };
+        };
+
+        field {
+            name = "vback_blank";
+            desc = "DHD1 back blanking region indicator";
+            sw = r;
+            hw = w;
+            encode = DHD1_STATE_vback_blank_enum;
+            reset = 0x0;
+        } vback_blank[0:0];
+    } DHD1_STATE @ 0xC4F0;
+
+    reg {
+        name = "BT.656 clip lowest threshold register (instant register)";
+        desc = "BT_CLIP0_L is a BT.656 clip lowest threshold register (instant register).
+
+Data sheet 9.2.6 BT_CLIP0_L (offset 0xD210, printed page 9-122, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 56638).";
+
+        field {
+            name = "clip_cl2";
+            desc = "Lowest threshold Y/R of component 2, unsigned integer";
+            sw = rw;
+            hw = r;
+            reset = 0x10;
+        } clip_cl2[29:20];
+
+        field {
+            name = "clip_cl1";
+            desc = "Lowest threshold Cb/G of component 1, unsigned integer";
+            sw = rw;
+            hw = r;
+            reset = 0x10;
+        } clip_cl1[19:10];
+
+        field {
+            name = "clip_cl0";
+            desc = "Lowest threshold Cr/B of component 0, unsigned integer";
+            sw = rw;
+            hw = r;
+            reset = 0x10;
+        } clip_cl0[9:0];
+    } BT_CLIP0_L @ 0xD210;
+
+    reg {
+        name = "BT.656 clip highest threshold register (instant register)";
+        desc = "BT_CLIP0_H is a BT.656 clip highest threshold register (instant register). For example, the output data needs to be clipped in BT.656 output mode.
+
+Data sheet 9.2.6 BT_CLIP0_H (offset 0xD214, printed page 9-123, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 56675).";
+
+        field {
+            name = "clip_ch2";
+            desc = "Highest threshold Y/R of component 2, unsigned integer";
+            sw = rw;
+            hw = r;
+            reset = 0xEB;
+        } clip_ch2[29:20];
+
+        field {
+            name = "clip_ch1";
+            desc = "Highest threshold Cb/G of component 1, unsigned integer";
+            sw = rw;
+            hw = r;
+            reset = 0xF0;
+        } clip_ch1[19:10];
+
+        field {
+            name = "clip_ch0";
+            desc = "Highest threshold Cr/B of component 0, unsigned integer";
+            sw = rw;
+            hw = r;
+            reset = 0xF0;
+        } clip_ch0[9:0];
+    } BT_CLIP0_H @ 0xD214;
+
+    reg {
+        name = "BT.656 dither control register";
+        desc = "BT_DITHER0_CTRL is a BT.656 dither control register.
+
+Data sheet 9.2.6 BT_DITHER0_CTRL (offset 0xD280, printed page 9-124, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 56709).";
+
+        enum BT_DITHER0_CTRL_dither_md_enum {
+            V_12_BIT_INPUTS = 0 { name = "V 12 Bit Inputs"; desc = "12-bit inputs, 10-bit outputs, no dithering, and direct bit truncation"; };
+            V_12_BIT_INPUTS_2 = 1 { name = "V 12 Bit Inputs 2"; desc = "12-bit inputs, 10-bit outputs, and time-domain dithering"; };
+            V_12_BIT_INPUTS_3 = 2 { name = "V 12 Bit Inputs 3"; desc = "12-bit inputs, 10-bit outputs, and spatial-domain dithering"; };
+            V_12_BIT_INPUTS_4 = 3 { name = "V 12 Bit Inputs 4"; desc = "12-bit inputs, 8-bit outputs, and time-domain and spatial- domain dithering"; };
+            V_12_BIT_INPUTS_5 = 4 { name = "V 12 Bit Inputs 5"; desc = "12-bit inputs, 10-bit outputs, and round off"; };
+            V_12_BIT_INPUTS_6 = 5 { name = "V 12 Bit Inputs 6"; desc = "12-bit inputs, 8-bit outputs, and round off Other values: reserved"; };
+        };
+
+        field {
+            name = "dither_md";
+            desc = "Dither mode select";
+            sw = rw;
+            hw = r;
+            encode = BT_DITHER0_CTRL_dither_md_enum;
+            reset = 0x1;
+        } dither_md[31:29];
+    } BT_DITHER0_CTRL @ 0xD280;
+
+    reg {
+        name = "BT.656 dither coefficient 0 register";
+        desc = "BT_DITHER0_COEF0 is BT.656 dither coefficient register 0.
+
+Data sheet 9.2.6 BT_DITHER0_COEF0 (offset 0xD284, printed page 9-124, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 56744).";
+
+        field {
+            name = "dither_coef3";
+            desc = "Coefficient 3 for time-domain dithering";
+            sw = rw;
+            hw = r;
+            reset = 0xDD;
+        } dither_coef3[31:24];
+
+        field {
+            name = "dither_coef2";
+            desc = "Coefficient 2 for time-domain dithering";
+            sw = rw;
+            hw = r;
+            reset = 0x66;
+        } dither_coef2[23:16];
+
+        field {
+            name = "dither_coef1";
+            desc = "Coefficient 1 for time-domain dithering";
+            sw = rw;
+            hw = r;
+            reset = 0x44;
+        } dither_coef1[15:8];
+
+        field {
+            name = "dither_coef0";
+            desc = "Coefficient 0 for time-domain dithering";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } dither_coef0[7:0];
+    } BT_DITHER0_COEF0 @ 0xD284;
+
+    reg {
+        name = "BT.656 dither coefficient 1 register";
+        desc = "BT_DITHER0_COEF1 is BT.656 dither coefficient register 1.
+
+Data sheet 9.2.6 BT_DITHER0_COEF1 (offset 0xD288, printed page 9-125, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 56772).";
+
+        field {
+            name = "dither_coef7";
+            desc = "Coefficient 7 for time-domain dithering";
+            sw = rw;
+            hw = r;
+            reset = 0xDD;
+        } dither_coef7[31:24];
+
+        field {
+            name = "dither_coef6";
+            desc = "Coefficient 6 for time-domain dithering";
+            sw = rw;
+            hw = r;
+            reset = 0x66;
+        } dither_coef6[23:16];
+
+        field {
+            name = "dither_coef5";
+            desc = "Coefficient 5 for time-domain dithering";
+            sw = rw;
+            hw = r;
+            reset = 0x44;
+        } dither_coef5[15:8];
+
+        field {
+            name = "dither_coef4";
+            desc = "Coefficient 4 for time-domain dithering";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } dither_coef4[7:0];
+    } BT_DITHER0_COEF1 @ 0xD288;
+
+    reg {
+        name = "LCD control register";
+        desc = "LCD_CTRL is an LCD control register.
+
+Data sheet 9.2.6 LCD_CTRL (offset 0xD400, printed page 9-125, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 56794).";
+
+        enum LCD_CTRL_lcd_serial_mode_enum {
+            PARALLEL_MODE = 0 { name = "Parallel Mode"; desc = "parallel mode"; };
+            SERIAL_MODE = 1 { name = "Serial Mode"; desc = "serial mode"; };
+        };
+
+        field {
+            name = "lcd_serial_mode";
+            desc = "LCD mode";
+            sw = rw;
+            hw = r;
+            encode = LCD_CTRL_lcd_serial_mode_enum;
+            reset = 0x0;
+        } lcd_serial_mode[29:29];
+
+        enum LCD_CTRL_lcd_serial_perd_enum {
+            V_3 = 0 { name = "V 3"; desc = "3"; };
+            V_4 = 1 { name = "V 4"; desc = "4"; };
+        };
+
+        field {
+            name = "lcd_serial_perd";
+            desc = "Number of output single-pixel clock cycles in serial LCD mode";
+            sw = rw;
+            hw = r;
+            encode = LCD_CTRL_lcd_serial_perd_enum;
+            reset = 0x0;
+        } lcd_serial_perd[28:28];
+
+        enum LCD_CTRL_lcd_parallel_order_enum {
+            RGB = 0 { name = "Rgb"; desc = "RGB"; };
+            BGR = 1 { name = "Bgr"; desc = "BGR"; };
+        };
+
+        field {
+            name = "lcd_parallel_order";
+            desc = "LCD parallel output sequence";
+            sw = rw;
+            hw = r;
+            encode = LCD_CTRL_lcd_parallel_order_enum;
+            reset = 0x0;
+        } lcd_parallel_order[27:27];
+
+        enum LCD_CTRL_lcd_data_inv_enum {
+            BITS_15_0 = 0 { name = "Bits 15 0"; desc = "Bits 15-0 are from upper bits to lower bits."; };
+            BITS_0_15 = 1 { name = "Bits 0 15"; desc = "Bits 0-15 are from upper bits to lower bits."; };
+        };
+
+        field {
+            name = "lcd_data_inv";
+            desc = "Inversion of the LCD output bits";
+            sw = rw;
+            hw = r;
+            encode = LCD_CTRL_lcd_data_inv_enum;
+            reset = 0x0;
+        } lcd_data_inv[26:26];
+    } LCD_CTRL @ 0xD400;
+
+    reg {
+        name = "Sync signal polarity configuration register in LCD external sync timing input mode";
+        desc = "LCD_SYNC_INV is a sync signal polarity configuration register in LCD external sync timing input mode. The setting of this register takes effect immediately after configuration, that is, the polarity of the corresponding sync signal is immediately affected.
+
+Data sheet 9.2.6 LCD_SYNC_INV (offset 0xD408, printed page 9-126, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 56845).";
+
+        enum LCD_SYNC_INV_f_inv_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "f_inv";
+            desc = "Output phase inversion enable for the odd/even field indicator signal (instant)";
+            sw = rw;
+            hw = r;
+            encode = LCD_SYNC_INV_f_inv_enum;
+            reset = 0x0;
+        } f_inv[3:3];
+
+        enum LCD_SYNC_INV_vs_inv_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "vs_inv";
+            desc = "Output phase inversion enable for the VS pulse (instant)";
+            sw = rw;
+            hw = r;
+            encode = LCD_SYNC_INV_vs_inv_enum;
+            reset = 0x0;
+        } vs_inv[2:2];
+
+        enum LCD_SYNC_INV_hs_inv_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "hs_inv";
+            desc = "Output phase inversion enable for the HS pulse (instant)";
+            sw = rw;
+            hw = r;
+            encode = LCD_SYNC_INV_hs_inv_enum;
+            reset = 0x0;
+        } hs_inv[1:1];
+
+        enum LCD_SYNC_INV_dv_inv_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "dv_inv";
+            desc = "Output phase inversion enable for the data validity signal (instant)";
+            sw = rw;
+            hw = r;
+            encode = LCD_SYNC_INV_dv_inv_enum;
+            reset = 0x0;
+        } dv_inv[0:0];
+    } LCD_SYNC_INV @ 0xD408;
+};
+
+`endif
