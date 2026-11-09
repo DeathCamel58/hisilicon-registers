@@ -15,6 +15,7 @@ regfile eCRG {
 
     reg {
         name = "APLL configuration register 0";
+        desc = "APLL (PERI_CRG0/1): the A9 and DDR clock is APLL FOUTVCO / 2 (a fixed divide: 1320 / 2 = 660 MHz on the board), not FOUTPOSTDIV; the AXI/APB clocks are derived from it. Hence postdiv/bypass here do not change the CPU rate. PLL rules (original Chinese data sheet 3.2.3 Tables 3-2..3-4): reference XIN = 24 MHz fixed; FOUTVCO = 24 MHz * (fbdiv + frac/2^24) / refdiv, which must be within 600 MHz..1.6 GHz; FOUTPOSTDIV = VCO / (postdiv1*postdiv2); FOUT1PH0 = /(pd1*pd2*2); FOUT2 = /(pd1*pd2*4); FOUT3 = /(pd1*pd2*6); FOUT4 = /(pd1*pd2*8). The *_pd / *_dacpd / *_foutvcopd / *_postdivpd / *_fout4phasepd bits are enables (1 = running, 0 = power down) despite their names; dsmpd 1 = integer mode (frac ignored), 0 = fractional mode. Changing a PLL configuration is only allowed in SLOW mode (SC_CTRL modectrl); wait for the lock bit in PERI_CRG58 (bit 0 APLL, bit 1 VPLL0, bit 2 EPLL) before switching back to NORMAL. The data sheet gives 0.1 ms (clock chapter) and 0.5 ms (SC_PLLCTRL text) for the settling time; it disagrees with itself.";
 
         enum PERI_CRG0_apll_bypass_enum {
             NO_BYPASS = 0x0 { desc = "No bypass."; };
@@ -46,7 +47,7 @@ regfile eCRG {
 
     reg {
         name = "APLL configuration register 1";
-        desc = "Hardware (Hi3520D V100 board, read on hardware 2026-11-08, stock U-Boot prompt after a cold boot): reads 0x007C30A5 (apll_fbdiv = 0xA5), reset here (data sheet) 0x007C309B (apll_fbdiv = 0x9B). Boot value: the BootROM / stock boot table reprograms the APLL before the prompt, so this is not taken as the reset value.";
+        desc = "Hardware (Hi3520D V100 board, read on hardware 2026-11-08, stock U-Boot prompt after a cold boot): reads 0x007C30A5 (apll_fbdiv = 0xA5), reset here (data sheet) 0x007C309B (apll_fbdiv = 0x9B). Boot value: the BootROM / stock boot table reprograms the APLL before the prompt, so this is not taken as the reset value. Data sheet reset values compute to VCO 1240 MHz (24/3*155); the data sheet text 'divide by two gives 660 MHz' is only correct for the boot value 1320 MHz (fbdiv 165).";
 
         field {
             enum apll_dacpd_enum {
@@ -124,7 +125,7 @@ regfile eCRG {
 
     reg {
         name = "VPLL0 Configuration Register 0";
-        desc = "Hardware (Hi3520D V100 board, read on hardware 2026-11-08, stock U-Boot prompt after a cold boot): reads 0x22000000 (vpll0_postdiv2 = 4, postdiv1 = 2), data sheet reset 0x12000000 (postdiv2 = 2). Boot value (VPLL0 is programmed by the boot table), not taken as the reset value.";
+        desc = "Hardware (Hi3520D V100 board, read on hardware 2026-11-08, stock U-Boot prompt after a cold boot): reads 0x22000000 (vpll0_postdiv2 = 4, postdiv1 = 2), data sheet reset 0x12000000 (postdiv2 = 2). Boot value (VPLL0 is programmed by the boot table), not taken as the reset value. VPLL0 (PERI_CRG2/3): feeds the VDP (video output, HD) and HDMI pixel clock; FOUT1PH0 = 148.5 MHz with refdiv 2, fbdiv 99, postdiv 2x2 (VCO 1188 MHz, example in data sheet 3.2.3). PLL rules (original Chinese data sheet 3.2.3 Tables 3-2..3-4): reference XIN = 24 MHz fixed; FOUTVCO = 24 MHz * (fbdiv + frac/2^24) / refdiv, which must be within 600 MHz..1.6 GHz; FOUTPOSTDIV = VCO / (postdiv1*postdiv2); FOUT1PH0 = /(pd1*pd2*2); FOUT2 = /(pd1*pd2*4); FOUT3 = /(pd1*pd2*6); FOUT4 = /(pd1*pd2*8). The *_pd / *_dacpd / *_foutvcopd / *_postdivpd / *_fout4phasepd bits are enables (1 = running, 0 = power down) despite their names; dsmpd 1 = integer mode (frac ignored), 0 = fractional mode. Changing a PLL configuration is only allowed in SLOW mode (SC_CTRL modectrl); wait for the lock bit in PERI_CRG58 (bit 0 APLL, bit 1 VPLL0, bit 2 EPLL) before switching back to NORMAL. The data sheet gives 0.1 ms (clock chapter) and 0.5 ms (SC_PLLCTRL text) for the settling time; it disagrees with itself.";
 
         field {
             enum vpll0_bypass_enum {
@@ -155,6 +156,7 @@ regfile eCRG {
 
     reg {
         name = "VPLL0 Configuration Register 1";
+        desc = "Reset 0x007C2063: refdiv 2, fbdiv 99, integer mode, all enables set (VCO 1188 MHz). Lock status PERI_CRG58 bit 1.";
 
         field {
             enum vpll0_dacpd_enum {
@@ -230,6 +232,7 @@ regfile eCRG {
 
     reg {
         name = "EPLL Configuration Register 0";
+        desc = "EPLL (PERI_CRG8/9), VCO 1350 MHz at reset (refdiv 4, fbdiv 225, postdiv 3x3): VCO/2 = 675 MHz AIO MCLK source; VCO/6 = 225 MHz VEDU/VPSS; VCO/7 = 193 MHz JPGE/VAPU; VCO/12 = 112.5 MHz SFC/MDU/JPGE/CIPHER (SFC also 75 MHz = FOUT1PH0); VDP SD source 54 MHz; FOUTPOSTDIV 150 MHz, /3 = 50 MHz SATA and ETH RMII reference; FOUT3 25 MHz = FE PHY input clock. PLL rules (original Chinese data sheet 3.2.3 Tables 3-2..3-4): reference XIN = 24 MHz fixed; FOUTVCO = 24 MHz * (fbdiv + frac/2^24) / refdiv, which must be within 600 MHz..1.6 GHz; FOUTPOSTDIV = VCO / (postdiv1*postdiv2); FOUT1PH0 = /(pd1*pd2*2); FOUT2 = /(pd1*pd2*4); FOUT3 = /(pd1*pd2*6); FOUT4 = /(pd1*pd2*8). The *_pd / *_dacpd / *_foutvcopd / *_postdivpd / *_fout4phasepd bits are enables (1 = running, 0 = power down) despite their names; dsmpd 1 = integer mode (frac ignored), 0 = fractional mode. Changing a PLL configuration is only allowed in SLOW mode (SC_CTRL modectrl); wait for the lock bit in PERI_CRG58 (bit 0 APLL, bit 1 VPLL0, bit 2 EPLL) before switching back to NORMAL. The data sheet gives 0.1 ms (clock chapter) and 0.5 ms (SC_PLLCTRL text) for the settling time; it disagrees with itself.";
 
         field {
             enum epll_bypass_enum {
@@ -260,6 +263,7 @@ regfile eCRG {
 
     reg {
         name = "EPLL Configuration Register 1";
+        desc = "Reset 0x007C40E1: refdiv 4, fbdiv 225, integer mode, all enables set. Lock status PERI_CRG58 bit 2.";
 
         field {
             enum epll_dacpd_enum {
@@ -1668,16 +1672,18 @@ regfile eCRG {
 
     reg {
         name = "SFC related clock and soft reset control register";
-        desc = "Hardware (Hi3520D V100 board, read on hardware 2026-11-08, stock U-Boot prompt after a cold boot): reads 0x0000000E (sfc_cksel = 3, reserved encoding, sfc_cken = 1), data sheet reset 0x00000002. Boot value (the boot code selects the SFC clock to boot from SPI flash), not taken as the reset value.";
+        desc = "Hardware (Hi3520D V100 board, read on hardware 2026-11-08, stock U-Boot prompt after a cold boot): reads 0x0000000E (sfc_cksel = 3 = 112.5 MHz, sfc_cken = 1), data sheet reset 0x00000002. Boot value (the boot code selects the SFC clock to boot from SPI flash), not taken as the reset value.";
 
         enum PERI_CRG48_sfc_cksel_enum {
             V_24_MHZ_CLOCK = 0x0 { desc = "24 MHz clock"; };
             V_24_MHZ_CLOCK_2 = 0x2 { desc = "24 MHz clock"; };
             V_75_MHZ_CLOCK = 0x1 { desc = "75 MHz clock"; };
+            V_112_5_MHZ_CLOCK = 0x3 { desc = "112.5 MHz clock"; };
         };
 
         field {
             name = "sfc_cksel";
+            desc = "SFC2X clock source: x0 = 24 MHz, 01 = 75 MHz, 11 = 112.5 MHz (original Chinese data sheet, printed '112..5MHz'; the 11 row is missing from the machine translation). 75 MHz = EPLL FOUT1PH0 and 112.5 MHz = EPLL VCO / 12 at the EPLL reset settings.";
             encode = PERI_CRG48_sfc_cksel_enum;
             reset = 0x0;
         } sfc_cksel[3:2];
@@ -1843,12 +1849,13 @@ regfile eCRG {
         desc = "Hardware (Hi3520D V100 board, read on hardware 2026-11-08, stock U-Boot prompt after a cold boot): reads 0x0007B000: uart_cksel = 0 (APB clock) while the reset here is 1 (0x0007F000). Boot value (the boot code switches the UART to the APB clock), not taken as the reset value; everything else equals the reset.";
 
         enum PERI_CRG57_test_clk_sel_enum {
-            TEST_CLOCK_GROUP = 0x0 { desc = "test clock group 1 (USB and PCLK)"; };
-            TEST_CLOCK_GROUP_1 = 0x1 { desc = "test clock group 2 (HDMI)"; };
+            TEST_CLOCK_GROUP_HDMI = 0x0 { desc = "second group of test clocks (HDMI)"; };
+            TEST_CLOCK_GROUP_USB_PCLK = 0x1 { desc = "first group of test clocks (USB and PCLK)"; };
         };
 
         field {
             name = "test_clk_sel";
+            desc = "Test clock group select. Original Chinese data sheet: 1 = first group (USB and PCLK), 0 = second group (HDMI). Earlier versions of this file had the two values swapped (the machine translation).";
             encode = PERI_CRG57_test_clk_sel_enum;
             reset = 0x0;
         } test_clk_sel[19:19];
@@ -1904,7 +1911,7 @@ regfile eCRG {
 
         field {
             name = "uart_cksel";
-            desc = "UART clock select. Hardware verified polarity (docs/hi3520d-clocks.md): 0 selects the APB clock, 1 the 2 MHz clock; the data sheet prints it the other way round (DS error). Reset 1 = 2 MHz matches the vendor U-Boot comment 'default is 2MHz'.";
+            desc = "UART clock select. 0 selects the APB clock, 1 the 2 MHz clock. This is exactly what the original Chinese data sheet prints (1: 2M clock, 0: APB clock) and what hardware and the vendor code show; only the machine-translated data sheet has it inverted. Reset 1 = 2 MHz matches the vendor U-Boot comment 'default is 2MHz'.";
             encode = PERI_CRG57_uart_cksel_enum;
             reset = 0x1;
         } uart_cksel[14:14];
@@ -1997,16 +2004,17 @@ regfile eCRG {
             reset = 0x0;
         } ir_srst_req[4:4];
 
-        enum PERI_CRG57_rtc_srst_req_enum {
+        enum PERI_CRG57_t_cap_srst_req_enum {
             DEASSERT_RESET = 0x0 { desc = "deassert reset"; };
             RESET = 0x1 { desc = "reset"; };
         };
 
         field {
-            name = "rtc_srst_req";
-            encode = PERI_CRG57_rtc_srst_req_enum;
+            name = "t_cap_srst_req";
+            desc = "Soft reset request of the t_cap block (original Chinese data sheet: 't_cap'; the RTC temperature capture / TEM_CAP_INT logic, GIC ID 89). This is NOT the RTC reset: the RTC has its own soft reset, writing 0 to its RTC_POR_N register and waiting 30 ms (data sheet 3.8.4.2). Earlier versions of this file called the bit rtc_srst_req.";
+            encode = PERI_CRG57_t_cap_srst_req_enum;
             reset = 0x0;
-        } rtc_srst_req[2:2];
+        } t_cap_srst_req[2:2];
 
         enum PERI_CRG57_i2c_srst_req_enum {
             DEASSERT_RESET = 0x0 { desc = "deassert reset"; };
