@@ -4,17 +4,16 @@
 regfile eHISI_SPI {
     name = "SPI Registers";
     desc = "
-    The serial peripheral interface (SPI) controller implements serial-to-parallel conversion and parallel-to-serial conversion, and serves as a master to communicate with peripherals in synchronous and serial modes. The SPI controller supports three types of peripheral interfaces including the SPI, TI synchronous serial interface, and MicroWire interface.
+    The serial peripheral interface (SPI) controller implements serial-to-parallel conversion and parallel-to-serial conversion, and communicates with peripherals in synchronous and serial modes. It is normally used as a master; whether slave mode exists differs per SoC (CR1.MS = 1 is documented as slave mode on some SoCs and as reserved on others). The SPI controller supports three types of peripheral interfaces including the SPI, TI synchronous serial interface, and MicroWire interface.
     
     ## Features
     !!! CAUTION
-        * Hi3519 V101 has four serial peripheral interfaces (SPIs). SPI0/1/3 supports a chip select (CS), whereas SPI2 supports two CSs.
-        * Hi3519 V101 SPIs are master interfaces. The working reference clock is the APB bus clock. SPI_CLK output by the SPI supports the maximum working frequency of 24.75 MHz.
+        The number of SPI instances, the number of chip selects per instance and the maximum SPI_CLK frequency depend on the SoC (for example Hi3519 V101: four SPIs, 24.75 MHz; Hi3520D: one SPI with CS0/CS1, 38.75 MHz). The working reference clock is the APB bus clock. See the data sheet of the SoC.
 
     The SPI controller has the following features:
 
     * Supports programmable frequency of the interface clock.
-    * Supports two separate FIFOs. One acts as an RX FIFO and the other one acts as a TX FIFO. Each of them is 16-bit wide and 256-location deep.
+    * Supports two separate FIFOs. One acts as an RX FIFO and the other one acts as a TX FIFO. Each of them is 16-bit wide; the depth depends on the SoC (for example 256 locations on Hi3519 V101, 8 locations on Hi3515).
     * Supports programmable serial data frame length: 4 bits to 16 bits.
     * Provides internal loopback test mode.
     * Supports the direct memory access (DMA) operation.
@@ -66,6 +65,7 @@ regfile eHISI_SPI {
             name = "DSS";
             desc = "Data width";
             encode = SPI_dss_enum;
+            reset = 0x0;
         } spi_dss[0:3];
 
         enum SPI_frf_enum {
@@ -78,16 +78,19 @@ regfile eHISI_SPI {
             name = "FRF";
             desc = "Frame format select";
             encode = SPI_frf_enum;
+            reset = 0x0;
         } spi_frf[4:5];
 
         field {
             name = "SPO";
             desc = "SPICLKOUT polarity";
+            reset = 0x0;
         } spi_spo[6:6];
 
         field {
             name = "SPH";
             desc = "SPICLKOUT phase";
+            reset = 0x0;
         } spi_sph[7:7];
 
         field {
@@ -97,6 +100,7 @@ regfile eHISI_SPI {
 
             CPSDVSR is an even ranging from 2 to 254, and it is configured by SPICPSR.
             ";
+            reset = 0x0;
         } spi_scr[8:15];
 
     } SPI_CR0 @ 0x000;
@@ -113,22 +117,26 @@ regfile eHISI_SPI {
             name = "LBM";
             encode = SPI_lbm_enum;
             desc = "Loopback Mode";
+            reset = 0x0;
         } spi_lbm[0:0];
 
         field {
             name = "SSE";
             encode = SPI_one_enable_enum;
             desc = "SPI enable";
+            reset = 0x0;
         } spi_sse[1:1];
 
         enum SPI_ms_enum {
-            MASTER = 0x1 { desc = "A normal serial port operation is enabled"; };
+            MASTER = 0x0 { desc = "Master mode (default)"; };
+            SLAVE  = 0x1 { desc = "Slave mode (reserved in the Hi3520D data sheet; slave mode in the Hi3515 and Hi3516 data sheets)"; };
         };
 
         field {
             name = "MS";
             encode = SPI_ms_enum;
             desc = "Master or slave mode. This bit can be changed only when the SPI is disabled.";
+            reset = 0x0;
         } spi_ms[2:2];
 
         enum SPI_big_end_enum {
@@ -140,6 +148,9 @@ regfile eHISI_SPI {
             name = "BigEnd";
             encode = SPI_big_end_enum;
             desc = "Data endian mode";
+`ifdef SPI_RESET_G1
+            reset = 0x0;
+`endif
         } spi_big_end[4:4];
 
         enum SPI_mode_altasens_enum {
@@ -150,17 +161,26 @@ regfile eHISI_SPI {
         field {
             name = "mode_altasens";
             encode = SPI_mode_altasens_enum;
+`ifdef SPI_RESET_G2
+            reset = 0x0;
+`endif
         } spi_mode_altasens[6:6];
 
         field {
             name = "WaitVal";
             desc = "Number of waiting beats between read and write when in the national microwire frame format. When WaitEn is 1 and the frame format is national microwire, WaitVal is valid.";
+`ifdef SPI_RESET_G1
+            reset = 0x7F;
+`endif
         } spi_wait_val[8:14];
 
         field {
             name = "WaitEn";
             encode = SPI_one_enable_enum;
             desc = "Wait enable. This bit is valid when the SPICR0[FRF] is set to the national microwire frame format.";
+`ifdef SPI_RESET_G1
+            reset = 0x0;
+`endif
         } spi_wait_en[15:15];
 
     } SPI_CR1 @ 0x004;
@@ -176,7 +196,8 @@ regfile eHISI_SPI {
             Write: TX FIFO
             If the data is less than 16 bits, the data must be aligned to the right. The TX logic ignores the unused upper bits, and the RX logic automatically aligns the data to the right.
             ";
-        } spi_din_2[0:15];
+            reset = 0x0;
+        } spi_data[0:15];
 
     } SPI_DR @ 0x008;
 
@@ -192,6 +213,9 @@ regfile eHISI_SPI {
             name = "TFE";
             encode = SPI_tfe_enum;
             desc = "Whether the TX FIFO is empty";
+            sw = r;
+            hw = w;
+            reset = 0x1;
         } spi_tfe[0:0];
 
         enum SPI_tnf_enum {
@@ -203,6 +227,9 @@ regfile eHISI_SPI {
             name = "TNF";
             encode = SPI_tnf_enum;
             desc = "Whether the TX FIFO is not full";
+            sw = r;
+            hw = w;
+            reset = 0x1;
         } spi_tnf[1:1];
 
         enum SPI_rne_enum {
@@ -214,6 +241,9 @@ regfile eHISI_SPI {
             name = "RNE";
             encode = SPI_rne_enum;
             desc = "Whether the RX FIFO is not empty";
+            sw = r;
+            hw = w;
+            reset = 0x0;
         } spi_rne[2:2];
 
         enum SPI_rff_enum {
@@ -225,6 +255,9 @@ regfile eHISI_SPI {
             name = "RFF";
             encode = SPI_rff_enum;
             desc = "Whether the RX FIFO is full";
+            sw = r;
+            hw = w;
+            reset = 0x0;
         } spi_rff[3:3];
 
         enum SPI_bsy_enum {
@@ -236,6 +269,9 @@ regfile eHISI_SPI {
             name = "BSY";
             encode = SPI_bsy_enum;
             desc = "SPI busy flag";
+            sw = r;
+            hw = w;
+            reset = 0x0;
         } spi_bsy[4:4];
 
     } SPI_SR @ 0x00C;
@@ -246,7 +282,8 @@ regfile eHISI_SPI {
         field {
             name = "CPSDVSR";
             desc = "Clock divider. The value must be an even ranging from 2 to 254. It depends on the frequency of the input clock SPICLK. The LSB is read as 0.";
-        } spi_ivin_0[0:7];
+            reset = 0x0;
+        } spi_cpsdvsr[0:7];
 
     } SPI_CPSR @ 0x010;
 
@@ -263,23 +300,27 @@ regfile eHISI_SPI {
             name = "RX overflow interrupt mask";
             encode = SPI_masked_zero_enum;
             desc = "When not masked, the hardware stream control function is enabled. That is, when the RX FIFO is full, the SPI stops transmitting data.";
+            reset = 0x0;
         } SPI_rorim[0:0];
 
         field {
             name = "RX timeout interrupt mask";
             encode = SPI_masked_zero_enum;
+            reset = 0x0;
         } SPI_rtim[1:1];
 
         field {
             name = "RX FIFO interrupt mask";
             encode = SPI_masked_zero_enum;
             desc = "Whether the interrupt is masked when half of less data is left in the RX FIFO";
+            reset = 0x0;
         } SPI_rxim[2:2];
 
         field {
             name = "TX FIFO interrupt mask";
             encode = SPI_masked_zero_enum;
             desc = "Whether the interrupt is masked when half of less data is left in the TX FIFO";
+            reset = 0x0;
         } SPI_txim[3:3];
 
     } SPI_IMSC @ 0x014;
@@ -292,24 +333,32 @@ regfile eHISI_SPI {
             name = "RORIS";
             desc = "Raw RX Overflow Interrupt Status";
             sw = r;
+            hw = w;
+            reset = 0x0;
         } SPI_roris[0:0];
 
         field {
             name = "RTRIS";
             desc = "Raw RX Timeout Interrupt Status";
             sw = r;
+            hw = w;
+            reset = 0x0;
         } SPI_rtris[1:1];
 
         field {
             name = "RXRIS";
             desc = "Raw RX FIFO Interrupt Status";
             sw = r;
+            hw = w;
+            reset = 0x0;
         } SPI_rxris[2:2];
 
         field {
             name = "TXRIS";
             desc = "Raw TX FIFO Interrupt Status";
             sw = r;
+            hw = w;
+            reset = 0x1;
         } SPI_txris[3:3];
 
     } SPI_RIS @ 0x018;
@@ -322,24 +371,32 @@ regfile eHISI_SPI {
             name = "RORMIS";
             desc = "Masked RX Overflow Interrupt Status";
             sw = r;
+            hw = w;
+            reset = 0x0;
         } SPI_rormis[0:0];
 
         field {
             name = "RTMIS";
             desc = "Masked RX Timeout Interrupt Status";
             sw = r;
+            hw = w;
+            reset = 0x0;
         } SPI_rtmis[1:1];
 
         field {
             name = "RXMIS";
             desc = "Masked RX FIFO Interrupt Status";
             sw = r;
+            hw = w;
+            reset = 0x0;
         } SPI_rxmis[2:2];
 
         field {
             name = "TXMIS";
             desc = "Masked TX FIFO Interrupt Status";
             sw = r;
+            hw = w;
+            reset = 0x0;
         } SPI_txmis[3:3];
 
     } SPI_MIS @ 0x01C;
@@ -351,11 +408,17 @@ regfile eHISI_SPI {
         field {
             name = "RORIC";
             desc = "RX overflow interrupt Clear";
+            sw = w;
+            hw = r;
+            reset = 0x0;
         } SPI_roric[0:0];
 
         field {
             name = "RTIC";
             desc = "RX timeout interrupt Clear";
+            sw = w;
+            hw = r;
+            reset = 0x0;
         } SPI_rtic[1:1];
 
     } SPI_ICR @ 0x020;
@@ -367,12 +430,18 @@ regfile eHISI_SPI {
             name = "RXDMAE";
             encode = SPI_one_enable_enum;
             desc = "DMA RX FIFO Enable";
+`ifdef SPI_RESET_G3
+            reset = 0x0;
+`endif
         } SPI_rxdmae[0:0];
 
         field {
             name = "TXDMAE";
             encode = SPI_one_enable_enum;
             desc = "DMA TX FIFO Enable";
+`ifdef SPI_RESET_G3
+            reset = 0x0;
+`endif
         } SPI_txdmae[1:1];
 
     } SPI_DMACR @ 0x024;
@@ -395,6 +464,9 @@ regfile eHISI_SPI {
             name = "DMATXBRSize";
             encode = SPI_DMATXBRSize_enum;
             desc = "Threshold for generating the TX FIFO request DMA transfer burst. That is, when the number of data segments in the TX FIFO is less than or equal to the configured value (256 – DMATXBRSize), DMATXBREQ is valid. The width of the TX FIFO is 16 bits.";
+`ifdef SPI_RESET_G6
+            reset = 0x1;
+`endif
         } SPI_DMATXBRSize[0:2];
 
         enum SPI_TXINTSize_enum {
@@ -412,6 +484,12 @@ regfile eHISI_SPI {
             name = "TXINTSize";
             encode = SPI_TXINTSize_enum;
             desc = "Threshold for generating the TX FIFO request interrupt. That is, when the number of data segments in the TX FIFO is less than or equal to the value of TXINTSize, TXRIS is valid.";
+`ifdef SPI_RESET_G4
+            reset = 0x0;
+`endif
+`ifdef SPI_RESET_G5
+            reset = 0x1;
+`endif
         } SPI_TXINTSize[3:5];
 
     } SPI_TXFIFOCR @ 0x028;
@@ -434,6 +512,9 @@ regfile eHISI_SPI {
             name = "DMARXBRSize";
             encode = SPI_DMARXBRSize_enum;
             desc = "Burst transfer threshold. When this threshold is reached, the RX FIFO asks the DMA to perform a burst transfer. That is, when number of data segments in the TX FIFO is less than or equal to the value of DMARXBRSize, DMARXBREQ is valid.";
+`ifdef SPI_RESET_G1
+            reset = 0x1;
+`endif
         } SPI_DMARXBRSize[0:2];
 
         enum SPI_RXINTSize_enum {
@@ -451,6 +532,12 @@ regfile eHISI_SPI {
             name = "RXINTSize";
             encode = SPI_RXINTSize_enum;
             desc = "Threshold for generating the RX FIFO request interrupt. That is, when the number of data segments in the TX FIFO is less than or equal to the configured value (256 – RXINTSize), RXRIS is valid. The width of the RX FIFO is 16 bits.";
+`ifdef SPI_RESET_G4
+            reset = 0x0;
+`endif
+`ifdef SPI_RESET_G5
+            reset = 0x1;
+`endif
         } SPI_RXINTSize[3:5];
 
     } SPI_RXFIFOCR @ 0x02C;
