@@ -1,0 +1,1710 @@
+`ifndef HISI_AIAO_RDL
+`define HISI_AIAO_RDL
+
+// AIAO (audio input/output, I2S/PCM, one RX + one TX port) of the Hi3518EV200 / Hi3516CV200 (data sheet 11.1).
+regfile eHISI_AIAO {
+    name = "AIAO (audio input/output)";
+    desc = "
+    Audio input/output (AIAO) of the Hi3518E V20X / Hi3516C V200 at 0x20650000 (data sheet 11.1), VIC interrupt 9: one audio input port (RX 0 / AIP, pins I2S_SD_RX) and one audio output port
+    (TX 0 / AOP, I2S_SD_TX), I2S (16/24-bit stereo, 8-192 kHz) or PCM (16-bit, short frame sync) in master mode, each with its own clock generator (I2S_CRG_CFG0/1_00 for RX, _08 for TX: MCLK,
+    BCLK and WS dividers; the I2S_MCLK / I2S_RX_WS / I2S_RX_BCLK pins come from the RX generator in the block diagram). Data moves by DMA between a cyclic DDR buffer (SADDR / SIZE / WPTR /
+    RPTR / threshold / TRANS_SIZE per direction) and the port; interrupts per direction (transfer done, buffer full/empty, almost full/empty, bus FIFO over/underflow, stop, TX mute fade done) are
+    enabled in RX_INT_ENA / TX_INT_ENA and gated by AIAO_INT_ENA. The on-chip audio CODEC is controlled through the MISC_CTRL registers at 0x20120000 + 0xC4..0xD8 (data sheet 11.2, `eHISI_MISC_CTRL`),
+    not through this block.
+
+    This is the AIAO generation of the Hi3516CV300 / Hi3519 / Hi3516AV200 (register names RX_IF_ATTRI, RX_DSP_CTRL, TX_DSP_CTRL with volume/fade, I2S_CRG_CFG); it is NOT the AIP/AOP layout
+    of the Hi3520D (`eHISI_AIO`). Vendor drivers for it are binary (`mpp` libraries); nothing in the local trees; no hardware verification. Register table: data sheet 11.1.5 / 11.1.6 (`hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt`
+    lines 75750-77294), 31 registers; the three data sheet typos corrected are listed in the register descriptions.
+    ";
+
+    reg {
+        name = "AIAO interrupt enable register";
+        desc = "AIAO_INT_ENA is an AIAO interrupt enable register.
+
+Top-level interrupt enable (VIC interrupt 9 'AIAO'); the per-channel causes are enabled in RX_INT_ENA / TX_INT_ENA.
+
+Data sheet 11.1.6 AIAO_INT_ENA (offset 0x0, printed page 11-9, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 75833).";
+
+        enum AIAO_INT_ENA_tx_ch0_int_ena_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "tx_ch0_int_ena";
+            desc = "TX channel 0 interrupt enable";
+            sw = rw;
+            hw = r;
+            encode = AIAO_INT_ENA_tx_ch0_int_ena_enum;
+            reset = 0x0;
+        } tx_ch0_int_ena[16:16];
+
+        enum AIAO_INT_ENA_rx_ch0_int_ena_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "rx_ch0_int_ena";
+            desc = "RX channel 0 interrupt enable";
+            sw = rw;
+            hw = r;
+            encode = AIAO_INT_ENA_rx_ch0_int_ena_enum;
+            reset = 0x0;
+        } rx_ch0_int_ena[0:0];
+    } AIAO_INT_ENA @ 0x0;
+
+    reg {
+        name = "AIAO interrupt status register";
+        desc = "AIAO_INT_STATUS is an AIAO interrupt status register.
+
+Data sheet 11.1.6 AIAO_INT_STATUS (offset 0x4, printed page 11-9, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 75865).";
+
+        enum AIAO_INT_STATUS_tx_ch0_int_status_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "tx_ch0_int_status";
+            desc = "Interrupt status of TX channel 0";
+            sw = r;
+            hw = w;
+            encode = AIAO_INT_STATUS_tx_ch0_int_status_enum;
+            reset = 0x0;
+        } tx_ch0_int_status[16:16];
+
+        enum AIAO_INT_STATUS_rx_ch0_int_status_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "rx_ch0_int_status";
+            desc = "Interrupt status of RX channel 0";
+            sw = r;
+            hw = w;
+            encode = AIAO_INT_STATUS_rx_ch0_int_status_enum;
+            reset = 0x0;
+        } rx_ch0_int_status[0:0];
+    } AIAO_INT_STATUS @ 0x4;
+
+    reg {
+        name = "AIAO raw interrupt register";
+        desc = "AIAO_INT_RAW is an AIAO raw interrupt register.
+
+Data sheet 11.1.6 AIAO_INT_RAW (offset 0x8, printed page 11-10, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 75906).";
+
+        enum AIAO_INT_RAW_tx_ch0_int_raw_enum {
+            NO_RAW_INTERRUPT = 0 { name = "No Raw Interrupt"; desc = "No raw interrupt is generated."; };
+            RAW_INTERRUPT_GENERATED = 1 { name = "Raw Interrupt Generated"; desc = "A raw interrupt is generated."; };
+        };
+
+        field {
+            name = "tx_ch0_int_raw";
+            desc = "Raw interrupt of TX channel 0";
+            sw = r;
+            hw = w;
+            encode = AIAO_INT_RAW_tx_ch0_int_raw_enum;
+            reset = 0x0;
+        } tx_ch0_int_raw[16:16];
+
+        enum AIAO_INT_RAW_rx_ch0_int_raw_enum {
+            NO_RAW_INTERRUPT = 0 { name = "No Raw Interrupt"; desc = "No raw interrupt is generated."; };
+            RAW_INTERRUPT_GENERATED = 1 { name = "Raw Interrupt Generated"; desc = "A raw interrupt is generated."; };
+        };
+
+        field {
+            name = "rx_ch0_int_raw";
+            desc = "Raw interrupt of RX channel 0";
+            sw = r;
+            hw = w;
+            encode = AIAO_INT_RAW_rx_ch0_int_raw_enum;
+            reset = 0x0;
+        } rx_ch0_int_raw[0:0];
+    } AIAO_INT_RAW @ 0x8;
+
+    reg {
+        name = "I2S00 CRG configuration register 0";
+        desc = "I2S_CRG_CFG0_00 is I2S00 CRG configuration register 0.
+
+Data sheet 11.1.6 I2S_CRG_CFG0_00 (offset 0x100, printed page 11-10, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 75938).";
+
+        field {
+            name = "aiao_mclk_div";
+            desc = "Configured value of the frequency division clock of the MCLK: (target MCLK frequency / frequency of the MCLK clock source) x 2^27. The MCLK clock source is the AIAO PLL output selected in PERI_CRG (data sheet 3.2); reset 0x00AA_AAAA = 1/3 of the source.";
+            sw = rw;
+            hw = r;
+            reset = 0x00AAAAAA;
+        } aiao_mclk_div[26:0];
+    } I2S_CRG_CFG0_00 @ 0x100;
+
+    reg {
+        name = "I2S00 CRG configuration register 1";
+        desc = "I2S_CRG_CFG1_00 is I2S00 CRG configuration register 1.
+
+Clock generator of the RX (AIP, 'CRG00') port: MCLK (I2S_CRG_CFG0_00) -> BCLK (aiao_bclk_div) -> WS / sampling clock (aiao_fsclk_div). Total reset value 0x131: cken 1, fsclk_div 3 (BCLK/64), bclk_div 1 (MCLK/3).
+
+Data sheet 11.1.6 I2S_CRG_CFG1_00 (offset 0x104, printed page 11-11, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 75972).";
+
+        enum I2S_CRG_CFG1_00_aiao_srst_req_enum {
+            DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
+            RESET_F = 1 { name = "Reset F"; desc = "reset"; };
+        };
+
+        field {
+            name = "aiao_srst_req";
+            desc = "Independent soft reset request of the RX 0 channel";
+            sw = rw;
+            hw = r;
+            encode = I2S_CRG_CFG1_00_aiao_srst_req_enum;
+            reset = 0x0;
+        } aiao_srst_req[9:9];
+
+        enum I2S_CRG_CFG1_00_aiao_cken_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "aiao_cken";
+            desc = "MCLK/BCLK/WS clock gating for CRG00";
+            sw = rw;
+            hw = r;
+            encode = I2S_CRG_CFG1_00_aiao_cken_enum;
+            reset = 0x1;
+        } aiao_cken[8:8];
+
+        enum I2S_CRG_CFG1_00_aiao_fsclk_div_enum {
+            FS_OBTAINED_DIVIDING = 0 { name = "Fs Obtained Dividing"; desc = "The FS is obtained by dividing the BCLK by 16."; };
+            FS_OBTAINED_DIVIDING_2 = 1 { name = "Fs Obtained Dividing 2"; desc = "The FS is obtained by dividing the BCLK by 32."; };
+            FS_OBTAINED_DIVIDING_3 = 2 { name = "Fs Obtained Dividing 3"; desc = "The FS is obtained by dividing the BCLK by 48."; };
+            FS_OBTAINED_DIVIDING_4 = 3 { name = "Fs Obtained Dividing 4"; desc = "The FS is obtained by dividing the BCLK by 64."; };
+            FS_OBTAINED_DIVIDING_5 = 4 { name = "Fs Obtained Dividing 5"; desc = "The FS is obtained by dividing the BCLK by 128."; };
+            FS_OBTAINED_DIVIDING_6 = 5 { name = "Fs Obtained Dividing 6"; desc = "The FS is obtained by dividing the BCLK by 256. Other values: The FS is obtained by dividing the BCLK by 8."; };
+        };
+
+        field {
+            name = "aiao_fsclk_div";
+            desc = "Frequency division relationship between the bit clock BCLK and the sampling clock FS";
+            sw = rw;
+            hw = r;
+            encode = I2S_CRG_CFG1_00_aiao_fsclk_div_enum;
+            reset = 0x3;
+        } aiao_fsclk_div[6:4];
+
+        enum I2S_CRG_CFG1_00_aiao_bclk_div_enum {
+            BCLK_OBTAINED_DIVIDING = 0 { name = "Bclk Obtained Dividing"; desc = "The BCLK is obtained by dividing the MCLK by 1."; };
+            BCLK_OBTAINED_DIVIDING_2 = 1 { name = "Bclk Obtained Dividing 2"; desc = "The BCLK is obtained by dividing the MCLK by 3."; };
+            BCLK_OBTAINED_DIVIDING_3 = 2 { name = "Bclk Obtained Dividing 3"; desc = "The BCLK is obtained by dividing the MCLK by 2."; };
+            BCLK_OBTAINED_DIVIDING_4 = 3 { name = "Bclk Obtained Dividing 4"; desc = "The BCLK is obtained by dividing the MCLK by 4."; };
+            BCLK_OBTAINED_DIVIDING_5 = 4 { name = "Bclk Obtained Dividing 5"; desc = "The BCLK is obtained by dividing the MCLK by 6."; };
+            BCLK_OBTAINED_DIVIDING_6 = 5 { name = "Bclk Obtained Dividing 6"; desc = "The BCLK is obtained by dividing the MCLK by 8."; };
+            BCLK_OBTAINED_DIVIDING_7 = 6 { name = "Bclk Obtained Dividing 7"; desc = "The BCLK is obtained by dividing the MCLK by 12."; };
+            BCLK_OBTAINED_DIVIDING_8 = 7 { name = "Bclk Obtained Dividing 8"; desc = "The BCLK is obtained by dividing the MCLK by 16."; };
+            BCLK_OBTAINED_DIVIDING_9 = 8 { name = "Bclk Obtained Dividing 9"; desc = "The BCLK is obtained by dividing the MCLK by 24."; };
+            BCLK_OBTAINED_DIVIDING_10 = 9 { name = "Bclk Obtained Dividing 10"; desc = "The BCLK is obtained by dividing the MCLK by 32."; };
+            BCLK_OBTAINED_DIVIDING_11 = 10 { name = "Bclk Obtained Dividing 11"; desc = "The BCLK is obtained by dividing the MCLK by 48."; };
+            BCLK_OBTAINED_DIVIDING_12 = 11 { name = "Bclk Obtained Dividing 12"; desc = "The BCLK is obtained by dividing the MCLK by 64. Other values: The BCLK is obtained by dividing the MCLK by 8."; };
+        };
+
+        field {
+            name = "aiao_bclk_div";
+            desc = "Frequency division relationship between the main clock MCLK and the bit clock BCLK";
+            sw = rw;
+            hw = r;
+            encode = I2S_CRG_CFG1_00_aiao_bclk_div_enum;
+            reset = 0x1;
+        } aiao_bclk_div[3:0];
+    } I2S_CRG_CFG1_00 @ 0x104;
+
+    reg {
+        name = "I2S08 CRG configuration register 0";
+        desc = "I2S_CRG_CFG0_08 is I2S08 CRG configuration register 0.
+
+Data sheet 11.1.6 I2S_CRG_CFG0_08 (offset 0x140, printed page 11-12, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 76038).";
+
+        field {
+            name = "aiao_mclk_div";
+            desc = "Configured value of the frequency division clock of the MCLK: (target MCLK frequency / frequency of the MCLK clock source) x 2^27. The MCLK clock source is the AIAO PLL output selected in PERI_CRG (data sheet 3.2); reset 0x00AA_AAAA = 1/3 of the source.";
+            sw = rw;
+            hw = r;
+            reset = 0x00AAAAAA;
+        } aiao_mclk_div[26:0];
+    } I2S_CRG_CFG0_08 @ 0x140;
+
+    reg {
+        name = "I2S08 CRG configuration register 1";
+        desc = "I2S_CRG_CFG1_08 is I2S08 CRG configuration register 1.
+
+Clock generator of the TX (AOP, 'CRG08') port, same layout as I2S_CRG_CFG1_00.
+
+Data sheet 11.1.6 I2S_CRG_CFG1_08 (offset 0x144, printed page 11-13, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 76074).";
+
+        enum I2S_CRG_CFG1_08_aiao_srst_req_enum {
+            DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
+            RESET_F = 1 { name = "Reset F"; desc = "reset"; };
+        };
+
+        field {
+            name = "aiao_srst_req";
+            desc = "Independent soft reset request of the TX 0 channel";
+            sw = rw;
+            hw = r;
+            encode = I2S_CRG_CFG1_08_aiao_srst_req_enum;
+            reset = 0x0;
+        } aiao_srst_req[9:9];
+
+        enum I2S_CRG_CFG1_08_aiao_cken_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "aiao_cken";
+            desc = "MCLK/BCLK/WS clock gating for CRG08";
+            sw = rw;
+            hw = r;
+            encode = I2S_CRG_CFG1_08_aiao_cken_enum;
+            reset = 0x1;
+        } aiao_cken[8:8];
+
+        enum I2S_CRG_CFG1_08_aiao_fsclk_div_enum {
+            FS_OBTAINED_DIVIDING = 0 { name = "Fs Obtained Dividing"; desc = "The FS is obtained by dividing the BCLK by 16."; };
+            FS_OBTAINED_DIVIDING_2 = 1 { name = "Fs Obtained Dividing 2"; desc = "The FS is obtained by dividing the BCLK by 32."; };
+            FS_OBTAINED_DIVIDING_3 = 2 { name = "Fs Obtained Dividing 3"; desc = "The FS is obtained by dividing the BCLK by 48."; };
+            FS_OBTAINED_DIVIDING_4 = 3 { name = "Fs Obtained Dividing 4"; desc = "The FS is obtained by dividing the BCLK by 64."; };
+            FS_OBTAINED_DIVIDING_5 = 4 { name = "Fs Obtained Dividing 5"; desc = "The FS is obtained by dividing the BCLK by 128."; };
+            FS_OBTAINED_DIVIDING_6 = 5 { name = "Fs Obtained Dividing 6"; desc = "The FS is obtained by dividing the BCLK by 256. Other values: The FS is obtained by dividing the BCLK by 8."; };
+        };
+
+        field {
+            name = "aiao_fsclk_div";
+            desc = "Frequency division relationship between the bit clock BCLK and the sampling clock FS";
+            sw = rw;
+            hw = r;
+            encode = I2S_CRG_CFG1_08_aiao_fsclk_div_enum;
+            reset = 0x3;
+        } aiao_fsclk_div[6:4];
+
+        enum I2S_CRG_CFG1_08_aiao_bclk_div_enum {
+            BCLK_OBTAINED_DIVIDING = 0 { name = "Bclk Obtained Dividing"; desc = "The BCLK is obtained by dividing the MCLK by 1."; };
+            BCLK_OBTAINED_DIVIDING_2 = 1 { name = "Bclk Obtained Dividing 2"; desc = "The BCLK is obtained by dividing the MCLK by 3."; };
+            BCLK_OBTAINED_DIVIDING_3 = 2 { name = "Bclk Obtained Dividing 3"; desc = "The BCLK is obtained by dividing the MCLK by 2."; };
+            BCLK_OBTAINED_DIVIDING_4 = 3 { name = "Bclk Obtained Dividing 4"; desc = "The BCLK is obtained by dividing the MCLK by 4."; };
+            BCLK_OBTAINED_DIVIDING_5 = 4 { name = "Bclk Obtained Dividing 5"; desc = "The BCLK is obtained by dividing the MCLK by 6."; };
+            BCLK_OBTAINED_DIVIDING_6 = 5 { name = "Bclk Obtained Dividing 6"; desc = "The BCLK is obtained by dividing the MCLK by 8."; };
+            BCLK_OBTAINED_DIVIDING_7 = 6 { name = "Bclk Obtained Dividing 7"; desc = "The BCLK is obtained by dividing the MCLK by 12."; };
+            BCLK_OBTAINED_DIVIDING_8 = 7 { name = "Bclk Obtained Dividing 8"; desc = "The BCLK is obtained by dividing the MCLK by 16."; };
+            BCLK_OBTAINED_DIVIDING_9 = 8 { name = "Bclk Obtained Dividing 9"; desc = "The BCLK is obtained by dividing the MCLK by 24."; };
+            BCLK_OBTAINED_DIVIDING_10 = 9 { name = "Bclk Obtained Dividing 10"; desc = "The BCLK is obtained by dividing the MCLK by 32."; };
+            BCLK_OBTAINED_DIVIDING_11 = 10 { name = "Bclk Obtained Dividing 11"; desc = "The BCLK is obtained by dividing the MCLK by 48."; };
+            BCLK_OBTAINED_DIVIDING_12 = 11 { name = "Bclk Obtained Dividing 12"; desc = "The BCLK is obtained by dividing the MCLK by 64. Other values: The BCLK is obtained by dividing the MCLK by 8."; };
+        };
+
+        field {
+            name = "aiao_bclk_div";
+            desc = "Frequency division relationship between the main clock MCLK and the bit clock BCLK";
+            sw = rw;
+            hw = r;
+            encode = I2S_CRG_CFG1_08_aiao_bclk_div_enum;
+            reset = 0x1;
+        } aiao_bclk_div[3:0];
+    } I2S_CRG_CFG1_08 @ 0x144;
+
+    reg {
+        name = "Interface attribute configuration register for the RX channel";
+        desc = "RX_IF_ATTRI is an interface attribute configuration register for the RX channel.
+
+Total reset value 0xE400_0004: rx_i2s_precision = 1 (16 bits) and the data sheet 'reserved' bits 31:30, 29 and 26 read 1 (modelled as reserved_b* fields). The vendor AIAO code of this generation (`aiao_hal`) writes the whole register.
+
+Data sheet 11.1.6 RX_IF_ATTRI (offset 0x1000, printed page 11-14, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 76139).";
+
+        field {
+            name = "reserved_b31_24";
+            desc = "Reserved in the data sheet; modelled so that the total reset value 0xE4000004 of the data sheet header is reproduced (reads 0xE4).";
+            sw = r;
+            hw = w;
+            reset = 0xE4;
+        } reserved_b31_24[31:24];
+
+        field {
+            name = "rx_sd_source_sel";
+            desc = "Serial data source select. The data sheet says only: 'This bit is set to 0x1000 in normal mode' (i.e. 0x8, bit 23 set; the reset value is 0 and the total reset value 0xE400_0004 has bits 23:20 = 0).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } rx_sd_source_sel[23:20];
+
+        enum RX_IF_ATTRI_rx_trackmode_enum {
+            SOUND_NOT_PROCESSED = 0 { name = "Sound Not Processed"; desc = "The sound is not processed."; };
+            SOUNDS_TWO_CHANNELS = 1 { name = "Sounds Two Channels"; desc = "The sounds in two channels are audio-left channel sounds."; };
+            SOUNDS_TWO_CHANNELS_2 = 2 { name = "Sounds Two Channels 2"; desc = "The sounds in two channels are audio-right channel sounds."; };
+            SOUNDS_TWO_CHANNELS_3 = 3 { name = "Sounds Two Channels 3"; desc = "The sounds in two channels are exchanged."; };
+            SOUNDS_TWO_CHANNELS_4 = 4 { name = "Sounds Two Channels 4"; desc = "The sounds of two channels are added and then output."; };
+            AUDIO_LEFT_CHANNEL = 5 { name = "Audio Left Channel"; desc = "The audio-left channel is muted, and the sound of the audio-right channel is from the original audio-right channel."; };
+            AUDIO_RIGHT_CHANNEL = 6 { name = "Audio Right Channel"; desc = "The audio-right channel is muted, and the sound of the audio-left channel is from the original audio-left channel."; };
+            RESERVED = 7 { name = "Reserved"; desc = "reserved"; };
+        };
+
+        field {
+            name = "rx_trackmode";
+            desc = "Audio-left and audio-right channel mode in I2S mode";
+            sw = rw;
+            hw = r;
+            encode = RX_IF_ATTRI_rx_trackmode_enum;
+            reset = 0x0;
+        } rx_trackmode[18:16];
+
+        field {
+            name = "rx_sd_offset";
+            desc = "Serial data offset (PCM timing mode; the TX register documents 0x0 = left-aligned mode, 0x1 = standard mode, other values reserved; the RX bit table gives no value list).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } rx_sd_offset[15:8];
+
+        enum RX_IF_ATTRI_rx_ch_num_enum {
+            V_1 = 0 { name = "V 1"; desc = "1"; };
+            V_2_OTHER_VALUES = 1 { name = "V 2 Other Values"; desc = "2 Other values: reserved"; };
+        };
+
+        field {
+            name = "rx_ch_num";
+            desc = "Number of RX channels";
+            sw = rw;
+            hw = r;
+            encode = RX_IF_ATTRI_rx_ch_num_enum;
+            reset = 0x0;
+        } rx_ch_num[6:4];
+
+        field {
+            name = "rx_i2s_precision";
+            desc = "Data sampling precision 2 I S mode: 01: 16 bits 10: 24 bits Other values: reserved PCM mode: 01: 16 bits Other values: reserved";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } rx_i2s_precision[3:2];
+
+        enum RX_IF_ATTRI_rx_mode_enum {
+            I_S_MODE = 0 { name = "I S Mode"; desc = "I S mode"; };
+            PCM_MODE_OTHER = 1 { name = "Pcm Mode Other"; desc = "PCM mode Other values: reserved"; };
+        };
+
+        field {
+            name = "rx_mode";
+            desc = "Interface mode of the RX channel";
+            sw = rw;
+            hw = r;
+            encode = RX_IF_ATTRI_rx_mode_enum;
+            reset = 0x0;
+        } rx_mode[1:0];
+    } RX_IF_ATTRI @ 0x1000;
+
+    reg {
+        name = "RX channel control register";
+        desc = "RX_DSP_CTRL is an RX channel control register.
+
+Start: set rx_enable = 1 after programming the buffer registers; stop: rx_enable = 0 and wait for rx_disable_done = 1 (the stop interrupt rx_stop_int also reports it).
+
+Data sheet 11.1.6 RX_DSP_CTRL (offset 0x1004, printed page 11-16, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 76227).";
+
+        enum RX_DSP_CTRL_rx_disable_done_enum {
+            NOT_COMPLETE = 0 { name = "Not Complete"; desc = "not complete"; };
+            COMPLETE = 1 { name = "Complete"; desc = "complete"; };
+        };
+
+        field {
+            name = "rx_disable_done";
+            desc = "RX channel disable completion identifier";
+            sw = r;
+            hw = w;
+            encode = RX_DSP_CTRL_rx_disable_done_enum;
+            reset = 0x1;
+        } rx_disable_done[29:29];
+
+        enum RX_DSP_CTRL_rx_enable_enum {
+            STOP = 0 { name = "Stop"; desc = "stop"; };
+            START = 1 { name = "Start"; desc = "start"; };
+        };
+
+        field {
+            name = "rx_enable";
+            desc = "RX channel start/stop control bit";
+            sw = rw;
+            hw = r;
+            encode = RX_DSP_CTRL_rx_enable_enum;
+            reset = 0x0;
+        } rx_enable[28:28];
+
+        enum RX_DSP_CTRL_bypass_en_enum {
+            DATA_PROCESSING_IMPLEMENTED = 0 { name = "Data Processing Implemented"; desc = "Data processing is implemented normally."; };
+            OPERATIONS_SUCH_AS = 1 { name = "Operations Such As"; desc = "Operations such as trackmode are not implemented."; };
+        };
+
+        field {
+            name = "bypass_en";
+            desc = "Data processing disable bit. The control function still takes effect after data processing is disabled.";
+            sw = rw;
+            hw = r;
+            encode = RX_DSP_CTRL_bypass_en_enum;
+            reset = 0x0;
+        } bypass_en[27:27];
+    } RX_DSP_CTRL @ 0x1004;
+
+    reg {
+        name = "DDR buffer start address register for the RX channel";
+        desc = "RX_BUFF_SADDR is a DDR buffer start address register for the RX channel.
+
+Data sheet 11.1.6 RX_BUFF_SADDR (offset 0x1080, printed page 11-16, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 76264).";
+
+        field {
+            name = "rx_buff_saddr";
+            desc = "Start address for the DDR buffer of RX channel 0. Its unit is byte.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } rx_buff_saddr[31:0];
+    } RX_BUFF_SADDR @ 0x1080;
+
+    reg {
+        name = "DDR buffer size register for the RX channel";
+        desc = "RX_BUFF_SIZE is a DDR buffer size register for the RX channel.
+
+Data sheet 11.1.6 RX_BUFF_SIZE (offset 0x1084, printed page 11-17, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 76293).";
+
+        field {
+            name = "rx_buff_size";
+            desc = "DDR buffer size of the RX channel. Its unit is byte.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } rx_buff_size[23:0];
+    } RX_BUFF_SIZE @ 0x1084;
+
+    reg {
+        name = "DDR buffer write address register for the RX channel";
+        desc = "RX_BUFF_WPTR is a DDR buffer write address register for the RX channel.
+
+Data sheet 11.1.6 RX_BUFF_WPTR (offset 0x1088, printed page 11-17, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 76314).";
+
+        field {
+            name = "rx_buff_wptr";
+            desc = "Write address for the DDR buffer of the RX channel. Its unit is byte.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } rx_buff_wptr[23:0];
+    } RX_BUFF_WPTR @ 0x1088;
+
+    reg {
+        name = "DDR buffer read address register for the RX channel";
+        desc = "RX_BUFF_RPTR is a DDR buffer read address register for the RX channel.
+
+Data sheet 11.1.6 RX_BUFF_RPTR (offset 0x108C, printed page 11-18, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 76349).";
+
+        field {
+            name = "rx_buff_rptr";
+            desc = "Read address for the DDR buffer of the RX channel. Its unit is byte.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } rx_buff_rptr[23:0];
+    } RX_BUFF_RPTR @ 0x108C;
+
+    reg {
+        name = "DDR buffer almost full threshold register _TH for the RX channel";
+        desc = "RX_BUFF_ALFULL_TH is a DDR buffer almost full threshold register for the RX channel.
+
+Data sheet 11.1.6 RX_BUFF_ALFULL_TH (offset 0x1090, printed page 11-18, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 76375).";
+
+        field {
+            name = "rx_buff_alfull_th";
+            desc = "Almost full threshold for the DDR buffer of the RX channel. Its unit is byte. If the available space of the DDR buffer is below the almost full threshold, the almost full raw interrupt is generated.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } rx_buff_alfull_th[23:0];
+    } RX_BUFF_ALFULL_TH @ 0x1090;
+
+    reg {
+        name = "Data transfer length register for the RX channel";
+        desc = "RX_TRANS_SIZE is data transfer length register for the RX interrupt.
+
+Data sheet 11.1.6 RX_TRANS_SIZE (offset 0x1094, printed page 11-19, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 76410).";
+
+        field {
+            name = "rx_trans_size";
+            desc = "After the RX channel receives the audio data with the length of rx_trans_size (in byte), a transfer completion interrupt is generated.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } rx_trans_size[23:0];
+    } RX_TRANS_SIZE @ 0x1094;
+
+    reg {
+        name = "Interrupt enable register for the RX channel";
+        desc = "RX_INT_ENA is an interrupt enable register for the RX channel.
+
+Data sheet 11.1.6 RX_INT_ENA (offset 0x10A0, printed page 11-19, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 76432).";
+
+        enum RX_INT_ENA_rx_if_full_lost_int_ena_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "rx_if_full_lost_int_ena";
+            desc = "Interface data full loss raw interrupt enable for the RX channel";
+            sw = rw;
+            hw = r;
+            encode = RX_INT_ENA_rx_if_full_lost_int_ena_enum;
+            reset = 0x0;
+        } rx_if_full_lost_int_ena[7:7];
+
+        enum RX_INT_ENA_rx_stop_int_ena_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "rx_stop_int_ena";
+            desc = "Stop interrupt enable for the RX channel";
+            sw = rw;
+            hw = r;
+            encode = RX_INT_ENA_rx_stop_int_ena_enum;
+            reset = 0x0;
+        } rx_stop_int_ena[5:5];
+
+        enum RX_INT_ENA_rx_bfifo_full_int_ena_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "rx_bfifo_full_int_ena";
+            desc = "Bus fifo overflow interrupt enable for the RX channel";
+            sw = rw;
+            hw = r;
+            encode = RX_INT_ENA_rx_bfifo_full_int_ena_enum;
+            reset = 0x0;
+        } rx_bfifo_full_int_ena[3:3];
+
+        enum RX_INT_ENA_rx_alfull_int_ena_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "rx_alfull_int_ena";
+            desc = "DDR buffer almost full interrupt enable for the RX channel";
+            sw = rw;
+            hw = r;
+            encode = RX_INT_ENA_rx_alfull_int_ena_enum;
+            reset = 0x0;
+        } rx_alfull_int_ena[2:2];
+
+        enum RX_INT_ENA_rx_full_int_ena_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "rx_full_int_ena";
+            desc = "DDR buffer full interrupt for the RX channel";
+            sw = rw;
+            hw = r;
+            encode = RX_INT_ENA_rx_full_int_ena_enum;
+            reset = 0x0;
+        } rx_full_int_ena[1:1];
+
+        enum RX_INT_ENA_rx_trans_int_ena_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "rx_trans_int_ena";
+            desc = "Transfer completion interrupt enable for the RX channel";
+            sw = rw;
+            hw = r;
+            encode = RX_INT_ENA_rx_trans_int_ena_enum;
+            reset = 0x0;
+        } rx_trans_int_ena[0:0];
+    } RX_INT_ENA @ 0x10A0;
+
+    reg {
+        name = "Raw interrupt register for the RX channel";
+        desc = "RX_INT_RAW is a raw interrupt register for the RX channel.
+
+Data sheet 11.1.6 RX_INT_RAW (offset 0x10A4, printed page 11-20, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 76493).";
+
+        enum RX_INT_RAW_rx_if_full_lost_int_raw_enum {
+            NO_RAW_INTERRUPT = 0 { name = "No Raw Interrupt"; desc = "No raw interrupt is generated."; };
+            RAW_INTERRUPT_GENERATED = 1 { name = "Raw Interrupt Generated"; desc = "A raw interrupt is generated."; };
+        };
+
+        field {
+            name = "rx_if_full_lost_int_raw";
+            desc = "Data full lost raw interrupt of the RX channel";
+            sw = r;
+            hw = w;
+            encode = RX_INT_RAW_rx_if_full_lost_int_raw_enum;
+            reset = 0x0;
+        } rx_if_full_lost_int_raw[7:7];
+
+        enum RX_INT_RAW_rx_stop_int_raw_enum {
+            NO_RAW_INTERRUPT = 0 { name = "No Raw Interrupt"; desc = "No raw interrupt is generated."; };
+            RAW_INTERRUPT_GENERATED = 1 { name = "Raw Interrupt Generated"; desc = "A raw interrupt is generated."; };
+        };
+
+        field {
+            name = "rx_stop_int_raw";
+            desc = "Stop raw interrupt of the RX channel";
+            sw = r;
+            hw = w;
+            encode = RX_INT_RAW_rx_stop_int_raw_enum;
+            reset = 0x0;
+        } rx_stop_int_raw[5:5];
+
+        enum RX_INT_RAW_rx_bfifo_full_int_raw_enum {
+            NO_RAW_INTERRUPT = 0 { name = "No Raw Interrupt"; desc = "No raw interrupt is generated."; };
+            RAW_INTERRUPT_GENERATED = 1 { name = "Raw Interrupt Generated"; desc = "A raw interrupt is generated."; };
+        };
+
+        field {
+            name = "rx_bfifo_full_int_raw";
+            desc = "Bus FIFO overflow raw interrupt of the RX channel";
+            sw = r;
+            hw = w;
+            encode = RX_INT_RAW_rx_bfifo_full_int_raw_enum;
+            reset = 0x0;
+        } rx_bfifo_full_int_raw[3:3];
+
+        enum RX_INT_RAW_rx_alfull_int_raw_enum {
+            NO_RAW_INTERRUPT = 0 { name = "No Raw Interrupt"; desc = "No raw interrupt is generated."; };
+            RAW_INTERRUPT_GENERATED = 1 { name = "Raw Interrupt Generated"; desc = "A raw interrupt is generated."; };
+        };
+
+        field {
+            name = "rx_alfull_int_raw";
+            desc = "DDR buffer almost full raw interrupt of the RX channel";
+            sw = r;
+            hw = w;
+            encode = RX_INT_RAW_rx_alfull_int_raw_enum;
+            reset = 0x0;
+        } rx_alfull_int_raw[2:2];
+
+        enum RX_INT_RAW_rx_full_int_raw_enum {
+            NO_RAW_INTERRUPT = 0 { name = "No Raw Interrupt"; desc = "No raw interrupt is generated."; };
+            RAW_INTERRUPT_GENERATED = 1 { name = "Raw Interrupt Generated"; desc = "A raw interrupt is generated."; };
+        };
+
+        field {
+            name = "rx_full_int_raw";
+            desc = "DDR buffer full raw interrupt of the RX channel";
+            sw = r;
+            hw = w;
+            encode = RX_INT_RAW_rx_full_int_raw_enum;
+            reset = 0x0;
+        } rx_full_int_raw[1:1];
+
+        enum RX_INT_RAW_rx_trans_int_raw_enum {
+            NO_RAW_INTERRUPT = 0 { name = "No Raw Interrupt"; desc = "No raw interrupt is generated."; };
+            RAW_INTERRUPT_GENERATED = 1 { name = "Raw Interrupt Generated"; desc = "A raw interrupt is generated."; };
+        };
+
+        field {
+            name = "rx_trans_int_raw";
+            desc = "Transfer completion raw interrupt of the RX interrupt";
+            sw = r;
+            hw = w;
+            encode = RX_INT_RAW_rx_trans_int_raw_enum;
+            reset = 0x0;
+        } rx_trans_int_raw[0:0];
+    } RX_INT_RAW @ 0x10A4;
+
+    reg {
+        name = "Interrupt status register for the RX channel";
+        desc = "RX_INT_STATUS is an interrupt status register for the RX channel.
+
+The data sheet bit table names bit 7 'tx_if_full_lost_int_status' (copy error); it is the RX interface full-loss interrupt and is named rx_* here.
+
+Data sheet 11.1.6 RX_INT_STATUS (offset 0x10A8, printed page 11-21, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 76552).";
+
+        enum RX_INT_STATUS_rx_if_full_lost_int_status_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "rx_if_full_lost_int_status";
+            desc = "Status of the data full loss interrupt of the RX channel";
+            sw = r;
+            hw = w;
+            encode = RX_INT_STATUS_rx_if_full_lost_int_status_enum;
+            reset = 0x0;
+        } rx_if_full_lost_int_status[7:7];
+
+        enum RX_INT_STATUS_rx_stop_int_status_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "rx_stop_int_status";
+            desc = "Status of the stop interrupt of the RX interrupt";
+            sw = r;
+            hw = w;
+            encode = RX_INT_STATUS_rx_stop_int_status_enum;
+            reset = 0x0;
+        } rx_stop_int_status[5:5];
+
+        enum RX_INT_STATUS_rx_bfifo_full_int_status_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "rx_bfifo_full_int_status";
+            desc = "Status of the bus fifo overflow interrupt of the RC channel";
+            sw = r;
+            hw = w;
+            encode = RX_INT_STATUS_rx_bfifo_full_int_status_enum;
+            reset = 0x0;
+        } rx_bfifo_full_int_status[3:3];
+
+        enum RX_INT_STATUS_rx_alfull_int_status_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "rx_alfull_int_status";
+            desc = "Status of the DDR buffer almost full interrupt of the RX channel";
+            sw = r;
+            hw = w;
+            encode = RX_INT_STATUS_rx_alfull_int_status_enum;
+            reset = 0x0;
+        } rx_alfull_int_status[2:2];
+
+        enum RX_INT_STATUS_rx_full_int_status_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "rx_full_int_status";
+            desc = "Status of the DDR buffer full interrupt of the RX interrupt";
+            sw = r;
+            hw = w;
+            encode = RX_INT_STATUS_rx_full_int_status_enum;
+            reset = 0x0;
+        } rx_full_int_status[1:1];
+
+        enum RX_INT_STATUS_rx_trans_int_status_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "rx_trans_int_status";
+            desc = "Status of the transfer completion interrupt of the RX channel";
+            sw = r;
+            hw = w;
+            encode = RX_INT_STATUS_rx_trans_int_status_enum;
+            reset = 0x0;
+        } rx_trans_int_status[0:0];
+    } RX_INT_STATUS @ 0x10A8;
+
+    reg {
+        name = "Interrupt clear register for the RX channel";
+        desc = "RX_INT_CLR is an interrupt clear register for the RX channel.
+
+The data sheet bit table names bit 7 'tx_if_full_lost_int_clear' (copy error, named rx_* here) and gives bit 0 the access type W, the other bits WC; all are write-one-to-clear.
+
+Data sheet 11.1.6 RX_INT_CLR (offset 0x10AC, printed page 11-22, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 76611).";
+
+        enum RX_INT_CLR_rx_if_full_lost_int_clear_enum {
+            NOT_CLEARED = 0 { name = "Not Cleared"; desc = "not cleared"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "rx_if_full_lost_int_clear";
+            desc = "Data full loss interrupt clear for the RX channel";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = RX_INT_CLR_rx_if_full_lost_int_clear_enum;
+            reset = 0x0;
+        } rx_if_full_lost_int_clear[7:7];
+
+        enum RX_INT_CLR_rx_stop_int_clear_enum {
+            NOT_CLEARED = 0 { name = "Not Cleared"; desc = "not cleared"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "rx_stop_int_clear";
+            desc = "Stop interrupt clear for the RX channel";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = RX_INT_CLR_rx_stop_int_clear_enum;
+            reset = 0x0;
+        } rx_stop_int_clear[5:5];
+
+        enum RX_INT_CLR_rx_bfifo_full_int_clear_enum {
+            NOT_CLEARED = 0 { name = "Not Cleared"; desc = "not cleared"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "rx_bfifo_full_int_clear";
+            desc = "Bus fifo overflow interrupt clear for the RX channel";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = RX_INT_CLR_rx_bfifo_full_int_clear_enum;
+            reset = 0x0;
+        } rx_bfifo_full_int_clear[3:3];
+
+        enum RX_INT_CLR_rx_alfull_int_clear_enum {
+            NOT_CLEARED = 0 { name = "Not Cleared"; desc = "not cleared"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "rx_alfull_int_clear";
+            desc = "DDR buffer almost full interrupt clear for the RX channel";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = RX_INT_CLR_rx_alfull_int_clear_enum;
+            reset = 0x0;
+        } rx_alfull_int_clear[2:2];
+
+        enum RX_INT_CLR_rx_full_int_clear_enum {
+            NOT_CLEARED = 0 { name = "Not Cleared"; desc = "not cleared"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "rx_full_int_clear";
+            desc = "DDR buffer full interrupt clear for the RX channel";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = RX_INT_CLR_rx_full_int_clear_enum;
+            reset = 0x0;
+        } rx_full_int_clear[1:1];
+
+        enum RX_INT_CLR_rx_trans_int_clear_enum {
+            NOT_CLEARED = 0 { name = "Not Cleared"; desc = "not cleared"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "rx_trans_int_clear";
+            desc = "Transfer completion interrupt clear for the RX interrupt";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = RX_INT_CLR_rx_trans_int_clear_enum;
+            reset = 0x0;
+        } rx_trans_int_clear[0:0];
+    } RX_INT_CLR @ 0x10AC;
+
+    reg {
+        name = "Interface attribute configuration register for the TX channel";
+        desc = "TX_IF_ATTRI is an interface attribute configuration register for the TX channel.
+
+Total reset value 0xE400_0004: tx_i2s_precision = 1 (16 bits) and the data sheet 'reserved' bits 31:30, 29 and 26 read 1 (modelled as reserved_b* fields).
+
+Data sheet 11.1.6 TX_IF_ATTRI (offset 0x2000, printed page 11-23, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 76669).";
+
+        field {
+            name = "reserved_b31_19";
+            desc = "Reserved in the data sheet; modelled so that the total reset value 0xE4000004 of the data sheet header is reproduced (reads 0x1C80).";
+            sw = r;
+            hw = w;
+            reset = 0x1C80;
+        } reserved_b31_19[31:19];
+
+        enum TX_IF_ATTRI_tx_trackmode_enum {
+            SOUND_NOT_PROCESSED = 0 { name = "Sound Not Processed"; desc = "The sound is not processed."; };
+            SOUNDS_TWO_CHANNELS = 1 { name = "Sounds Two Channels"; desc = "The sounds in two channels are audio-left channel sounds."; };
+            SOUNDS_TWO_CHANNELS_2 = 2 { name = "Sounds Two Channels 2"; desc = "The sounds in two channels are audio-right channel sounds."; };
+            SOUNDS_TWO_CHANNELS_3 = 3 { name = "Sounds Two Channels 3"; desc = "The sounds in two channels are exchanged."; };
+            SOUNDS_TWO_CHANNELS_4 = 4 { name = "Sounds Two Channels 4"; desc = "The sounds of two channels are added and then output."; };
+            AUDIO_LEFT_CHANNEL = 5 { name = "Audio Left Channel"; desc = "The audio-left channel is muted, and the sound of the audio- right channel is from the original audio-right channel."; };
+            AUDIO_RIGHT_CHANNEL = 6 { name = "Audio Right Channel"; desc = "The audio-right channel is muted, and the sound of the audio- left channel is from the original audio-left channel."; };
+            AUDIO_LEFT_AUDIO = 7 { name = "Audio Left Audio"; desc = "The audio-left and audio-right channels are muted."; };
+        };
+
+        field {
+            name = "tx_trackmode";
+            desc = "Audio-left and audio-right channel mode in I S mode";
+            sw = rw;
+            hw = r;
+            encode = TX_IF_ATTRI_tx_trackmode_enum;
+            reset = 0x0;
+        } tx_trackmode[18:16];
+
+        enum TX_IF_ATTRI_tx_sd_offset_enum {
+            LEFT_ALIGNED_MODE = 0x0 { name = "Left Aligned Mode"; desc = "left-aligned mode"; };
+            STANDARD_MODE_OTHER = 0x1 { name = "Standard Mode Other"; desc = "standard mode Other values: reserved"; };
+        };
+
+        field {
+            name = "tx_sd_offset";
+            desc = "PCM timing mode";
+            sw = rw;
+            hw = r;
+            encode = TX_IF_ATTRI_tx_sd_offset_enum;
+            reset = 0x0;
+        } tx_sd_offset[15:8];
+
+        enum TX_IF_ATTRI_tx_ch_num_enum {
+            DATA_TRANSMITTED_ONE = 0 { name = "Data Transmitted One"; desc = "Data is transmitted by one audio channel."; };
+            DATA_TRANSMITTED_TWO = 1 { name = "Data Transmitted Two"; desc = "Data is transmitted by two audio channels as stereo. Other values: reserved"; };
+        };
+
+        field {
+            name = "tx_ch_num";
+            desc = "Select of the TX channel";
+            sw = rw;
+            hw = r;
+            encode = TX_IF_ATTRI_tx_ch_num_enum;
+            reset = 0x0;
+        } tx_ch_num[5:4];
+
+        field {
+            name = "tx_i2s_precision";
+            desc = "Data sampling precision 2 I S mode: 01: 16 bits 10: 24 bits Other values: reserved PCM mode: 01: 16 bits Other values: reserved";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } tx_i2s_precision[3:2];
+
+        enum TX_IF_ATTRI_tx_mode_enum {
+            I_S_MODE = 0 { name = "I S Mode"; desc = "I S mode"; };
+            PCM_MODE_OTHER = 1 { name = "Pcm Mode Other"; desc = "PCM mode Other values: reserved"; };
+        };
+
+        field {
+            name = "tx_mode";
+            desc = "Interface mode of the TX channel";
+            sw = rw;
+            hw = r;
+            encode = TX_IF_ATTRI_tx_mode_enum;
+            reset = 0x0;
+        } tx_mode[1:0];
+    } TX_IF_ATTRI @ 0x2000;
+
+    reg {
+        name = "TX channel control register";
+        desc = "TX_DSP_CTRL is a TX channel control register.
+
+Start: set tx_enable = 1 after the DDR buffer has been filled past the almost-empty threshold; stop: tx_enable = 0 and wait for tx_disable_done = 1. Volume 0x79 = 0 dB.
+
+Data sheet 11.1.6 TX_DSP_CTRL (offset 0x2004, printed page 11-24, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 76743).";
+
+        enum TX_DSP_CTRL_tx_disable_done_enum {
+            NOT_COMPLETE = 0 { name = "Not Complete"; desc = "not complete"; };
+            COMPLETE = 1 { name = "Complete"; desc = "complete"; };
+        };
+
+        field {
+            name = "tx_disable_done";
+            desc = "TX channel disable completion identifier";
+            sw = r;
+            hw = w;
+            encode = TX_DSP_CTRL_tx_disable_done_enum;
+            reset = 0x1;
+        } tx_disable_done[29:29];
+
+        enum TX_DSP_CTRL_tx_enable_enum {
+            STOP = 0 { name = "Stop"; desc = "stop"; };
+            START = 1 { name = "Start"; desc = "start"; };
+        };
+
+        field {
+            name = "tx_enable";
+            desc = "TX channel start/stop control bit";
+            sw = rw;
+            hw = r;
+            encode = TX_DSP_CTRL_tx_enable_enum;
+            reset = 0x0;
+        } tx_enable[28:28];
+
+        enum TX_DSP_CTRL_bypass_en_enum {
+            DATA_PROCESSING_IMPLEMENTED = 0 { name = "Data Processing Implemented"; desc = "Data processing is implemented normally."; };
+            OPERATIONS_SUCH_AS = 1 { name = "Operations Such As"; desc = "Operations such as trackmode and volume processing are not implemented."; };
+        };
+
+        field {
+            name = "bypass_en";
+            desc = "Data processing disable bit. The control function still takes effect after data processing is disabled.";
+            sw = rw;
+            hw = r;
+            encode = TX_DSP_CTRL_bypass_en_enum;
+            reset = 0x0;
+        } bypass_en[27:27];
+
+        field {
+            name = "fade_out_rate";
+            desc = "Fade-out rate 0000: The fade-out rate changes every one sampling point. 0001: The fade-out rate changes every two sampling points. 0110: The fade-out rate changes every four sampling points. 0011: The fade-out rate changes every eight sampling points. 0100: The fade-out rate changes every 16 sampling points. 0101: The fade-out rate changes every 32 sampling points. 0110: The fade-out rate changes every 64 sampling points. 0111: The fade-out rate changes every 128 sampling points. Other values: reserved";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } fade_out_rate[23:20];
+
+        enum TX_DSP_CTRL_fade_in_rate_enum {
+            FADE_RATE_CHANGES = 0 { name = "Fade Rate Changes"; desc = "The fade-in rate changes every one sampling point."; };
+            FADE_RATE_CHANGES_2 = 1 { name = "Fade Rate Changes 2"; desc = "The fade-in rate changes every two sampling points."; };
+            FADE_RATE_CHANGES_3 = 2 { name = "Fade Rate Changes 3"; desc = "The fade-in rate changes every four sampling points."; };
+            FADE_RATE_CHANGES_4 = 3 { name = "Fade Rate Changes 4"; desc = "The fade-in rate changes every eight sampling points."; };
+            FADE_RATE_CHANGES_5 = 4 { name = "Fade Rate Changes 5"; desc = "The fade-in rate changes every 16 sampling points."; };
+            FADE_RATE_CHANGES_6 = 5 { name = "Fade Rate Changes 6"; desc = "The fade-in rate changes every 32 sampling points."; };
+            FADE_RATE_CHANGES_7 = 6 { name = "Fade Rate Changes 7"; desc = "The fade-in rate changes every 64 sampling points."; };
+            FADE_RATE_CHANGES_8 = 7 { name = "Fade Rate Changes 8"; desc = "The fade-in rate changes every 128 sampling points. Other values: reserved"; };
+        };
+
+        field {
+            name = "fade_in_rate";
+            desc = "Fade-in rate";
+            sw = rw;
+            hw = r;
+            encode = TX_DSP_CTRL_fade_in_rate_enum;
+            reset = 0x0;
+        } fade_in_rate[19:16];
+
+        enum TX_DSP_CTRL_volume_enum {
+            V_80_DB = 0x29 { name = "V 80 Db"; desc = "-80 dB"; };
+            V_79_DB = 0x2A { name = "V 79 Db"; desc = "-79 dB …"; };
+            V_4_DB = 0x75 { name = "V 4 Db"; desc = "-4 dB"; };
+            V_2_DB = 0x77 { name = "V 2 Db"; desc = "-2 dB"; };
+            V_0_DB = 0x79 { name = "V 0 Db"; desc = "0 dB"; };
+            V_2_DB_2 = 0x7B { name = "V 2 Db 2"; desc = "+2 dB"; };
+            V_4_DB_2 = 0x7D { name = "V 4 Db 2"; desc = "+4 dB"; };
+            V_6_DB = 0x7F { name = "V 6 Db"; desc = "+6 dB (maximum value)"; };
+        };
+
+        field {
+            name = "volume";
+            desc = "Volume. The volume is incremented by 1 dB when the field value is incremented by 1. 0x00-0x28: mute";
+            sw = rw;
+            hw = r;
+            encode = TX_DSP_CTRL_volume_enum;
+            reset = 0x0;
+        } volume[14:8];
+
+        enum TX_DSP_CTRL_mute_fade_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "mute_fade_en";
+            desc = "Mute fade-in/fade-out control";
+            sw = rw;
+            hw = r;
+            encode = TX_DSP_CTRL_mute_fade_en_enum;
+            reset = 0x0;
+        } mute_fade_en[1:1];
+
+        enum TX_DSP_CTRL_mute_en_enum {
+            NOT_MUTED = 0 { name = "Not Muted"; desc = "not muted"; };
+            MUTED = 1 { name = "Muted"; desc = "muted"; };
+        };
+
+        field {
+            name = "mute_en";
+            desc = "Mute control";
+            sw = rw;
+            hw = r;
+            encode = TX_DSP_CTRL_mute_en_enum;
+            reset = 0x0;
+        } mute_en[0:0];
+    } TX_DSP_CTRL @ 0x2004;
+
+    reg {
+        name = "DDR buffer start address register for the TX channel";
+        desc = "TX_BUFF_SADDR is a DDR buffer start address register for the TX channel.
+
+Data sheet 11.1.6 TX_BUFF_SADDR (offset 0x2080, printed page 11-26, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 76839).";
+
+        field {
+            name = "tx_buff_saddr";
+            desc = "Start address for the DDR buffer of the TX channel. Its unit is byte.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } tx_buff_saddr[31:0];
+    } TX_BUFF_SADDR @ 0x2080;
+
+    reg {
+        name = "DDR buffer size register for the TX channel";
+        desc = "TX_BUFF_SIZE is a DDR buffer size register for the TX channel.
+
+Data sheet 11.1.6 TX_BUFF_SIZE (offset 0x2084, printed page 11-27, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 76869).";
+
+        field {
+            name = "tx_buff_size";
+            desc = "DDR buffer size of the TX channel. Its unit is byte.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } tx_buff_size[23:0];
+    } TX_BUFF_SIZE @ 0x2084;
+
+    reg {
+        name = "DDR buffer write address register for the TX channel";
+        desc = "TX_BUFF_WPTR is a DDR buffer write address register for the TX channel.
+
+Data sheet 11.1.6 TX_BUFF_WPTR (offset 0x2088, printed page 11-27, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 76891).";
+
+        field {
+            name = "tx_buff_wptr";
+            desc = "Write address for the DDR buffer of the TX channel. Its unit is byte.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } tx_buff_wptr[23:0];
+    } TX_BUFF_WPTR @ 0x2088;
+
+    reg {
+        name = "DDR buffer read address register for the TX channel";
+        desc = "TX_BUFF_RPTR is a DDR buffer read address register for the TX channel.
+
+Data sheet 11.1.6 TX_BUFF_RPTR (offset 0x208C, printed page 11-28, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 76928).";
+
+        field {
+            name = "tx_buff_rptr";
+            desc = "Read address for the DDR buffer of the TX channel";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } tx_buff_rptr[23:0];
+    } TX_BUFF_RPTR @ 0x208C;
+
+    reg {
+        name = "DDR buffer almost empty threshold Y_TH register for the TX channel";
+        desc = "TX_BUFF_ALEMPTY_TH is a DDR buffer almost empty threshold register for the TX channel.
+
+Data sheet 11.1.6 TX_BUFF_ALEMPTY_TH (offset 0x2090, printed page 11-28, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 76953).";
+
+        field {
+            name = "tx_buff_alempty_th";
+            desc = "Almost empty threshold for the DDR buffer of the TX channel. Its unit is byte. If the available space of the DDR buffer is below the almost empty threshold, the almost empty raw interrupt is generated.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } tx_buff_alempty_th[23:0];
+    } TX_BUFF_ALEMPTY_TH @ 0x2090;
+
+    reg {
+        name = "Data transfer length register for the TX channel";
+        desc = "TX_TRANS_SIZE is a data transfer length register for the TX channel.
+
+Data sheet 11.1.6 TX_TRANS_SIZE (offset 0x2094, printed page 11-29, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 76987).";
+
+        field {
+            name = "tx_trans_size";
+            desc = "After the TX channel transmits the audio data with the length of tx_trans_size (in byte), a transfer completion interrupt is generated.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } tx_trans_size[23:0];
+    } TX_TRANS_SIZE @ 0x2094;
+
+    reg {
+        name = "Interrupt enable register for the TX channel";
+        desc = "TX_INT_ENA is an interrupt enable register for the TX channel.
+
+Data sheet 11.1.6 TX_INT_ENA (offset 0x20A0, printed page 11-29, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 77009).";
+
+        enum TX_INT_ENA_tx_dat_break_int_ena_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "tx_dat_break_int_ena";
+            desc = "Interface data break interrupt enable for the TX channel";
+            sw = rw;
+            hw = r;
+            encode = TX_INT_ENA_tx_dat_break_int_ena_enum;
+            reset = 0x0;
+        } tx_dat_break_int_ena[7:7];
+
+        enum TX_INT_ENA_tx_mfade_int_ena_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "tx_mfade_int_ena";
+            desc = "Mute fade-in/fade-output completion interrupt enable for the TX channel";
+            sw = rw;
+            hw = r;
+            encode = TX_INT_ENA_tx_mfade_int_ena_enum;
+            reset = 0x0;
+        } tx_mfade_int_ena[6:6];
+
+        enum TX_INT_ENA_tx_stop_int_ena_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "tx_stop_int_ena";
+            desc = "Stop interrupt enable for the TX channel";
+            sw = rw;
+            hw = r;
+            encode = TX_INT_ENA_tx_stop_int_ena_enum;
+            reset = 0x0;
+        } tx_stop_int_ena[5:5];
+
+        enum TX_INT_ENA_tx_ififo_empty_int_ena_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "tx_ififo_empty_int_ena";
+            desc = "Interface fifo underflow interrupt enable for the TX channel";
+            sw = rw;
+            hw = r;
+            encode = TX_INT_ENA_tx_ififo_empty_int_ena_enum;
+            reset = 0x0;
+        } tx_ififo_empty_int_ena[4:4];
+
+        enum TX_INT_ENA_tx_bfifo_empty_int_ena_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "tx_bfifo_empty_int_ena";
+            desc = "Bus fifo underflow interrupt enable for the TX channel";
+            sw = rw;
+            hw = r;
+            encode = TX_INT_ENA_tx_bfifo_empty_int_ena_enum;
+            reset = 0x0;
+        } tx_bfifo_empty_int_ena[3:3];
+
+        enum TX_INT_ENA_tx_alempty_int_ena_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "tx_alempty_int_ena";
+            desc = "DDR buffer almost empty interrupt enable for the TX channel";
+            sw = rw;
+            hw = r;
+            encode = TX_INT_ENA_tx_alempty_int_ena_enum;
+            reset = 0x0;
+        } tx_alempty_int_ena[2:2];
+
+        enum TX_INT_ENA_tx_empty_int_ena_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "tx_empty_int_ena";
+            desc = "DDR buffer empty interrupt for the TX channel";
+            sw = rw;
+            hw = r;
+            encode = TX_INT_ENA_tx_empty_int_ena_enum;
+            reset = 0x0;
+        } tx_empty_int_ena[1:1];
+
+        enum TX_INT_ENA_tx_trans_int_ena_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "tx_trans_int_ena";
+            desc = "Transfer completion interrupt enable for the TX channel";
+            sw = rw;
+            hw = r;
+            encode = TX_INT_ENA_tx_trans_int_ena_enum;
+            reset = 0x0;
+        } tx_trans_int_ena[0:0];
+    } TX_INT_ENA @ 0x20A0;
+
+    reg {
+        name = "Raw interrupt register for the TX channel";
+        desc = "TX_INT_RAW is a raw interrupt register for the TX channel.
+
+Data sheet 11.1.6 TX_INT_RAW (offset 0x20A4, printed page 11-30, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 77078).";
+
+        enum TX_INT_RAW_tx_dat_break_int_raw_enum {
+            NO_RAW_INTERRUPT = 0 { name = "No Raw Interrupt"; desc = "No raw interrupt is generated."; };
+            RAW_INTERRUPT_GENERATED = 1 { name = "Raw Interrupt Generated"; desc = "A raw interrupt is generated."; };
+        };
+
+        field {
+            name = "tx_dat_break_int_raw";
+            desc = "Interface data break raw interrupt of the TX channel";
+            sw = r;
+            hw = w;
+            encode = TX_INT_RAW_tx_dat_break_int_raw_enum;
+            reset = 0x0;
+        } tx_dat_break_int_raw[7:7];
+
+        enum TX_INT_RAW_tx_mfade_int_raw_enum {
+            NO_RAW_INTERRUPT = 0 { name = "No Raw Interrupt"; desc = "No raw interrupt is generated."; };
+            RAW_INTERRUPT_GENERATED = 1 { name = "Raw Interrupt Generated"; desc = "A raw interrupt is generated."; };
+        };
+
+        field {
+            name = "tx_mfade_int_raw";
+            desc = "Mute fade-in/fade-output completion raw interrupt of the TX channel";
+            sw = r;
+            hw = w;
+            encode = TX_INT_RAW_tx_mfade_int_raw_enum;
+            reset = 0x0;
+        } tx_mfade_int_raw[6:6];
+
+        enum TX_INT_RAW_tx_stop_int_raw_enum {
+            NO_RAW_INTERRUPT = 0 { name = "No Raw Interrupt"; desc = "No raw interrupt is generated."; };
+            RAW_INTERRUPT_GENERATED = 1 { name = "Raw Interrupt Generated"; desc = "A raw interrupt is generated."; };
+        };
+
+        field {
+            name = "tx_stop_int_raw";
+            desc = "Stop raw interrupt of the TX channel";
+            sw = r;
+            hw = w;
+            encode = TX_INT_RAW_tx_stop_int_raw_enum;
+            reset = 0x0;
+        } tx_stop_int_raw[5:5];
+
+        enum TX_INT_RAW_tx_ififo_empty_int_raw_enum {
+            NO_RAW_INTERRUPT = 0 { name = "No Raw Interrupt"; desc = "No raw interrupt is generated."; };
+            RAW_INTERRUPT_GENERATED = 1 { name = "Raw Interrupt Generated"; desc = "A raw interrupt is generated."; };
+        };
+
+        field {
+            name = "tx_ififo_empty_int_raw";
+            desc = "Interface fifo underflow raw interrupt of the TX channel";
+            sw = r;
+            hw = w;
+            encode = TX_INT_RAW_tx_ififo_empty_int_raw_enum;
+            reset = 0x0;
+        } tx_ififo_empty_int_raw[4:4];
+
+        enum TX_INT_RAW_tx_bfifo_empty_int_raw_enum {
+            NO_RAW_INTERRUPT = 0 { name = "No Raw Interrupt"; desc = "No raw interrupt is generated."; };
+            RAW_INTERRUPT_GENERATED = 1 { name = "Raw Interrupt Generated"; desc = "A raw interrupt is generated."; };
+        };
+
+        field {
+            name = "tx_bfifo_empty_int_raw";
+            desc = "Bus fifo underflow raw interrupt of the TX channel";
+            sw = r;
+            hw = w;
+            encode = TX_INT_RAW_tx_bfifo_empty_int_raw_enum;
+            reset = 0x0;
+        } tx_bfifo_empty_int_raw[3:3];
+
+        enum TX_INT_RAW_tx_alempty_int_raw_enum {
+            NO_RAW_INTERRUPT = 0 { name = "No Raw Interrupt"; desc = "No raw interrupt is generated."; };
+            RAW_INTERRUPT_GENERATED = 1 { name = "Raw Interrupt Generated"; desc = "A raw interrupt is generated."; };
+        };
+
+        field {
+            name = "tx_alempty_int_raw";
+            desc = "DDR buffer almost empty raw interrupt of the TX channel";
+            sw = r;
+            hw = w;
+            encode = TX_INT_RAW_tx_alempty_int_raw_enum;
+            reset = 0x0;
+        } tx_alempty_int_raw[2:2];
+
+        enum TX_INT_RAW_tx_empty_int_raw_enum {
+            NO_RAW_INTERRUPT = 0 { name = "No Raw Interrupt"; desc = "No raw interrupt is generated."; };
+            RAW_INTERRUPT_GENERATED = 1 { name = "Raw Interrupt Generated"; desc = "A raw interrupt is generated."; };
+        };
+
+        field {
+            name = "tx_empty_int_raw";
+            desc = "DDR buffer empty raw interrupt of the TX channel";
+            sw = r;
+            hw = w;
+            encode = TX_INT_RAW_tx_empty_int_raw_enum;
+            reset = 0x0;
+        } tx_empty_int_raw[1:1];
+
+        enum TX_INT_RAW_tx_trans_int_raw_enum {
+            NO_RAW_INTERRUPT = 0 { name = "No Raw Interrupt"; desc = "No raw interrupt is generated."; };
+            RAW_INTERRUPT_GENERATED = 1 { name = "Raw Interrupt Generated"; desc = "A raw interrupt is generated."; };
+        };
+
+        field {
+            name = "tx_trans_int_raw";
+            desc = "Transfer completion raw interrupt of the TX channel";
+            sw = r;
+            hw = w;
+            encode = TX_INT_RAW_tx_trans_int_raw_enum;
+            reset = 0x0;
+        } tx_trans_int_raw[0:0];
+    } TX_INT_RAW @ 0x20A4;
+
+    reg {
+        name = "Interrupt status register for the TX channel";
+        desc = "TX_INT_STATUS is an interrupt status register for the TX channel.
+
+Data sheet 11.1.6 TX_INT_STATUS (offset 0x20A8, printed page 11-32, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 77158).";
+
+        enum TX_INT_STATUS_tx_dat_break_int_status_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "tx_dat_break_int_status";
+            desc = "Status of the interface data break interrupt of the TX channel";
+            sw = r;
+            hw = w;
+            encode = TX_INT_STATUS_tx_dat_break_int_status_enum;
+            reset = 0x0;
+        } tx_dat_break_int_status[7:7];
+
+        enum TX_INT_STATUS_tx_mfade_int_status_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "tx_mfade_int_status";
+            desc = "Status of the mute fade-in/fade-output completion interrupt of the TX channel";
+            sw = r;
+            hw = w;
+            encode = TX_INT_STATUS_tx_mfade_int_status_enum;
+            reset = 0x0;
+        } tx_mfade_int_status[6:6];
+
+        enum TX_INT_STATUS_tx_stop_int_status_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "tx_stop_int_status";
+            desc = "Status of the stop interrupt of the TX interrupt";
+            sw = r;
+            hw = w;
+            encode = TX_INT_STATUS_tx_stop_int_status_enum;
+            reset = 0x0;
+        } tx_stop_int_status[5:5];
+
+        enum TX_INT_STATUS_tx_ififo_empty_int_status_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "tx_ififo_empty_int_status";
+            desc = "Status of the interface FIFO underflow interrupt of the TX channel";
+            sw = r;
+            hw = w;
+            encode = TX_INT_STATUS_tx_ififo_empty_int_status_enum;
+            reset = 0x0;
+        } tx_ififo_empty_int_status[4:4];
+
+        enum TX_INT_STATUS_tx_bfifo_empty_int_status_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "tx_bfifo_empty_int_status";
+            desc = "Status of the bus FIFO underflow interrupt of the TX channel";
+            sw = r;
+            hw = w;
+            encode = TX_INT_STATUS_tx_bfifo_empty_int_status_enum;
+            reset = 0x0;
+        } tx_bfifo_empty_int_status[3:3];
+
+        enum TX_INT_STATUS_tx_alempty_int_status_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "tx_alempty_int_status";
+            desc = "DDR buffer almost empty interrupt of the TX channel";
+            sw = r;
+            hw = w;
+            encode = TX_INT_STATUS_tx_alempty_int_status_enum;
+            reset = 0x0;
+        } tx_alempty_int_status[2:2];
+
+        enum TX_INT_STATUS_tx_empty_int_status_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "tx_empty_int_status";
+            desc = "Status of the DDR buffer empty interrupt of the TX channel";
+            sw = r;
+            hw = w;
+            encode = TX_INT_STATUS_tx_empty_int_status_enum;
+            reset = 0x0;
+        } tx_empty_int_status[1:1];
+
+        enum TX_INT_STATUS_tx_trans_int_status_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "tx_trans_int_status";
+            desc = "Status of the transfer completion interrupt of the TX channel";
+            sw = r;
+            hw = w;
+            encode = TX_INT_STATUS_tx_trans_int_status_enum;
+            reset = 0x0;
+        } tx_trans_int_status[0:0];
+    } TX_INT_STATUS @ 0x20A8;
+
+    reg {
+        name = "Interrupt clear register for the TX channel";
+        desc = "TX_INT_CLR is an interrupt clear register for the TX channel.
+
+The data sheet gives bit 7 (tx_dat_break_int_clear) the access type RO with the enable-register text; it is modelled write-one-to-clear like the other bits.
+
+Data sheet 11.1.6 TX_INT_CLR (offset 0x20AC, printed page 11-33, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 77229).";
+
+        enum TX_INT_CLR_tx_dat_break_int_clear_enum {
+            NOT_CLEARED = 0 { name = "Not Cleared"; desc = "not cleared"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "tx_dat_break_int_clear";
+            desc = "Interface data break interrupt clear for the TX channel";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = TX_INT_CLR_tx_dat_break_int_clear_enum;
+            reset = 0x0;
+        } tx_dat_break_int_clear[7:7];
+
+        enum TX_INT_CLR_tx_mfade_int_clear_enum {
+            NOT_CLEARED = 0 { name = "Not Cleared"; desc = "not cleared"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "tx_mfade_int_clear";
+            desc = "Mute fade-in/fade-output completion interrupt clear for the TX channel";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = TX_INT_CLR_tx_mfade_int_clear_enum;
+            reset = 0x0;
+        } tx_mfade_int_clear[6:6];
+
+        enum TX_INT_CLR_tx_stop_int_clear_enum {
+            NOT_CLEARED = 0 { name = "Not Cleared"; desc = "not cleared"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "tx_stop_int_clear";
+            desc = "Stop interrupt clear for the TX channel";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = TX_INT_CLR_tx_stop_int_clear_enum;
+            reset = 0x0;
+        } tx_stop_int_clear[5:5];
+
+        enum TX_INT_CLR_tx_ififo_empty_int_clear_enum {
+            NOT_CLEARED = 0 { name = "Not Cleared"; desc = "not cleared"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "tx_ififo_empty_int_clear";
+            desc = "Interface fifo underflow interrupt clear for the TX channel";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = TX_INT_CLR_tx_ififo_empty_int_clear_enum;
+            reset = 0x0;
+        } tx_ififo_empty_int_clear[4:4];
+
+        enum TX_INT_CLR_tx_bfifo_empty_int_clear_enum {
+            NOT_CLEARED = 0 { name = "Not Cleared"; desc = "not cleared"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "tx_bfifo_empty_int_clear";
+            desc = "Bus fifo underflow interrupt clear for the TX channel";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = TX_INT_CLR_tx_bfifo_empty_int_clear_enum;
+            reset = 0x0;
+        } tx_bfifo_empty_int_clear[3:3];
+
+        enum TX_INT_CLR_tx_alempty_int_clear_enum {
+            NOT_CLEARED = 0 { name = "Not Cleared"; desc = "not cleared"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "tx_alempty_int_clear";
+            desc = "DDR buffer almost empty interrupt clear for the TX channel";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = TX_INT_CLR_tx_alempty_int_clear_enum;
+            reset = 0x0;
+        } tx_alempty_int_clear[2:2];
+
+        enum TX_INT_CLR_tx_empty_int_clear_enum {
+            NOT_CLEARED = 0 { name = "Not Cleared"; desc = "not cleared"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "tx_empty_int_clear";
+            desc = "DDR buffer empty interrupt clear for the TX channel";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = TX_INT_CLR_tx_empty_int_clear_enum;
+            reset = 0x0;
+        } tx_empty_int_clear[1:1];
+
+        enum TX_INT_CLR_tx_trans_int_clear_enum {
+            NOT_CLEARED = 0 { name = "Not Cleared"; desc = "not cleared"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "tx_trans_int_clear";
+            desc = "Transfer completion interrupt clear for the TX channel";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = TX_INT_CLR_tx_trans_int_clear_enum;
+            reset = 0x0;
+        } tx_trans_int_clear[0:0];
+    } TX_INT_CLR @ 0x20AC;
+};
+
+`endif
