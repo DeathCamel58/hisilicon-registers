@@ -1,0 +1,171 @@
+`ifndef HISI_RNG_RDL
+`define HISI_RNG_RDL
+
+// RNG_GEN true random number generator of the Hi3518EV200 / Hi3516CV200 (data sheet 13.3).
+regfile eHISI_RNG {
+    name = "RNG_GEN (true random number generator)";
+    desc = "
+    True random number generator (RNG_GEN) of the Hi3518E V20X / Hi3516C V200 at 0x20280000 (data sheet 13.3, FIPS 140-1 random test): three selectable oscillator noise sources
+    (RNG_CTRL.osc_sel), optional filtering, dropping of equal bit pairs and post-processing (mixing depth), a 4-word output FIFO read through RNG_FIFO_DATA after checking RNG_STAT.
+    No interrupt. The data sheet does not describe the clock gate of this block in PERI_CRG.
+
+    This is NOT the register layout of the mainline `hisi-rng` driver (`hisilicon,hisi-rng`: SEED 0x0, CTRL 0x8, RAN_NUM 0x10 on the Hi3516CV300/Hi3519); a driver for this layout would be
+    new. Register table: data sheet 13.3.4 / 13.3.5 (`hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` lines 94188-94345); no vendor source in the local trees, not hardware verified.
+    ";
+
+    reg {
+        name = "RNG control register";
+        desc = "RNG_CTRL is an RNG control register.
+
+Total reset value 0x0000_1082: post_process_depth = 0x10, post_process_enable = 1, osc_sel = 2 (random number source 2). The data sheet gives the two low_osc_st bits and cleardata the access type WC (write to clear); they are modelled as read/write with write-one-to-clear.
+
+Data sheet 13.3.5 RNG_CTRL (offset 0x0, printed page 13-55, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 94215).";
+
+        field {
+            name = "low_osc_st1";
+            desc = "Exception test of the low-frequency oscillator (bit 1 of the two-bit status). 0: the low-frequency oscillator works properly. 1: the output of the low-frequency oscillator is always 1; writing this bit clears it.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            reset = 0x0;
+        } low_osc_st1[30:30];
+
+        field {
+            name = "low_osc_st0";
+            desc = "Exception test of the low-frequency oscillator (bit 0 of the two-bit status). 0: the low-frequency oscillator works properly. 1: the output of the low-frequency oscillator is always 1, and writing this bit clears it (the data sheet gives both bits the same text).";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            reset = 0x0;
+        } low_osc_st0[29:29];
+
+        field {
+            name = "post_process_depth";
+            desc = "Post-processing mixing depth. A larger value indicates a better random effect and lower speed.";
+            sw = rw;
+            hw = r;
+            reset = 0x10;
+        } post_process_depth[15:8];
+
+        enum RNG_CTRL_post_process_enable_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "post_process_enable";
+            desc = "Pre-processing enable for the random number. If this function is enabled, the random number generation speed is decreased by 1/(post_process_depth + 1).";
+            sw = rw;
+            hw = r;
+            encode = RNG_CTRL_post_process_enable_enum;
+            reset = 0x1;
+        } post_process_enable[7:7];
+
+        enum RNG_CTRL_drop_enable_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "drop_enable";
+            desc = "Enable for discarding two-bit data when the values of the consecutive two bits are the same (00 or 11). If this function is enabled, the random number generation speed is decreased by 1/3.";
+            sw = rw;
+            hw = r;
+            encode = RNG_CTRL_drop_enable_enum;
+            reset = 0x0;
+        } drop_enable[5:5];
+
+        enum RNG_CTRL_filter_enable_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "filter_enable";
+            desc = "Pre-processing filtering enable for the random number. If this function is enabled, the random number generation speed is decreased by 1/4.";
+            sw = rw;
+            hw = r;
+            encode = RNG_CTRL_filter_enable_enum;
+            reset = 0x0;
+        } filter_enable[4:4];
+
+        enum RNG_CTRL_mix_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "mix_en";
+            desc = "Data mixing enable";
+            sw = rw;
+            hw = r;
+            encode = RNG_CTRL_mix_en_enum;
+            reset = 0x0;
+        } mix_en[3:3];
+
+        enum RNG_CTRL_cleardata_enum {
+            NOT_CLEARED = 0 { name = "Not Cleared"; desc = "not cleared"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "cleardata";
+            desc = "Random number clear";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = RNG_CTRL_cleardata_enum;
+            reset = 0x0;
+        } cleardata[2:2];
+
+        enum RNG_CTRL_osc_sel_enum {
+            RNG_DISABLED = 0 { name = "Rng Disabled"; desc = "RNG is disabled."; };
+            RANDOM_NUMBER_SOURCE = 1 { name = "Random Number Source"; desc = "Random number source 1 is used."; };
+            RANDOM_NUMBER_SOURCE_2 = 2 { name = "Random Number Source 2"; desc = "Random number source 2 is used."; };
+            RANDOM_NUMBER_SOURCE_3 = 3 { name = "Random Number Source 3"; desc = "Random number source 3 is used."; };
+        };
+
+        field {
+            name = "osc_sel";
+            desc = "Random number source select";
+            sw = rw;
+            hw = r;
+            encode = RNG_CTRL_osc_sel_enum;
+            reset = 0x2;
+        } osc_sel[1:0];
+    } RNG_CTRL @ 0x0;
+
+    reg {
+        name = "RNG FIFO data register";
+        desc = "RNG_FIFO_DATA is an RNG FIFO data register.
+
+Operation (data sheet 13.3.3): wait until RNG_STAT.rng_data_count >= 1, then read this register; the FIFO holds four 32-bit words.
+
+Data sheet 13.3.5 RNG_FIFO_DATA (offset 0x4, printed page 13-56, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 94294).";
+
+        field {
+            name = "rng_fifo_data";
+            desc = "You can read the random number by directly reading this register.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } rng_fifo_data[31:0];
+    } RNG_FIFO_DATA @ 0x4;
+
+    reg {
+        name = "RNG status register";
+        desc = "RNG_STAT is an RNG status register.
+
+Data sheet 13.3.5 RNG_STAT (offset 0x8, printed page 13-57, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 94321).";
+
+        field {
+            name = "rng_data_count";
+            desc = "Number of 32-bit random numbers in the random number FIFO. The maximum value is 4.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } rng_data_count[2:0];
+    } RNG_STAT @ 0x8;
+};
+
+`endif

@@ -1,0 +1,280 @@
+`ifndef HISI_RSA_RDL
+`define HISI_RSA_RDL
+
+// SEC_RSA modular exponentiation engine of the Hi3518EV200 / Hi3516CV200 (data sheet 13.4).
+regfile eHISI_RSA {
+    name = "RSA (SEC_RSA modular exponentiation engine)";
+    desc = "
+    RSA modular exponentiation engine (SEC_RSA) of the Hi3518E V20X / Hi3516C V200 at 0x20260000 (data sheet 13.4): RSA 1024 / 2048 / 4096 encryption, decryption and signature verification
+    with the key N and exponent E/D written word by word to SEC_RSA_WSEC_REG, the packet to SEC_RSA_WPKT_REG and the result read word by word from SEC_RSA_RRSLT_REG (internal RAMs with
+    auto-incrementing addresses, SEC_RSA_ADDR_REG). Also a CRC16 check of the stored key and a RAM clear mode. The registers start at offset 0x50; offsets 0x00-0x4C are not documented.
+    No interrupt: completion is polled in SEC_RSA_BUSY_REG.
+
+    Register table: data sheet 13.4.5 / 13.4.6 (`hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` lines 94454-94810), 10 registers transcribed with their fields, access types and reset values; no vendor source in the local trees,
+    not hardware verified.
+    ";
+
+    reg {
+        name = "Busy status register for the SEC_RSA module";
+        desc = "SEC_RSA_BUSY_REG is a busy status register for the SEC_RSA module.
+
+Data sheet 13.4.6 SEC_RSA_BUSY_REG (offset 0x50, printed page 13-60, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 94504).";
+
+        enum SEC_RSA_BUSY_REG_sec_rsa_busy_reg_enum {
+            IDLE = 0 { name = "Idle"; desc = "idle"; };
+            BUSY = 1 { name = "Busy"; desc = "busy"; };
+        };
+
+        field {
+            name = "sec_rsa_busy_reg";
+            desc = "Busy status of the SEC_RSA module";
+            sw = r;
+            hw = w;
+            encode = SEC_RSA_BUSY_REG_sec_rsa_busy_reg_enum;
+            reset = 0x0;
+        } sec_rsa_busy_reg[0:0];
+    } SEC_RSA_BUSY_REG @ 0x50;
+
+    reg {
+        name = "Operating mode register for the SEC_RSA module";
+        desc = "SEC_RSA_MOD_REG is an operating mode register for the SEC_RSA module.
+
+Key width (data sheet 13.4.4): sec_rsa_key_width 0 or 3 = RSA 1024, 1 = RSA 2048, 2 = RSA 4096. Mode sequences: modular exponentiation (mod_sel 0, clr bits 0; write the packet to SEC_RSA_WPKT_REG, then the key N followed by E/D to SEC_RSA_WSEC_REG, each as key-width/32 words; start; wait busy = 0; read key-width/32 words from SEC_RSA_RRSLT_REG), CRC16 key check (mod_sel 3, key_width 1, start, read SEC_CRC16_REG), RAM clear (mod_sel 2, key_width 1, the three clr bits 1, start).
+
+Data sheet 13.4.6 SEC_RSA_MOD_REG (offset 0x54, printed page 13-61, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 94540).";
+
+        enum SEC_RSA_MOD_REG_sec_rsa_data2_clr_enum {
+            NOT_CLEARED = 0 { name = "Not Cleared"; desc = "not cleared"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "sec_rsa_data2_clr";
+            desc = "Clear enable for the RAM that stores the RSA result";
+            sw = rw;
+            hw = r;
+            encode = SEC_RSA_MOD_REG_sec_rsa_data2_clr_enum;
+            reset = 0x0;
+        } sec_rsa_data2_clr[6:6];
+
+        enum SEC_RSA_MOD_REG_sec_rsa_data1_clr_enum {
+            NOT_CLEARED = 0 { name = "Not Cleared"; desc = "not cleared"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "sec_rsa_data1_clr";
+            desc = "Clear enable for the RAM that stores the RSA packet";
+            sw = rw;
+            hw = r;
+            encode = SEC_RSA_MOD_REG_sec_rsa_data1_clr_enum;
+            reset = 0x0;
+        } sec_rsa_data1_clr[5:5];
+
+        enum SEC_RSA_MOD_REG_sec_rsa_data0_clr_enum {
+            NOT_CLEARED = 0 { name = "Not Cleared"; desc = "not cleared"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "sec_rsa_data0_clr";
+            desc = "Clear enable for the RAM that stores the RSA key";
+            sw = rw;
+            hw = r;
+            encode = SEC_RSA_MOD_REG_sec_rsa_data0_clr_enum;
+            reset = 0x0;
+        } sec_rsa_data0_clr[4:4];
+
+        enum SEC_RSA_MOD_REG_sec_rsa_key_width_enum {
+            V_1024_BITS = 0 { name = "V 1024 Bits"; desc = "1024 bits"; };
+            V_2048_BITS = 1 { name = "V 2048 Bits"; desc = "2048 bits"; };
+            V_4096_BITS = 2 { name = "V 4096 Bits"; desc = "4096 bits"; };
+            V_1024_BITS_2 = 3 { name = "V 1024 Bits 2"; desc = "1024 bits"; };
+        };
+
+        field {
+            name = "sec_rsa_key_width";
+            desc = "Key bit width";
+            sw = rw;
+            hw = r;
+            encode = SEC_RSA_MOD_REG_sec_rsa_key_width_enum;
+            reset = 0x0;
+        } sec_rsa_key_width[3:2];
+
+        enum SEC_RSA_MOD_REG_sec_rsa_mod_sel_enum {
+            MODULAR_EXPONENTIATION_ENCRYPT = 0 { name = "Modular Exponentiation Encrypt"; desc = "modular exponentiation encryption and decryption operation"; };
+            KEY_UPDATED_MODULAR = 1 { name = "Key Updated Modular"; desc = "The key is updated, and the modular exponentiation operation is not performed (this mode is not supported currently)."; };
+            RAM_CLEARED = 2 { name = "Ram Cleared"; desc = "The RAM is cleared."; };
+            KEY_CHECKED_USING = 3 { name = "Key Checked Using"; desc = "The key is checked by using CRC16."; };
+        };
+
+        field {
+            name = "sec_rsa_mod_sel";
+            desc = "Operating mode select";
+            sw = rw;
+            hw = r;
+            encode = SEC_RSA_MOD_REG_sec_rsa_mod_sel_enum;
+            reset = 0x0;
+        } sec_rsa_mod_sel[1:0];
+    } SEC_RSA_MOD_REG @ 0x54;
+
+    reg {
+        name = "Key write operation register for the SEC_RSA module";
+        desc = "SEC_RSA_WSEC_REG is a key write operation register for the SEC_RSA module.
+
+Data sheet 13.4.6 SEC_RSA_WSEC_REG (offset 0x58, printed page 13-62, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 94595).";
+
+        field {
+            name = "sec_rsa_wsec_reg";
+            desc = "Key address configured by the CPU";
+            sw = w;
+            hw = r;
+            reset = 0x0;
+        } sec_rsa_wsec_reg[31:0];
+    } SEC_RSA_WSEC_REG @ 0x58;
+
+    reg {
+        name = "Packet write operation register for the SEC_RSA module";
+        desc = "SEC_RSA_WPKT_REG is a packet write operation register for the SEC_RSA module.
+
+Data sheet 13.4.6 SEC_RSA_WPKT_REG (offset 0x5C, printed page 13-62, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 94613).";
+
+        field {
+            name = "sec_rsa_wpkt_reg";
+            desc = "Packet address configured by the CPU";
+            sw = w;
+            hw = r;
+            reset = 0x0;
+        } sec_rsa_wpkt_reg[31:0];
+    } SEC_RSA_WPKT_REG @ 0x5C;
+
+    reg {
+        name = "Packet read operation register for the SEC_RSA module";
+        desc = "SEC_RSA_RPKT_REG is a packet read operation register for the SEC_RSA module.
+
+Data sheet 13.4.6 SEC_RSA_RPKT_REG (offset 0x60, printed page 13-62, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 94632).";
+
+        field {
+            name = "sec_rsa_rpkt_reg";
+            desc = "Packet address read by the CPU";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } sec_rsa_rpkt_reg[31:0];
+    } SEC_RSA_RPKT_REG @ 0x60;
+
+    reg {
+        name = "Calculation result read operation register for the SEC_RSA module";
+        desc = "SEC_RSA_RRSLT_REG is a calculation result read operation register for the SEC_RSA module.
+
+Data sheet 13.4.6 SEC_RSA_RRSLT_REG (offset 0x64, printed page 13-63, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 94660).";
+
+        field {
+            name = "sec_rsa_rrslt_reg";
+            desc = "Calculation result read by the CPU";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } sec_rsa_rrslt_reg[31:0];
+    } SEC_RSA_RRSLT_REG @ 0x64;
+
+    reg {
+        name = "Modular exponentiation operation configuration start register for the SEC_RSA module";
+        desc = "SEC_RSA_START_REG is a modular exponentiation operation configuration start register for the SEC_RSA module.
+
+Data sheet 13.4.6 SEC_RSA_START_REG (offset 0x68, printed page 13-63, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 94679).";
+
+        enum SEC_RSA_START_REG_sec_rsa_start_reg_enum {
+            NOT_START = 0 { name = "Not Start"; desc = "not start"; };
+            START = 1 { name = "Start"; desc = "start"; };
+        };
+
+        field {
+            name = "sec_rsa_start_reg";
+            desc = "CPU configuration start";
+            sw = rw;
+            hw = r;
+            encode = SEC_RSA_START_REG_sec_rsa_start_reg_enum;
+            reset = 0x0;
+        } sec_rsa_start_reg[0:0];
+    } SEC_RSA_START_REG @ 0x68;
+
+    reg {
+        name = "RAM address register for the key, packet, and result of the SEC_RSA module";
+        desc = "SEC_RSA_ADDR_REG is an RAM address register for the key, packet, and result of the SEC_RSA module.
+
+Read-only write/read pointers of the four internal RAMs (key N, key E/D, packet, result); each advances by one word per access to the corresponding data register and wraps to 0 at the configured key width.
+
+Data sheet 13.4.6 SEC_RSA_ADDR_REG (offset 0x6C, printed page 13-64, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 94718).";
+
+        field {
+            name = "sec_rsa_addere_rslt";
+            desc = "Result RAM address The address offset is 4 bytes each time. That is, if the value of this field is 1, 4-byte data is stored. When the number of stored data segments reaches the maximum key bit width, the value of this field is 0 because the count value starts from 0.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } sec_rsa_addere_rslt[31:24];
+
+        field {
+            name = "sec_rsa_addre_pkt";
+            desc = "Packet RAM address The address offset is 4 bytes each time. That is, if the value of this field is 1, 4-byte data is stored or read. When the number of stored data segments reaches the maximum key bit width, the value of this field is 0 because the count value starts from 0.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } sec_rsa_addre_pkt[23:16];
+
+        field {
+            name = "sec_rsa_addre_d";
+            desc = "RAM address of the key parameter E/D The address offset is 4 bytes each time. That is, if the value of this field is 1, 4-byte data is stored. When the number of stored data segments reaches the maximum key bit width, the value of this field is 0 because the count value starts from 0.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } sec_rsa_addre_d[15:8];
+
+        field {
+            name = "sec_rsa_addr_n";
+            desc = "RAM address of the key parameter N The address offset is 4 bytes each time. That is, if the value of this field is 1, 4-byte data is stored. When the number of stored data segments reaches the maximum key bit width, the value of this field is 0 because the count value starts from 0.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } sec_rsa_addr_n[7:0];
+    } SEC_RSA_ADDR_REG @ 0x6C;
+
+    reg {
+        name = "Error alarm status register for the SEC_RSA module";
+        desc = "SEC_RSA_ERROR_REG is an error alarm status register for the SEC_RSA module.
+
+Data sheet 13.4.6 SEC_RSA_ERROR_REG (offset 0x70, printed page 13-65, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 94764).";
+
+        enum SEC_RSA_ERROR_REG_sec_rsa_err1_enum {
+            EXTERNAL_INPUT_KEY = 0 { name = "External Input Key"; desc = "The external input key is normal."; };
+            EXTERNAL_INPUT_KEY_2 = 1 { name = "External Input Key 2"; desc = "The external input key (N) is an even number."; };
+        };
+
+        field {
+            name = "sec_rsa_err1";
+            desc = "Alarm when the external input RSA key (N) is an even number (the odd/even feature of the key is not checked when the RAM that stores the key is cleared)";
+            sw = r;
+            hw = w;
+            encode = SEC_RSA_ERROR_REG_sec_rsa_err1_enum;
+            reset = 0x0;
+        } sec_rsa_err1[1:1];
+    } SEC_RSA_ERROR_REG @ 0x70;
+
+    reg {
+        name = "Key CRC result register for the SEC_RSA module";
+        desc = "SEC_CRC16_REG is a key CRC result register for the SEC_RSA module.
+
+Data sheet 13.4.6 SEC_CRC16_REG (offset 0x74, printed page 13-65, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 94796).";
+
+        field {
+            name = "sec_rsa_crc16_dat";
+            desc = "CRC result of the key";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } sec_rsa_crc16_dat[15:0];
+    } SEC_CRC16_REG @ 0x74;
+};
+
+`endif

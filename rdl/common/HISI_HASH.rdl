@@ -1,0 +1,635 @@
+`ifndef HISI_HASH_RDL
+`define HISI_HASH_RDL
+
+// HASH (SHA1/SHA256/HMAC) of the Hi3518EV200 / Hi3516CV200 (data sheet 13.2).
+regfile eHISI_HASH {
+    name = "HASH (SHA1 / SHA256 / HMAC)";
+    desc = "
+    HASH module of the Hi3518E V20X / Hi3516C V200 at 0x10070000 (data sheet 13.2): SHA1 and SHA256 (FIPS 180-2), HMAC-SHA1 and HMAC-SHA256 (RFC 2104), message supplied by the CPU (DATA_IN)
+    or read by the module's own AHB master (DMA_START_ADDR / DMA_LEN, word aligned). The message must be padded by software to a multiple of 64 bytes; TOTAL_LEN1/2 hold the padded length
+    (HMAC: padded length + 64 bytes for i_key_pad). The 128-bit HMAC key comes either from the cipher hash key control block (`eHISI_KEY_CTRL` at 0x20100800, HASH_CTRL.hardkey_sel = 0) or from
+    MCU_KEY0..3. The SHA initial value can be replaced (HASH_CTRL.sha_init_update_en = 1, SHA_INIT1..8_UPDATE) to continue a hash over several calls. The module has no interrupt in the
+    data sheet interrupt table (Table 3-6); completion is polled in HASH_STATUS.hash_rdy. The data sheet does not describe the clock / reset bits of this block in PERI_CRG; the vendor cipher driver
+    (`drv_cipher` for the Hi3518EV200 SDK) keeps the cipher and hash clocks on together.
+
+    **Operation (data sheet 13.2.4, same sequence for SHA1/SHA256/HMAC):** 1. wait HASH_STATUS.hash_rdy = 1; 2. write TOTAL_LEN1/TOTAL_LEN2; 3. write HASH_CTRL (read_ctrl 1 = CPU, 0 = DMA;
+    sha_sel; hmac_flag; hardkey_sel; small_end_en = 0; sha_init_update_en); 4. write SHA_START.sha_start = 1; 5. wait HASH_STATUS.rec_rdy = 1; 6. CPU mode: write the block to DATA_IN and repeat
+    from 4 until all data is written; DMA mode: write DMA_START_ADDR then DMA_LEN; 7. wait hash_rdy = 1 and read SHA_OUT1..5 (SHA1) or SHA_OUT1..8 (SHA256). SHA_OUTn are not reset
+    (random after power-up).
+
+    Register table: data sheet 13.2.5 / 13.2.6 (`hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` lines 93329-94156), 30 registers; every register, field, access type and reset value is transcribed from it; there is no vendor source for this
+    block in the local trees and nothing is hardware verified.
+    ";
+
+    reg {
+        name = "Hash message total length register (lower 32 bits)";
+        desc = "TOTAL_LEN1 is a hash message total length register (lower 32 bits).
+
+Data sheet 13.2.6 TOTAL_LEN1 (offset 0x0, printed page 13-41, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 93397).";
+
+        field {
+            name = "total_len1";
+            desc = "SHA: lower bits of the padded message length (in byte) HMAC: lower bits of the length (in byte) of (i_key_pad + padded message)";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } total_len1[31:0];
+    } TOTAL_LEN1 @ 0x0;
+
+    reg {
+        name = "Hash message total length register (upper 32 bits)";
+        desc = "TOTAL_LEN2 is a hash message total length register (upper 32 bits).
+
+Data sheet 13.2.6 TOTAL_LEN2 (offset 0x4, printed page 13-41, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 93417).";
+
+        field {
+            name = "total_len2";
+            desc = "SHA: upper bits of the padded message length (in byte) HMAC: upper bits of the length (in byte) of (i_key_pad + padded message)";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } total_len2[31:0];
+    } TOTAL_LEN2 @ 0x4;
+
+    reg {
+        name = "Status register";
+        desc = "HASH_STATUS is an HASH status register.
+
+The total reset value 0x0000_000F means hash_rdy, dma_rdy, msg_rdy and rec_rdy all read 1 after reset (idle).
+
+Data sheet 13.2.6 HASH_STATUS (offset 0x8, printed page 13-42, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 93447).";
+
+        enum HASH_STATUS_len_err_enum {
+            CORRECT = 0 { name = "Correct"; desc = "correct"; };
+            INCORRECT = 1 { name = "Incorrect"; desc = "incorrect"; };
+        };
+
+        field {
+            name = "len_err";
+            desc = "Length correctness flag";
+            sw = r;
+            hw = w;
+            encode = HASH_STATUS_len_err_enum;
+            reset = 0x0;
+        } len_err[6:6];
+
+        field {
+            name = "error_state";
+            desc = "AHB bus status. Bit 4 (err_state[4]): 0 = no error occurs on the AHB, 1 = an error occurs on the AHB. Bit 5 (err_state[5]): 0 = the AHB slave is idle, 1 = the AHB slave is busy.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } error_state[5:4];
+
+        enum HASH_STATUS_rec_rdy_enum {
+            NOT_READY = 0 { name = "Not Ready"; desc = "not ready"; };
+            READY = 1 { name = "Ready"; desc = "ready"; };
+        };
+
+        field {
+            name = "rec_rdy";
+            desc = "Data RX ready flag for the internal logic (reg_rdy = msg_rdy & dma_rdy)";
+            sw = r;
+            hw = w;
+            encode = HASH_STATUS_rec_rdy_enum;
+            reset = 0x1;
+        } rec_rdy[3:3];
+
+        enum HASH_STATUS_msg_rdy_enum {
+            CPU_CHANNEL_NOT = 0 { name = "Cpu Channel Not"; desc = "The CPU channel is not ready to receive data."; };
+            CPU_CHANNEL_READY = 1 { name = "Cpu Channel Ready"; desc = "The CPU channel is ready to receive data."; };
+        };
+
+        field {
+            name = "msg_rdy";
+            desc = "Block calculation debugging information";
+            sw = r;
+            hw = w;
+            encode = HASH_STATUS_msg_rdy_enum;
+            reset = 0x1;
+        } msg_rdy[2:2];
+
+        enum HASH_STATUS_dma_rdy_enum {
+            DATA_BLOCK_NOT = 0 { name = "Data Block Not"; desc = "A data block is not completely read in DMA mode."; };
+            DATA_BLOCK_COMPLETELY = 1 { name = "Data Block Completely"; desc = "A data block is completely read in DMA mode."; };
+        };
+
+        field {
+            name = "dma_rdy";
+            desc = "DMA debugging information";
+            sw = r;
+            hw = w;
+            encode = HASH_STATUS_dma_rdy_enum;
+            reset = 0x1;
+        } dma_rdy[1:1];
+
+        enum HASH_STATUS_hash_rdy_enum {
+            CALCULATION_NOT_COMPLETE = 0 { name = "Calculation Not Complete"; desc = "The calculation is not complete."; };
+            CALCULATION_COMPLETE = 1 { name = "Calculation Complete"; desc = "The calculation is complete."; };
+        };
+
+        field {
+            name = "hash_rdy";
+            desc = "TOTAL_LEN calculation completion signal";
+            sw = r;
+            hw = w;
+            encode = HASH_STATUS_hash_rdy_enum;
+            reset = 0x1;
+        } hash_rdy[0:0];
+    } HASH_STATUS @ 0x8;
+
+    reg {
+        name = "Control register";
+        desc = "HASH_CTRL is an HASH control register.
+
+Mode selection for one calculation (data sheet 13.2.4): CPU mode sets read_ctrl = 1 and writes the message to DATA_IN; DMA mode sets read_ctrl = 0 and programs DMA_START_ADDR / DMA_LEN. sha_sel 0 = SHA1 (result in SHA_OUT1..5), 1 = SHA256 (SHA_OUT1..8). HMAC: hmac_flag = 1, key from the cipher hash key control block (hardkey_sel = 0, see `eHISI_KEY_CTRL`) or from MCU_KEY0..3 (hardkey_sel = 1). The total reset value 0x20 = small_end_en (little-endian word order) set.
+
+Data sheet 13.2.6 HASH_CTRL (offset 0xC, printed page 13-43, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 93504).";
+
+        enum HASH_CTRL_sha_init_update_en_enum {
+            DISABLED_DEFAULT_SHA = 0 { name = "Disabled Default Sha"; desc = "disabled. The default SHA initial value is used."; };
+            ENABLED_VALUE_SHA = 1 { name = "Enabled Value Sha"; desc = "enabled. The value of sha_initn_update is used as the initial value when the SHA calculation starts."; };
+        };
+
+        field {
+            name = "sha_init_update_en";
+            desc = "SHA initial value update enable. This bit is set to 0 for HMAC.";
+            sw = rw;
+            hw = r;
+            encode = HASH_CTRL_sha_init_update_en_enum;
+            reset = 0x0;
+        } sha_init_update_en[6:6];
+
+        enum HASH_CTRL_small_end_en_enum {
+            BIG_ENDIAN_MODE = 0 { name = "Big Endian Mode"; desc = "big-endian mode"; };
+            LITTLE_ENDIAN_MODE = 1 { name = "Little Endian Mode"; desc = "little-endian mode"; };
+        };
+
+        field {
+            name = "small_end_en";
+            desc = "Word reverse order enable";
+            sw = rw;
+            hw = r;
+            encode = HASH_CTRL_small_end_en_enum;
+            reset = 0x1;
+        } small_end_en[5:5];
+
+        enum HASH_CTRL_hardkey_sel_enum {
+            KL_KEY = 0 { name = "Kl Key"; desc = "kl_key (hardware key)"; };
+            MCU_KEY = 1 { name = "Mcu Key"; desc = "MCU key (software key)"; };
+        };
+
+        field {
+            name = "hardkey_sel";
+            desc = "HMAC key select. This bit is set to 0 for the SHA.";
+            sw = rw;
+            hw = r;
+            encode = HASH_CTRL_hardkey_sel_enum;
+            reset = 0x0;
+        } hardkey_sel[4:4];
+
+        enum HASH_CTRL_hmac_flag_enum {
+            SHA_CALCULATION = 0 { name = "Sha Calculation"; desc = "SHA calculation"; };
+            HMAC_CALCULATION = 1 { name = "Hmac Calculation"; desc = "HMAC calculation"; };
+        };
+
+        field {
+            name = "hmac_flag";
+            desc = "Calculation mode select";
+            sw = rw;
+            hw = r;
+            encode = HASH_CTRL_hmac_flag_enum;
+            reset = 0x0;
+        } hmac_flag[3:3];
+
+        enum HASH_CTRL_sha_sel_enum {
+            SHA1_MODE = 0 { name = "Sha1 Mode"; desc = "SHA1 mode"; };
+            SHA256_MODE_OTHER = 1 { name = "Sha256 Mode Other"; desc = "SHA256 mode Other values: reserved, Currently this field can be set to only 00 or 01."; };
+        };
+
+        field {
+            name = "sha_sel";
+            desc = "Hash mode control";
+            sw = rw;
+            hw = r;
+            encode = HASH_CTRL_sha_sel_enum;
+            reset = 0x0;
+        } sha_sel[2:1];
+
+        enum HASH_CTRL_read_ctrl_enum {
+            MESSAGE_READ_DMA = 0 { name = "Message Read Dma"; desc = "The message is read by the DMA."; };
+            MESSAGE_READ_CPU = 1 { name = "Message Read Cpu"; desc = "The message is read by the CPU."; };
+        };
+
+        field {
+            name = "read_ctrl";
+            desc = "Message transfer mode control";
+            sw = rw;
+            hw = r;
+            encode = HASH_CTRL_read_ctrl_enum;
+            reset = 0x0;
+        } read_ctrl[0:0];
+    } HASH_CTRL @ 0xC;
+
+    reg {
+        name = "Calculation start register";
+        desc = "SHA_START is an SHA computing start register.
+
+Writing 1 starts a calculation (step 4 of every operation process in data sheet 13.2.4); in CPU mode it is written again for every 64-byte block.
+
+Data sheet 13.2.6 SHA_START (offset 0x10, printed page 13-44, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 93562).";
+
+        enum SHA_START_sha_start_enum {
+            NOT_START = 0 { name = "Not Start"; desc = "not start"; };
+            START = 1 { name = "Start"; desc = "start"; };
+        };
+
+        field {
+            name = "sha_start";
+            desc = "Hash calculation start signal";
+            sw = rw;
+            hw = r;
+            encode = SHA_START_sha_start_enum;
+            reset = 0x0;
+        } sha_start[0:0];
+    } SHA_START @ 0x10;
+
+    reg {
+        name = "Read message start address register";
+        desc = "DMA_START_ADDR is a read message start address register.
+
+Data sheet 13.2.6 DMA_START_ADDR (offset 0x14, printed page 13-44, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 93590).";
+
+        field {
+            name = "dma_start_addr";
+            desc = "Byte address. The address must be configured as word-aligned by software.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } dma_start_addr[31:0];
+    } DMA_START_ADDR @ 0x14;
+
+    reg {
+        name = "DMA transfer length register";
+        desc = "DMA_LEN is a DMA transfer length register. The data sheet bit table names the field segment_len1; the operating-mode text calls it DMA_LEN[dma_len].
+
+Data sheet 13.2.6 DMA_LEN (offset 0x18, printed page 13-45, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 93620).";
+
+        field {
+            name = "dma_len";
+            desc = "DMA transfer length (in byte), which must be word-aligned After the length is configured, data is read and calculated automatically by the internal logic.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } dma_len[31:0];
+    } DMA_LEN @ 0x18;
+
+    reg {
+        name = "Input data register";
+        desc = "DATA_IN is an SHA computing input data register.
+
+Write-only input FIFO of the CPU mode: 16 words (one 64-byte block) per SHA_START, after HASH_STATUS.rec_rdy = 1.
+
+Data sheet 13.2.6 DATA_IN (offset 0x1C, printed page 13-45, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 93640).";
+
+        field {
+            name = "data_in";
+            desc = "The input data of the message digest needs to be determined through SHA computing, and the input data is configured by the CPU. This register cannot be read when debug_disable is 1.";
+            sw = w;
+            hw = r;
+            reset = 0x0;
+        } data_in[31:0];
+    } DATA_IN @ 0x1C;
+
+    reg {
+        name = "RX message length register 1";
+        desc = "REC_LEN1 is RX message length register 1 (lower 32 bits of the number of bytes the hash module has consumed).
+
+Data sheet 13.2.6 REC_LEN1 (offset 0x20, printed page 13-45, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 93661).";
+
+        field {
+            name = "receive_byte_cnt1";
+            desc = "Number of bytes calculated by the hash module (64 bytes for each block). This register is cleared when the calculation starts.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } receive_byte_cnt1[31:0];
+    } REC_LEN1 @ 0x20;
+
+    reg {
+        name = "RX message length register 2";
+        desc = "REC_LEN2 is RX message length register 2 (upper 32 bits of the number of bytes the hash module has consumed).
+
+Data sheet 13.2.6 REC_LEN2 (offset 0x24, printed page 13-46, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 93690).";
+
+        field {
+            name = "receive_byte_cnt2";
+            desc = "Number of bytes calculated by the hash module (64 bytes for each block). This register is cleared when the calculation starts.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } receive_byte_cnt2[31:0];
+    } REC_LEN2 @ 0x24;
+
+    reg {
+        name = "Hash output register 1";
+        desc = "SHA_OUT1 is hash output result register 1.
+
+Data sheet 13.2.6 SHA_OUT1 (offset 0x30, printed page 13-46, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 93711).";
+
+        field {
+            name = "sha_out1";
+            desc = "Bits 0-31 of the SHA1/SHA256 message digest output The reset terminal is removed, and the initial value is random.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } sha_out1[31:0];
+    } SHA_OUT1 @ 0x30;
+
+    reg {
+        name = "Hash output register 2";
+        desc = "SHA_OUT2 is hash output result register 2.
+
+Data sheet 13.2.6 SHA_OUT2 (offset 0x34, printed page 13-47, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 93741).";
+
+        field {
+            name = "sha_out2";
+            desc = "Bits 32-63 of the SHA1/SHA256 message digest output The reset terminal is removed, and the initial value is random.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } sha_out2[31:0];
+    } SHA_OUT2 @ 0x34;
+
+    reg {
+        name = "Hash output register 3";
+        desc = "SHA_OUT3 is hash output result register 3.
+
+Data sheet 13.2.6 SHA_OUT3 (offset 0x38, printed page 13-47, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 93761).";
+
+        field {
+            name = "sha_out3";
+            desc = "Bits 64-95 of the SHA1/SHA256 message digest output The reset terminal is removed, and the initial value is random.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } sha_out3[31:0];
+    } SHA_OUT3 @ 0x38;
+
+    reg {
+        name = "Hash output register 4";
+        desc = "SHA_OUT4 is hash output result register 4.
+
+Data sheet 13.2.6 SHA_OUT4 (offset 0x3C, printed page 13-47, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 93782).";
+
+        field {
+            name = "sha_out4";
+            desc = "Bits 96-127 of the SHA1/SHA256 message digest output The reset terminal is removed, and the initial value is random.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } sha_out4[31:0];
+    } SHA_OUT4 @ 0x3C;
+
+    reg {
+        name = "Hash output register 5";
+        desc = "SHA_OUT5 is hash output result register 5.
+
+Data sheet 13.2.6 SHA_OUT5 (offset 0x40, printed page 13-48, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 93808).";
+
+        field {
+            name = "sha_out5";
+            desc = "Bits 128-159 of the SHA1/SHA256 message digest output The reset terminal is removed, and the initial value is random.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } sha_out5[31:0];
+    } SHA_OUT5 @ 0x40;
+
+    reg {
+        name = "Hash output register 6";
+        desc = "SHA_OUT6 is hash output result register 6.
+
+Data sheet 13.2.6 SHA_OUT6 (offset 0x44, printed page 13-48, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 93829).";
+
+        field {
+            name = "sha_out6";
+            desc = "This register does not apply to SHA1. This field indicates bits 160-191 of the SHA256 message digest output.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } sha_out6[31:0];
+    } SHA_OUT6 @ 0x44;
+
+    reg {
+        name = "Hash output register 7";
+        desc = "SHA_OUT7 is hash output result register 7.
+
+Data sheet 13.2.6 SHA_OUT7 (offset 0x48, printed page 13-48, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 93850).";
+
+        field {
+            name = "sha_out7";
+            desc = "This register does not apply to SHA1. This field indicates bits 192-223 of the SHA256 message digest output.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } sha_out7[31:0];
+    } SHA_OUT7 @ 0x48;
+
+    reg {
+        name = "Hash output register 8";
+        desc = "SHA_OUT8 is hash output result register 8.
+
+Data sheet 13.2.6 SHA_OUT8 (offset 0x4C, printed page 13-49, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 93879).";
+
+        field {
+            name = "sha_out8";
+            desc = "This register does not apply to SHA1. This field indicates bits 224-255 of the SHA256 message digest output.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } sha_out8[31:0];
+    } SHA_OUT8 @ 0x4C;
+
+    reg {
+        name = "Key 0 (configured by MCU) register";
+        desc = "MCU_KEY0 is an HMAC input key register (bits 0-31, configured by the CPU).
+
+Data sheet 13.2.6 MCU_KEY0 (offset 0x70, printed page 13-49, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 93900).";
+
+        field {
+            name = "mcu_key0";
+            desc = "HMAC input key register (bits 0-31, configured by the CPU) This register cannot be read when debug_disable is 1.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } mcu_key0[31:0];
+    } MCU_KEY0 @ 0x70;
+
+    reg {
+        name = "Key 1 (configured by MCU) register";
+        desc = "MCU_KEY1 is an HMAC input key register (bits 32-63, configured by the CPU).
+
+Data sheet 13.2.6 MCU_KEY1 (offset 0x74, printed page 13-50, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 93930).";
+
+        field {
+            name = "mcu_key1";
+            desc = "HMAC input key register (bits 32-63, configured by the CPU) This register cannot be read when debug_disable is 1.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } mcu_key1[31:0];
+    } MCU_KEY1 @ 0x74;
+
+    reg {
+        name = "Key 2 (configured by MCU) register";
+        desc = "MCU_KEY2 is an HMAC input key register (bits 64-95, configured by the CPU).
+
+Data sheet 13.2.6 MCU_KEY2 (offset 0x78, printed page 13-50, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 93950).";
+
+        field {
+            name = "mcu_key2";
+            desc = "HMAC input key register (bits 64-95, configured by the CPU) This register cannot be read when debug_disable is 1.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } mcu_key2[31:0];
+    } MCU_KEY2 @ 0x78;
+
+    reg {
+        name = "Key 3 (configured by MCU) register";
+        desc = "MCU_KEY3 is an HMAC input key register (bits 96-127, configured by the CPU).
+
+Data sheet 13.2.6 MCU_KEY3 (offset 0x7C, printed page 13-50, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 93971).";
+
+        field {
+            name = "mcu_key3";
+            desc = "HMAC input key register (bits 96-127, configured by the CPU) This register cannot be read when debug_disable is 1.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } mcu_key3[31:0];
+    } MCU_KEY3 @ 0x7C;
+
+    reg {
+        name = "SHA initial value register 1";
+        desc = "SHA_INIT1_UPDATE is SHA initial value register 1.
+
+Data sheet 13.2.6 SHA_INIT1_UPDATE (offset 0x90, printed page 13-51, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 93997).";
+
+        field {
+            name = "sha_init1_update";
+            desc = "SHA initial value. (bits 0-31)";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } sha_init1_update[31:0];
+    } SHA_INIT1_UPDATE @ 0x90;
+
+    reg {
+        name = "SHA initial value register 2";
+        desc = "SHA_INIT2_UPDATE is SHA initial value register 2.
+
+Data sheet 13.2.6 SHA_INIT2_UPDATE (offset 0x94, printed page 13-51, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 94016).";
+
+        field {
+            name = "sha_init2_update";
+            desc = "SHA initial value. (bits 32-63)";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } sha_init2_update[31:0];
+    } SHA_INIT2_UPDATE @ 0x94;
+
+    reg {
+        name = "SHA initial value register 3";
+        desc = "SHA_INIT3_UPDATE is SHA initial value register 3.
+
+Data sheet 13.2.6 SHA_INIT3_UPDATE (offset 0x98, printed page 13-51, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 94035).";
+
+        field {
+            name = "sha_init3_update";
+            desc = "SHA initial value. (bits 64-95)";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } sha_init3_update[31:0];
+    } SHA_INIT3_UPDATE @ 0x98;
+
+    reg {
+        name = "SHA initial value register 4";
+        desc = "SHA_INIT4_UPDATE is SHA initial value register 4.
+
+Data sheet 13.2.6 SHA_INIT4_UPDATE (offset 0x9C, printed page 13-52, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 94060).";
+
+        field {
+            name = "sha_init4_update";
+            desc = "SHA initial value. (bits 96-127)";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } sha_init4_update[31:0];
+    } SHA_INIT4_UPDATE @ 0x9C;
+
+    reg {
+        name = "SHA initial value register 5";
+        desc = "SHA_INIT5_UPDATE is SHA initial value register 5.
+
+Data sheet 13.2.6 SHA_INIT5_UPDATE (offset 0xA0, printed page 13-52, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 94079).";
+
+        field {
+            name = "sha_init5_update";
+            desc = "SHA initial value. (bits 128-159)";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } sha_init5_update[31:0];
+    } SHA_INIT5_UPDATE @ 0xA0;
+
+    reg {
+        name = "SHA initial value register 6";
+        desc = "SHA_INIT6_UPDATE is SHA initial value register 6.
+
+Data sheet 13.2.6 SHA_INIT6_UPDATE (offset 0xA4, printed page 13-52, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 94098).";
+
+        field {
+            name = "sha_init6_update";
+            desc = "SHA initial value. (bits 160-191)";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } sha_init6_update[31:0];
+    } SHA_INIT6_UPDATE @ 0xA4;
+
+    reg {
+        name = "SHA initial value register 7";
+        desc = "SHA_INIT7_UPDATE is SHA initial value register 7.
+
+Data sheet 13.2.6 SHA_INIT7_UPDATE (offset 0xA8, printed page 13-53, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 94123).";
+
+        field {
+            name = "sha_init7_update";
+            desc = "SHA initial value. (bits 192-223)";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } sha_init7_update[31:0];
+    } SHA_INIT7_UPDATE @ 0xA8;
+
+    reg {
+        name = "SHA initial value register 8";
+        desc = "SHA_INIT8_UPDATE is SHA initial value register 8.
+
+Data sheet 13.2.6 SHA_INIT8_UPDATE (offset 0xAC, printed page 13-53, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 94142).";
+
+        field {
+            name = "sha_init8_update";
+            desc = "SHA initial value. (bits 224-255)";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } sha_init8_update[31:0];
+    } SHA_INIT8_UPDATE @ 0xAC;
+};
+
+`endif

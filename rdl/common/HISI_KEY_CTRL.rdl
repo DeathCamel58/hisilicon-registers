@@ -1,0 +1,241 @@
+`ifndef HISI_KEY_CTRL_RDL
+`define HISI_KEY_CTRL_RDL
+
+// Cipher hash key control (key ladder) of the Hi3518EV200 / Hi3516CV200 (data sheet 13.5).
+regfile eHISI_KEY_CTRL {
+    name = "Cipher hash key control (key ladder)";
+    desc = "
+    Cipher hash key control (key ladder, `KL_*`) of the Hi3518E V20X / Hi3516C V200 at 0x20100800 (data sheet 13.5): burns a 128-bit key into one of four OTP key slots (KL_CTRL.otp_key_add) from
+    KL_WKEY0..3, and loads an OTP key into the CIPHER key RAM (slot cipher_key_add) or into the HASH module as the HMAC key, so that the key never passes through software. Three operations
+    (data sheet 13.5.1.1-13.5.1.3), each started by KL_CTRL.start after KL_STA shows the controller ready, completion polled in KL_STA. No interrupt.
+
+    Register table: data sheet 13.5.2 / 13.5.3 (`hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` lines 94879-95100), 6 registers; no vendor source in the local trees, not hardware verified. The data sheet address map lists the block as
+    `cipher_hash_key_ctrl` at 0x20100800-0x2010FFFF.
+    ";
+
+    reg {
+        name = "Key burning register 0";
+        desc = "KL_WKEY0 is key burning register 0.
+
+Data sheet 13.5.3 KL_WKEY0 (offset 0x0, printed page 13-67, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 94900).";
+
+        field {
+            name = "key0";
+            desc = "Key[31:0] that are burnt to the OTP";
+            sw = w;
+            hw = r;
+            reset = 0x0;
+        } key0[31:0];
+    } KL_WKEY0 @ 0x0;
+
+    reg {
+        name = "Key burning register 1";
+        desc = "KL_WKEY1 is key burning register 1.
+
+Data sheet 13.5.3 KL_WKEY1 (offset 0x4, printed page 13-68, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 94928).";
+
+        field {
+            name = "key1";
+            desc = "Key[63:32] that are burnt to the OTP";
+            sw = w;
+            hw = r;
+            reset = 0x0;
+        } key1[31:0];
+    } KL_WKEY1 @ 0x4;
+
+    reg {
+        name = "Key burning register 2";
+        desc = "KL_WKEY2 is key burning register 2.
+
+Data sheet 13.5.3 KL_WKEY2 (offset 0x8, printed page 13-68, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 94946).";
+
+        field {
+            name = "key2";
+            desc = "Key[95:64] that are burnt to the OTP";
+            sw = w;
+            hw = r;
+            reset = 0x0;
+        } key2[31:0];
+    } KL_WKEY2 @ 0x8;
+
+    reg {
+        name = "Key burning register 3";
+        desc = "KL_WKEY3 is key burning register 3.
+
+Data sheet 13.5.3 KL_WKEY3 (offset 0xC, printed page 13-68, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 94965).";
+
+        field {
+            name = "key3";
+            desc = "Key[127:96] that are burnt to the OTP";
+            sw = w;
+            hw = r;
+            reset = 0x0;
+        } key3[31:0];
+    } KL_WKEY3 @ 0xC;
+
+    reg {
+        name = "Key control register";
+        desc = "KL_CTRL is a key control register.
+
+Exactly one of otp_kd_mode / cipher_kl_mode / hash_kl_mode is set per operation (data sheet 13.5.1); wait for KL_STA.ctrl_rdy = 1 and ctrl_busy0 = ctrl_busy1 = 0 before writing, then write start = 1. Burning (otp_kd_mode) programs the OTP word selected by otp_key_add with KL_WKEY0..3 (OTP bits can only go from 0 to 1; KL_STA.key_wt_error = 1 means the address was already burnt). Loading to the cipher copies OTP key otp_key_add into cipher key slot cipher_key_add (CIPHER_KEY of `eHISI_CIPHER_MC`, selected per channel by key_adder with key_sel = hardware key); loading to the hash makes the OTP key the HMAC key (HASH_CTRL.hardkey_sel = 0).
+
+Data sheet 13.5.3 KL_CTRL (offset 0x10, printed page 13-69, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 94993).";
+
+        field {
+            name = "cipher_key_add";
+            desc = "Key address for loading the key to the cipher";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } cipher_key_add[10:8];
+
+        field {
+            name = "otp_key_add";
+            desc = "Address of the key in the OTP for burning or loading the key";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } otp_key_add[5:4];
+
+        enum KL_CTRL_hash_kl_mode_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "hash_kl_mode";
+            desc = "Enable for loading the key to the hash";
+            sw = rw;
+            hw = r;
+            encode = KL_CTRL_hash_kl_mode_enum;
+            reset = 0x0;
+        } hash_kl_mode[3:3];
+
+        enum KL_CTRL_otp_kd_mode_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "otp_kd_mode";
+            desc = "Enable for burning the key to the OTP";
+            sw = rw;
+            hw = r;
+            encode = KL_CTRL_otp_kd_mode_enum;
+            reset = 0x0;
+        } otp_kd_mode[2:2];
+
+        enum KL_CTRL_cipher_kl_mode_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "cipher_kl_mode";
+            desc = "Enable for loading the key to the cipher";
+            sw = rw;
+            hw = r;
+            encode = KL_CTRL_cipher_kl_mode_enum;
+            reset = 0x0;
+        } cipher_kl_mode[1:1];
+
+        field {
+            name = "start";
+            desc = "Operation start. Writing 1 to this bit starts the operation. Reading back this bit has no effect.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } start[0:0];
+    } KL_CTRL @ 0x10;
+
+    reg {
+        name = "Status indicator register";
+        desc = "KL_STA is a status indicator register.
+
+Completion: key_wt_finish 0 -> 1 (burn), cipher_kl_finish 0 -> 1 (cipher load), hash_key_read_busy 1 -> 0 (hash load).
+
+Data sheet 13.5.3 KL_STA (offset 0x14, printed page 13-70, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 95053).";
+
+        enum KL_STA_key_wt_finish_enum {
+            NOT_COMPLETE = 0 { name = "Not Complete"; desc = "not complete"; };
+            COMPLETE = 1 { name = "Complete"; desc = "complete"; };
+        };
+
+        field {
+            name = "key_wt_finish";
+            desc = "Whether the operation of burning the key to the OTP is complete";
+            sw = r;
+            hw = w;
+            encode = KL_STA_key_wt_finish_enum;
+            reset = 0x0;
+        } key_wt_finish[31:31];
+
+        enum KL_STA_key_wt_error_enum {
+            NO_ERROR_OCCURS = 0 { name = "No Error Occurs"; desc = "No error occurs. The burning is successful."; };
+            ERROR_OCCURS_KEY = 1 { name = "Error Occurs Key"; desc = "An error occurs. The key address has been burnt before."; };
+        };
+
+        field {
+            name = "key_wt_error";
+            desc = "Whether an error occurs during the operation of burning the key to the OTP";
+            sw = r;
+            hw = w;
+            encode = KL_STA_key_wt_error_enum;
+            reset = 0x0;
+        } key_wt_error[30:30];
+
+        field {
+            name = "ctrl_busy1";
+            desc = "Controller busy signal 1. A new operation can be initiated only when ctrl_busy1 and ctrl_busy0 are 0 and ctrl_rdy is 1.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } ctrl_busy1[29:29];
+
+        field {
+            name = "ctrl_busy0";
+            desc = "Controller busy signal 0. A new operation can be initiated only when ctrl_busy1 and ctrl_busy0 are 0 and ctrl_rdy is 1.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } ctrl_busy0[28:28];
+
+        field {
+            name = "ctrl_rdy";
+            desc = "Controller ready signal. A new operation can be initiated only when ctrl_busy1 and ctrl_busy0 are 0 and ctrl_rdy is 1.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } ctrl_rdy[27:27];
+
+        enum KL_STA_hash_key_read_busy_enum {
+            COMPLETE = 0 { name = "Complete"; desc = "complete"; };
+            NOT_COMPLETE_HASH = 1 { name = "Not Complete Hash"; desc = "not complete The hash encryption and decryption operations are started only after the loading operation is complete."; };
+        };
+
+        field {
+            name = "hash_key_read_busy";
+            desc = "Whether the operation of loading the key to the hash is complete";
+            sw = r;
+            hw = w;
+            encode = KL_STA_hash_key_read_busy_enum;
+            reset = 0x0;
+        } hash_key_read_busy[1:1];
+
+        enum KL_STA_cipher_kl_finish_enum {
+            NOT_COMPLETE = 0 { name = "Not Complete"; desc = "not complete"; };
+            COMPLETE_CIPHER_ENCRYPTION = 1 { name = "Complete Cipher Encryption"; desc = "complete The cipher encryption and decryption operations are started only after the loading operation is complete."; };
+        };
+
+        field {
+            name = "cipher_kl_finish";
+            desc = "Whether the operation of loading the key to the cipher is complete";
+            sw = r;
+            hw = w;
+            encode = KL_STA_cipher_kl_finish_enum;
+            reset = 0x0;
+        } cipher_kl_finish[0:0];
+    } KL_STA @ 0x14;
+};
+
+`endif
