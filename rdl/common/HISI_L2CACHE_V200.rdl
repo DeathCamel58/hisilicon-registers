@@ -1,0 +1,1241 @@
+`ifndef HISI_L2CACHE_V200_RDL
+`define HISI_L2CACHE_V200_RDL
+
+regfile eHISI_L2CACHE_V200 {
+    name = "HiSilicon L2 cache controller v200";
+    desc = "
+    HiSilicon \"L2 cache v200\" outer cache controller (vendor `CONFIG_CACHE_HIL2V200`), 128 KB on the Hi3520D/Hi3515A/Hi3515C (256 KB on other SoCs using the same driver), 8 ways, 32-byte lines
+    (way size 16 KB, 512 lines per way). It is **not** an ARM PL310 / L2C-310: the register layout is unrelated (a mainline `arm,pl310-cache` node hangs in `l2c_enable()`, docs/TODO.md).
+    The block is at 0x20700000 (1 MB window, Table 1-1 'L2 Cache Space').
+
+    **The data sheet does not document these registers.** Section 3.10.2 only lists the features (128 KB, physical tag, lockdown in format C, 32-byte lines, write-back/write-through, ECC with 1-bit
+    correction on tag and data RAM, exclusive cache mode, clean/invalidate by way, way+index or address, performance statistics counters; `datasheet.txt` lines 18201-18267) and Table 3-24 the L2 : AXI clock ratio
+    (PERI_CRG10 freqmode_a9_sys). The registers below are transcribed from the vendor driver and its header (`REG_L2_*`, `BIT_L2_*`); every offset and bit used by the driver is exact, the
+    remaining registers (test mode, region, counters, special control) are present in the header but never used by the driver, so their field layout is unknown (modelled as plain 32-bit registers
+    with a description). The data sheet gives no reset values; the reset values here were read on hardware (nvr0408, stock U-Boot with the L2 off, right after power cycle) on 2026-11-08 (`docs/rdl-sweep/hw-reads-2026-11-08.md`): L2_CTRL 0, L2_AUCTRL 0x01000011 (bits 24, 4, 0 are not named in the vendor header), L2_STATUS 0x2, interrupt/maintenance/lock/test/region registers 0, INT_COUNTER and EXT_COUNTER arrays read 0xFFFFFFFF at their first word (0x600, 0x700; applied to every element, only the first was read), L2_SPECIAL_CHECK0 0x6DF7B1BE, L2_SPECIAL_CHECK1 0. Behaviour of the registers beyond the reset values is not hardware verified.
+
+    Interrupts (GIC IDs, DS Table 3-16): 61 `L2CACHE_CHK0_INT`, 62 `L2CACHE_CHK1_INT`, 63 `L2CACHE_INT_COMB`.
+
+    Driver sequence (`l2cache_init`): disable (`L2_CTRL` = 0), set `event_bus_en` and `monitor_en` in `L2_AUCTRL`, write 0 to `L2_INTCLR`, `L2_SPECIAL_CHECK0/1`, write 0x3FFF to `L2_INTMASK`, invalidate all
+    ways with `L2_MAINT_AUTO` (poll `L2_RINT.auto_end`, clear via `L2_INTCLR`), then enable (`L2_CTRL` = 1). Range maintenance writes `address | flag` to `L2_INVALID` / `L2_CLEAN` once per 32-byte line.
+    ";
+
+    reg {
+        name = "L2 control";
+        desc = "Cache enable.
+
+Vendor driver `arch/arm/mm/cache-hil2v200.c` / `cache-hil2v200.h` (REG_L2_CTRL, BIT_L2_CTRL_CACHE_ENABLE).";
+
+        field {
+            name = "cache_enable";
+            desc = "1 = L2 cache enabled, 0 = disabled (bypassed, all L1 operations pass through to memory).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } cache_enable[0:0];
+    } L2_CTRL @ 0x0;
+
+    reg {
+        name = "L2 auxiliary control";
+        desc = "Auxiliary control bits.
+
+Vendor driver `arch/arm/mm/cache-hil2v200.c` / `cache-hil2v200.h` (REG_L2_AUCTRL, BIT_L2_AUCTRL_*).";
+
+        field {
+            name = "non_secure_int_con";
+            desc = "Non-secure interrupt access control (BIT_L2_AUCTRL_NON_SECURE_INT_CON).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } non_secure_int_con[20:20];
+
+        field {
+            name = "non_secure_lock_en";
+            desc = "Non-secure lockdown enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } non_secure_lock_en[19:19];
+
+        field {
+            name = "override_secure_check";
+            desc = "Override secure check.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } override_secure_check[18:18];
+
+        field {
+            name = "force_write_allocate";
+            desc = "Force write allocate (DS 3.10.2: forcible write-allocate on every cacheable write).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } force_write_allocate[16:16];
+
+        field {
+            name = "shared_attr_override_en";
+            desc = "Shared attribute override enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } shared_attr_override_en[15:15];
+
+        field {
+            name = "monitor_en";
+            desc = "Performance monitor enable (set by the driver).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } monitor_en[13:13];
+
+        field {
+            name = "event_bus_en";
+            desc = "Event bus enable (set by the driver).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } event_bus_en[12:12];
+
+        field {
+            name = "exclusive_cache_oper";
+            desc = "Exclusive cache operation (DS 3.10.2: exclusive cache function).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } exclusive_cache_oper[11:11];
+
+        field {
+            name = "hw_reset_bit24";
+            desc = "Bit 24 is not named in the vendor header; it reads 1 after reset (hardware read 2026-11-08, register reset 0x01000011).";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } hw_reset_bit24[24:24];
+
+        field {
+            name = "hw_reset_bit4";
+            desc = "Bit 4 is not named in the vendor header; it reads 1 after reset (hardware read 2026-11-08, register reset 0x01000011).";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } hw_reset_bit4[4:4];
+
+        field {
+            name = "hw_reset_bit0";
+            desc = "Bit 0 is not named in the vendor header; it reads 1 after reset (hardware read 2026-11-08, register reset 0x01000011).";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } hw_reset_bit0[0:0];
+    } L2_AUCTRL @ 0x4;
+
+    reg {
+        name = "L2 status";
+        desc = "Idle and secure-debug status.
+
+Vendor driver `arch/arm/mm/cache-hil2v200.c` / `cache-hil2v200.h` (REG_L2_STATUS, BIT_L2_STATUS_*).";
+
+        field {
+            name = "spniden";
+            desc = "SPNIDEN input (secure privileged non-invasive debug enable).";
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } spniden[1:1];
+
+        field {
+            name = "idle";
+            desc = "1 = the controller is idle.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } idle[0:0];
+    } L2_STATUS @ 0x8;
+
+    reg {
+        name = "L2 internal interrupt mask";
+        desc = "Mask of the internal error interrupts. The driver writes 0x3FFF to enable all except auto_end (so 1 = enabled).
+
+Vendor driver `arch/arm/mm/cache-hil2v200.c` / `cache-hil2v200.h` (REG_L2_INTMASK). Bit meanings follow the vendor constant names (BIT_L2_*_<name>); the long names in the field descriptions are interpretations of those abbreviations, not data sheet text.";
+
+        field {
+            name = "auto_end";
+            desc = "Auto maintenance operation finished - enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } auto_end[14:14];
+
+        field {
+            name = "slverr_rb";
+            desc = "AXI SLVERR on a read buffer access - enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } slverr_rb[13:13];
+
+        field {
+            name = "decerr_ra";
+            desc = "AXI DECERR on a read allocate - enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } decerr_ra[12:12];
+
+        field {
+            name = "decerr_wb";
+            desc = "AXI DECERR on a write buffer access - enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } decerr_wb[11:11];
+
+        field {
+            name = "slverr_wb";
+            desc = "AXI SLVERR on a write buffer access - enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } slverr_wb[10:10];
+
+        field {
+            name = "decerr_wa";
+            desc = "AXI DECERR on a write allocate - enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } decerr_wa[9:9];
+
+        field {
+            name = "slverr_wa";
+            desc = "AXI SLVERR on a write allocate - enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } slverr_wa[8:8];
+
+        field {
+            name = "decerr_eb";
+            desc = "AXI DECERR on an eviction buffer access - enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } decerr_eb[7:7];
+
+        field {
+            name = "slverr_eb";
+            desc = "AXI SLVERR on an eviction buffer access - enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } slverr_eb[6:6];
+
+        field {
+            name = "errrd";
+            desc = "data RAM ECC error on read - enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } errrd[5:5];
+
+        field {
+            name = "errrt";
+            desc = "tag RAM ECC error on read - enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } errrt[4:4];
+
+        field {
+            name = "errwd";
+            desc = "data RAM ECC error on write - enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } errwd[3:3];
+
+        field {
+            name = "errwt";
+            desc = "tag RAM ECC error on write - enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } errwt[2:2];
+
+        field {
+            name = "parrd";
+            desc = "data RAM parity error on read - enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } parrd[1:1];
+
+        field {
+            name = "parrt";
+            desc = "tag RAM parity error on read - enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } parrt[0:0];
+    } L2_INTMASK @ 0x100;
+
+    reg {
+        name = "L2 internal masked interrupt status";
+        desc = "Masked internal interrupt status.
+
+Vendor driver `arch/arm/mm/cache-hil2v200.c` / `cache-hil2v200.h` (REG_L2_MINT). Bit meanings follow the vendor constant names (BIT_L2_*_<name>); the long names in the field descriptions are interpretations of those abbreviations, not data sheet text.";
+
+        field {
+            name = "auto_end";
+            desc = "Auto maintenance operation finished.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } auto_end[14:14];
+
+        field {
+            name = "slverr_rb";
+            desc = "AXI SLVERR on a read buffer access.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } slverr_rb[13:13];
+
+        field {
+            name = "decerr_ra";
+            desc = "AXI DECERR on a read allocate.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } decerr_ra[12:12];
+
+        field {
+            name = "decerr_wb";
+            desc = "AXI DECERR on a write buffer access.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } decerr_wb[11:11];
+
+        field {
+            name = "slverr_wb";
+            desc = "AXI SLVERR on a write buffer access.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } slverr_wb[10:10];
+
+        field {
+            name = "decerr_wa";
+            desc = "AXI DECERR on a write allocate.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } decerr_wa[9:9];
+
+        field {
+            name = "slverr_wa";
+            desc = "AXI SLVERR on a write allocate.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } slverr_wa[8:8];
+
+        field {
+            name = "decerr_eb";
+            desc = "AXI DECERR on an eviction buffer access.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } decerr_eb[7:7];
+
+        field {
+            name = "slverr_eb";
+            desc = "AXI SLVERR on an eviction buffer access.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } slverr_eb[6:6];
+
+        field {
+            name = "errrd";
+            desc = "data RAM ECC error on read.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } errrd[5:5];
+
+        field {
+            name = "errrt";
+            desc = "tag RAM ECC error on read.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } errrt[4:4];
+
+        field {
+            name = "errwd";
+            desc = "data RAM ECC error on write.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } errwd[3:3];
+
+        field {
+            name = "errwt";
+            desc = "tag RAM ECC error on write.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } errwt[2:2];
+
+        field {
+            name = "parrd";
+            desc = "data RAM parity error on read.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } parrd[1:1];
+
+        field {
+            name = "parrt";
+            desc = "tag RAM parity error on read.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } parrt[0:0];
+    } L2_MINT @ 0x104;
+
+    reg {
+        name = "L2 internal raw interrupt status";
+        desc = "Raw internal interrupt status.
+
+Vendor driver `arch/arm/mm/cache-hil2v200.c` / `cache-hil2v200.h` (REG_L2_RINT; the driver polls auto_end). Bit meanings follow the vendor constant names (BIT_L2_*_<name>); the long names in the field descriptions are interpretations of those abbreviations, not data sheet text.";
+
+        field {
+            name = "auto_end";
+            desc = "Auto maintenance operation finished.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } auto_end[14:14];
+
+        field {
+            name = "slverr_rb";
+            desc = "AXI SLVERR on a read buffer access.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } slverr_rb[13:13];
+
+        field {
+            name = "decerr_ra";
+            desc = "AXI DECERR on a read allocate.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } decerr_ra[12:12];
+
+        field {
+            name = "decerr_wb";
+            desc = "AXI DECERR on a write buffer access.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } decerr_wb[11:11];
+
+        field {
+            name = "slverr_wb";
+            desc = "AXI SLVERR on a write buffer access.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } slverr_wb[10:10];
+
+        field {
+            name = "decerr_wa";
+            desc = "AXI DECERR on a write allocate.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } decerr_wa[9:9];
+
+        field {
+            name = "slverr_wa";
+            desc = "AXI SLVERR on a write allocate.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } slverr_wa[8:8];
+
+        field {
+            name = "decerr_eb";
+            desc = "AXI DECERR on an eviction buffer access.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } decerr_eb[7:7];
+
+        field {
+            name = "slverr_eb";
+            desc = "AXI SLVERR on an eviction buffer access.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } slverr_eb[6:6];
+
+        field {
+            name = "errrd";
+            desc = "data RAM ECC error on read.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } errrd[5:5];
+
+        field {
+            name = "errrt";
+            desc = "tag RAM ECC error on read.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } errrt[4:4];
+
+        field {
+            name = "errwd";
+            desc = "data RAM ECC error on write.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } errwd[3:3];
+
+        field {
+            name = "errwt";
+            desc = "tag RAM ECC error on write.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } errwt[2:2];
+
+        field {
+            name = "parrd";
+            desc = "data RAM parity error on read.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } parrd[1:1];
+
+        field {
+            name = "parrt";
+            desc = "tag RAM parity error on read.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } parrt[0:0];
+    } L2_RINT @ 0x108;
+
+    reg {
+        name = "L2 internal interrupt clear";
+        desc = "Write 1 to clear the matching raw interrupt bit (the driver writes the value read from L2_RINT, and 0 in its handler).
+
+Vendor driver `arch/arm/mm/cache-hil2v200.c` / `cache-hil2v200.h` (REG_L2_INTCLR). Bit meanings follow the vendor constant names (BIT_L2_*_<name>); the long names in the field descriptions are interpretations of those abbreviations, not data sheet text.";
+
+        field {
+            name = "auto_end";
+            desc = "Auto maintenance operation finished - clear.";
+            sw = w;
+            hw = r;
+            reset = 0x0;
+        } auto_end[14:14];
+
+        field {
+            name = "slverr_rb";
+            desc = "AXI SLVERR on a read buffer access - clear.";
+            sw = w;
+            hw = r;
+            reset = 0x0;
+        } slverr_rb[13:13];
+
+        field {
+            name = "decerr_ra";
+            desc = "AXI DECERR on a read allocate - clear.";
+            sw = w;
+            hw = r;
+            reset = 0x0;
+        } decerr_ra[12:12];
+
+        field {
+            name = "decerr_wb";
+            desc = "AXI DECERR on a write buffer access - clear.";
+            sw = w;
+            hw = r;
+            reset = 0x0;
+        } decerr_wb[11:11];
+
+        field {
+            name = "slverr_wb";
+            desc = "AXI SLVERR on a write buffer access - clear.";
+            sw = w;
+            hw = r;
+            reset = 0x0;
+        } slverr_wb[10:10];
+
+        field {
+            name = "decerr_wa";
+            desc = "AXI DECERR on a write allocate - clear.";
+            sw = w;
+            hw = r;
+            reset = 0x0;
+        } decerr_wa[9:9];
+
+        field {
+            name = "slverr_wa";
+            desc = "AXI SLVERR on a write allocate - clear.";
+            sw = w;
+            hw = r;
+            reset = 0x0;
+        } slverr_wa[8:8];
+
+        field {
+            name = "decerr_eb";
+            desc = "AXI DECERR on an eviction buffer access - clear.";
+            sw = w;
+            hw = r;
+            reset = 0x0;
+        } decerr_eb[7:7];
+
+        field {
+            name = "slverr_eb";
+            desc = "AXI SLVERR on an eviction buffer access - clear.";
+            sw = w;
+            hw = r;
+            reset = 0x0;
+        } slverr_eb[6:6];
+
+        field {
+            name = "errrd";
+            desc = "data RAM ECC error on read - clear.";
+            sw = w;
+            hw = r;
+            reset = 0x0;
+        } errrd[5:5];
+
+        field {
+            name = "errrt";
+            desc = "tag RAM ECC error on read - clear.";
+            sw = w;
+            hw = r;
+            reset = 0x0;
+        } errrt[4:4];
+
+        field {
+            name = "errwd";
+            desc = "data RAM ECC error on write - clear.";
+            sw = w;
+            hw = r;
+            reset = 0x0;
+        } errwd[3:3];
+
+        field {
+            name = "errwt";
+            desc = "tag RAM ECC error on write - clear.";
+            sw = w;
+            hw = r;
+            reset = 0x0;
+        } errwt[2:2];
+
+        field {
+            name = "parrd";
+            desc = "data RAM parity error on read - clear.";
+            sw = w;
+            hw = r;
+            reset = 0x0;
+        } parrd[1:1];
+
+        field {
+            name = "parrt";
+            desc = "tag RAM parity error on read - clear.";
+            sw = w;
+            hw = r;
+            reset = 0x0;
+        } parrt[0:0];
+    } L2_INTCLR @ 0x10C;
+
+    reg {
+        name = "L2 Internal monitor interrupt mask";
+        desc = "Internal monitor interrupt mask (performance counter overflow interrupts). Defined in the vendor header, never used by the driver; field layout unknown.
+
+Vendor driver `arch/arm/mm/cache-hil2v200.c` / `cache-hil2v200.h` (REG_).L2_INTMASK_INT_MON";
+
+        field {
+            name = "value";
+            desc = "Register value (layout not documented).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } value[31:0];
+    } L2_INTMASK_INT_MON @ 0x110;
+
+    reg {
+        name = "L2 Internal monitor masked interrupt status";
+        desc = "Internal monitor masked interrupt status (performance counter overflow interrupts). Defined in the vendor header, never used by the driver; field layout unknown.
+
+Vendor driver `arch/arm/mm/cache-hil2v200.c` / `cache-hil2v200.h` (REG_).L2_MINT_INT_MON";
+
+        field {
+            name = "value";
+            desc = "Register value (layout not documented).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } value[31:0];
+    } L2_MINT_INT_MON @ 0x114;
+
+    reg {
+        name = "L2 Internal monitor raw interrupt status";
+        desc = "Internal monitor raw interrupt status (performance counter overflow interrupts). Defined in the vendor header, never used by the driver; field layout unknown.
+
+Vendor driver `arch/arm/mm/cache-hil2v200.c` / `cache-hil2v200.h` (REG_).L2_RINT_INT_MON";
+
+        field {
+            name = "value";
+            desc = "Register value (layout not documented).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } value[31:0];
+    } L2_RINT_INT_MON @ 0x118;
+
+    reg {
+        name = "L2 Internal monitor interrupt clear";
+        desc = "Internal monitor interrupt clear (performance counter overflow interrupts). Defined in the vendor header, never used by the driver; field layout unknown.
+
+Vendor driver `arch/arm/mm/cache-hil2v200.c` / `cache-hil2v200.h` (REG_).L2_INTCLR_INT_MON";
+
+        field {
+            name = "value";
+            desc = "Register value (layout not documented).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } value[31:0];
+    } L2_INTCLR_INT_MON @ 0x11C;
+
+    reg {
+        name = "L2 External monitor interrupt mask";
+        desc = "External monitor interrupt mask (performance counter overflow interrupts). Defined in the vendor header, never used by the driver; field layout unknown.
+
+Vendor driver `arch/arm/mm/cache-hil2v200.c` / `cache-hil2v200.h` (REG_).L2_INTMASK_EXT_MON";
+
+        field {
+            name = "value";
+            desc = "Register value (layout not documented).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } value[31:0];
+    } L2_INTMASK_EXT_MON @ 0x120;
+
+    reg {
+        name = "L2 External monitor masked interrupt status";
+        desc = "External monitor masked interrupt status (performance counter overflow interrupts). Defined in the vendor header, never used by the driver; field layout unknown.
+
+Vendor driver `arch/arm/mm/cache-hil2v200.c` / `cache-hil2v200.h` (REG_).L2_MINT_EXT_MON";
+
+        field {
+            name = "value";
+            desc = "Register value (layout not documented).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } value[31:0];
+    } L2_MINT_EXT_MON @ 0x124;
+
+    reg {
+        name = "L2 External monitor raw interrupt status";
+        desc = "External monitor raw interrupt status (performance counter overflow interrupts). Defined in the vendor header, never used by the driver; field layout unknown.
+
+Vendor driver `arch/arm/mm/cache-hil2v200.c` / `cache-hil2v200.h` (REG_).L2_RINT_EXT_MON";
+
+        field {
+            name = "value";
+            desc = "Register value (layout not documented).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } value[31:0];
+    } L2_RINT_EXT_MON @ 0x128;
+
+    reg {
+        name = "L2 External monitor interrupt clear";
+        desc = "External monitor interrupt clear (performance counter overflow interrupts). Defined in the vendor header, never used by the driver; field layout unknown.
+
+Vendor driver `arch/arm/mm/cache-hil2v200.c` / `cache-hil2v200.h` (REG_).L2_INTCLR_EXT_MON";
+
+        field {
+            name = "value";
+            desc = "Register value (layout not documented).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } value[31:0];
+    } L2_INTCLR_EXT_MON @ 0x12C;
+
+    reg {
+        name = "L2 sync";
+        desc = "Cache sync. The driver's `cache_sync()` only reads this register (reading drains the outstanding operations).
+
+Vendor driver `arch/arm/mm/cache-hil2v200.c` / `cache-hil2v200.h` (REG_L2_SYNC).";
+
+        field {
+            name = "sync";
+            desc = "Sync (BIT_L2_SYNC_SYNC).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } sync[0:0];
+    } L2_SYNC @ 0x200;
+
+    reg {
+        name = "L2 automatic maintenance";
+        desc = "Clean or invalidate a whole way in hardware. The driver writes way << 2 | start (invalidate) or way << 2 | start | 0x2 (clean); completion is `L2_RINT.auto_end`.
+
+Vendor driver `arch/arm/mm/cache-hil2v200.c` / `cache-hil2v200.h` (REG_L2_MAINT_AUTO).";
+
+        field {
+            name = "way";
+            desc = "Way number 0..7 (BIT_L2_MAINT_AUTO_WAYADDRESS = 2).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } way[4:2];
+
+        field {
+            name = "clean";
+            desc = "1 = clean the way, 0 = invalidate it (the driver ORs 0x2).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } clean[1:1];
+
+        field {
+            name = "start";
+            desc = "Start the operation.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } start[0:0];
+    } L2_MAINT_AUTO @ 0x20C;
+
+    reg {
+        name = "L2 invalidate";
+        desc = "Invalidate a line by address: the driver writes `line address | 0x2` (BIT_L2_INVALID_BYADDRESS = 1) once per 32-byte line; flush_range writes `address | 1` to this and to L2_CLEAN.
+
+Vendor driver `arch/arm/mm/cache-hil2v200.c` / `cache-hil2v200.h` (REG_L2_INVALID, BIT_L2_INVALID_*).";
+
+        field {
+            name = "address";
+            desc = "Physical address bits 31:5 (by-address mode). The header also defines BIT_L2_INVALID_WAYADDRESS = 29 and LINEADDRESS = 5 for the way/index mode (way in bits 31:29, line index from bit 5).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } address[31:5];
+
+        field {
+            name = "byaddress";
+            desc = "1 = operate by address (BIT_L2_INVALID_BYADDRESS).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } byaddress[1:1];
+
+        field {
+            name = "flush_flag";
+            desc = "Written as 1 by the driver's flush_range (meaning not documented).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } flush_flag[0:0];
+    } L2_INVALID @ 0x210;
+
+    reg {
+        name = "L2 clean";
+        desc = "Clean a line by address (same layout as L2_INVALID).
+
+Vendor driver `arch/arm/mm/cache-hil2v200.c` / `cache-hil2v200.h` (REG_L2_CLEAN, BIT_L2_CLEAN_*).";
+
+        field {
+            name = "address";
+            desc = "Physical address bits 31:5 (way in 31:29 and line index from bit 5 for the way/index mode).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } address[31:5];
+
+        field {
+            name = "byaddress";
+            desc = "1 = operate by address (BIT_L2_CLEAN_BYADDRESS).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } byaddress[1:1];
+
+        field {
+            name = "flush_flag";
+            desc = "Written as 1 by the driver's flush_range (meaning not documented).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } flush_flag[0:0];
+    } L2_CLEAN @ 0x214;
+
+    reg {
+        name = "L2 data lockdown by way";
+        desc = "One bit per way (L2_LOCKWAY_MASK = 0xFF): lock the way against data allocation (lockdown in format C, DS 3.10.2).
+
+Vendor driver `arch/arm/mm/cache-hil2v200.c` / `cache-hil2v200.h` (REG_L2_DLOCKWAY).";
+
+        field {
+            name = "datalock";
+            desc = "Per-way data lock bits.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } datalock[7:0];
+    } L2_DLOCKWAY @ 0x300;
+
+    reg {
+        name = "L2 instruction lockdown by way";
+        desc = "One bit per way: lock the way against instruction allocation.
+
+Vendor driver `arch/arm/mm/cache-hil2v200.c` / `cache-hil2v200.h` (REG_L2_ILOCKWAY).";
+
+        field {
+            name = "instrlock";
+            desc = "Per-way instruction lock bits.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } instrlock[7:0];
+    } L2_ILOCKWAY @ 0x304;
+
+    reg {
+        name = "L2 test mode";
+        desc = "Test mode enable.
+
+Vendor driver `arch/arm/mm/cache-hil2v200.c` / `cache-hil2v200.h` (REG_L2_TESTMODE).";
+
+        field {
+            name = "test_mode";
+            desc = "Test mode (BIT_L2_TESTMODE_TEST_MODE).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } test_mode[0:0];
+    } L2_TESTMODE @ 0x400;
+
+    reg {
+        name = "L2 interrupt test";
+        desc = "Test-mode interrupt injection (bits 11:0, same names as the L2_RINT error bits).
+
+Vendor driver `arch/arm/mm/cache-hil2v200.c` / `cache-hil2v200.h` (REG_L2_INTTEST, L2_INTTEST_*).";
+
+        field {
+            name = "decerr_wb";
+            desc = "AXI DECERR on a write buffer access - inject.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } decerr_wb[11:11];
+
+        field {
+            name = "slverr_wb";
+            desc = "AXI SLVERR on a write buffer access - inject.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } slverr_wb[10:10];
+
+        field {
+            name = "decerr_wa";
+            desc = "AXI DECERR on a write allocate - inject.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } decerr_wa[9:9];
+
+        field {
+            name = "slverr_wa";
+            desc = "AXI SLVERR on a write allocate - inject.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } slverr_wa[8:8];
+
+        field {
+            name = "decerr_eb";
+            desc = "AXI DECERR on an eviction buffer access - inject.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } decerr_eb[7:7];
+
+        field {
+            name = "slverr_eb";
+            desc = "AXI SLVERR on an eviction buffer access - inject.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } slverr_eb[6:6];
+
+        field {
+            name = "errrd";
+            desc = "data RAM ECC error on read - inject.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } errrd[5:5];
+
+        field {
+            name = "errrt";
+            desc = "tag RAM ECC error on read - inject.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } errrt[4:4];
+
+        field {
+            name = "errwd";
+            desc = "data RAM ECC error on write - inject.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } errwd[3:3];
+
+        field {
+            name = "errwt";
+            desc = "tag RAM ECC error on write - inject.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } errwt[2:2];
+
+        field {
+            name = "parrd";
+            desc = "data RAM parity error on read - inject.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } parrd[1:1];
+
+        field {
+            name = "parrt";
+            desc = "tag RAM parity error on read - inject.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } parrt[0:0];
+    } L2_INTTEST @ 0x404;
+
+    reg {
+        name = "L2 internal monitor interrupt test";
+        desc = "Test register; defined in the vendor header, never used by the driver; layout unknown.
+
+Vendor driver `arch/arm/mm/cache-hil2v200.c` / `cache-hil2v200.h` (REG_).L2_INTTEST_INT_MON";
+
+        field {
+            name = "value";
+            desc = "Register value (layout not documented).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } value[31:0];
+    } L2_INTTEST_INT_MON @ 0x408;
+
+    reg {
+        name = "L2 external monitor interrupt test";
+        desc = "Test register; defined in the vendor header, never used by the driver; layout unknown.
+
+Vendor driver `arch/arm/mm/cache-hil2v200.c` / `cache-hil2v200.h` (REG_).L2_INTTEST_EXT_MON";
+
+        field {
+            name = "value";
+            desc = "Register value (layout not documented).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } value[31:0];
+    } L2_INTTEST_EXT_MON @ 0x40C;
+
+    reg {
+        name = "L2 event test";
+        desc = "Test-mode event injection.
+
+Vendor driver `arch/arm/mm/cache-hil2v200.c` / `cache-hil2v200.h` (REG_L2_EVENTTEST, BIT_L2_EVENTTEST_*).";
+
+        field {
+            name = "dataread_hit";
+            desc = "Data read hit.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } dataread_hit[8:8];
+
+        field {
+            name = "dataread_request";
+            desc = "Data read request.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } dataread_request[7:7];
+
+        field {
+            name = "datawrite_hit";
+            desc = "Data write hit.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } datawrite_hit[6:6];
+
+        field {
+            name = "datawrite_request";
+            desc = "Data write request.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } datawrite_request[5:5];
+
+        field {
+            name = "instrut_hit";
+            desc = "Instruction hit.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } instrut_hit[4:4];
+
+        field {
+            name = "instrut_request";
+            desc = "Instruction request.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } instrut_request[3:3];
+
+        field {
+            name = "eviction";
+            desc = "Eviction.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } eviction[2:2];
+
+        field {
+            name = "bufferedw_request";
+            desc = "Buffered write request.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } bufferedw_request[1:1];
+
+        field {
+            name = "writeall_request";
+            desc = "Write-all request.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } writeall_request[0:0];
+    } L2_EVENTTEST @ 0x410;
+
+    reg {
+        name = "L2 region register";
+        desc = "Region 0..4 configuration (address region attribute registers). Defined in the vendor header, never used by the driver; layout unknown.
+
+Vendor driver `arch/arm/mm/cache-hil2v200.c` / `cache-hil2v200.h` (REG_L2_REGION0..4).";
+
+        field {
+            name = "value";
+            desc = "Register value (layout not documented).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } value[31:0];
+    } L2_REGION[5] @ 0x500 += 0x4;
+
+    reg {
+        name = "L2 internal performance counter";
+        desc = "Internal event counter 0..10 (DS 3.10.2: statistics on cache accesses, write-backs, misses and miss waits). Event assignment not documented.
+
+Vendor driver `arch/arm/mm/cache-hil2v200.c` / `cache-hil2v200.h` (REG_L2_INT_COUNTER0..10).";
+
+        field {
+            name = "count";
+            desc = "Counter value.";
+            sw = rw;
+            hw = r;
+            reset = 0xFFFFFFFF;
+        } count[31:0];
+    } L2_INT_COUNTER[11] @ 0x600 += 0x4;
+
+    reg {
+        name = "L2 external performance counter";
+        desc = "External event counter 0..27. Event assignment not documented.
+
+Vendor driver `arch/arm/mm/cache-hil2v200.c` / `cache-hil2v200.h` (REG_L2_EXT_COUNTER0..27).";
+
+        field {
+            name = "count";
+            desc = "Counter value.";
+            sw = rw;
+            hw = r;
+            reset = 0xFFFFFFFF;
+        } count[31:0];
+    } L2_EXT_COUNTER[28] @ 0x700 += 0x4;
+
+    reg {
+        name = "L2 special control";
+        desc = "Special control. Defined in the vendor header, never written by the driver; layout unknown.
+
+Vendor driver `arch/arm/mm/cache-hil2v200.c` / `cache-hil2v200.h` (REG_L2_SPECIAL_CTRL).";
+
+        field {
+            name = "value";
+            desc = "Register value (layout not documented).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } value[31:0];
+    } L2_SPECIAL_CTRL @ 0x800;
+
+    reg {
+        name = "L2 special check 0";
+        desc = "ECC/check status 0; the interrupt handler prints it and the init code clears it (writes 0).
+
+Vendor driver `arch/arm/mm/cache-hil2v200.c` / `cache-hil2v200.h` (REG_L2_SPECIAL_CHECK0).";
+
+        field {
+            name = "value";
+            desc = "Register value (layout not documented).";
+            sw = rw;
+            hw = r;
+            reset = 0x6DF7B1BE;
+        } value[31:0];
+    } L2_SPECIAL_CHECK0 @ 0x804;
+
+    reg {
+        name = "L2 special check 1";
+        desc = "ECC/check status 1; the interrupt handler prints it and the init code clears it (writes 0).
+
+Vendor driver `arch/arm/mm/cache-hil2v200.c` / `cache-hil2v200.h` (REG_L2_SPECIAL_CHECK1).";
+
+        field {
+            name = "value";
+            desc = "Register value (layout not documented).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } value[31:0];
+    } L2_SPECIAL_CHECK1 @ 0x808;
+
+};
+
+`endif
