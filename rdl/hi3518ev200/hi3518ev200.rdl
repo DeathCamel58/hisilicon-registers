@@ -1,0 +1,183 @@
+`include "defines.rdl"
+
+`include "CRG.rdl"
+`include "../common/ARM_PL011.rdl"
+`include "../common/ARM_PL061.rdl"
+`include "../common/ARM_PL190.rdl"
+`include "../common/HISI_DDRC_V2.rdl"
+`include "../common/HISI_DMAC.rdl"
+`include "../common/HISI_DWMMC.rdl"
+`include "../common/HISI_FEMAC.rdl"
+`include "../common/HISI_FMC.rdl"
+`include "../common/HISI_I2C_DW.rdl"
+`include "../common/HISI_IO_CONFIG_V2.rdl"
+`include "../common/HISI_IR.rdl"
+`include "../common/HISI_LSADC.rdl"
+`include "../common/HISI_MISC_CTRL.rdl"
+`include "../common/HISI_PMC.rdl"
+`include "../common/HISI_PWM.rdl"
+`include "../common/HISI_RTC_SPI.rdl"
+`include "../common/HISI_RTC_SPI_V2.rdl"
+`include "../common/HISI_SPI.rdl"
+`include "../common/HISI_SYS_CTRL_V2.rdl"
+`include "../common/HISI_TIMER_SP804.rdl"
+`include "../common/HISI_USB_DEVICE.rdl"
+`include "../common/HISI_USB_HOST.rdl"
+`include "../common/HISI_WDG_SP805.rdl"
+
+addrmap hi3518ev200 {
+    name = "hi3518ev200 registers";
+    desc = "
+        ## Datasheets
+
+        * Hi3518E V20X / Hi3516C V200 Economical HD IP Camera SoC Data Sheet, issue 02 (2017-06-12) (the Hi3518E V200 and V201 share it; the Hi3516C V200 part of it has a different package/pin list but the same register map)
+
+        ## Facts
+
+        * CPU: ARM926EJ-S, 32 KB I-cache + 32 KB D-cache, 540 MHz (Hi3516C V200: 600 MHz); no VFP/NEON, no L2, no GIC: the interrupt controller is an ARM PL190 VIC at 0x100D0000.
+        * DDR: Hi3518E V200/V201 embedded 16-bit DDR2 (512 / 256 Mbit), max 360 MHz; DDR window 0x80000000. SPI flash window 0x58000000 (64 MB). On-chip RAM 0x04010000 (64 KB), BOOTROM 0x04000000.
+        * Boot: BOOTROM_SEL (pin MDCK) = 1: serial download (BOOTROM); BOOTROM_SEL = 0: BOOT_SEL (pin EPHY_RST) 0 = SPI flash (NOR 3/4-byte or NAND 1/4-wire by SFC_DEVICE_MODE/SFC_EMMC_BOOT_MODE straps), 1 = eMMC.
+        * Chip ID: SYS_CTRL SCSYSID3..0 = 0x3518E200; SCSYSID0[31:24] = 2 (Hi3518EV200).
+
+        ## Addresses
+
+        | Start Address | End Address | Description | Capacity | Documented Here |
+        |---------------|-------------|-------------|----------|-----------------|
+        | 0x00000000    | 0x03FFFFFF  | Memory selected after address | 64 MB | &#10060; |
+        | 0x04000000    | 0x0400FFFF  | BOOTROM | 64 KB | &#10060; |
+        | 0x04010000    | 0x0401FFFF  | On-chip RAM | 64 KB | &#10060; |
+        | 0x04020000    | 0x0FFFFFFF  | Reserved | - | &#10060; |
+        | 0x10000000    | 0x1000FFFF  | Reserved | 64 KB | &#10060; |
+        | 0x10010000    | 0x1001FFFF  | FMC control register | 64 KB | &#9989; |
+        | 0x10020000    | 0x1002FFFF  | SDIO0 register | 64 KB | &#9989; |
+        | 0x10030000    | 0x1003FFFF  | SDIO1 register | 64 KB | &#9989; |
+        | 0x10040000    | 0x1004FFFF  | Reserved | 64 KB | &#10060; |
+        | 0x10050000    | 0x1005FFFF  | Reserved | 64 KB | &#10060; |
+        | 0x10060000    | 0x1006FFFF  | DMAC register | 64 KB | &#9989; |
+        | 0x10070000    | 0x1007FFFF  | HASH register | 64 KB | &#10060; |
+        | 0x10080000    | 0x1008FFFF  | USB device register | 64 KB | &#9989; |
+        | 0x10090000    | 0x1009FFFF  | ETH register | 64 KB | &#9989; |
+        | 0x100A0000    | 0x100AFFFF  | USB OHCI register | 64 KB | &#9989; |
+        | 0x100B0000    | 0x100BFFFF  | USB EHCI register | 64 KB | &#9989; |
+        | 0x100C0000    | 0x100CFFFF  | Cipher register | 64 KB | &#10060; |
+        | 0x100D0000    | 0x100DFFFF  | Interrupt control register | 64 KB | &#9989; |
+        | 0x100E0000    | 0x1FFFFFFF  | Reserved | - | &#10060; |
+        | 0x20000000    | 0x2000FFFF  | Timer 0/Timer 1 register | 64 KB | &#9989; |
+        | 0x20010000    | 0x2001FFFF  | Timer 2/Timer 3 register | 64 KB | &#9989; |
+        | 0x20020000    | 0x2002FFFF  | Reserved | 64 KB | &#10060; |
+        | 0x20030000    | 0x2003FFFF  | CRG register | 64 KB | &#9989; |
+        | 0x20040000    | 0x2004FFFF  | WDG register | 64 KB | &#9989; |
+        | 0x20050000    | 0x2005FFFF  | SYS_CTRL register | 64 KB | &#9989; |
+        | 0x20060000    | 0x2006FFFF  | RTC register | 64 KB | &#9989; |
+        | 0x20070000    | 0x2007FFFF  | IR register | 64 KB | &#9989; |
+        | 0x20080000    | 0x2008FFFF  | UART0 register | 64 KB | &#9989; |
+        | 0x20090000    | 0x2009FFFF  | UART1 register | 64 KB | &#9989; |
+        | 0x200A0000    | 0x200AFFFF  | UART2 register | 64 KB | &#9989; |
+        | 0x200B0000    | 0x200BFFFF  | SAR_ADC register | 64 KB | &#9989; |
+        | 0x200C0000    | 0x200CFFFF  | SPI0 register | 64 KB | &#9989; |
+        | 0x200D0000    | 0x200DFFFF  | I2C0 register | 64 KB | &#9989; |
+        | 0x200E0000    | 0x200EFFFF  | SPI1 register | 64 KB | &#9989; |
+        | 0x200F0000    | 0x200F07FF  | IO MUX register | 2 KB | &#9989; |
+        | 0x200F0800    | 0x200FFFFF  | IO CTR register | 62 KB | &#10060; |
+        | 0x20100000    | 0x201007FF  | Reserved | 2 KB | &#10060; |
+        | 0x20100800    | 0x2010FFFF  | cipher_hash_key_ctrl register | 62 KB | &#10060; |
+        | 0x20110000    | 0x2011FFFF  | DDRC/DDR PHY register | 64 KB | &#9989; |
+        | 0x20120000    | 0x2012FFFF  | MISC register | 64 KB | &#9989; |
+        | 0x20130000    | 0x2013FFFF  | PWM register | 64 KB | &#9989; |
+        | 0x20140000    | 0x2014FFFF  | GPIO0 register | 64 KB | &#9989; |
+        | 0x20150000    | 0x2015FFFF  | GPIO1 register | 64 KB | &#9989; |
+        | 0x20160000    | 0x2016FFFF  | GPIO2 register | 64 KB | &#9989; |
+        | 0x20170000    | 0x2017FFFF  | GPIO3 register | 64 KB | &#9989; |
+        | 0x20180000    | 0x2018FFFF  | GPIO4 register | 64 KB | &#9989; |
+        | 0x20190000    | 0x2019FFFF  | GPIO5 register | 64 KB | &#9989; |
+        | 0x201A0000    | 0x201AFFFF  | GPIO6 register | 64 KB | &#9989; |
+        | 0x201B0000    | 0x201BFFFF  | GPIO7 register | 64 KB | &#9989; |
+        | 0x201C0000    | 0x201CFFFF  | GPIO8 register | 64 KB | &#9989; |
+        | 0x201D0000    | 0x201DFFFF  | Reserved | 64 KB | &#10060; |
+        | 0x201E0000    | 0x201EFFFF  | Reserved | 64 KB | &#10060; |
+        | 0x201F0000    | 0x201FFFFF  | Reserved | 64 KB | &#10060; |
+        | 0x20200000    | 0x2020FFFF  | Reserved | 64 KB | &#10060; |
+        | 0x20210000    | 0x2021FFFF  | Reserved | 64 KB | &#10060; |
+        | 0x20220000    | 0x2022FFFF  | Reserved | 64 KB | &#10060; |
+        | 0x20230000    | 0x2023FFFF  | Reserved | 64 KB | &#10060; |
+        | 0x20240000    | 0x2024FFFF  | I2C1 register | 64 KB | &#9989; |
+        | 0x20250000    | 0x2025FFFF  | I2C2 register | 64 KB | &#9989; |
+        | 0x20260000    | 0x2026FFFF  | RSA register | 64 KB | &#10060; |
+        | 0x20270000    | 0x2027FFFF  | PMC register | 64 KB | &#9989; |
+        | 0x20280000    | 0x2028FFFF  | TRNG register | 64 KB | &#10060; |
+        | 0x20290000    | 0x2057FFFF  | Reserved | - | &#10060; |
+        | 0x20580000    | 0x205BFFFF  | VICAP register | 256 KB | &#10060; |
+        | 0x205C0000    | 0x205CFFFF  | VDP register | 64 KB | &#10060; |
+        | 0x205D0000    | 0x205FFFFF  | Reserved | - | &#10060; |
+        | 0x20600000    | 0x2060FFFF  | VPSS register | 64 KB | &#10060; |
+        | 0x20610000    | 0x2061FFFF  | TDE register | 64 KB | &#10060; |
+        | 0x20620000    | 0x2062FFFF  | AVC register | 64 KB | &#10060; |
+        | 0x20630000    | 0x2063FFFF  | VGS register | 64 KB | &#10060; |
+        | 0x20640000    | 0x2064FFFF  | Reserved | 64 KB | &#10060; |
+        | 0x20650000    | 0x2065FFFF  | AIAO register | 64 KB | &#10060; |
+        | 0x20660000    | 0x2066FFFF  | JPGE register | 64 KB | &#10060; |
+        | 0x20670000    | 0x2067FFFF  | Reserved | - | &#10060; |
+        | 0x20680000    | 0x2068FFFF  | MIPI register | 64 KB | &#10060; |
+        | 0x20690000    | 0x2069FFFF  | Reserved | 64 KB | &#10060; |
+        | 0x206A0000    | 0x206AFFFF  | IVE register | 64 KB | &#10060; |
+        | 0x206B0000    | 0x206BFFFF  | Reserved | - | &#10060; |
+        | 0x206C0000    | 0x206CFFFF  | Reserved | 64 KB | &#10060; |
+        | 0x206D0000    | 0x206DFFFF  | DDR test module | 64 KB | &#10060; |
+        | 0x206E0000    | 0x206EFFFF  | Reserved | 64 KB | &#10060; |
+        | 0x206F0000    | 0x206FFFFF  | Reserved | 64 KB | &#10060; |
+        | 0x20700000    | 0x4FFFFFFF  | Reserved | - | &#10060; |
+        | 0x50000000    | 0x53FFFFFF  | Reserved | 64 MB | &#10060; |
+        | 0x54000000    | 0x57FFFFFF  | Reserved | 64 MB | &#10060; |
+        | 0x58000000    | 0x5BFFFFFF  | Storage space of the SPI flash | 64 MB | &#10060; |
+        | 0x5C000000    | 0x7FFFFFFF  | Reserved | - | &#10060; |
+        | 0x80000000    | 0x9FFFFFFF  | Address space of the | 512 MB | &#10060; |
+        | 0xA0000000    | 0xFFFFFFFF  | Reserved | - | &#10060; |
+
+        &#9989; = a register block is described in this addrmap; &#10060; = not described (reserved, memory window, or media/ISP/security block outside the bring-up scope).
+    ";
+
+    eHISI_FMC              FMC          @ 0x10010000;
+    eHISI_DWMMC            SDIO0        @ 0x10020000;
+    eHISI_DWMMC            SDIO1        @ 0x10030000;
+    eHISI_DMAC             DMAC         @ 0x10060000;
+    eHISI_USB_DEVICE       USB_DEV      @ 0x10080000;
+    eHISI_FEMAC            ETH          @ 0x10090000;
+    eHISI_USB_OHCI         OHCI         @ 0x100A0000;
+    eHISI_USB_EHCI         EHCI         @ 0x100B0000;
+    eARM_PL190             VIC          @ 0x100D0000;
+    eHISI_TIMER_SP804      TIMER0       @ 0x20000000;
+    eHISI_TIMER_SP804      TIMER1       @ 0x20000020;
+    eHISI_TIMER_SP804      TIMER2       @ 0x20010000;
+    eHISI_TIMER_SP804      TIMER3       @ 0x20010020;
+    eCRG                   CRG          @ 0x20030000;
+    eHISI_WDG_SP805        WDG          @ 0x20040000;
+    eHISI_SYS_CTRL_V2      SYS_CTRL     @ 0x20050000;
+    eHISI_RTC_SPI          RTC          @ 0x20060000;
+    eHISI_IR               IR           @ 0x20070000;
+    eARM_PL011             UART0        @ 0x20080000;
+    eARM_PL011             UART1        @ 0x20090000;
+    eARM_PL011             UART2        @ 0x200A0000;
+    eHISI_LSADC            LSADC        @ 0x200B0000;
+    eHISI_SPI              SPI0         @ 0x200C0000;
+    eHISI_I2C_DW           I2C0         @ 0x200D0000;
+    eHISI_SPI              SPI1         @ 0x200E0000;
+    eHISI_IO_CONFIG_V2     IO_CONFIG    @ 0x200F0000;
+    eHISI_DDRC_V2          DDRC         @ 0x20110000;
+    eHISI_MISC_CTRL        MISC_CTRL    @ 0x20120000;
+    eHISI_PWM              PWM0         @ 0x20130000;
+    eHISI_PWM              PWM1         @ 0x20130020;
+    eHISI_PWM              PWM2         @ 0x20130040;
+    eHISI_PWM              PWM3         @ 0x20130060;
+    eARM_PL061             GPIO0        @ 0x20140000;
+    eARM_PL061             GPIO1        @ 0x20150000;
+    eARM_PL061             GPIO2        @ 0x20160000;
+    eARM_PL061             GPIO3        @ 0x20170000;
+    eARM_PL061             GPIO4        @ 0x20180000;
+    eARM_PL061             GPIO5        @ 0x20190000;
+    eARM_PL061             GPIO6        @ 0x201A0000;
+    eARM_PL061             GPIO7        @ 0x201B0000;
+    eARM_PL061             GPIO8        @ 0x201C0000;
+    eHISI_I2C_DW           I2C1         @ 0x20240000;
+    eHISI_I2C_DW           I2C2         @ 0x20250000;
+    eHISI_PMC              PMC          @ 0x20270000;
+};
