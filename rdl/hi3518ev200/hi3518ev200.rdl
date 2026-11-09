@@ -30,20 +30,49 @@ addrmap hi3518ev200 {
     desc = "
         ## Datasheets
 
-        * [Full Datasheet](assets/Hi3518EV20X-Hi3516CV200-Datasheet.pdf): Hi3518E V20X / Hi3516C V200 Economical HD IP Camera SoC Data Sheet, issue 02 (2017-06-12) (the Hi3518E V200 and V201 share it; the Hi3516C V200 part of it has a different package/pin list but the same register map)
+        * [Full Datasheet](assets/Hi3518EV20X-Hi3516CV200-Datasheet.pdf): Hi3518E V20X / Hi3516C V200 Economical HD IP Camera SoC Data Sheet, issue 02 (2017-06-12). One document for the Hi3518E V200, Hi3518E V201 and Hi3516C V200: one address map (Table 1-4), one CRG/SYS_CTRL/MISC/IO-config register set, one interrupt table; the chips differ only in package/pin list, CPU speed, DDR and codec performance (see Variants). This is HiSilicon's own English edition; no Chinese original is available in this workspace, so vendor code (U-Boot 2010.06 `hi3518ev200`, Linux `clk-hi3518ev20x.c`, OpenIPC `hi3518ev20x.dtsi`) was used to settle disputed values, as noted in the block descriptions.
 
         ## Facts
 
-        * CPU: ARM926EJ-S, 32 KB I-cache + 32 KB D-cache, 540 MHz (Hi3516C V200: 600 MHz); no VFP/NEON, no L2, no GIC: the interrupt controller is an ARM PL190 VIC at 0x100D0000.
-        * DDR: Hi3518E V200/V201 embedded 16-bit DDR2 (512 / 256 Mbit), max 360 MHz; DDR window 0x80000000. SPI flash window 0x58000000 (64 MB). On-chip RAM 0x04010000 (64 KB), BOOTROM 0x04000000.
-        * Boot: BOOTROM_SEL (pin MDCK) = 1: serial download (BOOTROM); BOOTROM_SEL = 0: BOOT_SEL (pin EPHY_RST) 0 = SPI flash (NOR 3/4-byte or NAND 1/4-wire by SFC_DEVICE_MODE/SFC_EMMC_BOOT_MODE straps), 1 = eMMC.
-        * Chip ID: SYS_CTRL SCSYSID3..0 = 0x3518E200; SCSYSID0[31:24] = 2 (Hi3518EV200).
+        * CPU: ARM926EJ-S (ARMv5TEJ), 32 KB I-cache + 32 KB D-cache, 540 MHz (Hi3516C V200: 600 MHz); no VFP/NEON, no L2, no GIC: the interrupt controller is an ARM PL190 VIC at 0x100D0000 (32 sources, see Interrupts).
+        * DDR: Hi3518E V200/V201 embedded 16-bit DDR2 (512 / 256 Mbit), max 360 MHz; DDR window 0x80000000 (64 MB usable on the V200, 32 MB on the V201). SPI flash window 0x58000000 (64 MB). On-chip RAM 0x04010000 (64 KB), BOOTROM 0x04000000. DDRC at 0x20110000 (eHISI_DDRC_V2), the DDR PHY at 0x20118000 inside the same window (vendor U-Boot `DDR_PHY0_REG_BASE`).
+        * Boot: BOOTROM_SEL (pin MDCK) = 1: serial download (BOOTROM); BOOTROM_SEL = 0: BOOT_SEL (pin EPHY_RST) 0 = SPI flash (NOR 3/4-byte or NAND 1/4-wire by the SFC_DEVICE_MODE (pin SHUTTER_TRIG) / SFC_EMMC_BOOT_MODE (pin FLASH_TRIG) straps), 1 = eMMC (4/8-wire by SFC_EMMC_BOOT_MODE). The straps are readable in SYS_CTRL SYSSTAT. After POR the boot memory (BOOTROM, or SFC CS0) is remapped to address 0 (SC_CTRL remapstat); the boot code clears the remap with SC_CTRL remapclear.
+        * Clocks: 24 MHz XIN crystal into three PLLs (APLL = CPU, VPLL = 1188 MHz video/bus tree, EPLL = 1000 MHz) in the CRG; the CPU and the bus run from the crystal after reset. 32.768 kHz RTC_XIN for the RTC.
+        * Chip ID: SYS_CTRL SCSYSID3..0 = 0x3518E200 for all three chips; SCSYSID0[31:24] (`chipid`) distinguishes them: 0x01 = Hi3516C V200, 0x02 = Hi3518E V200, 0x03 = Hi3518E V201. The vendor U-Boot only checks the 32-bit ID (`_HI3518EV200 0x3518e200`), which is why its SoC string reads `hi3518ev200` on a Hi3516C V200 too.
+
+        ## Variants (data sheet chapter 1 and 4.1)
+
+        | | Hi3518E V200 | Hi3518E V201 | Hi3516C V200 |
+        |---|---|---|---|
+        | SCSYSID0[31:24] | 0x02 | 0x03 | 0x01 |
+        | CPU | ARM926 @ 540 MHz | ARM926 @ 540 MHz | ARM926 @ 600 MHz |
+        | DDR | embedded 16-bit DDR2, 512 Mbit, 360 MHz | embedded 16-bit DDR2, 256 Mbit, 360 MHz | external 16-bit DDR2/DDR3/DDR3L, up to 4 Gbit, 400 MHz |
+        | Package | TFBGA 192, 10 x 10 mm | TFBGA 192, 10 x 10 mm | TFBGA 273, 12 x 12 mm |
+        | Encoder | 1080p@20 | 960p@25, no lens distortion correction, no 90/270 rotation | 1080p@30 |
+        | MIPI | - | - | differential (MIPI/LVDS) and single-ended modes on the VI pins |
+
+        The register map, the CRG, SYS_CTRL, MISC, IO-config (same mux register set; the 273-pin part exposes more of the pins) and all peripheral blocks are documented once for the three chips; the Hi3516C V200 is listed as its own chip (`hi3516cv200`) with the same blocks.
+
+        ## Interrupts (PL190 VIC source numbers, data sheet Table 3-8)
+
+        | # | Source | # | Source | # | Source | # | Source |
+        |---|--------|---|--------|---|--------|---|--------|
+        | 0 | Global soft interrupt (SYS_CTRL SOLFINT) | 8 | GZIP / SDIO1 | 16 | USB OHCI | 24 | AVC (H.264 encoder) |
+        | 1 | Watchdog | 9 | AIAO | 17 | VPSS | 25 | UART2 |
+        | 2 | RTC / Temper_Cap | 10 | USB device | 18 | SDIO0 | 26 | JPGE |
+        | 3 | Timer0 / Timer1 | 11 | FMC | 19 | IR / SAR ADC | 27 | TDE |
+        | 4 | Timer2 / Timer3 | 12 | ETH | 20 | I2C0 / I2C1 / I2C2 | 28 | MIPI |
+        | 5 | UART0 | 13 | CIPHER | 21 | IVE | 29 | VGS |
+        | 6 | SSP0 (SPI0) | 14 | DMAC | 22 | VICAP | 30 | UART1 |
+        | 7 | SSP1 (SPI1) | 15 | USB EHCI | 23 | VDP | 31 | GPIO0-GPIO8 (one shared line) |
+
+        Shared lines (timers, GZIP/SDIO1, RTC/Temper_Cap, IR/SAR ADC, the three I2Cs, the nine GPIOs) must be demultiplexed from the peripheral's own status registers. The OpenIPC/vendor device tree `hi3518ev20x.dtsi` uses the same numbers (timers 3/4, UART0/1/2 = 5/30/25, SPI 6/7, SDIO0/1 = 18/8, USB 10/15/16, ETH 12, I2C 20, GPIO 31).
 
         ## Addresses
 
         | Start Address | End Address | Description | Capacity | Documented Here |
         |---------------|-------------|-------------|----------|-----------------|
-        | 0x00000000    | 0x03FFFFFF  | Memory selected after address | 64 MB | &#10060; |
+        | 0x00000000    | 0x03FFFFFF  | Boot memory (remapped): SPI flash when {BOOT_SEL, BOOTROM_SEL} = 00, else BOOTROM; the on-chip RAM after the remap is cleared (SC_CTRL remapclear) | 64 MB | &#10060; |
         | 0x04000000    | 0x0400FFFF  | BOOTROM | 64 KB | &#10060; |
         | 0x04010000    | 0x0401FFFF  | On-chip RAM | 64 KB | &#10060; |
         | 0x04020000    | 0x0FFFFFFF  | Reserved | - | &#10060; |
@@ -81,7 +110,7 @@ addrmap hi3518ev200 {
         | 0x200F0800    | 0x200FFFFF  | IO CTR register | 62 KB | &#10060; |
         | 0x20100000    | 0x201007FF  | Reserved | 2 KB | &#10060; |
         | 0x20100800    | 0x2010FFFF  | cipher_hash_key_ctrl register | 62 KB | &#10060; |
-        | 0x20110000    | 0x2011FFFF  | DDRC/DDR PHY register | 64 KB | &#9989; |
+        | 0x20110000    | 0x2011FFFF  | DDRC/DDR PHY register (DDRC at 0x20110000, DDR PHY at 0x20118000) | 64 KB | &#9989; |
         | 0x20120000    | 0x2012FFFF  | MISC register | 64 KB | &#9989; |
         | 0x20130000    | 0x2013FFFF  | PWM register | 64 KB | &#9989; |
         | 0x20140000    | 0x2014FFFF  | GPIO0 register | 64 KB | &#9989; |
@@ -120,7 +149,7 @@ addrmap hi3518ev200 {
         | 0x20680000    | 0x2068FFFF  | MIPI register | 64 KB | &#10060; |
         | 0x20690000    | 0x2069FFFF  | Reserved | 64 KB | &#10060; |
         | 0x206A0000    | 0x206AFFFF  | IVE register | 64 KB | &#10060; |
-        | 0x206B0000    | 0x206BFFFF  | Reserved | - | &#10060; |
+        | 0x206B0000    | 0x206BFFFF  | Reserved (GZIP in the vendor U-Boot, `GZIP_REG_BASE`, used for the fast-boot snapshot) | - | &#10060; |
         | 0x206C0000    | 0x206CFFFF  | Reserved | 64 KB | &#10060; |
         | 0x206D0000    | 0x206DFFFF  | DDR test module | 64 KB | &#10060; |
         | 0x206E0000    | 0x206EFFFF  | Reserved | 64 KB | &#10060; |
@@ -130,10 +159,10 @@ addrmap hi3518ev200 {
         | 0x54000000    | 0x57FFFFFF  | Reserved | 64 MB | &#10060; |
         | 0x58000000    | 0x5BFFFFFF  | Storage space of the SPI flash | 64 MB | &#10060; |
         | 0x5C000000    | 0x7FFFFFFF  | Reserved | - | &#10060; |
-        | 0x80000000    | 0x9FFFFFFF  | Address space of the | 512 MB | &#10060; |
+        | 0x80000000    | 0x9FFFFFFF  | Address space of the connected external DDR (Hi3518E V200: 64 MB, Hi3518E V201: 32 MB, Hi3516C V200: up to 512 MB) | 512 MB | &#10060; |
         | 0xA0000000    | 0xFFFFFFFF  | Reserved | - | &#10060; |
 
-        &#9989; = a register block is described in this addrmap; &#10060; = not described (reserved, memory window, or media/ISP/security block outside the bring-up scope).
+        &#9989; = a register block is described in this addrmap; &#10060; = not described (reserved, memory window, or media/ISP/security block outside the bring-up scope). The address table is the data sheet's Table 1-4 (the on-chip RAM/BOOTROM remark of the 0x00000000 row and the DDR size remark of the 0x80000000 row are restored from the data sheet text). This file and `hi3516cv200.rdl` carry the same table and instance list: change both.
     ";
 
     eHISI_FMC              FMC          @ 0x10010000;
