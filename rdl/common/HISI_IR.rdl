@@ -1,0 +1,691 @@
+`ifndef HISI_IR_RDL
+`define HISI_IR_RDL
+
+
+regfile eHISI_IR {
+    name = "HiSilicon IR receiver";
+    desc = "
+    HiSilicon infrared (IR) receiver at 0x20070000 (APB, one instance; GIC interrupt ID 46). Two operating modes selected in IR_CFG (DS 14.4.2): mode 0 decodes NEC (simple / full repeat code), SONY and TC9012 frames with
+    error detection and wake-up, mode 1 measures symbol widths for any format. The reference clock is prescaled to 1 MHz by software (IR_CFG frequency divider; the vendor driver writes `freq - 1`). Registers and reset
+    values are from the Hi3520D/Hi3515A/Hi3515C data sheet issue 07, chapter 14.4 (printed pages 14-51 .. 14-78, `datasheet.txt` lines 54554-56092) and agree with the vendor driver register map (`openhisilicon/kernel/ir/hi3520dv200/hiir.c`: IR_ENABLE 0x00, IR_CONFIG 0x04, CNT_LEADS/LEADE/SLEADE 0x08/0x0C/0x10, CNT0_B 0x14, CNT1_B 0x18, IR_BUSY 0x1C, IR_DATAH/L 0x20/0x24, IR_INTM/INTS/INTC 0x28/0x2C/0x30, IR_START 0x34; that driver is the Hi3520D V200 SDK one, same register names).
+
+    !!! NOTE
+        Data sheet error: the IR_B0 (0x14) description block repeats the IR_B1 table header (`0x018 IR_B1 0x0087_00CB`) with cnt0_* fields. IR_B0 is therefore given at 0x14 (summary table, vendor driver CNT0_B) and its reset value is not taken from that header (left undefined); IR_B1 keeps 0x008700CB. The pin function of the IR input is selected in IO_CONFIG (the vendor driver writes 0 to IO_CONFIG 0x1F8 before use).
+    ";
+
+    reg {
+        name = "IR receive enable control register";
+        desc = "IR receive enable control register.
+
+Data sheet 14.4.5 IR_EN (offset 0x0, printed page 14-60, `datasheet.txt` line 55152).";
+
+        enum IR_EN_ir_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled."; };
+        };
+
+        field {
+            name = "ir_en";
+            desc = "IR receive module enable.";
+            sw = rw;
+            hw = r;
+            encode = IR_EN_ir_en_enum;
+            reset = 0x0;
+        } ir_en[0:0];
+    } IR_EN @ 0x0;
+
+    reg {
+        name = "IR configuration register";
+        desc = "IR configuration register.
+
+Data sheet 14.4.5 IR_CFG (offset 0x4, printed page 14-61, `datasheet.txt` line 55213).";
+
+        field {
+            name = "ir_max_level_width";
+            desc = "Invalid when IR_CFG[ir_mode] is 0. Indicates the maximum level width (in 10 µs) of a symbol whenIR_CFG[ir_mode] is 1. This width indicates the end of a symbol stream.";
+            sw = rw;
+            hw = r;
+            reset = 0x3E80;
+        } ir_max_level_width[31:16];
+
+        field {
+            name = "ir_format";
+            desc = "Indicates the data code format when IR_CFG[ir_mode] is 0. 00: NEC with simple repeat code 01: TC9012 code 10: NEC with full repeat code 11: SONY code For details about the relationship between code types and code formats, see Table 14-5 to Table 14-7. Indicates the symbol format when IR_CFG[ir_mode] is 1. bit[15]: reserved The definitions of bit[14] are as follows: 0: The symbol is from low to high, and the symbol stream ends at the high level. 1: The symbol is from high to low, and the symbol stream ends at the low level.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ir_format[15:14];
+
+        field {
+            name = "ir_bits";
+            desc = "Indicates the number of data bits in a frame when IR_CFG[ir_mode] is 0. 0x00-0x2F: 1-48 data bits in a frame 0x30-0x3F: reserved If ir_bits is set to a value ranging from 0x30 to 0x3F by using software, the setting has no effect and the original value is retained. Indicates the symbol receive interrupt threshold when IR_CFG[ir_mode] is 1. bit[13]: reserved bit[12:8]: 0x0-0x1F. 0x0 indicates that an interrupt is reported when there is at least one symbol in the FIFO; 0x1F indicates that an interrupt is reported when there are at least 32 symbols in the FIFO, and so on.";
+            sw = rw;
+            hw = r;
+            reset = 0x1F;
+        } ir_bits[13:8];
+
+        enum IR_CFG_ir_mode_enum {
+            DECODED_COMPLETE_DATA = 0 { name = "Decoded Complete Data"; desc = "The decoded complete data frames are output."; };
+            ONLY_SYMBOL_WIDTH = 1 { name = "Only Symbol Width"; desc = "Only the symbol width is output."; };
+        };
+
+        field {
+            name = "ir_mode";
+            desc = "IR operating mode.";
+            sw = rw;
+            hw = r;
+            encode = IR_CFG_ir_mode_enum;
+            reset = 0x0;
+        } ir_mode[7:7];
+
+        field {
+            name = "ir_freq";
+            desc = "Frequency divider of the working clock. 0x00-0x7F: correspond to the working clock divider 1-128 respectively.";
+            sw = rw;
+            hw = r;
+            reset = 0xB;
+        } ir_freq[6:0];
+    } IR_CFG @ 0x4;
+
+    reg {
+        name = "Lead code start bit margin configuration register (valid when IR_CFG[ir_mode] is 0 only)";
+        desc = "Lead code start bit margin configuration register (valid when IR_CFG[ir_mode] is 0 only).
+
+Data sheet 14.4.5 IR_LEADS (offset 0x8, printed page 14-63, `datasheet.txt` line 55315).";
+
+        field {
+            name = "cnt_leads_min";
+            desc = "Minimum pulse width of the start bit of the lead code. 0x000-0x007: reserved";
+            sw = rw;
+            hw = r;
+            reset = 0x33C;
+        } cnt_leads_min[25:16];
+
+        field {
+            name = "cnt_leads_max";
+            desc = "Maximum pulse width of the start bit of the lead code. 0x000-0x007: reserved";
+            sw = rw;
+            hw = r;
+            reset = 0x3CC;
+        } cnt_leads_max[9:0];
+    } IR_LEADS @ 0x8;
+
+    reg {
+        name = "Lead code end bit margin configuration register (valid when IR_CFG[ir_mode] is 0 only)";
+        desc = "Lead code end bit margin configuration register (valid when IR_CFG[ir_mode] is 0 only).
+
+Data sheet 14.4.5 IR_LEADE (offset 0xC, printed page 14-64, `datasheet.txt` line 55379).";
+
+        field {
+            name = "cnt_leade_min";
+            desc = "Minimum pulse width of the end bit of the lead code. 0x000-0x007: reserved";
+            sw = rw;
+            hw = r;
+            reset = 0x19E;
+        } cnt_leade_min[24:16];
+
+        field {
+            name = "cnt_leade_max";
+            desc = "Maximum pulse width of the end bit of the lead code. 0x000-0x007: reserved";
+            sw = rw;
+            hw = r;
+            reset = 0x1E6;
+        } cnt_leade_max[8:0];
+    } IR_LEADE @ 0xC;
+
+    reg {
+        name = "Simple lead code end bit margin configuration register (valid when IR_CFG[ir_mode] is 0 only)";
+        desc = "Simple lead code end bit margin configuration register (valid when IR_CFG[ir_mode] is 0 only).
+
+Data sheet 14.4.5 IR_SLEADE (offset 0x10, printed page 14-65, `datasheet.txt` line 55443).";
+
+        field {
+            name = "cnt_sleade_min";
+            desc = "Minimum pulse width of the end bit of the simple lead code. 0x000-0x007: reserved";
+            sw = rw;
+            hw = r;
+            reset = 0xCF;
+        } cnt_sleade_min[24:16];
+
+        field {
+            name = "cnt_sleade_max";
+            desc = "Maximum pulse width of the start bit of the simple lead code. 0x000-0x007: reserved";
+            sw = rw;
+            hw = r;
+            reset = 0xF3;
+        } cnt_sleade_max[8:0];
+    } IR_SLEADE @ 0x10;
+
+    reg {
+        name = "Data 0 level judge margin configuration register (used only when IR_CFG[ir_mode] is 0)";
+        desc = "IR_B0 is the data 0 level judge margin configuration register (valid only when IR_CFG[ir_mode] = 0). Before setting it, set IR_BUSY[ir_busy] to 0 and IR_EN[ir_en] to 1, otherwise the previous value is kept. The margins for bit0 and bit1 must not overlap; a margin is about 20% of the typical value of the code type and cnt0_b_max must be >= cnt0_b_min.
+
+Data sheet 14.4.5 IR_B0 (offset 0x14, printed page 14-68, `datasheet.txt` line 55466).";
+
+        field {
+            name = "cnt0_b_min";
+            desc = "Minimum pulse width of the level for judging bit0. 0x000-0x007: reserved";
+            sw = rw;
+            hw = r;
+        } cnt0_b_min[24:16];
+
+        field {
+            name = "cnt0_b_max";
+            desc = "Maximum pulse width of the level for judging bit0. 0x000-0x007: reserved";
+            sw = rw;
+            hw = r;
+        } cnt0_b_max[8:0];
+    } IR_B0 @ 0x14;
+
+    reg {
+        name = "Data 1 level judge margin configuration register (used only when IR_CFG[ir_mode] is 0)";
+        desc = "IR_B1 is the data 1 level judge margin configuration register (valid only when IR_CFG[ir_mode] = 0). Before setting it, set IR_BUSY[ir_busy] to 0 and IR_EN[ir_en] to 1, otherwise the previous value is kept. The margins for bit0 and bit1 must not overlap; a margin is about 20% of the typical value of the code type and cnt1_b_max must be >= cnt1_b_min.
+
+Data sheet 14.4.5 IR_B1 (offset 0x18, printed page 14-66, `datasheet.txt` line 55505).";
+
+        field {
+            name = "cnt1_b_min";
+            desc = "Minimum pulse width of the level for judging bit1. 0x000-0x007: reserved";
+            sw = rw;
+            hw = r;
+            reset = 0x87;
+        } cnt1_b_min[24:16];
+
+        field {
+            name = "cnt1_b_max";
+            desc = "Maximum pulse width of the level for judging bit1. 0x000-0x007: reserved";
+            sw = rw;
+            hw = r;
+            reset = 0xCB;
+        } cnt1_b_max[8:0];
+    } IR_B1 @ 0x18;
+
+    reg {
+        name = "Configuration busy flag register";
+        desc = "IR_BUSY is a configuration busy flag register.
+
+Data sheet 14.4.5 IR_BUSY (offset 0x1C, printed page 14-68, `datasheet.txt` line 55596).";
+
+        enum IR_BUSY_ir_busy_enum {
+            IDLE_THIS_CASE = 0 { name = "Idle This Case"; desc = "idle. In this case, software can configure data."; };
+            INDICATES_BUSY_STATE = 1 { name = "Indicates Busy State"; desc = "Indicates the busy state. In this state, software cannot configure data."; };
+        };
+
+        field {
+            name = "ir_busy";
+            desc = "Busy status flag.";
+            sw = r;
+            hw = w;
+            encode = IR_BUSY_ir_busy_enum;
+            reset = 0x0;
+        } ir_busy[0:0];
+    } IR_BUSY @ 0x1C;
+
+    reg {
+        name = "Upper 16-bit IR receive decoded data register (IR_CFG[ir_mode] = 0) or symbol count register in the symbol FIFO (IR_CFG[ir_mode] = 1)";
+        desc = "IR_DATAH is an upper 16-bit IR receive decoded data register (IR_CFG[ir_mode] = 0) or symbol count register in the symbol FIFO (IR_CFG[ir_mode] = 1) The IR_DATAH register stores the upper 16 bits of the decoded data received by the IR, whereas IR_DATAL stores the lower 32 bits of the decoded data received by the IR. The data bits depend on the valid data bits in a frame and the specific code. For details, see the valid data bits in Table 14-5 to Table 14-7. Data is stored as follows: The data is stored in IR_DATAH and IR_DATAL in sequence from MSB to LSB. That is, after IR_DATAL is full, the remaining data is stored in IR_DATAH. The unused upper bits are reserved. Data is read as follows: IR_DATAH and IR_DATAL are read in sequence. The hardware receives all data bits without checking the definition of each data bit. The software is responsible for processing data bits.
+
+Data sheet 14.4.5 IR_DATAH (offset 0x20, printed page 14-68, `datasheet.txt` line 55633).";
+
+        field {
+            name = "ir_datah";
+            desc = "ir_datah";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } ir_datah[15:0];
+    } IR_DATAH @ 0x20;
+
+    reg {
+        name = "Lower 32-bit IR receive decoded data register (IR_CFG[ir_mode] = 0) or IR received symbol width register (IR_CFG[ir_mode] = 1)";
+        desc = "IR_DATAL is a lower 32-bit IR receive decoded data register (IR_CFG[ir_mode] = 0) or IR receive symbol width register (IR_CFG[ir_mode] = 1).
+
+Data sheet 14.4.5 IR_DATAL (offset 0x24, printed page 14-69, `datasheet.txt` line 55680).";
+
+        field {
+            name = "ir_datal";
+            desc = "Indicates the lower 32 bits of the decoded data received by the IR module when IR_CFG[ir_mode] is 0. Indicates the width of the symbol received by the IR module when IR_CFG[ir_mode] is 1. The definitions of bit[31:16] are as follows: Indicates the high-level width (a multiple of 10 us) of the symbol received by the IR when the symbol level is from low to high. Indicates the low-level width (a multiple of 10 us) of the symbol received by the IR module when the symbol level is from high to low. The definitions of bit[15:0] are as follows: Indicates the low-level width (a multiple of 10 us) of the symbol received by the IR module when the symbol level is from low to high. Indicates the high-level width (a multiple of 10 us) of the symbol received by the IR module when the symbol level is from high to";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } ir_datal[31:0];
+    } IR_DATAL @ 0x24;
+
+    reg {
+        name = "IR interrupt mask register";
+        desc = "IR interrupt mask register.
+
+Data sheet 14.4.5 IR_INT_MASK (offset 0x28, printed page 14-71, `datasheet.txt` line 55782).";
+
+        enum IR_INT_MASK_intm_overrun_enum {
+            NOT_MASKED = 0 { name = "Not Masked"; desc = "not masked"; };
+            MASKED = 1 { name = "Masked"; desc = "masked"; };
+        };
+
+        field {
+            name = "intm_overrun";
+            desc = "Symbol overflow interrupt mask when IR_CFG[ir_mode] is 1.";
+            sw = rw;
+            hw = r;
+            encode = IR_INT_MASK_intm_overrun_enum;
+            reset = 0x0;
+        } intm_overrun[18:18];
+
+        enum IR_INT_MASK_intm_time_out_enum {
+            NOT_MASKED = 0 { name = "Not Masked"; desc = "not masked"; };
+            MASKED = 1 { name = "Masked"; desc = "masked"; };
+        };
+
+        field {
+            name = "intm_time_out";
+            desc = "Symbol timeout interrupt mask when IR_CFG[ir_mode] is 1.";
+            sw = rw;
+            hw = r;
+            encode = IR_INT_MASK_intm_time_out_enum;
+            reset = 0x0;
+        } intm_time_out[17:17];
+
+        enum IR_INT_MASK_intm_symb_rcv_enum {
+            NOT_MASKED = 0 { name = "Not Masked"; desc = "not masked"; };
+            MASKED = 1 { name = "Masked"; desc = "masked"; };
+        };
+
+        field {
+            name = "intm_symb_rcv";
+            desc = "Receive N symbol interrupt mask when IR_CFG[ir_mode] is 1.";
+            sw = rw;
+            hw = r;
+            encode = IR_INT_MASK_intm_symb_rcv_enum;
+            reset = 0x0;
+        } intm_symb_rcv[16:16];
+
+        enum IR_INT_MASK_intm_release_enum {
+            NOT_MASKED = 0 { name = "Not Masked"; desc = "not masked"; };
+            MASKED = 1 { name = "Masked"; desc = "masked"; };
+        };
+
+        field {
+            name = "intm_release";
+            desc = "Key release interrupt mask when IR_CFG[ir_mode] is 0.";
+            sw = rw;
+            hw = r;
+            encode = IR_INT_MASK_intm_release_enum;
+            reset = 0x0;
+        } intm_release[3:3];
+
+        enum IR_INT_MASK_intm_overflow_enum {
+            NOT_MASKED = 0 { name = "Not Masked"; desc = "not masked"; };
+            MASKED = 1 { name = "Masked"; desc = "masked"; };
+        };
+
+        field {
+            name = "intm_overflow";
+            desc = "Receive data overflow interrupt mask when IR_CFG[ir_mode] is 0.";
+            sw = rw;
+            hw = r;
+            encode = IR_INT_MASK_intm_overflow_enum;
+            reset = 0x0;
+        } intm_overflow[2:2];
+
+        enum IR_INT_MASK_intm_framerr_enum {
+            NOT_MASKED = 0 { name = "Not Masked"; desc = "not masked"; };
+            MASKED = 1 { name = "Masked"; desc = "masked"; };
+        };
+
+        field {
+            name = "intm_framerr";
+            desc = "Receive data frame format error interrupt mask when IR_CFG[ir_mode] is 0.";
+            sw = rw;
+            hw = r;
+            encode = IR_INT_MASK_intm_framerr_enum;
+            reset = 0x0;
+        } intm_framerr[1:1];
+
+        enum IR_INT_MASK_intm_rcv_enum {
+            NOT_MASKED = 0 { name = "Not Masked"; desc = "not masked"; };
+            MASKED = 1 { name = "Masked"; desc = "masked"; };
+        };
+
+        field {
+            name = "intm_rcv";
+            desc = "Receive data frame interrupt mask when IR_CFG[ir_mode] is 0.";
+            sw = rw;
+            hw = r;
+            encode = IR_INT_MASK_intm_rcv_enum;
+            reset = 0x0;
+        } intm_rcv[0:0];
+    } IR_INT_MASK @ 0x28;
+
+    reg {
+        name = "IR interrupt status register";
+        desc = "IR_INT_STATUS is an IR interrupt status register. z    When IR_CFG[ir_mode] is 0, IR_INT_STATUS bit[3:0] and IR_INT_STATUS bit[19:16] are valid. z    When IR_CFG[ir_mode] is 1, IR_INT_STATUS bit[10:8] and IR_INT_STATUS bit[26:24] are valid.
+
+Data sheet 14.4.5 IR_INT_STATUS (offset 0x2C, printed page 14-72, `datasheet.txt` line 55854).";
+
+        enum IR_INT_STATUS_intms_overrun_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "intms_overrun";
+            desc = "Masked symbol overflow interrupt status when IR_CFG[ir_mode] is 1.";
+            sw = r;
+            hw = w;
+            encode = IR_INT_STATUS_intms_overrun_enum;
+            reset = 0x0;
+        } intms_overrun[26:26];
+
+        enum IR_INT_STATUS_intms_time_out_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "intms_time_out";
+            desc = "Masked symbol timeout interrupt status when IR_CFG[ir_mode] is 1.";
+            sw = r;
+            hw = w;
+            encode = IR_INT_STATUS_intms_time_out_enum;
+            reset = 0x0;
+        } intms_time_out[25:25];
+
+        enum IR_INT_STATUS_intms_symb_rcv_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "intms_symb_rcv";
+            desc = "Masked receive symbol interrupt status when IR_CFG[ir_mode] is 1.";
+            sw = r;
+            hw = w;
+            encode = IR_INT_STATUS_intms_symb_rcv_enum;
+            reset = 0x0;
+        } intms_symb_rcv[24:24];
+
+        enum IR_INT_STATUS_intms_release_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "intms_release";
+            desc = "Masked key release interrupt status when IR_CFG[ir_mode] is 0.";
+            sw = r;
+            hw = w;
+            encode = IR_INT_STATUS_intms_release_enum;
+            reset = 0x0;
+        } intms_release[19:19];
+
+        enum IR_INT_STATUS_intms_overflow_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "intms_overflow";
+            desc = "Masked receive data overflow error interrupt status when IR_CFG[ir_mode] is 0.";
+            sw = r;
+            hw = w;
+            encode = IR_INT_STATUS_intms_overflow_enum;
+            reset = 0x0;
+        } intms_overflow[18:18];
+
+        enum IR_INT_STATUS_intms_framerr_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "intms_framerr";
+            desc = "Masked receive data frame format error interrupt status when IR_CFG[ir_mode] is 0.";
+            sw = r;
+            hw = w;
+            encode = IR_INT_STATUS_intms_framerr_enum;
+            reset = 0x0;
+        } intms_framerr[17:17];
+
+        enum IR_INT_STATUS_intms_rcv_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "intms_rcv";
+            desc = "Masked receive data frame interrupt status when IR_CFG[ir_mode] is 0.";
+            sw = r;
+            hw = w;
+            encode = IR_INT_STATUS_intms_rcv_enum;
+            reset = 0x0;
+        } intms_rcv[16:16];
+
+        enum IR_INT_STATUS_intrs_overrun_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "intrs_overrun";
+            desc = "Raw symbol overflow interrupt status when IR_CFG[ir_mode] is 1.";
+            sw = r;
+            hw = w;
+            encode = IR_INT_STATUS_intrs_overrun_enum;
+            reset = 0x0;
+        } intrs_overrun[10:10];
+
+        enum IR_INT_STATUS_intrs_time_out_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "intrs_time_out";
+            desc = "Raw symbol timeout interrupt status when IR_CFG[ir_mode] is 1.";
+            sw = r;
+            hw = w;
+            encode = IR_INT_STATUS_intrs_time_out_enum;
+            reset = 0x0;
+        } intrs_time_out[9:9];
+
+        enum IR_INT_STATUS_intrs_symb_rcv_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "intrs_symb_rcv";
+            desc = "Raw receive symbol interrupt status when IR_CFG[ir_mode] is 1.";
+            sw = r;
+            hw = w;
+            encode = IR_INT_STATUS_intrs_symb_rcv_enum;
+            reset = 0x0;
+        } intrs_symb_rcv[8:8];
+
+        enum IR_INT_STATUS_intrs_release_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "intrs_release";
+            desc = "Raw key release interrupt status when IR_CFG[ir_mode] is 0.";
+            sw = r;
+            hw = w;
+            encode = IR_INT_STATUS_intrs_release_enum;
+            reset = 0x0;
+        } intrs_release[3:3];
+
+        enum IR_INT_STATUS_intrs_overflow_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "intrs_overflow";
+            desc = "Raw receive data overflow error interrupt status when IR_CFG[ir_mode] is 0.";
+            sw = r;
+            hw = w;
+            encode = IR_INT_STATUS_intrs_overflow_enum;
+            reset = 0x0;
+        } intrs_overflow[2:2];
+
+        enum IR_INT_STATUS_intrs_framerr_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "intrs_framerr";
+            desc = "Raw receive data frame format error interrupt status when IR_CFG[ir_mode] is 0.";
+            sw = r;
+            hw = w;
+            encode = IR_INT_STATUS_intrs_framerr_enum;
+            reset = 0x0;
+        } intrs_framerr[1:1];
+
+        enum IR_INT_STATUS_intrs_rcv_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "intrs_rcv";
+            desc = "Raw receive data frame interrupt status when IR_CFG[ir_mode] is 0.";
+            sw = r;
+            hw = w;
+            encode = IR_INT_STATUS_intrs_rcv_enum;
+            reset = 0x0;
+        } intrs_rcv[0:0];
+    } IR_INT_STATUS @ 0x2C;
+
+    reg {
+        name = "IR interrupt clear register";
+        desc = "IR_INT_CLR is an IR interrupt clear register. z    When IR_CFG[ir_mode] is 0, IR_INT_CLR bit[3:0] are valid. z    When IR_CFG [ir_mode] is 1, IR_INT_CLR bit[18:16] are valid.
+
+Data sheet 14.4.5 IR_INT_CLR (offset 0x30, printed page 14-74, `datasheet.txt` line 55973).";
+
+        enum IR_INT_CLR_intc_overrun_enum {
+            NO_EFFECT = 0 { name = "No Effect"; desc = "no effect"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "intc_overrun";
+            desc = "When IR_CFG[ir_mode] is 1, this bit indicates whether the symbol overflow interrupt request is cleared.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = IR_INT_CLR_intc_overrun_enum;
+            reset = 0x0;
+        } intc_overrun[18:18];
+
+        enum IR_INT_CLR_intc_time_out_enum {
+            NO_EFFECT = 0 { name = "No Effect"; desc = "no effect"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "intc_time_out";
+            desc = "When IR_CFG[ir_mode] is 1, this bit indicates whether the symbol timeout interrupt request is cleared.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = IR_INT_CLR_intc_time_out_enum;
+            reset = 0x0;
+        } intc_time_out[17:17];
+
+        enum IR_INT_CLR_intc_symb_rcv_enum {
+            NO_EFFECT = 0 { name = "No Effect"; desc = "no effect"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "intc_symb_rcv";
+            desc = "When IR_CFG[ir_mode] is 1, this bit indicates whether the receive symbol interrupt request is cleared.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = IR_INT_CLR_intc_symb_rcv_enum;
+            reset = 0x0;
+        } intc_symb_rcv[16:16];
+
+        enum IR_INT_CLR_intc_release_enum {
+            NO_EFFECT = 0 { name = "No Effect"; desc = "no effect"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "intc_release";
+            desc = "When IR_CFG[ir_mode] is 0, this bit indicates whether the key release interrupt request is cleared.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = IR_INT_CLR_intc_release_enum;
+            reset = 0x0;
+        } intc_release[3:3];
+
+        enum IR_INT_CLR_intc_overflow_enum {
+            NO_EFFECT = 0 { name = "No Effect"; desc = "no effect"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "intc_overflow";
+            desc = "When IR_CFG[ir_mode] is 0, this bit indicates whether the receive data overflow error interrupt request is cleared.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = IR_INT_CLR_intc_overflow_enum;
+            reset = 0x0;
+        } intc_overflow[2:2];
+
+        enum IR_INT_CLR_intc_framerr_enum {
+            NO_EFFECT = 0 { name = "No Effect"; desc = "no effect"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "intc_framerr";
+            desc = "When IR_CFG[ir_mode] is 0, this bit indicates whether the receive data frame format error interrupt request is cleared.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = IR_INT_CLR_intc_framerr_enum;
+            reset = 0x0;
+        } intc_framerr[1:1];
+
+        enum IR_INT_CLR_intc_rcv_enum {
+            NO_EFFECT = 0 { name = "No Effect"; desc = "no effect"; };
+            CLEARED_IF_RECEIVE = 1 { name = "Cleared If Receive"; desc = "cleared If a receive data frame interrupt is generated and the software writes 1 to the bit without reading the data in IR_DATAL, the interrupt cannot be cleared."; };
+        };
+
+        field {
+            name = "intc_rcv";
+            desc = "When IR_CFG[ir_mode] is 0, this bit indicates whether the receive data frame interrupt request is cleared.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = IR_INT_CLR_intc_rcv_enum;
+            reset = 0x0;
+        } intc_rcv[0:0];
+    } IR_INT_CLR @ 0x30;
+
+    reg {
+        name = "IR start configuration register";
+        desc = "IR_START is an IR start configuration register. After other registers are configured, IR_START can be started when any value is written to the corresponding address during the startup of the IR module.
+
+Data sheet 14.4.5 IR_START (offset 0x34, printed page 14-75, `datasheet.txt` line 56050).";
+
+        field {
+            name = "ir_start";
+            desc = "ir_start";
+            sw = w;
+            hw = r;
+            reset = 0x0;
+        } ir_start[0:0];
+    } IR_START @ 0x34;
+
+};
+
+`endif

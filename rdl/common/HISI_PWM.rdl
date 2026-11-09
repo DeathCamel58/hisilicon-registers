@@ -1,0 +1,191 @@
+`ifndef HISI_PWM_RDL
+`define HISI_PWM_RDL
+
+
+regfile eHISI_PWM {
+    name = "HiSilicon PWM";
+    desc = "
+    HiSilicon PWM module at 0x20120000 (one instance, one independent output channel PWM0; the vendor platform headers list this address as DDRC1 for other chips, the Hi3520D data sheet Table 1-1 says PWM).
+    Clock source selectable between 3 MHz and 24 MHz (PERI_CRG14); 26-bit period counter (the data sheet text also says 16-bit counter: inconsistent) and 26-bit high-level counter; 10-bit pulse counter (max 1023 pulses, or infinite mode).
+    Programming sequence (DS 14.8.3): select the clock in PERI_CRG14, wait until PWM0_STATE2[10] is 0 (idle), write PWM0_CFG0 (period), PWM0_CFG1 (high-level count), PWM0_CFG2 (pulse count), then set PWM0_CTRL[0]. Registers are from Hi3520D/Hi3515A/Hi3515C data sheet issue 07, chapter 14.8
+    (`datasheet.txt` lines 59404-60060). No vendor driver source exists in the repo trees for this module; not hardware verified.
+    ";
+
+    reg {
+        name = "PWM0 configuration 0 register";
+        desc = "PWM0_CFG0 is PWM0 configuration 0 register.
+
+Data sheet 14.8.4 PWM0_CFG0 (offset 0x0, printed page 14-138, `datasheet.txt` line 59489).";
+
+        field {
+            name = "pwm0_period";
+            desc = "Number of cycles for PWM0. This field cannot be set to 0 or 1. Otherwise, the output level is high.";
+            sw = rw;
+            hw = r;
+            reset = 0x18F;
+        } pwm0_period[25:0];
+    } PWM0_CFG0 @ 0x0;
+
+    reg {
+        name = "PWM0 configuration 1 register";
+        desc = "PWM0_CFG1 is PWM0 configuration 1 register.
+
+Data sheet 14.8.4 PWM0_CFG1 (offset 0x4, printed page 14-139, `datasheet.txt` line 59520).";
+
+        field {
+            name = "pwm0_duty";
+            desc = "Number of level beats for PWM0. If the field value is equal to the number of cycles, the output level is always high.";
+            sw = rw;
+            hw = r;
+            reset = 0xC7;
+        } pwm0_duty[25:0];
+    } PWM0_CFG1 @ 0x4;
+
+    reg {
+        name = "PWM0 configuration 2 register";
+        desc = "PWM0_CFG2 is PWM0 configuration 2 register.
+
+Data sheet 14.8.4 PWM0_CFG2 (offset 0x8, printed page 14-139, `datasheet.txt` line 59542).";
+
+        field {
+            name = "pwm0_num";
+            desc = "Number of square waves output by PWM0.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } pwm0_num[9:0];
+    } PWM0_CFG2 @ 0x8;
+
+    reg {
+        name = "PWM0 control register";
+        desc = "PWM0_CTRL is PWM0 control register.
+
+Data sheet 14.8.4 PWM0_CTRL (offset 0xC, printed page 14-140, `datasheet.txt` line 59570).";
+
+        enum PWM0_CTRL_pwm0_keep_enum {
+            NUMBER_SQUARE_WAVES = 0 { name = "Number Square Waves"; desc = "The number of square waves output by PWM0 is fixed."; };
+            PWM0_ALWAYS_OUTPUTS = 1 { name = "Pwm0 Always Outputs"; desc = "PWM0 always outputs square waves."; };
+        };
+
+        field {
+            name = "pwm0_keep";
+            desc = "PWM output mode.";
+            sw = rw;
+            hw = r;
+            encode = PWM0_CTRL_pwm0_keep_enum;
+            reset = 0x0;
+        } pwm0_keep[2:2];
+
+        enum PWM0_CTRL_pwm0_inv_enum {
+            PWM0_OUTPUTS_SQUARE = 0 { name = "Pwm0 Outputs Square"; desc = "PWM0 outputs square waves in normal mode."; };
+            PWM0_OUTPUTS_SQUARE_2 = 1 { name = "Pwm0 Outputs Square 2"; desc = "PWM0 outputs square waves in inverted mode."; };
+        };
+
+        field {
+            name = "pwm0_inv";
+            desc = "PWM output control.";
+            sw = rw;
+            hw = r;
+            encode = PWM0_CTRL_pwm0_inv_enum;
+            reset = 0x0;
+        } pwm0_inv[1:1];
+
+        enum PWM0_CTRL_pwm0_enable_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "pwm0_enable";
+            desc = "PWM0 enable.";
+            sw = rw;
+            hw = r;
+            encode = PWM0_CTRL_pwm0_enable_enum;
+            reset = 0x0;
+        } pwm0_enable[0:0];
+    } PWM0_CTRL @ 0xC;
+
+    reg {
+        name = "PWM0 status 0 register";
+        desc = "PWM0_STATE0 is PWM0 status 0 register.
+
+Data sheet 14.8.4 PWM0_STATE0 (offset 0x10, printed page 14-140, `datasheet.txt` line 59605).";
+
+        field {
+            name = "pwm0_period_st";
+            desc = "Number of count cycles for the internal module of PWM0.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } pwm0_period_st[25:0];
+    } PWM0_STATE0 @ 0x10;
+
+    reg {
+        name = "PWM0 status 1 register";
+        desc = "PWM0_STATE1 is PWM0 status 1 register.
+
+Data sheet 14.8.4 PWM0_STATE1 (offset 0x14, printed page 14-141, `datasheet.txt` line 59632).";
+
+        field {
+            name = "pwm0_duty_st";
+            desc = "Number of high level beats for the internal module of PWM0.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } pwm0_duty_st[25:0];
+    } PWM0_STATE1 @ 0x14;
+
+    reg {
+        name = "PWM0 status 2 register";
+        desc = "PWM0_STATE2 is PWM0 status 2 register.
+
+Data sheet 14.8.4 PWM0_STATE2 (offset 0x18, printed page 14-141, `datasheet.txt` line 59651).";
+
+        field {
+            name = "pwm0_cnt_st";
+            desc = "Number of remaining square waves output by PWM0. This field is valid only when the following conditions are met: pwm0_busy == 1, pwm0_keep_st == 0";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } pwm0_cnt_st[21:12];
+
+        enum PWM0_STATE2_pwm0_keep_st_enum {
+            NUMBER_OUTPUT_SQUARE = 0 { name = "Number Output Square"; desc = "The number of output square waves is fixed."; };
+            SQUARE_WAVES_ALWAYS = 1 { name = "Square Waves Always"; desc = "Square waves are always output."; };
+        };
+
+        field {
+            name = "pwm0_keep_st";
+            desc = "Square wave output mode for the internal module of PWM0.";
+            sw = r;
+            hw = w;
+            encode = PWM0_STATE2_pwm0_keep_st_enum;
+            reset = 0x0;
+        } pwm0_keep_st[11:11];
+
+        enum PWM0_STATE2_pwm0_busy_enum {
+            WAVE_OUTPUT_COMPLETE = 0 { name = "Wave Output Complete"; desc = "Wave output is complete and PWM0 is idle."; };
+            PWM0_OUTPUTTING_SQUARE = 1 { name = "Pwm0 Outputting Square"; desc = "PWM0 is outputting square waves."; };
+        };
+
+        field {
+            name = "pwm0_busy";
+            desc = "Working status of PWM0.";
+            sw = r;
+            hw = w;
+            encode = PWM0_STATE2_pwm0_busy_enum;
+            reset = 0x0;
+        } pwm0_busy[10:10];
+
+        field {
+            name = "pwm0_period_st";
+            desc = "Number of output square waves for the internal module of PWM0.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } pwm0_period_st[9:0];
+    } PWM0_STATE2 @ 0x18;
+
+};
+
+`endif
