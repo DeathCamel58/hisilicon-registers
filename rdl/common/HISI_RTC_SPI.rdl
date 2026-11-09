@@ -1,0 +1,1641 @@
+`ifndef HISI_RTC_SPI_RDL
+`define HISI_RTC_SPI_RDL
+
+regfile eHISI_RTC_SPI {
+    name = "HiSilicon SPI-bridged RTC (APB registers)";
+    desc = "
+    The Hi3520D/Hi3515A/Hi3515C real-time clock is **not** an ARM PL031 (see `eHISI_RTC` for that layout). It is a HiSilicon RTC in its own power domain (battery
+    supplied, pins RTC_XIN / RTC_XOUT, AVDD33_RTC / AVSS_RTC): a 40-bit up counter on a 100 Hz clock (16-bit day counter, 5-bit hours, 6-bit minutes, 6-bit seconds, 7 bits of
+    10 ms), a match (alarm) comparator, soft reset, fixed-divide mode and an automatic temperature compensation of the crystal frequency (LUTs, internal t_sensor or an
+    external sensor via the temperature registers).
+
+    **Only the registers listed here are on the APB bus.** `SPI_CLK_DIV` / `SPI_RW` form an SPI bridge to the RTC macro; the counter, load, match, interrupt, reset and
+    temperature-correction registers (81 byte-wide registers, internal addresses 0x00-0x52) are *inside* the RTC and are reached only by writing `SPI_RW`. Their layout is the
+    separate address space `eHISI_RTC_SPI_INTERNAL` below (also available as the top-level `aHISI_RTC_SPI_INTERNAL`); it is NOT memory mapped and has no CPU address. The
+    registers at 0x80..0xA0 (`CONVER_T` .. `FILTER_NUM`) are the APB-side temperature sensor measurement interface.
+
+    The RTC alarm interrupt is GIC interrupt ID 39 (SPI 7); the temperature sensor capture interrupt is ID 89 (`TEM_CAP_INT`, SPI 57) (DS Table 3-16). The clock gate and soft reset are the
+    RTC bits of PERI_CRG57.
+
+    Source: Hi3520D/Hi3515A/Hi3515C data sheet issue 07, section 3.8 (printed pages 3-141 .. 3-189, `datasheet.txt` lines 15150-18170): 3.8.5 register summary (APB: Table 3-22,
+    internal: Table 3-23), 3.8.6 APB register description, 3.8.7 internal register description. The block is present in all three SoCs of the data sheet (Table 1-1 lists the RTC for
+    all three and the Hi3515A/Hi3515C brief data sheets both list the RTC with independent power supply). The registers were extracted programmatically from the data sheet text
+    and cross-checked offset by offset and reset by reset against the hand transcription in `docs/rdl-sweep/hi3520d/eHISI_RTC.yaml` (all 92 agree). No hardware access was used;
+    this block is data-sheet only. All APB registers are 32 bits wide.
+    ";
+
+    reg {
+        name = "SPI clock divider register";
+        desc = "SPI_CLK_DIV is the SPI clock divider register.
+
+Example in the data sheet 3.8.4.5: APB clock 120 MHz, SPI clock 12 MHz -> (120/12)/2 - 1 = 4. The reset value 0x3B (59) is the data sheet value.
+
+Data sheet 3.8.6 SPI_CLK_DIV (printed page 3-151, `datasheet.txt` line 15604).";
+
+        field {
+            name = "spi_clk_div";
+            desc = "SPI clock divider. The SPI clock frequency cannot be higher than 20 MHz. The value 12 MHz is recommended. The field value ranges from 1 to 255. The value of spi_clk_div is used to define the SPI RX and RX bit rates. The formula is as follows: FSPICLK = FAPBCLK/[2 x (spi_clk_div + 1)]. FAPBCLK is the APB clock frequency. If the APB clock is 120 MHz and the expected SPI clock is 12 MHz, the configured value of spi_clk_div is calculated as follows: (120/12)/2 - 1 = 4";
+            sw = rw;
+            hw = r;
+            reset = 0x3B;
+        } spi_clk_div[7:0];
+    } SPI_CLK_DIV @ 0x0;
+
+    reg {
+        name = "SPI read/write register";
+        desc = "SPI_RW is the SPI read/write register.
+
+Access protocol (DS 3.8.4.5): wait until `spi_busy` = 0; then write one word with `spi_start` = 1, `spi_rw`, `spi_add` (internal address) and, for a write, `spi_wdata`. For a read, wait for `spi_busy` = 0 again and take `spi_rdata`. Example from the data sheet: writing 0x01060010 writes 0x10 to RTC_MR_10MS (internal address 0x06). The data sheet's read example is inconsistent: it says spi_rw is 0 but quotes 0x01860000, which has bit 23 (spi_rw) set; the word for a read of internal address 0x06 is 0x01860000.
+
+Data sheet 3.8.6 SPI_RW (printed page 3-151, `datasheet.txt` line 15631).";
+
+        enum SPI_RW_spi_busy_enum {
+            SPI_IDLE_NEW = 0 { name = "Spi Idle New"; desc = "The SPI is idle, and a new read/write operation can be initiated over the SPI."; };
+            READ_WRITE_OPERATION = 1 { name = "Read Write Operation"; desc = "A read/write operation is being performed over the SPI, and no new operation is allowed."; };
+        };
+
+        field {
+            name = "spi_busy";
+            desc = "SPI read/write status indicator.";
+            sw = r;
+            hw = w;
+            encode = SPI_RW_spi_busy_enum;
+            reset = 0x0;
+        } spi_busy[31:31];
+
+        field {
+            name = "spi_start";
+            desc = "SPI read/write start. Writing 1 automatically clears this field. Writing has no effect when spi_busy is 1. That is, no new SPI operation is started before the previous read/write operation is complete. If a start request is sent, hardware ignores this request.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } spi_start[24:24];
+
+        enum SPI_RW_spi_rw_enum {
+            WRITE = 0 { name = "Write"; desc = "write"; };
+            READ = 1 { name = "Read"; desc = "read"; };
+        };
+
+        field {
+            name = "spi_rw";
+            desc = "SPI operation type.";
+            sw = rw;
+            hw = r;
+            encode = SPI_RW_spi_rw_enum;
+            reset = 0x0;
+        } spi_rw[23:23];
+
+        field {
+            name = "spi_add";
+            desc = "SPI operation address. The address range is 0-127.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } spi_add[22:16];
+
+        field {
+            name = "spi_rdata";
+            desc = "Data read from the SPI.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } spi_rdata[15:8];
+
+        field {
+            name = "spi_wdata";
+            desc = "Data to be written to the SPI.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } spi_wdata[7:0];
+    } SPI_RW @ 0x4;
+
+    reg {
+        name = "Temperature sensor measurement control register";
+        desc = "CONVER_T is the temperature sensor measurement control register.
+
+Data sheet 3.8.6 CONVER_T (printed page 3-152, `datasheet.txt` line 15683).";
+
+        field {
+            name = "conver_t";
+            desc = "Temperature sensor measurement start. This field must be set to 1. 1: start. Hardware automatically sets this field to 0 when the interrupt is cleared.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } conver_t[0:0];
+    } CONVER_T @ 0x80;
+
+    reg {
+        name = "Temperature sensor measurement CRC check enable register";
+        desc = "CRC_EN is the temperature sensor measurement CRC check enable register.
+
+Data sheet 3.8.6 CRC_EN (printed page 3-153, `datasheet.txt` line 15722).";
+
+        enum CRC_EN_crc_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "crc_en";
+            desc = "Temperature sensor measurement CRC check enable.";
+            sw = rw;
+            hw = r;
+            encode = CRC_EN_crc_en_enum;
+            reset = 0x0;
+        } crc_en[0:0];
+    } CRC_EN @ 0x84;
+
+    reg {
+        name = "Temperature sensor measurement interrupt mask register";
+        desc = "INT_MASK is the temperature sensor measurement interrupt mask register.
+
+Data sheet 3.8.6 INT_MASK (printed page 3-153, `datasheet.txt` line 15746).";
+
+        enum INT_MASK_int_mask_enum {
+            NOT_MASKED = 0 { name = "Not Masked"; desc = "not masked"; };
+            MASKED = 1 { name = "Masked"; desc = "masked"; };
+        };
+
+        field {
+            name = "int_mask";
+            desc = "Temperature sensor measurement interrupt mask.";
+            sw = rw;
+            hw = r;
+            encode = INT_MASK_int_mask_enum;
+            reset = 0x0;
+        } int_mask[0:0];
+    } INT_MASK @ 0x88;
+
+    reg {
+        name = "Temperature sensor measurement interrupt clear register";
+        desc = "INT_CLEAR is the temperature sensor measurement interrupt clear register.
+
+Data sheet 3.8.6 INT_CLEAR (printed page 3-154, `datasheet.txt` line 15784).";
+
+        field {
+            name = "int_clear";
+            desc = "Temperature sensor measurement interrupt clear. Writing 1 clears the interrupt. Hardware automatically sets this field to 0 after the interrupt is cleared.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } int_clear[0:0];
+    } INT_CLEAR @ 0x8C;
+
+    reg {
+        name = "Temperature sensor measurement status register";
+        desc = "BUSY is the temperature sensor measurement status register.
+
+Data sheet 3.8.6 BUSY (printed page 3-154, `datasheet.txt` line 15812).";
+
+        enum BUSY_busy_enum {
+            READY = 0 { name = "Ready"; desc = "ready"; };
+            BUSY = 1 { name = "Busy"; desc = "busy"; };
+        };
+
+        field {
+            name = "busy";
+            desc = "Temperature sensor measurement status.";
+            sw = r;
+            hw = w;
+            encode = BUSY_busy_enum;
+            reset = 0x0;
+        } busy[0:0];
+    } BUSY @ 0x90;
+
+    reg {
+        name = "Raw temperature sensor measurement interrupt status register";
+        desc = "INT_RAW is the raw temperature sensor measurement interrupt status register.
+
+Data sheet 3.8.6 INT_RAW (printed page 3-155, `datasheet.txt` line 15846).";
+
+        field {
+            name = "int_err";
+            desc = "Error interrupt.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } int_err[1:1];
+
+        field {
+            name = "get_tmprt_int";
+            desc = "Temperature measurement completion interrupt.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } get_tmprt_int[0:0];
+    } INT_RAW @ 0x94;
+
+    reg {
+        name = "Temperature sensor measurement interrupt status register";
+        desc = "INT_TCAP is the temperature sensor measurement interrupt status register.
+
+Data sheet 3.8.6 INT_TCAP (printed page 3-155, `datasheet.txt` line 15874).";
+
+        enum INT_TCAP_int_tcap_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "int_tcap";
+            desc = "Masked interrupt status.";
+            sw = r;
+            hw = w;
+            encode = INT_TCAP_int_tcap_enum;
+            reset = 0x0;
+        } int_tcap[0:0];
+    } INT_TCAP @ 0x98;
+
+    reg {
+        name = "Temperature sensor measurement value register";
+        desc = "T_VALUE is the temperature sensor measurement value register.
+
+Data sheet 3.8.6 T_VALUE (printed page 3-156, `datasheet.txt` line 15912).";
+
+        field {
+            name = "t_value";
+            desc = "Temperature measured by the sensor.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } t_value[11:0];
+    } T_VALUE @ 0x9C;
+
+    reg {
+        name = "Filter glitch width configuration register";
+        desc = "FILTER_NUM is the filter glitch width configuration register.
+
+Data sheet 3.8.6 FILTER_NUM (printed page 3-156, `datasheet.txt` line 15931).";
+
+        field {
+            name = "filter_num";
+            desc = "Filter glitch width for inputs. The glitch with the width of (N + 1) APB clocks is filtered.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } filter_num[3:0];
+    } FILTER_NUM @ 0xA0;
+
+};
+
+regfile eHISI_RTC_SPI_INTERNAL {
+    name = "HiSilicon SPI-bridged RTC (internal registers)";
+    desc = "
+    The 81 byte-wide registers inside the RTC macro (data sheet 3.8.7, Table 3-23, `datasheet.txt` lines 15948-18047). The offsets below are **internal addresses**
+    (the `spi_add` field, 0-127, of `SPI_RW` in `eHISI_RTC_SPI`). This is not a CPU address space: the registers can only be read and written through the SPI bridge
+    (write `SPI_RW` with `spi_start`, wait for `spi_busy` = 0, read `spi_rdata`). Every register is 8 bits wide.
+
+    Counter: RTC_10MS_COUNT 0x00, RTC_S_COUNT 0x01, RTC_M_COUNT 0x02, RTC_H_COUNT 0x03, RTC_D_COUNT_L/H 0x04/0x05 (read-only 40-bit counter). Match (alarm) value: RTC_MR_* 0x06-0x0B. Load
+    value: RTC_LR_* 0x0C-0x11, loaded into the counter by RTC_LORD (0x12) = 1. RTC_IMSC 0x13, RTC_INT_CLR 0x14, RTC_MSC_INT 0x15, RTC_RAW_INT 0x16 are the interrupt registers,
+    RTC_POR_N 0x18 is the RTC soft reset (write 0, wait 30 ms; it returns to 1 by itself). 0x1A-0x52 hold the temperature compensation: RTC_SAR_CTRL, TOT_OFFSET_L/H, TEMP_OFFSET,
+    OUTSIDE_TEMP, DIE_TEMP, TEMP_SEL, the 47 correction LUT entries LUT1..LUT47 (0x22-0x50, power-on defaults are a typical crystal curve) and the fixed-frequency divider
+    Sdm_coef_ouside_h/l (0x51/0x52). Internal addresses 0x19 and 0x1B are not described in the data sheet.
+
+    !!! NOTE
+        The data sheet names the registers 0x51 and 0x52 `Sdm_coef_ouside_h` / `Sdm_coef_ouside_l` (sic, summary table: lower case 'sdm'); the names are kept as printed.
+    ";
+
+    reg {
+        name = "Count value register for the RTC 10 ms counter";
+        desc = "RTC_10MS_COUNT is the count value register for the RTC 10 ms counter.
+
+Data sheet 3.8.7 RTC_10MS_COUNT (internal address 0x00, printed page 3-157, `datasheet.txt` line 15964).";
+        regwidth = 8;
+
+        field {
+            name = "rtc_10ms_count";
+            desc = "RTC 10 ms counter value. It indicates the currently counted time. Its unit is 10 ms. The value range is 0-99.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } rtc_10ms_count[6:0];
+    } RTC_10MS_COUNT @ 0x0;
+
+    reg {
+        name = "Count value register for the RTC second counter";
+        desc = "RTC_S_COUNT is the count value register for the RTC second counter.
+
+Data sheet 3.8.7 RTC_S_COUNT (internal address 0x01, printed page 3-157, `datasheet.txt` line 15992).";
+        regwidth = 8;
+
+        field {
+            name = "rtc_s_count";
+            desc = "RTC second counter value. It indicates the currently counted seconds. The value range is 0-59.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } rtc_s_count[5:0];
+    } RTC_S_COUNT @ 0x1;
+
+    reg {
+        name = "Count value register for the RTC minute counter";
+        desc = "RTC_M_COUNT is the count value register for the RTC minute counter.
+
+Data sheet 3.8.7 RTC_M_COUNT (internal address 0x02, printed page 3-158, `datasheet.txt` line 16031).";
+        regwidth = 8;
+
+        field {
+            name = "rtc_m_count";
+            desc = "RTC minute counter value. It indicates the currently counted minutes. The value range is 0-59.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } rtc_m_count[5:0];
+    } RTC_M_COUNT @ 0x2;
+
+    reg {
+        name = "Count value register for the RTC hour counter";
+        desc = "RTC_H_COUNT is the count value register for the RTC hour counter.
+
+Data sheet 3.8.7 RTC_H_COUNT (internal address 0x03, printed page 3-158, `datasheet.txt` line 16059).";
+        regwidth = 8;
+
+        field {
+            name = "rtc_h_count";
+            desc = "RTC hour counter value. It indicates the currently counted hours. The value range is 0-23.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } rtc_h_count[4:0];
+    } RTC_H_COUNT @ 0x3;
+
+    reg {
+        name = "Lower-8-bit count value register for the RTC day counter";
+        desc = "RTC_D_COUNT_L is the lower-8-bit count value register for the RTC day counter.
+
+Data sheet 3.8.7 RTC_D_COUNT_L (internal address 0x04, printed page 3-159, `datasheet.txt` line 16098).";
+        regwidth = 8;
+
+        field {
+            name = "rtc_d_count_l";
+            desc = "Lower eight bits of the RTC day counter value. This field works with RTC_D_COUNT_H to indicate the currently counted days. The day range is 0-65535.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } rtc_d_count_l[7:0];
+    } RTC_D_COUNT_L @ 0x4;
+
+    reg {
+        name = "Upper-8-bit count value register for the RTC day counter";
+        desc = "RTC_D_COUNT_H is the upper-8-bit count value register for the RTC day counter.
+
+Data sheet 3.8.7 RTC_D_COUNT_H (internal address 0x05, printed page 3-159, `datasheet.txt` line 16119).";
+        regwidth = 8;
+
+        field {
+            name = "rtc_d_count_h";
+            desc = "Upper eight bits of the RTC day counter value. This field works with RTC_D_COUNT_L to indicate the currently counted day. The day range is 0-65535.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } rtc_d_count_h[7:0];
+    } RTC_D_COUNT_H @ 0x5;
+
+    reg {
+        name = "Match value register for the RTC 10 ms counter";
+        desc = "RTC_MR_10MS is the match value register for the RTC 10 ms counter.
+
+Data sheet 3.8.7 RTC_MR_10MS (internal address 0x06, printed page 3-160, `datasheet.txt` line 16151).";
+        regwidth = 8;
+
+        field {
+            name = "rtc_mr_10ms";
+            desc = "Match value of the RTC 10 ms counter. The value range is 0-99.";
+            sw = rw;
+            hw = r;
+            reset = 0x7F;
+        } rtc_mr_10ms[6:0];
+    } RTC_MR_10MS @ 0x6;
+
+    reg {
+        name = "Match value register for the RTC second counter";
+        desc = "RTC_MR_S is the match value register for the RTC second counter.
+
+Data sheet 3.8.7 RTC_MR_S (internal address 0x07, printed page 3-160, `datasheet.txt` line 16179).";
+        regwidth = 8;
+
+        field {
+            name = "rtc_mr_s";
+            desc = "Match value of the RTC second counter. The value range is 0-59.";
+            sw = rw;
+            hw = r;
+            reset = 0x3F;
+        } rtc_mr_s[5:0];
+    } RTC_MR_S @ 0x7;
+
+    reg {
+        name = "Match value register for the RTC minute counter";
+        desc = "RTC_MR_M is the match value register for the RTC minute counter.
+
+Data sheet 3.8.7 RTC_MR_M (internal address 0x08, printed page 3-161, `datasheet.txt` line 16217).";
+        regwidth = 8;
+
+        field {
+            name = "rtc_mr_m";
+            desc = "Match value of the RTC minute counter. The value range is 0-59.";
+            sw = rw;
+            hw = r;
+            reset = 0x3F;
+        } rtc_mr_m[5:0];
+    } RTC_MR_M @ 0x8;
+
+    reg {
+        name = "Match value register for the RTC hour counter";
+        desc = "RTC_MR_H is the match value register for the RTC hour counter.
+
+Data sheet 3.8.7 RTC_MR_H (internal address 0x09, printed page 3-161, `datasheet.txt` line 16245).";
+        regwidth = 8;
+
+        field {
+            name = "rtc_mr_h";
+            desc = "Match value of the RTC hour counter. The value range is 0-23.";
+            sw = rw;
+            hw = r;
+            reset = 0x1F;
+        } rtc_mr_h[4:0];
+    } RTC_MR_H @ 0x9;
+
+    reg {
+        name = "Lower-8-bit match value register for the RTC day counter";
+        desc = "RTC_MR_D_L is the lower-8-bit match value register for the RTC day counter.
+
+Data sheet 3.8.7 RTC_MR_D_L (internal address 0x0A, printed page 3-162, `datasheet.txt` line 16283).";
+        regwidth = 8;
+
+        field {
+            name = "rtc_mr_d_l";
+            desc = "Lower eight bits of the match value of the RTC day counter. This field works with RTC_MR_D_H to indicate the matched day. The day range is 0-65535.";
+            sw = rw;
+            hw = r;
+            reset = 0xFF;
+        } rtc_mr_d_l[7:0];
+    } RTC_MR_D_L @ 0xA;
+
+    reg {
+        name = "Upper-8-bit match value register for the RTC day counter";
+        desc = "RTC_MR_D_H is the upper-8-bit match value register for the RTC day counter.
+
+Data sheet 3.8.7 RTC_MR_D_H (internal address 0x0B, printed page 3-162, `datasheet.txt` line 16304).";
+        regwidth = 8;
+
+        field {
+            name = "rtc_mr_d_h";
+            desc = "Upper eight bits of the match value of the RTC day counter. This field works with RTC_MR_D_L to indicate the matched day. The day range is 0-65535.";
+            sw = rw;
+            hw = r;
+            reset = 0xFF;
+        } rtc_mr_d_h[7:0];
+    } RTC_MR_D_H @ 0xB;
+
+    reg {
+        name = "Configured value register for the RTC 10 ms counter";
+        desc = "RTC_LR_10MS is the configured value register for the RTC 10 ms counter.
+
+Data sheet 3.8.7 RTC_LR_10MS (internal address 0x0C, printed page 3-163, `datasheet.txt` line 16336).";
+        regwidth = 8;
+
+        field {
+            name = "rtc_lr_10ms";
+            desc = "Configured value of the RTC 10 ms counter. The value range is 0-99.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } rtc_lr_10ms[6:0];
+    } RTC_LR_10MS @ 0xC;
+
+    reg {
+        name = "Configured value register for the RTC second counter";
+        desc = "RTC_LR_S is the configured value register for the RTC second counter.
+
+Data sheet 3.8.7 RTC_LR_S (internal address 0x0D, printed page 3-163, `datasheet.txt` line 16364).";
+        regwidth = 8;
+
+        field {
+            name = "rtc_lr_s";
+            desc = "Configured value of the RTC second counter. The value range is 0-59.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } rtc_lr_s[5:0];
+    } RTC_LR_S @ 0xD;
+
+    reg {
+        name = "Configured value register for the RTC minute counter";
+        desc = "RTC_LR_M is the configured value register for the RTC minute counter.
+
+Data sheet 3.8.7 RTC_LR_M (internal address 0x0E, printed page 3-164, `datasheet.txt` line 16402).";
+        regwidth = 8;
+
+        field {
+            name = "rtc_lr_m";
+            desc = "Configured value of the RTC minute counter. The value range is 0-59.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } rtc_lr_m[5:0];
+    } RTC_LR_M @ 0xE;
+
+    reg {
+        name = "Configured value register for the RTC hour counter";
+        desc = "RTC_LR_H is the configured value register for the RTC hour counter.
+
+Data sheet 3.8.7 RTC_LR_H (internal address 0x0F, printed page 3-164, `datasheet.txt` line 16430).";
+        regwidth = 8;
+
+        field {
+            name = "rtc_lr_h";
+            desc = "Configured value of the RTC hour counter. The value range is 0-23.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } rtc_lr_h[4:0];
+    } RTC_LR_H @ 0xF;
+
+    reg {
+        name = "Lower-8-bit configured value register for the RTC day counter";
+        desc = "RTC_LR_D_L is the lower-8-bit configured value register for the RTC day counter.
+
+Data sheet 3.8.7 RTC_LR_D_L (internal address 0x10, printed page 3-165, `datasheet.txt` line 16468).";
+        regwidth = 8;
+
+        field {
+            name = "rtc_lr_d_l";
+            desc = "Lower eight bits of the configured value of the RTC day counter. This field works with RTC_LR_D_H to indicate the configured day. The day range is 0-65535.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } rtc_lr_d_l[7:0];
+    } RTC_LR_D_L @ 0x10;
+
+    reg {
+        name = "Upper-8-bit configured value register for the RTC day counter";
+        desc = "RTC_LR_D_H is the upper-8-bit configured value register for the RTC day counter.
+
+Data sheet 3.8.7 RTC_LR_D_H (internal address 0x11, printed page 3-165, `datasheet.txt` line 16489).";
+        regwidth = 8;
+
+        field {
+            name = "rtc_lr_d_h";
+            desc = "Upper eight bits of the configured value of the RTC day counter. This field works with RTC_LR_D_L to indicate the configured day. The day range is 0-65535.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } rtc_lr_d_h[7:0];
+    } RTC_LR_D_H @ 0x11;
+
+    reg {
+        name = "RTC configured value loading enable register";
+        desc = "RTC_LORD is the RTC configured value loading enable register.
+
+Data sheet 3.8.7 RTC_LORD (internal address 0x12, printed page 3-166, `datasheet.txt` line 16521).";
+        regwidth = 8;
+
+        field {
+            name = "rtc_load";
+            desc = "RTC configured value loading enable. When the field is enabled, the RTC configured value will be loaded to the RTC accumulator. If software writes 1 to load the configured value, hardware will automatically set this field to 0 after successful loading.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } rtc_load[0:0];
+    } RTC_LORD @ 0x12;
+
+    reg {
+        name = "RTC interrupt enable register";
+        desc = "RTC_IMSC is the RTC interrupt enable register.
+
+Data sheet 3.8.7 RTC_IMSC (internal address 0x13, printed page 3-166, `datasheet.txt` line 16551).";
+        regwidth = 8;
+
+        enum RTC_IMSC_rtc_imsc_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "rtc_imsc";
+            desc = "RTC timing interrupt enable.";
+            sw = rw;
+            hw = r;
+            encode = RTC_IMSC_rtc_imsc_enum;
+            reset = 0x0;
+        } rtc_imsc[0:0];
+    } RTC_IMSC @ 0x13;
+
+    reg {
+        name = "RTC interrupt clear register";
+        desc = "RTC_INT_CLR is the RTC interrupt clear register.
+
+Data sheet 3.8.7 RTC_INT_CLR (internal address 0x14, printed page 3-167, `datasheet.txt` line 16590).";
+        regwidth = 8;
+
+        field {
+            name = "rtc_int_clr";
+            desc = "RTC timing interrupt clear. If software writes 1 to clear the interrupt, hardware will automatically set this field to 0 after the interrupt is successfully cleared.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } rtc_int_clr[0:0];
+    } RTC_INT_CLR @ 0x14;
+
+    reg {
+        name = "RTC mask interrupt status register";
+        desc = "RTC_MSC_INT is the RTC mask interrupt status register.
+
+Data sheet 3.8.7 RTC_MSC_INT (internal address 0x15, printed page 3-167, `datasheet.txt` line 16619).";
+        regwidth = 8;
+
+        field {
+            name = "mask_int";
+            desc = "Mask interrupt status.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } mask_int[0:0];
+    } RTC_MSC_INT @ 0x15;
+
+    reg {
+        name = "RTC raw interrupt status register";
+        desc = "RTC_RAW_INT is the RTC raw interrupt status register.
+
+Data sheet 3.8.7 RTC_RAW_INT (internal address 0x16, printed page 3-168, `datasheet.txt` line 16656).";
+        regwidth = 8;
+
+        field {
+            name = "raw_int";
+            desc = "Raw interrupt status.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } raw_int[0:0];
+    } RTC_RAW_INT @ 0x16;
+
+    reg {
+        name = "RTC output clock select register";
+        desc = "RTC_CLK is the RTC output clock select register.
+
+Data sheet 3.8.7 RTC_CLK (internal address 0x17, printed page 3-168, `datasheet.txt` line 16681).";
+        regwidth = 8;
+
+        enum RTC_CLK_clk_out_sel_enum {
+            OUTPUT_CRYSTAL_OSCILLATOR = 0 { name = "Output Crystal Oscillator"; desc = "output crystal oscillator clock"; };
+            OUTPUT_CORRECTED_100 = 1 { name = "Output Corrected 100"; desc = "output corrected 100 Hz clock 1X: output 1 Hz clock"; };
+        };
+
+        field {
+            name = "clk_out_sel";
+            desc = "Output test clock of the RTC.";
+            sw = rw;
+            hw = r;
+            encode = RTC_CLK_clk_out_sel_enum;
+            reset = 0x0;
+        } clk_out_sel[1:0];
+    } RTC_CLK @ 0x17;
+
+    reg {
+        name = "RTC reset control register";
+        desc = "RTC_POR_N is the RTC reset control register.
+
+Data sheet 3.8.7 RTC_POR_N (internal address 0x18, printed page 3-169, `datasheet.txt` line 16723).";
+        regwidth = 8;
+
+        field {
+            name = "rtc_por_n";
+            desc = "RTC reset. This field is automatically set to 1 after the RTC is successfully reset. 0: reset";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } rtc_por_n[0:0];
+    } RTC_POR_N @ 0x18;
+
+    reg {
+        name = "RTC internal t_sensor control register";
+        desc = "RTC_SAR_CTRL is the RTC internal t_sensor control register.
+
+Data sheet 3.8.7 RTC_SAR_CTRL (internal address 0x1A, printed page 3-169, `datasheet.txt` line 16751).";
+        regwidth = 8;
+
+        enum RTC_SAR_CTRL_sample_time_enum {
+            V_1_MINUTE = 0 { name = "V 1 Minute"; desc = "1 minute"; };
+            V_4_MINUTES = 1 { name = "V 4 Minutes"; desc = "4 minutes"; };
+            V_8_MINUTES = 2 { name = "V 8 Minutes"; desc = "8 minutes"; };
+            V_16_MINUTES = 3 { name = "V 16 Minutes"; desc = "16 minutes"; };
+        };
+
+        field {
+            name = "sample_time";
+            desc = "Temperature update period";
+            sw = rw;
+            hw = r;
+            encode = RTC_SAR_CTRL_sample_time_enum;
+            reset = 0x0;
+        } sample_time[1:0];
+    } RTC_SAR_CTRL @ 0x1A;
+
+    reg {
+        name = "Lower-8-bit corrected tot_offset register when the correction algorithm is used";
+        desc = "TOT_OFFSET_L is the lower-8-bit corrected tot_offset register when the correction algorithm is used.
+
+Data sheet 3.8.7 TOT_OFFSET_L (internal address 0x1C, printed page 3-170, `datasheet.txt` line 16789).";
+        regwidth = 8;
+
+        field {
+            name = "tot_offset_l";
+            desc = "Corrected tot_offset by using the correction algorithm. The value is expressed by complement codes -256 to +255. That is, tot_offset is 1990 + (-256 to +255) in the correction algorithm. This field value is the lower seven bits of tot_offset.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } tot_offset_l[7:0];
+    } TOT_OFFSET_L @ 0x1C;
+
+    reg {
+        name = "Upper-1-bit corrected tot_offset register when the correction algorithm is used";
+        desc = "TOT_OFFSET_H is the upper-1-bit corrected tot_offset register when the correction algorithm is used.
+
+Data sheet 3.8.7 TOT_OFFSET_H (internal address 0x1D, printed page 3-170, `datasheet.txt` line 16813).";
+        regwidth = 8;
+
+        field {
+            name = "tot_offset_h";
+            desc = "Corrected tot_offset by using the correction algorithm. The value is expressed by complement codes -256 to +255. That is, tot_offset is 1990 + (-256 to +255) in the correction algorithm. This field value is the upper one bit of tot_offset.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } tot_offset_h[0:0];
+    } TOT_OFFSET_H @ 0x1D;
+
+    reg {
+        name = "Temperature code word offset register corresponding to the correction input LUT";
+        desc = "TEMP_OFFSET is the temperature code word offset register corresponding to the correction input LUT.
+
+Data sheet 3.8.7 TEMP_OFFSET (internal address 0x1E, printed page 3-171, `datasheet.txt` line 16852).";
+        regwidth = 8;
+
+        field {
+            name = "temp_offset";
+            desc = "Offset of the temperature code words that are input to the correction LUT. The value is expressed by the complement code and the value ranges from -32 to +31.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } temp_offset[5:0];
+    } TEMP_OFFSET @ 0x1E;
+
+    reg {
+        name = "External ambient temperature register";
+        desc = "OUTSIDE_TEMP is the external ambient temperature register.
+
+Data sheet 3.8.7 OUTSIDE_TEMP (internal address 0x1F, printed page 3-171, `datasheet.txt` line 16881).";
+        regwidth = 8;
+
+        field {
+            name = "outside_temp";
+            desc = "Ambient temperature. The code word indicates -40°C to +140°C.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } outside_temp[7:0];
+    } OUTSIDE_TEMP @ 0x1F;
+
+    reg {
+        name = "RTC internal t_sensor temperature register";
+        desc = "DIE_TEMP is the RTC internal t_sensor temperature register.
+
+Data sheet 3.8.7 DIE_TEMP (internal address 0x20, printed page 3-172, `datasheet.txt` line 16912).";
+        regwidth = 8;
+
+        field {
+            name = "die_temp";
+            desc = "Internal chip temperature provided by the t_sensor in the RTC. The code word indicates -40°C to +140°C.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } die_temp[7:0];
+    } DIE_TEMP @ 0x20;
+
+    reg {
+        name = "Correction algorithm input temperature source select register";
+        desc = "TEMP_SEL is the correction algorithm input temperature source select register.
+
+Data sheet 3.8.7 TEMP_SEL (internal address 0x21, printed page 3-172, `datasheet.txt` line 16932).";
+        regwidth = 8;
+
+        field {
+            name = "sdm_sel";
+            desc = "Whether to perform temperature compensation. This field works with fix_model and temp_sel. When the chip is powered on or off: {temp_sel, fix_mode, temp_sel} 0xx: temperature compensation enabled. The mode depends on {fix_mode, temp_sel}. 110: temperature compensation disabled. The RTC clock is the one obtained after decimal frequency division. For details about the frequency dividers, see the sdm_coef_ouside_h and sdm_coef_ouside_l registers. Other values: reserved";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } sdm_sel[2:2];
+
+        field {
+            name = "fix_mode";
+            desc = "Correction algorithm input temperature source select. This field works with temp_sel. For details, see descriptions of the temp_sel field.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } fix_mode[1:1];
+
+        field {
+            name = "temp_sel";
+            desc = "Correction algorithm input temperature source select. This field parameter works with fix_mode. When the chip is powered on, the value meanings for {fix_mode, temp_sel} are as follows: 00: The correction circuit temperature is read from the DIE_TEMP register. 01: The correction circuit temperature is read from the OUTSIDE_TEMP register. 1X: The correction circuit temperature is read from the OUTSIDE_TEMP register. When the chip is powered off, the value meanings for {fix_mode, temp_sel} are as follows: 0X: The correction circuit temperature is read from the DIE_TEMP register. 1X: The correction circuit temperature is read from the OUTSIDE_TEMP register.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } temp_sel[0:0];
+    } TEMP_SEL @ 0x21;
+
+    reg {
+        name = "Temperature correction algorithm LUT1 register";
+        desc = "LUT1 is the temperature correction algorithm LUT1 register.
+
+Data sheet 3.8.7 LUT1 (internal address 0x22, printed page 3-173, `datasheet.txt` line 17001).";
+        regwidth = 8;
+
+        field {
+            name = "lut1";
+            desc = "Temperature correction algorithm LUT1.";
+            sw = rw;
+            hw = r;
+            reset = 0xAC;
+        } lut1[7:0];
+    } LUT1 @ 0x22;
+
+    reg {
+        name = "Temperature correction algorithm LUT2 register";
+        desc = "LUT2 is the temperature correction algorithm LUT2 register.
+
+Data sheet 3.8.7 LUT2 (internal address 0x23, printed page 3-173, `datasheet.txt` line 17019).";
+        regwidth = 8;
+
+        field {
+            name = "lut2";
+            desc = "Temperature correction algorithm LUT2.";
+            sw = rw;
+            hw = r;
+            reset = 0xB4;
+        } lut2[7:0];
+    } LUT2 @ 0x23;
+
+    reg {
+        name = "Temperature correction algorithm LUT3 register";
+        desc = "LUT3 is the temperature correction algorithm LUT3 register.
+
+Data sheet 3.8.7 LUT3 (internal address 0x24, printed page 3-174, `datasheet.txt` line 17046).";
+        regwidth = 8;
+
+        field {
+            name = "lut3";
+            desc = "Temperature correction algorithm LUT3.";
+            sw = rw;
+            hw = r;
+            reset = 0xBB;
+        } lut3[7:0];
+    } LUT3 @ 0x24;
+
+    reg {
+        name = "Temperature correction algorithm LUT4 register";
+        desc = "LUT4 is the temperature correction algorithm LUT4 register.
+
+Data sheet 3.8.7 LUT4 (internal address 0x25, printed page 3-174, `datasheet.txt` line 17065).";
+        regwidth = 8;
+
+        field {
+            name = "lut4";
+            desc = "Temperature correction algorithm LUT4.";
+            sw = rw;
+            hw = r;
+            reset = 0xC2;
+        } lut4[7:0];
+    } LUT4 @ 0x25;
+
+    reg {
+        name = "Temperature correction algorithm LUT5 register";
+        desc = "LUT5 is the temperature correction algorithm LUT5 register.
+
+Data sheet 3.8.7 LUT5 (internal address 0x26, printed page 3-174, `datasheet.txt` line 17083).";
+        regwidth = 8;
+
+        field {
+            name = "lut5";
+            desc = "Temperature correction algorithm LUT5.";
+            sw = rw;
+            hw = r;
+            reset = 0xC8;
+        } lut5[7:0];
+    } LUT5 @ 0x26;
+
+    reg {
+        name = "Temperature correction algorithm LUT6 register";
+        desc = "LUT6 is the temperature correction algorithm LUT6 register.
+
+Data sheet 3.8.7 LUT6 (internal address 0x27, printed page 3-175, `datasheet.txt` line 17109).";
+        regwidth = 8;
+
+        field {
+            name = "lut6";
+            desc = "Temperature correction algorithm LUT6.";
+            sw = rw;
+            hw = r;
+            reset = 0xCF;
+        } lut6[7:0];
+    } LUT6 @ 0x27;
+
+    reg {
+        name = "Temperature correction algorithm LUT7 register";
+        desc = "LUT7 is the temperature correction algorithm LUT7 register.
+
+Data sheet 3.8.7 LUT7 (internal address 0x28, printed page 3-175, `datasheet.txt` line 17128).";
+        regwidth = 8;
+
+        field {
+            name = "lut7";
+            desc = "Temperature correction algorithm LUT7.";
+            sw = rw;
+            hw = r;
+            reset = 0xD5;
+        } lut7[7:0];
+    } LUT7 @ 0x28;
+
+    reg {
+        name = "Temperature correction algorithm LUT8 register";
+        desc = "LUT8 is the temperature correction algorithm LUT8 register.
+
+Data sheet 3.8.7 LUT8 (internal address 0x29, printed page 3-175, `datasheet.txt` line 17147).";
+        regwidth = 8;
+
+        field {
+            name = "lut8";
+            desc = "Temperature correction algorithm LUT8.";
+            sw = rw;
+            hw = r;
+            reset = 0xDC;
+        } lut8[7:0];
+    } LUT8 @ 0x29;
+
+    reg {
+        name = "Temperature correction algorithm LUT9 register";
+        desc = "LUT9 is the temperature correction algorithm LUT9 register.
+
+Data sheet 3.8.7 LUT9 (internal address 0x2A, printed page 3-176, `datasheet.txt` line 17173).";
+        regwidth = 8;
+
+        field {
+            name = "lut9";
+            desc = "Temperature correction algorithm LUT9.";
+            sw = rw;
+            hw = r;
+            reset = 0xE2;
+        } lut9[7:0];
+    } LUT9 @ 0x2A;
+
+    reg {
+        name = "Temperature correction algorithm LUT10 register";
+        desc = "LUT10 is the temperature correction algorithm LUT10 register.
+
+Data sheet 3.8.7 LUT10 (internal address 0x2B, printed page 3-176, `datasheet.txt` line 17192).";
+        regwidth = 8;
+
+        field {
+            name = "lut10";
+            desc = "Temperature correction algorithm LUT10.";
+            sw = rw;
+            hw = r;
+            reset = 0xE8;
+        } lut10[7:0];
+    } LUT10 @ 0x2B;
+
+    reg {
+        name = "Temperature correction algorithm LUT11 register";
+        desc = "LUT11 is the temperature correction algorithm LUT11 register.
+
+Data sheet 3.8.7 LUT11 (internal address 0x2C, printed page 3-176, `datasheet.txt` line 17211).";
+        regwidth = 8;
+
+        field {
+            name = "lut11";
+            desc = "Temperature correction algorithm LUT11.";
+            sw = rw;
+            hw = r;
+            reset = 0xEE;
+        } lut11[7:0];
+    } LUT11 @ 0x2C;
+
+    reg {
+        name = "Temperature correction algorithm LUT12 register";
+        desc = "LUT12 is the temperature correction algorithm LUT12 register.
+
+Data sheet 3.8.7 LUT12 (internal address 0x2D, printed page 3-177, `datasheet.txt` line 17237).";
+        regwidth = 8;
+
+        field {
+            name = "lut12";
+            desc = "Temperature correction algorithm LUT12.";
+            sw = rw;
+            hw = r;
+            reset = 0xF3;
+        } lut12[7:0];
+    } LUT12 @ 0x2D;
+
+    reg {
+        name = "Temperature correction algorithm LUT13 register";
+        desc = "LUT13 is the temperature correction algorithm LUT13 register.
+
+Data sheet 3.8.7 LUT13 (internal address 0x2E, printed page 3-177, `datasheet.txt` line 17256).";
+        regwidth = 8;
+
+        field {
+            name = "lut13";
+            desc = "Temperature correction algorithm LUT13.";
+            sw = rw;
+            hw = r;
+            reset = 0xF9;
+        } lut13[7:0];
+    } LUT13 @ 0x2E;
+
+    reg {
+        name = "Temperature correction algorithm LUT14 register";
+        desc = "LUT14 is the temperature correction algorithm LUT14 register.
+
+Data sheet 3.8.7 LUT14 (internal address 0x2F, printed page 3-177, `datasheet.txt` line 17275).";
+        regwidth = 8;
+
+        field {
+            name = "lut14";
+            desc = "Temperature correction algorithm LUT14.";
+            sw = rw;
+            hw = r;
+            reset = 0xFE;
+        } lut14[7:0];
+    } LUT14 @ 0x2F;
+
+    reg {
+        name = "Temperature correction algorithm LUT15 register";
+        desc = "LUT15 is the temperature correction algorithm LUT15 register.
+
+Data sheet 3.8.7 LUT15 (internal address 0x30, printed page 3-178, `datasheet.txt` line 17301).";
+        regwidth = 8;
+
+        field {
+            name = "lut15";
+            desc = "Temperature correction algorithm LUT15.";
+            sw = rw;
+            hw = r;
+            reset = 0x3;
+        } lut15[7:0];
+    } LUT15 @ 0x30;
+
+    reg {
+        name = "Temperature correction algorithm LUT16 register";
+        desc = "LUT16 is the temperature correction algorithm LUT16 register.
+
+Data sheet 3.8.7 LUT16 (internal address 0x31, printed page 3-178, `datasheet.txt` line 17320).";
+        regwidth = 8;
+
+        field {
+            name = "lut16";
+            desc = "Temperature correction algorithm LUT16.";
+            sw = rw;
+            hw = r;
+            reset = 0x8;
+        } lut16[7:0];
+    } LUT16 @ 0x31;
+
+    reg {
+        name = "Temperature correction algorithm LUT17 register";
+        desc = "LUT17 is the temperature correction algorithm LUT17 register.
+
+Data sheet 3.8.7 LUT17 (internal address 0x32, printed page 3-178, `datasheet.txt` line 17339).";
+        regwidth = 8;
+
+        field {
+            name = "lut17";
+            desc = "Temperature correction algorithm LUT17.";
+            sw = rw;
+            hw = r;
+            reset = 0xD;
+        } lut17[7:0];
+    } LUT17 @ 0x32;
+
+    reg {
+        name = "Temperature correction algorithm LUT18 register";
+        desc = "LUT18 is the temperature correction algorithm LUT18 register.
+
+Data sheet 3.8.7 LUT18 (internal address 0x33, printed page 3-179, `datasheet.txt` line 17365).";
+        regwidth = 8;
+
+        field {
+            name = "lut18";
+            desc = "Temperature correction algorithm LUT18.";
+            sw = rw;
+            hw = r;
+            reset = 0x12;
+        } lut18[7:0];
+    } LUT18 @ 0x33;
+
+    reg {
+        name = "Temperature correction algorithm LUT19 register";
+        desc = "LUT19 is the temperature correction algorithm LUT19 register.
+
+Data sheet 3.8.7 LUT19 (internal address 0x34, printed page 3-179, `datasheet.txt` line 17384).";
+        regwidth = 8;
+
+        field {
+            name = "lut19";
+            desc = "Temperature correction algorithm LUT19.";
+            sw = rw;
+            hw = r;
+            reset = 0x17;
+        } lut19[7:0];
+    } LUT19 @ 0x34;
+
+    reg {
+        name = "Temperature correction algorithm LUT20 register";
+        desc = "LUT20 is the temperature correction algorithm LUT20 register.
+
+Data sheet 3.8.7 LUT20 (internal address 0x35, printed page 3-179, `datasheet.txt` line 17403).";
+        regwidth = 8;
+
+        field {
+            name = "lut20";
+            desc = "Temperature correction algorithm LUT20.";
+            sw = rw;
+            hw = r;
+            reset = 0x1B;
+        } lut20[7:0];
+    } LUT20 @ 0x35;
+
+    reg {
+        name = "Temperature correction algorithm LUT21 register";
+        desc = "LUT21 is the temperature correction algorithm LUT21 register.
+
+Data sheet 3.8.7 LUT21 (internal address 0x36, printed page 3-180, `datasheet.txt` line 17429).";
+        regwidth = 8;
+
+        field {
+            name = "lut21";
+            desc = "Temperature correction algorithm LUT21.";
+            sw = rw;
+            hw = r;
+            reset = 0x1F;
+        } lut21[7:0];
+    } LUT21 @ 0x36;
+
+    reg {
+        name = "Temperature correction algorithm LUT22 register";
+        desc = "LUT22 is the temperature correction algorithm LUT22 register.
+
+Data sheet 3.8.7 LUT22 (internal address 0x37, printed page 3-180, `datasheet.txt` line 17448).";
+        regwidth = 8;
+
+        field {
+            name = "lut22";
+            desc = "Temperature correction algorithm LUT22.";
+            sw = rw;
+            hw = r;
+            reset = 0x23;
+        } lut22[7:0];
+    } LUT22 @ 0x37;
+
+    reg {
+        name = "Temperature correction algorithm LUT23 register";
+        desc = "LUT23 is the temperature correction algorithm LUT23 register.
+
+Data sheet 3.8.7 LUT23 (internal address 0x38, printed page 3-180, `datasheet.txt` line 17467).";
+        regwidth = 8;
+
+        field {
+            name = "lut23";
+            desc = "Temperature correction algorithm LUT23.";
+            sw = rw;
+            hw = r;
+            reset = 0x27;
+        } lut23[7:0];
+    } LUT23 @ 0x38;
+
+    reg {
+        name = "Temperature correction algorithm LUT24 register";
+        desc = "LUT24 is the temperature correction algorithm LUT24 register.
+
+Data sheet 3.8.7 LUT24 (internal address 0x39, printed page 3-181, `datasheet.txt` line 17493).";
+        regwidth = 8;
+
+        field {
+            name = "lut24";
+            desc = "Temperature correction algorithm LUT24.";
+            sw = rw;
+            hw = r;
+            reset = 0x2B;
+        } lut24[7:0];
+    } LUT24 @ 0x39;
+
+    reg {
+        name = "Temperature correction algorithm LUT25 register";
+        desc = "LUT25 is the temperature correction algorithm LUT25 register.
+
+Data sheet 3.8.7 LUT25 (internal address 0x3A, printed page 3-181, `datasheet.txt` line 17512).";
+        regwidth = 8;
+
+        field {
+            name = "lut25";
+            desc = "Temperature correction algorithm LUT25.";
+            sw = rw;
+            hw = r;
+            reset = 0x2E;
+        } lut25[7:0];
+    } LUT25 @ 0x3A;
+
+    reg {
+        name = "Temperature correction algorithm LUT26 register";
+        desc = "LUT26 is the temperature correction algorithm LUT26 register.
+
+Data sheet 3.8.7 LUT26 (internal address 0x3B, printed page 3-181, `datasheet.txt` line 17531).";
+        regwidth = 8;
+
+        field {
+            name = "lut26";
+            desc = "Temperature correction algorithm LUT26.";
+            sw = rw;
+            hw = r;
+            reset = 0x32;
+        } lut26[7:0];
+    } LUT26 @ 0x3B;
+
+    reg {
+        name = "Temperature correction algorithm LUT27 register";
+        desc = "LUT27 is the temperature correction algorithm LUT27 register.
+
+Data sheet 3.8.7 LUT27 (internal address 0x3C, printed page 3-182, `datasheet.txt` line 17557).";
+        regwidth = 8;
+
+        field {
+            name = "lut27";
+            desc = "Temperature correction algorithm LUT27.";
+            sw = rw;
+            hw = r;
+            reset = 0x35;
+        } lut27[7:0];
+    } LUT27 @ 0x3C;
+
+    reg {
+        name = "Temperature correction algorithm LUT28 register";
+        desc = "LUT28 is the temperature correction algorithm LUT28 register.
+
+Data sheet 3.8.7 LUT28 (internal address 0x3D, printed page 3-182, `datasheet.txt` line 17576).";
+        regwidth = 8;
+
+        field {
+            name = "lut28";
+            desc = "Temperature correction algorithm LUT28.";
+            sw = rw;
+            hw = r;
+            reset = 0x38;
+        } lut28[7:0];
+    } LUT28 @ 0x3D;
+
+    reg {
+        name = "Temperature correction algorithm LUT29 register";
+        desc = "LUT29 is the temperature correction algorithm LUT29 register.
+
+Data sheet 3.8.7 LUT29 (internal address 0x3E, printed page 3-182, `datasheet.txt` line 17595).";
+        regwidth = 8;
+
+        field {
+            name = "lut29";
+            desc = "Temperature correction algorithm LUT29.";
+            sw = rw;
+            hw = r;
+            reset = 0x3B;
+        } lut29[7:0];
+    } LUT29 @ 0x3E;
+
+    reg {
+        name = "Temperature correction algorithm LUT30 register";
+        desc = "LUT30 is the temperature correction algorithm LUT30 register.
+
+Data sheet 3.8.7 LUT30 (internal address 0x3F, printed page 3-183, `datasheet.txt` line 17621).";
+        regwidth = 8;
+
+        field {
+            name = "lut30";
+            desc = "Temperature correction algorithm LUT30.";
+            sw = rw;
+            hw = r;
+            reset = 0x3E;
+        } lut30[7:0];
+    } LUT30 @ 0x3F;
+
+    reg {
+        name = "Temperature correction algorithm LUT31 register";
+        desc = "LUT31 is the temperature correction algorithm LUT31 register.
+
+Data sheet 3.8.7 LUT31 (internal address 0x40, printed page 3-183, `datasheet.txt` line 17640).";
+        regwidth = 8;
+
+        field {
+            name = "lut31";
+            desc = "Temperature correction algorithm LUT31.";
+            sw = rw;
+            hw = r;
+            reset = 0x41;
+        } lut31[7:0];
+    } LUT31 @ 0x40;
+
+    reg {
+        name = "Temperature correction algorithm LUT32 register";
+        desc = "LUT32 is the temperature correction algorithm LUT32 register.
+
+Data sheet 3.8.7 LUT32 (internal address 0x41, printed page 3-183, `datasheet.txt` line 17659).";
+        regwidth = 8;
+
+        field {
+            name = "lut32";
+            desc = "Temperature correction algorithm LUT32.";
+            sw = rw;
+            hw = r;
+            reset = 0x43;
+        } lut32[7:0];
+    } LUT32 @ 0x41;
+
+    reg {
+        name = "Temperature correction algorithm LUT33 register";
+        desc = "LUT33 is the temperature correction algorithm LUT33 register.
+
+Data sheet 3.8.7 LUT33 (internal address 0x42, printed page 3-184, `datasheet.txt` line 17685).";
+        regwidth = 8;
+
+        field {
+            name = "lut33";
+            desc = "Temperature correction algorithm LUT33.";
+            sw = rw;
+            hw = r;
+            reset = 0x45;
+        } lut33[7:0];
+    } LUT33 @ 0x42;
+
+    reg {
+        name = "Temperature correction algorithm LUT34 register";
+        desc = "LUT34 is the temperature correction algorithm LUT34 register.
+
+Data sheet 3.8.7 LUT34 (internal address 0x43, printed page 3-184, `datasheet.txt` line 17704).";
+        regwidth = 8;
+
+        field {
+            name = "lut34";
+            desc = "Temperature correction algorithm LUT34.";
+            sw = rw;
+            hw = r;
+            reset = 0x48;
+        } lut34[7:0];
+    } LUT34 @ 0x43;
+
+    reg {
+        name = "Temperature correction algorithm LUT35 register";
+        desc = "LUT35 is the temperature correction algorithm LUT35 register.
+
+Data sheet 3.8.7 LUT35 (internal address 0x44, printed page 3-184, `datasheet.txt` line 17723).";
+        regwidth = 8;
+
+        field {
+            name = "lut35";
+            desc = "Temperature correction algorithm LUT35.";
+            sw = rw;
+            hw = r;
+            reset = 0x4A;
+        } lut35[7:0];
+    } LUT35 @ 0x44;
+
+    reg {
+        name = "Temperature correction algorithm LUT36 register";
+        desc = "LUT36 is the temperature correction algorithm LUT36 register.
+
+Data sheet 3.8.7 LUT36 (internal address 0x45, printed page 3-185, `datasheet.txt` line 17749).";
+        regwidth = 8;
+
+        field {
+            name = "lut36";
+            desc = "Temperature correction algorithm LUT36.";
+            sw = rw;
+            hw = r;
+            reset = 0x4B;
+        } lut36[7:0];
+    } LUT36 @ 0x45;
+
+    reg {
+        name = "Temperature correction algorithm LUT37 register";
+        desc = "LUT37 is the temperature correction algorithm LUT37 register.
+
+Data sheet 3.8.7 LUT37 (internal address 0x46, printed page 3-185, `datasheet.txt` line 17768).";
+        regwidth = 8;
+
+        field {
+            name = "lut37";
+            desc = "Temperature correction algorithm LUT37.";
+            sw = rw;
+            hw = r;
+            reset = 0x4D;
+        } lut37[7:0];
+    } LUT37 @ 0x46;
+
+    reg {
+        name = "Temperature correction algorithm LUT38 register";
+        desc = "LUT38 is the temperature correction algorithm LUT38 register.
+
+Data sheet 3.8.7 LUT38 (internal address 0x47, printed page 3-185, `datasheet.txt` line 17787).";
+        regwidth = 8;
+
+        field {
+            name = "lut38";
+            desc = "Temperature correction algorithm LUT38.";
+            sw = rw;
+            hw = r;
+            reset = 0x4F;
+        } lut38[7:0];
+    } LUT38 @ 0x47;
+
+    reg {
+        name = "Temperature correction algorithm LUT39 register";
+        desc = "LUT39 is the temperature correction algorithm LUT39 register.
+
+Data sheet 3.8.7 LUT39 (internal address 0x48, printed page 3-186, `datasheet.txt` line 17813).";
+        regwidth = 8;
+
+        field {
+            name = "lut39";
+            desc = "Temperature correction algorithm LUT39.";
+            sw = rw;
+            hw = r;
+            reset = 0x50;
+        } lut39[7:0];
+    } LUT39 @ 0x48;
+
+    reg {
+        name = "Temperature correction algorithm LUT40 register";
+        desc = "LUT40 is the temperature correction algorithm LUT40 register.
+
+Data sheet 3.8.7 LUT40 (internal address 0x49, printed page 3-186, `datasheet.txt` line 17832).";
+        regwidth = 8;
+
+        field {
+            name = "lut40";
+            desc = "Temperature correction algorithm LUT40.";
+            sw = rw;
+            hw = r;
+            reset = 0x51;
+        } lut40[7:0];
+    } LUT40 @ 0x49;
+
+    reg {
+        name = "Temperature correction algorithm LUT41 register";
+        desc = "LUT41 is the temperature correction algorithm LUT41 register.
+
+Data sheet 3.8.7 LUT41 (internal address 0x4A, printed page 3-186, `datasheet.txt` line 17851).";
+        regwidth = 8;
+
+        field {
+            name = "lut41";
+            desc = "Temperature correction algorithm LUT41.";
+            sw = rw;
+            hw = r;
+            reset = 0x52;
+        } lut41[7:0];
+    } LUT41 @ 0x4A;
+
+    reg {
+        name = "Temperature correction algorithm LUT42 register";
+        desc = "LUT42 is the temperature correction algorithm LUT42 register.
+
+Data sheet 3.8.7 LUT42 (internal address 0x4B, printed page 3-187, `datasheet.txt` line 17877).";
+        regwidth = 8;
+
+        field {
+            name = "lut42";
+            desc = "Temperature correction algorithm LUT42.";
+            sw = rw;
+            hw = r;
+            reset = 0x53;
+        } lut42[7:0];
+    } LUT42 @ 0x4B;
+
+    reg {
+        name = "Temperature correction algorithm LUT43 register";
+        desc = "LUT43 is the temperature correction algorithm LUT43 register.
+
+Data sheet 3.8.7 LUT43 (internal address 0x4C, printed page 3-187, `datasheet.txt` line 17896).";
+        regwidth = 8;
+
+        field {
+            name = "lut43";
+            desc = "Temperature correction algorithm LUT43.";
+            sw = rw;
+            hw = r;
+            reset = 0x54;
+        } lut43[7:0];
+    } LUT43 @ 0x4C;
+
+    reg {
+        name = "Temperature correction algorithm LUT44 register";
+        desc = "LUT44 is the temperature correction algorithm LUT44 register.
+
+Data sheet 3.8.7 LUT44 (internal address 0x4D, printed page 3-187, `datasheet.txt` line 17915).";
+        regwidth = 8;
+
+        field {
+            name = "lut44";
+            desc = "Temperature correction algorithm LUT44.";
+            sw = rw;
+            hw = r;
+            reset = 0x54;
+        } lut44[7:0];
+    } LUT44 @ 0x4D;
+
+    reg {
+        name = "Temperature correction algorithm LUT45 register";
+        desc = "LUT45 is the temperature correction algorithm LUT45 register.
+
+Data sheet 3.8.7 LUT45 (internal address 0x4E, printed page 3-188, `datasheet.txt` line 17941).";
+        regwidth = 8;
+
+        field {
+            name = "lut45";
+            desc = "Temperature correction algorithm LUT45.";
+            sw = rw;
+            hw = r;
+            reset = 0x55;
+        } lut45[7:0];
+    } LUT45 @ 0x4E;
+
+    reg {
+        name = "Temperature correction algorithm LUT46 register";
+        desc = "LUT46 is the temperature correction algorithm LUT46 register.
+
+Data sheet 3.8.7 LUT46 (internal address 0x4F, printed page 3-188, `datasheet.txt` line 17960).";
+        regwidth = 8;
+
+        field {
+            name = "lut46";
+            desc = "Temperature correction algorithm LUT46.";
+            sw = rw;
+            hw = r;
+            reset = 0x55;
+        } lut46[7:0];
+    } LUT46 @ 0x4F;
+
+    reg {
+        name = "Temperature correction algorithm LUT47 register";
+        desc = "LUT47 is the temperature correction algorithm LUT47 register.
+
+Data sheet 3.8.7 LUT47 (internal address 0x50, printed page 3-188, `datasheet.txt` line 17979).";
+        regwidth = 8;
+
+        field {
+            name = "lut47";
+            desc = "Temperature correction algorithm LUT47.";
+            sw = rw;
+            hw = r;
+            reset = 0x55;
+        } lut47[7:0];
+    } LUT47 @ 0x50;
+
+    reg {
+        name = "External upper-4-bit frequency divider register";
+        desc = "Sdm_coef_ouside_h is an external upper-4-bit frequency divider register.
+
+Data sheet 3.8.7 Sdm_coef_ouside_h (internal address 0x51, printed page 3-189, `datasheet.txt` line 18005).";
+        regwidth = 8;
+
+        field {
+            name = "Sdm_coef_ouside_h";
+            desc = "Upper 4 bits of the frequency divider in fixed frequency-division mode";
+            sw = rw;
+            hw = r;
+            reset = 0x8;
+        } Sdm_coef_ouside_h[3:0];
+    } Sdm_coef_ouside_h @ 0x51;
+
+    reg {
+        name = "External lower-8-bit frequency divider register";
+        desc = "Sdm_coef_ouside_l is an external lower-8-bit frequency divider register.
+
+Data sheet 3.8.7 Sdm_coef_ouside_l (internal address 0x52, printed page 3-189, `datasheet.txt` line 18027).";
+        regwidth = 8;
+
+        field {
+            name = "Sdm_coef_ouside_l";
+            desc = "Lower eight bits of the frequency divider in fixed frequency-division mode Note: When Sdm_coef_ouside_h and Sdm_coef_ouside_l are read or written, you need to read or write to the upper four bits and then the lower eight bits continuously.";
+            sw = rw;
+            hw = r;
+            reset = 0x1B;
+        } Sdm_coef_ouside_l[7:0];
+    } Sdm_coef_ouside_l @ 0x52;
+
+};
+
+// Top-level wrapper so that the internal address space can be elaborated and exported on its own. It is NOT instantiated in any SoC:
+// the registers have no CPU address (see eHISI_RTC_SPI).
+addrmap aHISI_RTC_SPI_INTERNAL {
+    name = "HiSilicon SPI-bridged RTC internal address space";
+    desc = "Internal 8-bit register space of the RTC, reached only through SPI_RW (see eHISI_RTC_SPI). Offsets are the SPI internal addresses.";
+    eHISI_RTC_SPI_INTERNAL INTERNAL @ 0x0;
+};
+
+`endif

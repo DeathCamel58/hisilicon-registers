@@ -1,0 +1,529 @@
+`ifndef HISI_I2C_RDL
+`define HISI_I2C_RDL
+
+regfile eHISI_I2C {
+    name = "HiSilicon I2C Master Controller";
+    desc = "
+    HiSilicon APB I2C master controller (not an ARM or Synopsys DesignWare IP). Transmits/receives bytes under software control with a command register
+    (start / write / read / stop / ACK) and reports status through raw interrupt flags that are masked by `I2C_CTRL`. 7-bit and 10-bit addressing, standard mode (100 kbit/s) and
+    high-speed mode (400 kbit/s), multi-master arbitration, SDA/SCL input filtering (data sheet 14.1.2). The reference clock is the bus clock divided by 4; the
+    clock gate and soft reset bits are in PERI_CRG57 (I2C bits).
+
+    All registers are 32 bits wide and only the low bits are implemented; the bits above are reserved (RAZ). Register layout, reset values and bit descriptions are taken from
+    the Hi3520D/Hi3515A/Hi3515C data sheet issue 07, chapter 14.1 (printed pages 14-1 .. 14-12, `datasheet.txt` lines 52203-52685). The block exists once per SoC at 0x200D0000
+    (pins I2C_SCL = GPIO1_7 function 1, I2C_SDA = GPIO1_6 function 1, DS Table 2-10). The interrupt is GIC interrupt ID 45 (SPI 13, DS Table 3-16).
+
+    !!! NOTE
+        The I2C section of data sheet issue 06 and issue 07 differs in the I2C_SCL_H / I2C_SCL_L descriptions (change history, issue 07). The description used here is the
+        issue 07 one. No vendor I2C driver source for this controller is in the Hi3520D SDK kernel tree (the HiSilicon I2C driver is in the MPP extdrv package), so the
+        register behaviour here is data-sheet only and not hardware verified.
+    ";
+
+    reg {
+        name = "I2C control register";
+        desc = "I2C_CTRL is an I2C control register. It is used to enable the I2C module and mask interrupts.
+
+Bit 7 (int_mask) is the global mask: it must be 0 while I2C_SCL_H / I2C_SCL_L are being configured (see I2C_SCL_H).
+
+Data sheet 14.1.5 I2C_CTRL (printed page 14-4, `datasheet.txt` line 52292).";
+
+        enum I2C_CTRL_i2c_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "i2c_en";
+            desc = "I2C enable.";
+            sw = rw;
+            hw = r;
+            encode = I2C_CTRL_i2c_en_enum;
+            reset = 0x0;
+        } i2c_en[8:8];
+
+        enum I2C_CTRL_int_mask_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked."; };
+        };
+
+        field {
+            name = "int_mask";
+            desc = "Global I2C interrupt mask.";
+            sw = rw;
+            hw = r;
+            encode = I2C_CTRL_int_mask_enum;
+            reset = 0x0;
+        } int_mask[7:7];
+
+        enum I2C_CTRL_int_start_mask_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked."; };
+        };
+
+        field {
+            name = "int_start_mask";
+            desc = "Master start condition transmit end interrupt mask.";
+            sw = rw;
+            hw = r;
+            encode = I2C_CTRL_int_start_mask_enum;
+            reset = 0x0;
+        } int_start_mask[6:6];
+
+        enum I2C_CTRL_int_stop_mask_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked."; };
+        };
+
+        field {
+            name = "int_stop_mask";
+            desc = "Master stop condition transmit end interrupt mask.";
+            sw = rw;
+            hw = r;
+            encode = I2C_CTRL_int_stop_mask_enum;
+            reset = 0x0;
+        } int_stop_mask[5:5];
+
+        enum I2C_CTRL_int_tx_mask_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked."; };
+        };
+
+        field {
+            name = "int_tx_mask";
+            desc = "Master transmit interrupt mask.";
+            sw = rw;
+            hw = r;
+            encode = I2C_CTRL_int_tx_mask_enum;
+            reset = 0x0;
+        } int_tx_mask[4:4];
+
+        enum I2C_CTRL_int_rx_mask_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked."; };
+        };
+
+        field {
+            name = "int_rx_mask";
+            desc = "Master receive interrupt mask.";
+            sw = rw;
+            hw = r;
+            encode = I2C_CTRL_int_rx_mask_enum;
+            reset = 0x0;
+        } int_rx_mask[3:3];
+
+        enum I2C_CTRL_int_ack_err_mask_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked."; };
+        };
+
+        field {
+            name = "int_ack_err_mask";
+            desc = "Slave ACK error interrupt mask.";
+            sw = rw;
+            hw = r;
+            encode = I2C_CTRL_int_ack_err_mask_enum;
+            reset = 0x0;
+        } int_ack_err_mask[2:2];
+
+        enum I2C_CTRL_int_arb_loss_mask_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked."; };
+        };
+
+        field {
+            name = "int_arb_loss_mask";
+            desc = "Bus arbitration failure interrupt mask.";
+            sw = rw;
+            hw = r;
+            encode = I2C_CTRL_int_arb_loss_mask_enum;
+            reset = 0x0;
+        } int_arb_loss_mask[1:1];
+
+        enum I2C_CTRL_int_done_mask_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked."; };
+        };
+
+        field {
+            name = "int_done_mask";
+            desc = "Bus transfer done interrupt mask.";
+            sw = rw;
+            hw = r;
+            encode = I2C_CTRL_int_done_mask_enum;
+            reset = 0x0;
+        } int_done_mask[0:0];
+    } I2C_CTRL @ 0x0;
+
+    reg {
+        name = "I2C command register";
+        desc = "Software writes the command bits (start, write, read, stop, ACK control) here; the controller clears the operation bits when the operation is complete (the data sheet describes 0 = operation complete, 1 = operation valid, i.e. the bits are modelled as `rw`; hardware self-clear is not described as a separate access type).
+
+Data sheet 14.1.5 I2C_COM (printed page 14-6, `datasheet.txt` line 52373).";
+
+        enum I2C_COM_op_ack_enum {
+            YES = 0 { name = "Yes"; desc = "yes"; };
+            NO = 1 { name = "No"; desc = "no"; };
+        };
+
+        field {
+            name = "op_ack";
+            desc = "Indicates whether to send an ACK when the master serves as the receiver.";
+            sw = rw;
+            hw = r;
+            encode = I2C_COM_op_ack_enum;
+            reset = 0x0;
+        } op_ack[4:4];
+
+        enum I2C_COM_op_start_enum {
+            OPERATION_COMPLETE = 0 { name = "Operation Complete"; desc = "The operation is complete."; };
+            OPERATION_VALID = 1 { name = "Operation Valid"; desc = "The operation is valid."; };
+        };
+
+        field {
+            name = "op_start";
+            desc = "Start condition operation.";
+            sw = rw;
+            hw = r;
+            encode = I2C_COM_op_start_enum;
+            reset = 0x0;
+        } op_start[3:3];
+
+        enum I2C_COM_op_rd_enum {
+            OPERATION_COMPLETE = 0 { name = "Operation Complete"; desc = "The operation is complete."; };
+            OPERATION_VALID = 1 { name = "Operation Valid"; desc = "The operation is valid."; };
+        };
+
+        field {
+            name = "op_rd";
+            desc = "Read operation.";
+            sw = rw;
+            hw = r;
+            encode = I2C_COM_op_rd_enum;
+            reset = 0x0;
+        } op_rd[2:2];
+
+        enum I2C_COM_op_we_enum {
+            OPERATION_COMPLETE = 0 { name = "Operation Complete"; desc = "The operation is complete."; };
+            OPERATION_VALID = 1 { name = "Operation Valid"; desc = "The operation is valid."; };
+        };
+
+        field {
+            name = "op_we";
+            desc = "Write operation.";
+            sw = rw;
+            hw = r;
+            encode = I2C_COM_op_we_enum;
+            reset = 0x0;
+        } op_we[1:1];
+
+        enum I2C_COM_op_stop_enum {
+            OPERATION_COMPLETE = 0 { name = "Operation Complete"; desc = "The operation is complete."; };
+            OPERATION_VALID = 1 { name = "Operation Valid"; desc = "The operation is valid."; };
+        };
+
+        field {
+            name = "op_stop";
+            desc = "Stop condition operation.";
+            sw = rw;
+            hw = r;
+            encode = I2C_COM_op_stop_enum;
+            reset = 0x0;
+        } op_stop[0:0];
+    } I2C_COM @ 0x4;
+
+    reg {
+        name = "I2C interrupt clear register";
+        desc = "The data sheet lists these bits as `WC` (write 1 to clear the matching I2C_SR interrupt); modelled `sw = rw` + `onwrite = woclr` as in the other chips of this repo.
+
+Data sheet 14.1.5 I2C_ICR (printed page 14-7, `datasheet.txt` line 52427).";
+
+        enum I2C_ICR_clr_int_start_enum {
+            NOT_CLEARED = 0 { name = "Not Cleared"; desc = "not cleared"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "clr_int_start";
+            desc = "Master start condition transmit end interrupt clear.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = I2C_ICR_clr_int_start_enum;
+            reset = 0x0;
+        } clr_int_start[6:6];
+
+        enum I2C_ICR_clr_int_stop_enum {
+            NOT_CLEARED = 0 { name = "Not Cleared"; desc = "not cleared"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "clr_int_stop";
+            desc = "Master stop condition transmit end interrupt clear.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = I2C_ICR_clr_int_stop_enum;
+            reset = 0x0;
+        } clr_int_stop[5:5];
+
+        enum I2C_ICR_clr_int_tx_enum {
+            NOT_CLEARED = 0 { name = "Not Cleared"; desc = "not cleared"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "clr_int_tx";
+            desc = "Master transmit interrupt clear.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = I2C_ICR_clr_int_tx_enum;
+            reset = 0x0;
+        } clr_int_tx[4:4];
+
+        enum I2C_ICR_clr_int_rx_enum {
+            NOT_CLEARED = 0 { name = "Not Cleared"; desc = "not cleared"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "clr_int_rx";
+            desc = "Master receive interrupt clear.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = I2C_ICR_clr_int_rx_enum;
+            reset = 0x0;
+        } clr_int_rx[3:3];
+
+        enum I2C_ICR_clr_int_ack_err_enum {
+            NOT_CLEARED = 0 { name = "Not Cleared"; desc = "not cleared"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "clr_int_ack_err";
+            desc = "Slave ACK error interrupt clear.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = I2C_ICR_clr_int_ack_err_enum;
+            reset = 0x0;
+        } clr_int_ack_err[2:2];
+
+        enum I2C_ICR_clr_int_arb_loss_enum {
+            NOT_CLEARED = 0 { name = "Not Cleared"; desc = "not cleared"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "clr_int_arb_loss";
+            desc = "Bus arbitration failure interrupt clear.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = I2C_ICR_clr_int_arb_loss_enum;
+            reset = 0x0;
+        } clr_int_arb_loss[1:1];
+
+        enum I2C_ICR_clr_int_done_enum {
+            NOT_CLEARED = 0 { name = "Not Cleared"; desc = "not cleared"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "clr_int_done";
+            desc = "Bus transfer done interrupt clear.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = I2C_ICR_clr_int_done_enum;
+            reset = 0x0;
+        } clr_int_done[0:0];
+    } I2C_ICR @ 0x8;
+
+    reg {
+        name = "I2C status register";
+        desc = "I2C_SR bit[1] indicates an I2C bus arbitration failure. When I2C_SR bit[1] is valid, the current operation fails. Before clearing I2C_SR bit[1], you need to clear other interrupts and clear I2C_COM or write a new command to I2C_COM in sequence.
+
+Bits 6:0 are the raw, unmasked interrupt flags (cleared via I2C_ICR); the data sheet gives no separate masked-status register.
+
+Data sheet 14.1.5 I2C_SR (printed page 14-8, `datasheet.txt` line 52491).";
+
+        enum I2C_SR_bus_busy_enum {
+            IDLE = 0 { name = "Idle"; desc = "idle"; };
+            BUSY = 1 { name = "Busy"; desc = "busy"; };
+        };
+
+        field {
+            name = "bus_busy";
+            desc = "Bus busy.";
+            sw = r;
+            hw = w;
+            encode = I2C_SR_bus_busy_enum;
+            reset = 0x0;
+        } bus_busy[7:7];
+
+        enum I2C_SR_int_start_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "int_start";
+            desc = "Master start condition transmit end interrupt.";
+            sw = r;
+            hw = w;
+            encode = I2C_SR_int_start_enum;
+            reset = 0x0;
+        } int_start[6:6];
+
+        enum I2C_SR_int_stop_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "int_stop";
+            desc = "Master stop condition transmit end interrupt.";
+            sw = r;
+            hw = w;
+            encode = I2C_SR_int_stop_enum;
+            reset = 0x0;
+        } int_stop[5:5];
+
+        enum I2C_SR_int_tx_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "int_tx";
+            desc = "Master transmit interrupt.";
+            sw = r;
+            hw = w;
+            encode = I2C_SR_int_tx_enum;
+            reset = 0x0;
+        } int_tx[4:4];
+
+        enum I2C_SR_int_rx_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "int_rx";
+            desc = "Master receive interrupt.";
+            sw = r;
+            hw = w;
+            encode = I2C_SR_int_rx_enum;
+            reset = 0x0;
+        } int_rx[3:3];
+
+        enum I2C_SR_int_ack_err_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "int_ack_err";
+            desc = "Slave ACK error interrupt.";
+            sw = r;
+            hw = w;
+            encode = I2C_SR_int_ack_err_enum;
+            reset = 0x0;
+        } int_ack_err[2:2];
+
+        enum I2C_SR_int_arb_loss_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "int_arb_loss";
+            desc = "Bus arbitration failure interrupt.";
+            sw = r;
+            hw = w;
+            encode = I2C_SR_int_arb_loss_enum;
+            reset = 0x0;
+        } int_arb_loss[1:1];
+
+        enum I2C_SR_int_done_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "int_done";
+            desc = "Bus transfer done interrupt.";
+            sw = r;
+            hw = w;
+            encode = I2C_SR_int_done_enum;
+            reset = 0x0;
+        } int_done[0:0];
+    } I2C_SR @ 0xC;
+
+    reg {
+        name = "I2C SCL high-level cycle number register";
+        desc = "I2C_SCL_H is an I2C SCL high-level cycle number register. It is used to configure the number of SCL high-level cycles of the working I2C module. During or before the configuration of system initialization, you must set I2C_CTRL bit[7] to 0.
+
+Write the number of reference-clock cycles that SCL stays high. The module reference clock is bus clock / 4 (DS 14.1.2); the 400 kbit/s mode needs different SCL_H/SCL_L than the 100 kbit/s mode. Data sheet issue 07 changed the I2C_SCL_H / I2C_SCL_L descriptions (change history, datasheet.txt:251).
+
+Data sheet 14.1.5 I2C_SCL_H (printed page 14-9, `datasheet.txt` line 52559).";
+
+        field {
+            name = "scl_h";
+            desc = "SCL high-level time.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } scl_h[15:0];
+    } I2C_SCL_H @ 0x10;
+
+    reg {
+        name = "I2C SCL low-level cycle number register";
+        desc = "Write the number of reference-clock cycles that SCL stays low (see I2C_SCL_H).
+
+Data sheet 14.1.5 I2C_SCL_L (printed page 14-10, `datasheet.txt` line 52601).";
+
+        field {
+            name = "scl_l";
+            desc = "SCL Low-level time.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } scl_l[15:0];
+    } I2C_SCL_L @ 0x14;
+
+    reg {
+        name = "I2C transmit data register";
+        desc = "Data sheet 14.1.5 I2C_TXR (printed page 14-11, `datasheet.txt` line 52643).";
+
+        field {
+            name = "i2c_txr";
+            desc = "Data is transmitted by the master";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } i2c_txr[7:0];
+    } I2C_TXR @ 0x18;
+
+    reg {
+        name = "I2C receive data register";
+        desc = "I2C_RXR is an I2C receive data register. It is used to enable the master to receive the data from the slave. When I2C_SR bit[3] is 1, the I2C_RXR data is valid. The data is remained until the next start operation starts.
+
+Data sheet 14.1.5 I2C_RXR (printed page 14-11, `datasheet.txt` line 52670).";
+
+        field {
+            name = "i2c_rxr";
+            desc = "Data is received by the master.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } i2c_rxr[7:0];
+    } I2C_RXR @ 0x1C;
+
+};
+
+`endif
