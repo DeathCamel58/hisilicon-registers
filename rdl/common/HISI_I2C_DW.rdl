@@ -1,0 +1,1478 @@
+`ifndef HISI_I2C_DW_RDL
+`define HISI_I2C_DW_RDL
+
+regfile eHISI_I2C_DW {
+    name = "HiSilicon I2C Master Controller (DesignWare-style register map)";
+    desc = "
+    HiSilicon master-only I2C controller of the Hi3518E V20X / Hi3516C V200 (data sheet issue 02, section 12.1). Three instances: I2C0 0x200D0000, I2C1 0x20240000, I2C2 0x20250000
+    (all three share interrupt line 20 of the VIC, data sheet Table 3-8 `I2C0/I2C1/I2C2`). **Register layout is Synopsys-DesignWare-like** (I2C_CON, I2C_TAR, I2C_DATA_CMD, I2C_SCL_HCNT/LCNT, I2C_INTR_*,
+    I2C_ENABLE, I2C_STATUS, TXFLR/RXFLR, SDA_HOLD, TX_ABRT_SRC, DMA_CR/TDLR/RDLR) with HiSilicon extensions: I2C_LOCK (0xAC, **locked at reset**), I2C_SCL_SWITCH / I2C_SCL_SIM (bus-recovery,
+    \"anti-suspend\"), a single-register-access engine (I2C_MST_SINGLE_CTRL/CMD) and a DMA-driven sequential-read/write engine (I2C_SEQUENCE_CMD0..2). It is **not** the Hi3520D
+    APB I2C (`eHISI_I2C`, different register map) and **not** the register layout implemented by the mainline `i2c-hibvt` driver (GLB at 0x0, SCL_H at 0x4, command FIFO at 0x30,
+    compatibles `hisilicon,hibvt-i2c` / `hi3516cv300-i2c`): the Hi3518EV200 data sheet documents a different layout, and the vendor device tree for this SoC uses the out-of-tree
+    compatible `hisilicon,hisi-i2c-hisilicon` for which no driver source is in the tree. FIFO depth: TXFLR/RXFLR are 5 bits (up to 16 or 32 entries).
+
+    Clocking (DS 12.1.2, 3.2.5): the I2C reference clock is 24 MHz in the data sheet's examples; the CRG selects it with PERI_CRG57 `i2c_cksel` [27:26] (00 = APB clock (reset default), 01 = 24 MHz,
+    1x = 6 MHz) and the soft resets are PERI_CRG57 `i2c0_srst_req` [23], `i2c1_srst_req` [24], `i2c2_srst_req` [25]; there is no separate clock-gate bit. DMA request lines: I2C0 RX/TX = 0/1, I2C1 = 2/3,
+    I2C2 = 10/11 (DMAC Table 3-12). The data register for DMA is the I2C_DATA_CMD at +0x10.
+
+    SCL timing (DS I2C_SCL_HCNT/LCNT): counts are in units of the reference clock; standard mode count = (fi2c/fSCL) x 0.5 each, fast mode HCNT = 0.36 x and LCNT = 0.64 x (fi2c/fSCL).
+
+    All registers are 32 bits wide; unlisted upper bits are reserved. Register layout, resets and bit descriptions are from the data sheet 12.1.5 (`hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` lines 77731-79299); the
+    bit descriptions are the data sheet's text. There is no vendor driver for this layout in the source trees, so nothing here is cross-checked against code or hardware.
+    ";
+
+
+    reg {
+        name = "I2C control register";
+        desc = "I2C_CON is an I2C control register.
+
+Total reset value 0x65: bit 5 `restart_en` resets to 1; bits 6, 2 and 0 are listed as reserved by the data sheet but read 1 at reset (modelled as `reserved_b*` so that the register total matches the data sheet). The data sheet does not describe a master-enable / speed / slave-disable field in this register (unlike a Synopsys DesignWare IC_CON); master mode is implicit. **All registers except I2C_LOCK are write-protected after reset, see I2C_LOCK.**
+
+Data sheet 12.1.5 I2C_CON (offset 0x0, printed page 12-5, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 77797).";
+
+        field {
+            name = "reserved_b6";
+            desc = "Reserved. The data sheet lists this bit as RO reserved but its total reset value 0x0000_0065 has this bit set (reads 1 at reset).";
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } reserved_b6[6:6];
+
+        enum I2C_CON_restart_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED_IF_RESTART = 1 { name = "Enabled If Restart"; desc = "enabled If the Restart function is disabled, the following functions are not supported: sending the start bit, high-speed mode, read operation in 10-bit addressing mode, combined addressing mode."; };
+        };
+
+        field {
+            name = "restart_en";
+            desc = "Restart command TX enable in master mode";
+            sw = rw;
+            hw = r;
+            encode = I2C_CON_restart_en_enum;
+            reset = 0x1;
+        } restart_en[5:5];
+
+        field {
+            name = "reserved_b2";
+            desc = "Reserved. The data sheet lists this bit as RO reserved but its total reset value 0x0000_0065 has this bit set (reads 1 at reset).";
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } reserved_b2[2:2];
+
+        field {
+            name = "reserved_b0";
+            desc = "Reserved. The data sheet lists this bit as RO reserved but its total reset value 0x0000_0065 has this bit set (reads 1 at reset).";
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } reserved_b0[0:0];
+    } I2C_CON @ 0x0;
+
+    reg {
+        name = "I2C access slave device address register";
+        desc = "I2C_TAR is an I2C access slave device address register.
+
+Reset 0x2C is the data sheet value (7-bit address 0x2C, not a typical sensor address).
+
+Data sheet 12.1.5 I2C_TAR (offset 0x4, printed page 12-6, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 77839).";
+
+        enum I2C_TAR_master_10bit_enum {
+            V_7_BITS = 0 { name = "V 7 Bits"; desc = "7 bits"; };
+            V_10_BITS = 1 { name = "V 10 Bits"; desc = "10 bits"; };
+        };
+
+        field {
+            name = "master_10bit";
+            desc = "Address length in master mode";
+            sw = rw;
+            hw = r;
+            encode = I2C_TAR_master_10bit_enum;
+            reset = 0x0;
+        } master_10bit[12:12];
+
+        enum I2C_TAR_special_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "special";
+            desc = "General call or start byte function enable";
+            sw = rw;
+            hw = r;
+            encode = I2C_TAR_special_enum;
+            reset = 0x0;
+        } special[11:11];
+
+        enum I2C_TAR_gc_or_start_enum {
+            GENERAL_CALL_COMMAND = 0 { name = "General Call Command"; desc = "general call command (After the general call command is sent, you can perform only write operations. If you perform read operations, tx_abort interrupt is triggered. For details about the definition.)"; };
+            START_BYTE_COMMAND = 1 { name = "Start Byte Command"; desc = "start byte command"; };
+        };
+
+        field {
+            name = "gc_or_start";
+            desc = "I2C command to be executed when the Special bit is 1";
+            sw = rw;
+            hw = r;
+            encode = I2C_TAR_gc_or_start_enum;
+            reset = 0x0;
+        } gc_or_start[10:10];
+
+        field {
+            name = "i2c_tar";
+            desc = "Slave address that is accessed by the I2C when I2C acts as a master device";
+            sw = rw;
+            hw = r;
+            reset = 0x2C;
+        } i2c_tar[9:0];
+    } I2C_TAR @ 0x4;
+
+    reg {
+        name = "I2C data operation register";
+        desc = "I2C_DATA_CMD is an I2C data operation register.
+
+The data sheet lists bit 8 as reserved: there is no read/write command bit (a DesignWare IC_DATA_CMD has CMD at bit 8); read and write transfers are driven through the I2C_MST_SINGLE_* / I2C_SEQUENCE_CMD* registers or, in this DS flow chart, through the FIFO with the command implied. The data sheet gives no worked example of a plain FIFO read, and no vendor driver source for this IP is in the tree: behaviour of the FIFO path is data-sheet only.
+
+Data sheet 12.1.5 I2C_DATA_CMD (offset 0x10, printed page 12-7, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 77893).";
+
+        field {
+            name = "data";
+            desc = "Data to be transmitted or received through the I2C bus Read: The data received from the I2C bus is read. Write: The written data is transmitted to the I2C.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } data[7:0];
+    } I2C_DATA_CMD @ 0x10;
+
+    reg {
+        name = "I2C_SCL high level configuration register";
+        desc = "I2C_SCL_HCNT is an I2C_SCL high level configuration register.
+
+Data sheet 12.1.5 I2C_SCL_HCNT (offset 0x1C, printed page 12-7, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 77920).";
+
+        field {
+            name = "i2c_scl_hcnt";
+            desc = "High-level time of the SCL clock. The timing unit is I2C working reference clock (24 MHz is used as an example). It is recommended that the field value be 1/2 of the SCL clock cycle in standard mode and be 0.36 of the SCL clock in fast mode. That is, i2c_scl_hcnt is calculated as follows: In standard mode: i2c_scl_hcnt = (fi2c/fSCL) x 0.5 In fast mode: i2c_scl_hcnt = (fi2c/fSCL) x 0.36 For example, if the 400 kHz SCL clock works in fast mode, i2c_scl_hcnt is 22 (0.36 x 24 MHz/400 kHz).";
+            sw = rw;
+            hw = r;
+            reset = 0x10;
+        } i2c_scl_hcnt[15:0];
+    } I2C_SCL_HCNT @ 0x1C;
+
+    reg {
+        name = "I2C_SCL low level configuration register";
+        desc = "I2C_SCL_LCNT is an I2C_SCL low level configuration register.
+
+Data sheet 12.1.5 I2C_SCL_LCNT (offset 0x20, printed page 12-8, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 77962).";
+
+        field {
+            name = "i2c_scl_lcnt";
+            desc = "Low-level time of the SCL clock. The timing unit is I2C working reference clock (24 MHz is used as an example). It is recommended that the field value be 1/2 of the SCL clock cycle in standard mode and be 0.64 of the SCL clock in fast mode. That is, i2c_scl_lcnt is calculated as follows: In standard mode: i2c_scl_lcnt = (fi2c/fSCL) x 0.5 In fast mode: i2c_scl_lcnt = (fi2c/fSCL) x 0.64 For example, if the 400 kHz SCL clock works in fast mode, i2c_scl_lcnt is 38 (0.64 x 24 MHz/400 kHz).";
+            sw = rw;
+            hw = r;
+            reset = 0x10;
+        } i2c_scl_lcnt[15:0];
+    } I2C_SCL_LCNT @ 0x20;
+
+    reg {
+        name = "I2C masked interrupt status register";
+        desc = "I2C_INTR_STAT is an interrupt status register after the I2C is masked.
+
+Data sheet 12.1.5 I2C_INTR_STAT (offset 0x2C, printed page 12-9, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 78006).";
+
+        enum I2C_INTR_STAT_gen_call_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "gen_call";
+            desc = "Status of the interrupt indicating that a general call request is received";
+            sw = r;
+            hw = w;
+            encode = I2C_INTR_STAT_gen_call_enum;
+            reset = 0x0;
+        } gen_call[11:11];
+
+        enum I2C_INTR_STAT_start_det_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "start_det";
+            desc = "Status of the start detect interrupt indicating the I2C bus interface has the START or RESTART condition";
+            sw = r;
+            hw = w;
+            encode = I2C_INTR_STAT_start_det_enum;
+            reset = 0x0;
+        } start_det[10:10];
+
+        enum I2C_INTR_STAT_stop_det_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "stop_det";
+            desc = "Status of the start detect interrupt indicating the I2C bus interface has the STOP condition";
+            sw = r;
+            hw = w;
+            encode = I2C_INTR_STAT_stop_det_enum;
+            reset = 0x0;
+        } stop_det[9:9];
+
+        enum I2C_INTR_STAT_activity_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "activity";
+            desc = "Activity interrupt status. The I2C activity status is recorded until the interrupt is cleared.";
+            sw = r;
+            hw = w;
+            encode = I2C_INTR_STAT_activity_enum;
+            reset = 0x0;
+        } activity[8:8];
+
+        enum I2C_INTR_STAT_tx_abrt_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "tx_abrt";
+            desc = "TX abort interrupt status";
+            sw = r;
+            hw = w;
+            encode = I2C_INTR_STAT_tx_abrt_enum;
+            reset = 0x0;
+        } tx_abrt[6:6];
+
+        enum I2C_INTR_STAT_tx_empty_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "tx_empty";
+            desc = "Status of the interrupt indicating that TX_FIFO reaches or is below the threshold";
+            sw = r;
+            hw = w;
+            encode = I2C_INTR_STAT_tx_empty_enum;
+            reset = 0x0;
+        } tx_empty[4:4];
+
+        enum I2C_INTR_STAT_tx_over_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "tx_over";
+            desc = "TX_FIFO overflow interrupt status";
+            sw = r;
+            hw = w;
+            encode = I2C_INTR_STAT_tx_over_enum;
+            reset = 0x0;
+        } tx_over[3:3];
+
+        enum I2C_INTR_STAT_rx_full_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "rx_full";
+            desc = "Status of the interrupt indicating that RX_FIFO reaches or is above the threshold";
+            sw = r;
+            hw = w;
+            encode = I2C_INTR_STAT_rx_full_enum;
+            reset = 0x0;
+        } rx_full[2:2];
+
+        enum I2C_INTR_STAT_rx_over_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "rx_over";
+            desc = "RX_FIFO overflow interrupt status";
+            sw = r;
+            hw = w;
+            encode = I2C_INTR_STAT_rx_over_enum;
+            reset = 0x0;
+        } rx_over[1:1];
+
+        enum I2C_INTR_STAT_rx_under_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "rx_under";
+            desc = "Read data overflow (that is, the CPU reads the FIFO when RX_FIFO is empty) interrupt status";
+            sw = r;
+            hw = w;
+            encode = I2C_INTR_STAT_rx_under_enum;
+            reset = 0x0;
+        } rx_under[0:0];
+    } I2C_INTR_STAT @ 0x2C;
+
+    reg {
+        name = "I2C interrupt mask register";
+        desc = "I2C_INTR_MASK is an I2C interrupt mask register.
+
+Polarity as printed in the data sheet (1 = masked). A Synopsys DesignWare IC_INTR_MASK has the opposite polarity (1 = not masked); the data sheet text was kept because no hardware access or vendor driver is available; check on hardware.
+
+Data sheet 12.1.5 I2C_INTR_MASK (offset 0x30, printed page 12-10, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 78087).";
+
+        enum I2C_INTR_MASK_gen_call_mask_enum {
+            NOT_MASKED = 0 { name = "Not Masked"; desc = "not masked"; };
+            MASKED = 1 { name = "Masked"; desc = "masked"; };
+        };
+
+        field {
+            name = "gen_call_mask";
+            desc = "Interrupt mask when a general call request is received";
+            sw = rw;
+            hw = r;
+            encode = I2C_INTR_MASK_gen_call_mask_enum;
+            reset = 0x0;
+        } gen_call_mask[11:11];
+
+        enum I2C_INTR_MASK_start_det_mask_enum {
+            NOT_MASKED = 0 { name = "Not Masked"; desc = "not masked"; };
+            MASKED = 1 { name = "Masked"; desc = "masked"; };
+        };
+
+        field {
+            name = "start_det_mask";
+            desc = "Start detect interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = I2C_INTR_MASK_start_det_mask_enum;
+            reset = 0x0;
+        } start_det_mask[10:10];
+
+        enum I2C_INTR_MASK_stop_det_enum {
+            NOT_MASKED = 0 { name = "Not Masked"; desc = "not masked"; };
+            MASKED = 1 { name = "Masked"; desc = "masked"; };
+        };
+
+        field {
+            name = "stop_det";
+            desc = "Stop detect interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = I2C_INTR_MASK_stop_det_enum;
+            reset = 0x0;
+        } stop_det[9:9];
+
+        enum I2C_INTR_MASK_activity_enum {
+            NOT_MASKED = 0 { name = "Not Masked"; desc = "not masked"; };
+            MASKED = 1 { name = "Masked"; desc = "masked"; };
+        };
+
+        field {
+            name = "activity";
+            desc = "Activity interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = I2C_INTR_MASK_activity_enum;
+            reset = 0x0;
+        } activity[8:8];
+
+        enum I2C_INTR_MASK_tx_abrt_enum {
+            NOT_MASKED = 0 { name = "Not Masked"; desc = "not masked"; };
+            MASKED = 1 { name = "Masked"; desc = "masked"; };
+        };
+
+        field {
+            name = "tx_abrt";
+            desc = "TX abort interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = I2C_INTR_MASK_tx_abrt_enum;
+            reset = 0x0;
+        } tx_abrt[6:6];
+
+        enum I2C_INTR_MASK_tx_empty_enum {
+            NOT_MASKED = 0 { name = "Not Masked"; desc = "not masked"; };
+            MASKED = 1 { name = "Masked"; desc = "masked"; };
+        };
+
+        field {
+            name = "tx_empty";
+            desc = "Interrupt mask when TX_FIFO reaches or is below the threshold";
+            sw = rw;
+            hw = r;
+            encode = I2C_INTR_MASK_tx_empty_enum;
+            reset = 0x0;
+        } tx_empty[4:4];
+
+        enum I2C_INTR_MASK_tx_over_enum {
+            NOT_MASKED = 0 { name = "Not Masked"; desc = "not masked"; };
+            MASKED = 1 { name = "Masked"; desc = "masked"; };
+        };
+
+        field {
+            name = "tx_over";
+            desc = "TX_FIFO overflow interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = I2C_INTR_MASK_tx_over_enum;
+            reset = 0x0;
+        } tx_over[3:3];
+
+        enum I2C_INTR_MASK_rx_full_enum {
+            NOT_MASKED = 0 { name = "Not Masked"; desc = "not masked"; };
+            MASKED = 1 { name = "Masked"; desc = "masked"; };
+        };
+
+        field {
+            name = "rx_full";
+            desc = "Interrupt mask when RX_FIFO reaches or is below the threshold";
+            sw = rw;
+            hw = r;
+            encode = I2C_INTR_MASK_rx_full_enum;
+            reset = 0x0;
+        } rx_full[2:2];
+
+        enum I2C_INTR_MASK_rx_over_enum {
+            NOT_MASKED = 0 { name = "Not Masked"; desc = "not masked"; };
+            MASKED = 1 { name = "Masked"; desc = "masked"; };
+        };
+
+        field {
+            name = "rx_over";
+            desc = "RX_FIFO overflow interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = I2C_INTR_MASK_rx_over_enum;
+            reset = 0x0;
+        } rx_over[1:1];
+
+        enum I2C_INTR_MASK_rx_under_enum {
+            NOT_MASKED = 0 { name = "Not Masked"; desc = "not masked"; };
+            MASKED = 1 { name = "Masked"; desc = "masked"; };
+        };
+
+        field {
+            name = "rx_under";
+            desc = "Interrupt mask when read data overflows (The CPU reads the FIFO when RX_FIFO is empty.)";
+            sw = rw;
+            hw = r;
+            encode = I2C_INTR_MASK_rx_under_enum;
+            reset = 0x0;
+        } rx_under[0:0];
+    } I2C_INTR_MASK @ 0x30;
+
+    reg {
+        name = "I2C raw interrupt status register";
+        desc = "I2C_INTR_RAW is an I2C raw interrupt status register.
+
+Data sheet 12.1.5 I2C_INTR_RAW (offset 0x34, printed page 12-11, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 78157).";
+
+        enum I2C_INTR_RAW_gen_call_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            SLAVE_RECEIVES_GENERAL = 1 { name = "Slave Receives General"; desc = "The slave receives the general call."; };
+        };
+
+        field {
+            name = "gen_call";
+            desc = "Interrupt status when a general call request is received";
+            sw = r;
+            hw = w;
+            encode = I2C_INTR_RAW_gen_call_enum;
+            reset = 0x0;
+        } gen_call[11:11];
+
+        enum I2C_INTR_RAW_start_det_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            START_RESTART_CONDITION = 1 { name = "Start Restart Condition"; desc = "The START or RESTART condition is detected."; };
+        };
+
+        field {
+            name = "start_det";
+            desc = "Start detect interrupt status, indicating whether the I2C bus interface has the START or RESTART condition";
+            sw = r;
+            hw = w;
+            encode = I2C_INTR_RAW_start_det_enum;
+            reset = 0x0;
+        } start_det[10:10];
+
+        enum I2C_INTR_RAW_stop_det_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            STOP_CONDITION_DETECTED = 1 { name = "Stop Condition Detected"; desc = "The STOP condition is detected."; };
+        };
+
+        field {
+            name = "stop_det";
+            desc = "Stop detect interrupt status, indicating whether the I2C bus interface has the STOP condition";
+            sw = r;
+            hw = w;
+            encode = I2C_INTR_RAW_stop_det_enum;
+            reset = 0x0;
+        } stop_det[9:9];
+
+        enum I2C_INTR_RAW_activity_enum {
+            IDLE = 0 { name = "Idle"; desc = "idle"; };
+            BUSY = 1 { name = "Busy"; desc = "busy"; };
+        };
+
+        field {
+            name = "activity";
+            desc = "Activity interrupt status. The I2C activity status is recorded until the interrupt is cleared.";
+            sw = r;
+            hw = w;
+            encode = I2C_INTR_RAW_activity_enum;
+            reset = 0x0;
+        } activity[8:8];
+
+        enum I2C_INTR_RAW_tx_abrt_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "tx_abrt";
+            desc = "TX abort interrupt status";
+            sw = r;
+            hw = w;
+            encode = I2C_INTR_RAW_tx_abrt_enum;
+            reset = 0x0;
+        } tx_abrt[6:6];
+
+        enum I2C_INTR_RAW_tx_empty_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "tx_empty";
+            desc = "Interrupt status when TX_FIFO reaches or is below the threshold";
+            sw = r;
+            hw = w;
+            encode = I2C_INTR_RAW_tx_empty_enum;
+            reset = 0x0;
+        } tx_empty[4:4];
+
+        enum I2C_INTR_RAW_tx_over_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "tx_over";
+            desc = "TX_FIFO overflow interrupt status";
+            sw = r;
+            hw = w;
+            encode = I2C_INTR_RAW_tx_over_enum;
+            reset = 0x0;
+        } tx_over[3:3];
+
+        enum I2C_INTR_RAW_rx_full_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "rx_full";
+            desc = "Interrupt status when RX_FIFO reaches or is below the threshold";
+            sw = r;
+            hw = w;
+            encode = I2C_INTR_RAW_rx_full_enum;
+            reset = 0x0;
+        } rx_full[2:2];
+
+        enum I2C_INTR_RAW_rx_over_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "rx_over";
+            desc = "RX_FIFO overflow interrupt status";
+            sw = r;
+            hw = w;
+            encode = I2C_INTR_RAW_rx_over_enum;
+            reset = 0x0;
+        } rx_over[1:1];
+
+        enum I2C_INTR_RAW_rx_under_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "rx_under";
+            desc = "Interrupt status when read data overflows (The CPU reads the FIFO when RX_FIFO is empty.)";
+            sw = r;
+            hw = w;
+            encode = I2C_INTR_RAW_rx_under_enum;
+            reset = 0x0;
+        } rx_under[0:0];
+    } I2C_INTR_RAW @ 0x34;
+
+    reg {
+        name = "RX_FIFO threshold configuration register";
+        desc = "I2C_RX_TL is an RX_FIFO threshold configuration register.
+
+Data sheet 12.1.5 I2C_RX_TL (offset 0x38, printed page 12-13, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 78273).";
+
+        field {
+            name = "rx_tl";
+            desc = "RX_FIFO threshold. Valid values: 0-15. The actual threshold is the configured value plus 1. An rx_full interrupt is triggered when the number of data items in RX_FIFO is greater than or equal to the threshold. The upper threshold is the RX_FIFO depth if the configured value is greater than the RX_FIFO depth.";
+            sw = rw;
+            hw = r;
+            reset = 0x3;
+        } rx_tl[3:0];
+    } I2C_RX_TL @ 0x38;
+
+    reg {
+        name = "TX_FIFO threshold configuration register";
+        desc = "I2C_TX_TL is a TX_FIFO threshold configuration register.
+
+Data sheet 12.1.5 I2C_TX_TL (offset 0x3C, printed page 12-14, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 78305).";
+
+        field {
+            name = "tx_tl";
+            desc = "TX_FIFO threshold. Valid values: 0-15. The actual threshold is equal to the configured value. A tx_empty interrupt is triggered when the amount of data in TX_FIFO is less than or equal to the threshold. The upper threshold is the TX_FIFO depth if the configured value is greater than the TX_FIFO depth.";
+            sw = rw;
+            hw = r;
+            reset = 0x4;
+        } tx_tl[3:0];
+    } I2C_TX_TL @ 0x3C;
+
+    reg {
+        name = "I2C interrupt clear register";
+        desc = "I2C_CLR_INTR is an I2C interrupt clear register.
+
+Data sheet 12.1.5 I2C_CLR_INTR (offset 0x40, printed page 12-14, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 78331).";
+
+        field {
+            name = "clr_intr";
+            desc = "Combined interrupts, all independent interrupts, and the I2C_TX_ABRT_SRC register are cleared when 1 is written to this bit.";
+            sw = w;
+            hw = r;
+            reset = 0x0;
+        } clr_intr[0:0];
+    } I2C_CLR_INTR @ 0x40;
+
+    reg {
+        name = "I2C enable register";
+        desc = "I2C_ENABLE is an I2C enable register.
+
+Data sheet 12.1.5 I2C_ENABLE (offset 0x6C, printed page 12-15, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 78365).";
+
+        enum I2C_ENABLE_enable_f_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "enable";
+            desc = "I2C enable";
+            sw = rw;
+            hw = r;
+            encode = I2C_ENABLE_enable_f_enum;
+            reset = 0x0;
+        } enable_f[0:0];
+    } I2C_ENABLE @ 0x6C;
+
+    reg {
+        name = "I2C status register";
+        desc = "I2C_STATUS is an I2C status register.
+
+Data sheet 12.1.5 I2C_STATUS (offset 0x70, printed page 12-15, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 78389).";
+
+        enum I2C_STATUS_mst_activity_enum {
+            MASTER_ENTERS_IDLE = 0 { name = "Master Enters Idle"; desc = "The master enters the idle state, and the I2C is deactivated."; };
+            MASTER_DOES_NOT = 1 { name = "Master Does Not"; desc = "The master does not enter the idle state, and the I2C is activated."; };
+        };
+
+        field {
+            name = "mst_activity";
+            desc = "I2C master activity status";
+            sw = r;
+            hw = w;
+            encode = I2C_STATUS_mst_activity_enum;
+            reset = 0x0;
+        } mst_activity[5:5];
+
+        enum I2C_STATUS_rx_fifo_full_enum {
+            NOT_FULL = 0 { name = "Not Full"; desc = "not full"; };
+            FULL = 1 { name = "Full"; desc = "full"; };
+        };
+
+        field {
+            name = "rx_fifo_full";
+            desc = "RX_FIFO full flag";
+            sw = r;
+            hw = w;
+            encode = I2C_STATUS_rx_fifo_full_enum;
+            reset = 0x0;
+        } rx_fifo_full[4:4];
+
+        enum I2C_STATUS_rx_fifo_nempty_enum {
+            EMPTY = 0 { name = "Empty"; desc = "empty"; };
+            NON_EMPTY = 1 { name = "Non Empty"; desc = "non-empty"; };
+        };
+
+        field {
+            name = "rx_fifo_nempty";
+            desc = "RX_FIFO non-empty flag";
+            sw = r;
+            hw = w;
+            encode = I2C_STATUS_rx_fifo_nempty_enum;
+            reset = 0x0;
+        } rx_fifo_nempty[3:3];
+
+        enum I2C_STATUS_tx_fifo_nempty_enum {
+            NON_EMPTY = 0 { name = "Non Empty"; desc = "non-empty"; };
+            EMPTY = 1 { name = "Empty"; desc = "empty"; };
+        };
+
+        field {
+            name = "tx_fifo_nempty";
+            desc = "TX_FIFO empty flag";
+            sw = r;
+            hw = w;
+            encode = I2C_STATUS_tx_fifo_nempty_enum;
+            reset = 0x1;
+        } tx_fifo_nempty[2:2];
+
+        enum I2C_STATUS_tx_fifo_full_enum {
+            FULL = 0 { name = "Full"; desc = "full"; };
+            NOT_FULL = 1 { name = "Not Full"; desc = "not full"; };
+        };
+
+        field {
+            name = "tx_fifo_full";
+            desc = "TX_FIFO non-full flag";
+            sw = r;
+            hw = w;
+            encode = I2C_STATUS_tx_fifo_full_enum;
+            reset = 0x1;
+        } tx_fifo_full[1:1];
+
+        enum I2C_STATUS_i2c_activity_enum {
+            IDLE = 0 { name = "Idle"; desc = "idle"; };
+            ACTIVE = 1 { name = "Active"; desc = "active"; };
+        };
+
+        field {
+            name = "i2c_activity";
+            desc = "I2C operating status";
+            sw = r;
+            hw = w;
+            encode = I2C_STATUS_i2c_activity_enum;
+            reset = 0x0;
+        } i2c_activity[0:0];
+    } I2C_STATUS @ 0x70;
+
+    reg {
+        name = "TX_FIFO valid data indicator register";
+        desc = "I2C_TXFLR is a TX_FIFO valid data indicator register.
+
+The data sheet text reads \"cleared when or a tx_abort interrupt is generated\" (a word is missing; the RXFLR text says: cleared when a tx_abort interrupt is generated).
+
+Data sheet 12.1.5 I2C_TXFLR (offset 0x74, printed page 12-16, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 78445).";
+
+        field {
+            name = "tx_flr";
+            desc = "Number of valid data items in TX_FIFO The register is cleared when or a tx_abort interrupt is generated.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } tx_flr[4:0];
+    } I2C_TXFLR @ 0x74;
+
+    reg {
+        name = "RX_FIFO valid data indicator register";
+        desc = "I2C_RXFLR is an RX_FIFO valid data indicator register.
+
+Data sheet 12.1.5 I2C_RXFLR (offset 0x78, printed page 12-17, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 78476).";
+
+        field {
+            name = "rx_flr";
+            desc = "Number of valid data items in RX_FIFO The register is cleared when a tx_abort interrupt is generated.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } rx_flr[4:0];
+    } I2C_RXFLR @ 0x78;
+
+    reg {
+        name = "SDA hold time register";
+        desc = "I2C_SDA_HOLD is an SDA hold time register.
+
+The data sheet text refers to `I2C_SCL_LCNT[i2c_fs_lcnt]`; the field is named i2c_scl_lcnt in I2C_SCL_LCNT.
+
+Data sheet 12.1.5 I2C_SDA_HOLD (offset 0x7C, printed page 12-17, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 78497).";
+
+        field {
+            name = "sda_hold_fs";
+            desc = "SDA hold time. The timing unit is I2C working reference clock. It is recommended that sda_hold_fs be set to I2C_SCL_LCNT[i2c_fs_lcnt]/2.";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } sda_hold_fs[15:0];
+    } I2C_SDA_HOLD @ 0x7C;
+
+    reg {
+        name = "I2C TX failure interrupt source register";
+        desc = "I2C_TX_ABRT_SRC is an I2C TX failure interrupt source register.
+
+Data sheet 12.1.5 I2C_TX_ABRT_SRC (offset 0x80, printed page 12-18, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 78535).";
+
+        enum I2C_TX_ABRT_SRC_arb_lost_enum {
+            NO_ERROR_OCCURS = 0 { name = "No Error Occurs"; desc = "No error occurs."; };
+            ERROR_OCCURS = 1 { name = "Error Occurs"; desc = "An error occurs."; };
+        };
+
+        field {
+            name = "arb_lost";
+            desc = "Whether an error occurs after the master loses the bus control permission";
+            sw = r;
+            hw = w;
+            encode = I2C_TX_ABRT_SRC_arb_lost_enum;
+            reset = 0x0;
+        } arb_lost[12:12];
+
+        enum I2C_TX_ABRT_SRC_abrt_10b_rd_norstrt_enum {
+            NO_ERROR_OCCURS = 0 { name = "No Error Occurs"; desc = "No error occurs."; };
+            ERROR_OCCURS = 1 { name = "Error Occurs"; desc = "An error occurs."; };
+        };
+
+        field {
+            name = "abrt_10b_rd_norstrt";
+            desc = "Whether an error occurs after the restart is disabled (I2C_CON[restart_en] set to 0) and the master attempts to initiate a read operation in 10-bit mode";
+            sw = r;
+            hw = w;
+            encode = I2C_TX_ABRT_SRC_abrt_10b_rd_norstrt_enum;
+            reset = 0x0;
+        } abrt_10b_rd_norstrt[10:10];
+
+        enum I2C_TX_ABRT_SRC_abrt_sbyte_norstrt_enum {
+            NO_ERROR_OCCURS = 0 { name = "No Error Occurs"; desc = "No error occurs."; };
+            ERROR_OCCURS = 1 { name = "Error Occurs"; desc = "An error occurs."; };
+        };
+
+        field {
+            name = "abrt_sbyte_norstrt";
+            desc = "Whether an error occurs after the restart is disabled (I2C_CON[restart_en] set to 0) and a user attempts to initiate a start operation";
+            sw = r;
+            hw = w;
+            encode = I2C_TX_ABRT_SRC_abrt_sbyte_norstrt_enum;
+            reset = 0x0;
+        } abrt_sbyte_norstrt[9:9];
+
+        enum I2C_TX_ABRT_SRC_abrt_sbyte_ackdet_enum {
+            NO_ERROR_OCCURS = 0 { name = "No Error Occurs"; desc = "No error occurs."; };
+            ERROR_OCCURS = 1 { name = "Error Occurs"; desc = "An error occurs. (The slave does not need to respond to the start command.)"; };
+        };
+
+        field {
+            name = "abrt_sbyte_ackdet";
+            desc = "Whether an error occurs when the master sends a start command and receives a response";
+            sw = r;
+            hw = w;
+            encode = I2C_TX_ABRT_SRC_abrt_sbyte_ackdet_enum;
+            reset = 0x0;
+        } abrt_sbyte_ackdet[7:7];
+
+        enum I2C_TX_ABRT_SRC_abrt_gcall_read_enum {
+            TX_ABORT_TRIGGERED = 0 { name = "Tx Abort Triggered"; desc = "tx_abort is triggered due to a reason not defined by the bit."; };
+            MASTER_SENDS_COMMON = 1 { name = "Master Sends Common"; desc = "The master sends a common request, but the user initiates a read operation after the request."; };
+        };
+
+        field {
+            name = "abrt_gcall_read";
+            desc = "tx_abort generation cause";
+            sw = r;
+            hw = w;
+            encode = I2C_TX_ABRT_SRC_abrt_gcall_read_enum;
+            reset = 0x0;
+        } abrt_gcall_read[5:5];
+
+        enum I2C_TX_ABRT_SRC_abrt_gcall_noack_enum {
+            TX_ABORT_TRIGGERED = 0 { name = "Tx Abort Triggered"; desc = "tx_abort is triggered due to a reason not defined by the bit."; };
+            MASTER_SENDS_COMMON = 1 { name = "Master Sends Common"; desc = "The master sends a common request but does not receive a response from the slave over the bus."; };
+        };
+
+        field {
+            name = "abrt_gcall_noack";
+            desc = "tx_abort generation cause";
+            sw = r;
+            hw = w;
+            encode = I2C_TX_ABRT_SRC_abrt_gcall_noack_enum;
+            reset = 0x0;
+        } abrt_gcall_noack[4:4];
+
+        enum I2C_TX_ABRT_SRC_abrt_txdata_noack_enum {
+            TX_ABORT_TRIGGERED = 0 { name = "Tx Abort Triggered"; desc = "tx_abort is triggered due to a reason not defined by the bit."; };
+            AFTER_MASTER_SENDS = 1 { name = "After Master Sends"; desc = "After the master sends an address and receives a response from the slave, the master sends data to the slave but does not receive any response."; };
+        };
+
+        field {
+            name = "abrt_txdata_noack";
+            desc = "tx_abort generation cause";
+            sw = r;
+            hw = w;
+            encode = I2C_TX_ABRT_SRC_abrt_txdata_noack_enum;
+            reset = 0x0;
+        } abrt_txdata_noack[3:3];
+
+        enum I2C_TX_ABRT_SRC_abrt_10addr2_noack_enum {
+            TX_ABORT_TRIGGERED = 0 { name = "Tx Abort Triggered"; desc = "tx_abort is triggered due to a reason not defined by the bit."; };
+            MASTER_SENDS_ADDRESS = 1 { name = "Master Sends Address"; desc = "The master sends address bit[10:8] the second time but does not receive any response from the slave when the master operates in 10-bit mode."; };
+        };
+
+        field {
+            name = "abrt_10addr2_noack";
+            desc = "tx_abort generation cause";
+            sw = r;
+            hw = w;
+            encode = I2C_TX_ABRT_SRC_abrt_10addr2_noack_enum;
+            reset = 0x0;
+        } abrt_10addr2_noack[2:2];
+
+        enum I2C_TX_ABRT_SRC_abrt_10addr1_noack_enum {
+            TX_ABORT_TRIGGERED = 0 { name = "Tx Abort Triggered"; desc = "tx_abort is triggered due to a reason not defined by the bit."; };
+            MASTER_SENDS_ADDRESS = 1 { name = "Master Sends Address"; desc = "The master sends address bit[7:0] the first time but does not receive any response from the slave when the master operates in 10-bit mode."; };
+        };
+
+        field {
+            name = "abrt_10addr1_noack";
+            desc = "tx_abort generation cause";
+            sw = r;
+            hw = w;
+            encode = I2C_TX_ABRT_SRC_abrt_10addr1_noack_enum;
+            reset = 0x0;
+        } abrt_10addr1_noack[1:1];
+
+        enum I2C_TX_ABRT_SRC_abrt_7b_addr_noack_enum {
+            TX_ABORT_TRIGGERED = 0 { name = "Tx Abort Triggered"; desc = "tx_abort is triggered due to a reason not defined by the bit."; };
+            MASTER_SENDS_ADDRESS = 1 { name = "Master Sends Address"; desc = "The master sends an address but does not receive the response from any slave on the bus when the master operates in 7-bit mode."; };
+        };
+
+        field {
+            name = "abrt_7b_addr_noack";
+            desc = "tx_abort generation cause";
+            sw = r;
+            hw = w;
+            encode = I2C_TX_ABRT_SRC_abrt_7b_addr_noack_enum;
+            reset = 0x0;
+        } abrt_7b_addr_noack[0:0];
+    } I2C_TX_ABRT_SRC @ 0x80;
+
+    reg {
+        name = "I2C DMA interface control register";
+        desc = "I2C_DMA_CR is an I2C DMA interface control register.
+
+The data sheet names bit 1 `rdmae` but describes it as the TX FIFO DMA enable, and names bit 0 `tdmae` but describes it as the RX FIFO DMA enable: names and descriptions disagree (a DesignWare IC_DMA_CR has RDMAE at bit 0 and TDMAE at bit 1). Names kept as printed; the descriptions are the data sheet's.
+
+Data sheet 12.1.5 I2C_DMA_CR (offset 0x88, printed page 12-20, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 78634).";
+
+        enum I2C_DMA_CR_rdmae_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "rdmae";
+            desc = "DMA enable for the TX FIFO";
+            sw = rw;
+            hw = r;
+            encode = I2C_DMA_CR_rdmae_enum;
+            reset = 0x0;
+        } rdmae[1:1];
+
+        enum I2C_DMA_CR_tdmae_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "tdmae";
+            desc = "DMA enable for the RX FIFO";
+            sw = rw;
+            hw = r;
+            encode = I2C_DMA_CR_tdmae_enum;
+            reset = 0x0;
+        } tdmae[0:0];
+    } I2C_DMA_CR @ 0x88;
+
+    reg {
+        name = "TX_FIFO DMA operation threshold register";
+        desc = "I2C_DMA_TDLR is a TX_FIFO DMA operation threshold register.
+
+Data sheet 12.1.5 I2C_DMA_TDLR (offset 0x8C, printed page 12-20, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 78660).";
+
+        field {
+            name = "dma_txtl";
+            desc = "TX FIFO DMA threshold. When the number of data items of the TX FIFO is less than or equal to this value, a DMA operation request is sent. The DMA moves data to the TX FIFO.";
+            sw = rw;
+            hw = r;
+            reset = 0x4;
+        } dma_txtl[3:0];
+    } I2C_DMA_TDLR @ 0x8C;
+
+    reg {
+        name = "RX_FIFO DMA operation threshold register";
+        desc = "I2C_DMA_RDLR is an RX_FIFO DMA operation threshold register.
+
+The data sheet description says `TX FIFO` where RX FIFO is meant (it is the RX threshold register).
+
+Data sheet 12.1.5 I2C_DMA_RDLR (offset 0x90, printed page 12-21, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 78687).";
+
+        field {
+            name = "dma_rxtl";
+            desc = "RX FIFO DMA threshold. When the number of data items of the TX FIFO is greater than or equal to this value, a DMA operation request is sent. The DMA moves data of the RX FIFO to the specified destination. The actual value is equal to the configured value plus 1.";
+            sw = rw;
+            hw = r;
+            reset = 0x4;
+        } dma_rxtl[3:0];
+    } I2C_DMA_RDLR @ 0x90;
+
+    reg {
+        name = "I2C anti-suspend enable register";
+        desc = "I2C_SCL_SWITCH is an I2C anti-suspend enable register.
+
+Data sheet 12.1.5 I2C_SCL_SWITCH (offset 0xA0, printed page 12-21, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 78711).";
+
+        enum I2C_SCL_SWITCH_scl_switch_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "scl_switch";
+            desc = "Master simulate SCL signal enable";
+            sw = rw;
+            hw = r;
+            encode = I2C_SCL_SWITCH_scl_switch_enum;
+            reset = 0x0;
+        } scl_switch[0:0];
+    } I2C_SCL_SWITCH @ 0xA0;
+
+    reg {
+        name = "I2C anti-suspend analog register";
+        desc = "I2C_SCL_SIM is an I2C anti-suspend analog register.
+
+Data sheet 12.1.5 I2C_SCL_SIM (offset 0xA4, printed page 12-22, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 78749).";
+
+        enum I2C_SCL_SIM_scl_sim_enum {
+            OUTPUT_SCL_0 = 0 { name = "Output Scl 0"; desc = "The output SCL is 0."; };
+            OUTPUT_SCL_1 = 1 { name = "Output Scl 1"; desc = "The output SCL is 1."; };
+        };
+
+        field {
+            name = "scl_sim";
+            desc = "SCL enable signals simulated by the master";
+            sw = rw;
+            hw = r;
+            encode = I2C_SCL_SIM_scl_sim_enum;
+            reset = 0x1;
+        } scl_sim[0:0];
+    } I2C_SCL_SIM @ 0xA4;
+
+    reg {
+        name = "I2C lock register";
+        desc = "I2C_LOCK is an I2C lock register.
+
+**Reset value 1 = locked.** Write 0x1ACCE551 to unlock (the vendor flow chart, data sheet Figure 12-2, starts with this write); after unlocking all other registers can be written. Reading returns the lock state (0 = unlocked), not the written value.
+
+Data sheet 12.1.5 I2C_LOCK (offset 0xAC, printed page 12-22, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 78774).";
+
+        enum I2C_LOCK_i2c_lock_enum {
+            REGISTER_UNLOCKED_ALL = 0 { name = "Register Unlocked All"; desc = "The register is unlocked, and all registers can be configured."; };
+            REGISTER_LOCKED_ONLY = 1 { name = "Register Locked Only"; desc = "The register is locked, and only this register can be configured."; };
+        };
+
+        field {
+            name = "i2c_lock";
+            desc = "I2C lock register. To unlock the register, write 1ACCE551 to the register. To lock the register, write other values. When this register is read:";
+            sw = rw;
+            hw = r;
+            encode = I2C_LOCK_i2c_lock_enum;
+            reset = 0x1;
+        } i2c_lock[0:0];
+    } I2C_LOCK @ 0xAC;
+
+    reg {
+        name = "I2C_MST_SINGLE_CTRL register";
+        desc = "I2C_MST_SINGLE_CTRL is an I2C_MST_SINGLE_CTRL register.
+
+The data sheet bit table gives garbled/duplicated names for bits 27:24; the names used here are those of the bit-diagram row (`*_clr`).
+
+Data sheet 12.1.5 I2C_MST_SINGLE_CTRL (offset 0xB0, printed page 12-23, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 78810).";
+
+        enum I2C_MST_SINGLE_CTRL_single_model_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "single_model_en";
+            desc = "I2C master single operation enable control";
+            sw = rw;
+            hw = r;
+            encode = I2C_MST_SINGLE_CTRL_single_model_en_enum;
+            reset = 0x0;
+        } single_model_en[31:31];
+
+        enum I2C_MST_SINGLE_CTRL_single_model_enum {
+            WRITE = 0 { name = "Write"; desc = "write"; };
+            READ = 1 { name = "Read"; desc = "read"; };
+        };
+
+        field {
+            name = "single_model";
+            desc = "I2C master single operation mode control";
+            sw = rw;
+            hw = r;
+            encode = I2C_MST_SINGLE_CTRL_single_model_enum;
+            reset = 0x0;
+        } single_model[30:30];
+
+        enum I2C_MST_SINGLE_CTRL_single_addr_model_enum {
+            SLAVE_REGISTER_HAS = 0 { name = "Slave Register Has"; desc = "The slave register has an 8-bit address width."; };
+            SLAVE_REGISTER_HAS_2 = 1 { name = "Slave Register Has 2"; desc = "The slave register has a 16-bit address width."; };
+        };
+
+        field {
+            name = "single_addr_model";
+            desc = "I2C master single operation address mode control";
+            sw = rw;
+            hw = r;
+            encode = I2C_MST_SINGLE_CTRL_single_addr_model_enum;
+            reset = 0x0;
+        } single_addr_model[29:29];
+
+        enum I2C_MST_SINGLE_CTRL_single_data_model_enum {
+            SLAVE_REGISTER_HAS = 0 { name = "Slave Register Has"; desc = "The slave register has an 8-bit data width."; };
+            SLAVE_REGISTER_HAS_2 = 1 { name = "Slave Register Has 2"; desc = "The slave register has a 16-bit data width."; };
+        };
+
+        field {
+            name = "single_data_model";
+            desc = "I2C master single operation data mode control";
+            sw = rw;
+            hw = r;
+            encode = I2C_MST_SINGLE_CTRL_single_data_model_enum;
+            reset = 0x0;
+        } single_data_model[28:28];
+
+        field {
+            name = "single_mst_tx_abrt_clr";
+            desc = "Transmission failure indicator clear in single-operation mode";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            reset = 0x0;
+        } single_mst_tx_abrt_clr[27:27];
+
+        field {
+            name = "single_tx_cmd_fifo_over_clr";
+            desc = "SINGLE_TX_FIFO overflow indicator clear";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            reset = 0x0;
+        } single_tx_cmd_fifo_over_clr[26:26];
+
+        field {
+            name = "single_rx_cmd_fifo_under_clr";
+            desc = "SINGLE_RX_FIFO read data overflow indicator clear";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            reset = 0x0;
+        } single_rx_cmd_fifo_under_clr[25:25];
+
+        field {
+            name = "single_rx_cmd_fifo_over_clr";
+            desc = "SINGLE_RX_FIFO overflow indicator clear";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            reset = 0x0;
+        } single_rx_cmd_fifo_over_clr[24:24];
+
+        enum I2C_MST_SINGLE_CTRL_single_mst_tx_abrt_enum {
+            NO_TRANSMISSION_FAILURE = 0 { name = "No Transmission Failure"; desc = "No transmission failure occurs."; };
+            TRANSMISSION_FAILURE_OCCURS = 1 { name = "Transmission Failure Occurs"; desc = "A transmission failure occurs."; };
+        };
+
+        field {
+            name = "single_mst_tx_abrt";
+            desc = "Transmission failure indicator in single-operation mode";
+            sw = r;
+            hw = w;
+            encode = I2C_MST_SINGLE_CTRL_single_mst_tx_abrt_enum;
+            reset = 0x0;
+        } single_mst_tx_abrt[23:23];
+
+        enum I2C_MST_SINGLE_CTRL_single_tx_cmd_fifo_over_enum {
+            DATA_SINGLE_TX = 0 { name = "Data Single Tx"; desc = "Data in SINGLE_TX_FIFO does not overflow."; };
+            DATA_SINGLE_TX_2 = 1 { name = "Data Single Tx 2"; desc = "Data in SINGLE_TX_FIFO overflows."; };
+        };
+
+        field {
+            name = "single_tx_cmd_fifo_over";
+            desc = "SINGLE_TX_FIFO overflow indicator";
+            sw = r;
+            hw = w;
+            encode = I2C_MST_SINGLE_CTRL_single_tx_cmd_fifo_over_enum;
+            reset = 0x0;
+        } single_tx_cmd_fifo_over[22:22];
+
+        enum I2C_MST_SINGLE_CTRL_single_tx_cmd_fifo_not_full_enum {
+            SINGLE_TX_FIFO = 0 { name = "Single Tx Fifo"; desc = "SINGLE_TX_FIFO is full. The FIFO has at least 16 data items."; };
+            SINGLE_TX_FIFO_2 = 1 { name = "Single Tx Fifo 2"; desc = "SINGLE_TX_FIFO is not full. The FIFO has less than 16 data items."; };
+        };
+
+        field {
+            name = "single_tx_cmd_fifo_not_full";
+            desc = "SINGLE_TX_FIFO non-full indicator";
+            sw = r;
+            hw = w;
+            encode = I2C_MST_SINGLE_CTRL_single_tx_cmd_fifo_not_full_enum;
+            reset = 0x1;
+        } single_tx_cmd_fifo_not_full[21:21];
+
+        enum I2C_MST_SINGLE_CTRL_single_tx_cmd_fifo_empty_enum {
+            THERE_DATA_FIFO = 0 { name = "There Data Fifo"; desc = "There is data in the FIFO."; };
+            THERE_NO_DATA = 1 { name = "There No Data"; desc = "There is no data in the FIFO."; };
+        };
+
+        field {
+            name = "single_tx_cmd_fifo_empty";
+            desc = "SINGLE_TX_FIFO empty indicator";
+            sw = r;
+            hw = w;
+            encode = I2C_MST_SINGLE_CTRL_single_tx_cmd_fifo_empty_enum;
+            reset = 0x1;
+        } single_tx_cmd_fifo_empty[20:20];
+
+        field {
+            name = "single_tx_cmd_fifo_cnt";
+            desc = "Number of valid data items in SINGLE_TX_FIFO This register is cleared when the I2C master single operation is disabled (I2C_MST_SINGLE_CTRL bit[31] set to 0).";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } single_tx_cmd_fifo_cnt[16:12];
+
+        enum I2C_MST_SINGLE_CTRL_single_rx_cmd_fifo_under_enum {
+            NO_READ_DATA = 0 { name = "No Read Data"; desc = "No read data overflows."; };
+            READ_DATA_OVERFLOWS = 1 { name = "Read Data Overflows"; desc = "Read data overflows."; };
+        };
+
+        field {
+            name = "single_rx_cmd_fifo_under";
+            desc = "Overflow status when read data overflows (The CPU reads the FIFO when SINGLE_RX_FIFO is empty.)";
+            sw = r;
+            hw = w;
+            encode = I2C_MST_SINGLE_CTRL_single_rx_cmd_fifo_under_enum;
+            reset = 0x0;
+        } single_rx_cmd_fifo_under[11:11];
+
+        enum I2C_MST_SINGLE_CTRL_single_rx_cmd_fifo_over_enum {
+            DATA_SINGLE_RX = 0 { name = "Data Single Rx"; desc = "Data in SINGLE_RX_FIFO does not overflow."; };
+            DATA_SINGLE_RX_2 = 1 { name = "Data Single Rx 2"; desc = "Data in SINGLE_RX_FIFO overflows."; };
+        };
+
+        field {
+            name = "single_rx_cmd_fifo_over";
+            desc = "SINGLE_RX_FIFO overflow status";
+            sw = r;
+            hw = w;
+            encode = I2C_MST_SINGLE_CTRL_single_rx_cmd_fifo_over_enum;
+            reset = 0x0;
+        } single_rx_cmd_fifo_over[10:10];
+
+        enum I2C_MST_SINGLE_CTRL_single_rx_cmd_fifo_full_enum {
+            SINGLE_RX_FIFO = 0 { name = "Single Rx Fifo"; desc = "SINGLE_RX_FIFO is not full. The FIFO has less than 16 data items."; };
+            SINGLE_RX_FIFO_2 = 1 { name = "Single Rx Fifo 2"; desc = "SINGLE_RX_FIFO is full. The FIFO has at least 16 data items."; };
+        };
+
+        field {
+            name = "single_rx_cmd_fifo_full";
+            desc = "SINGLE_RX_FIFO full indicator";
+            sw = r;
+            hw = w;
+            encode = I2C_MST_SINGLE_CTRL_single_rx_cmd_fifo_full_enum;
+            reset = 0x0;
+        } single_rx_cmd_fifo_full[9:9];
+
+        enum I2C_MST_SINGLE_CTRL_single_rx_cmd_fifo_not_empty_enum {
+            THERE_NO_DATA = 0 { name = "There No Data"; desc = "There is no data in the FIFO."; };
+            THERE_DATA_FIFO = 1 { name = "There Data Fifo"; desc = "There is data in the FIFO."; };
+        };
+
+        field {
+            name = "single_rx_cmd_fifo_not_empty";
+            desc = "SINGLE_RX_FIFO non-empty indicator";
+            sw = r;
+            hw = w;
+            encode = I2C_MST_SINGLE_CTRL_single_rx_cmd_fifo_not_empty_enum;
+            reset = 0x0;
+        } single_rx_cmd_fifo_not_empty[8:8];
+
+        field {
+            name = "single_rx_cmd_fifo_cnt";
+            desc = "Number of valid data items in SINGLE_RX_FIFO This register is cleared when the I2C master single operation is disabled (I2C_MST_SINGLE_CTRL bit[31] set to 0).";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } single_rx_cmd_fifo_cnt[4:0];
+    } I2C_MST_SINGLE_CTRL @ 0xB0;
+
+    reg {
+        name = "I2C_MST_SINGLE_CMD register";
+        desc = "I2C_MST_SINGLE_CMD is an I2C_MST_SINGLE_CMD register.
+
+Data sheet 12.1.5 I2C_MST_SINGLE_CMD (offset 0xB4, printed page 12-25, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 78932).";
+
+        field {
+            name = "single_addr";
+            desc = "Address of the slave register accessed using the I2C master single operation";
+            sw = w;
+            hw = r;
+            reset = 0x0;
+        } single_addr[31:16];
+
+        field {
+            name = "single_data";
+            desc = "Data of the slave register accessed using the I2C master single operation";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } single_data[15:0];
+    } I2C_MST_SINGLE_CMD @ 0xB4;
+
+    reg {
+        name = "I2C_SEQUENCE_CMD0 register";
+        desc = "I2C_SEQUENCE_CMD0 is an I2C_SEQUENCE_CMD0 register.
+
+The data sheet lists bits 27 and 23 as RW reserved (not modelled); bits 26:24 RO reserved.
+
+Data sheet 12.1.5 I2C_SEQUENCE_CMD0 (offset 0xB8, printed page 12-26, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 78971).";
+
+        enum I2C_SEQUENCE_CMD0_sequential_mode_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "sequential_mode_en";
+            desc = "Sequential mode enable (This function must be used together with the DMA.)";
+            sw = rw;
+            hw = r;
+            encode = I2C_SEQUENCE_CMD0_sequential_mode_en_enum;
+            reset = 0x0;
+        } sequential_mode_en[31:31];
+
+        enum I2C_SEQUENCE_CMD0_sequential_rw_enum {
+            READ = 0 { name = "Read"; desc = "read"; };
+            WRITE = 1 { name = "Write"; desc = "write"; };
+        };
+
+        field {
+            name = "sequential_rw";
+            desc = "Operation type in sequential mode";
+            sw = rw;
+            hw = r;
+            encode = I2C_SEQUENCE_CMD0_sequential_rw_enum;
+            reset = 0x0;
+        } sequential_rw[30:30];
+
+        enum I2C_SEQUENCE_CMD0_sequential_addr_mode_enum {
+            V_8_BITS = 0 { name = "V 8 Bits"; desc = "8 bits"; };
+            V_16_BITS = 1 { name = "V 16 Bits"; desc = "16 bits"; };
+            V_24_BITS = 2 { name = "V 24 Bits"; desc = "24 bits"; };
+            V_32_BITS = 3 { name = "V 32 Bits"; desc = "32 bits"; };
+        };
+
+        field {
+            name = "sequential_addr_mode";
+            desc = "Start address type in sequential mode";
+            sw = rw;
+            hw = r;
+            encode = I2C_SEQUENCE_CMD0_sequential_addr_mode_enum;
+            reset = 0x0;
+        } sequential_addr_mode[29:28];
+
+        field {
+            name = "add_cnt_full";
+            desc = "Start address transmission completion indicator, indicating that the DMA can be started";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } add_cnt_full[22:22];
+
+        field {
+            name = "sequential_busy";
+            desc = "Operation busy indicator in sequential mode";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } sequential_busy[21:21];
+
+        field {
+            name = "sequential_finish";
+            desc = "Operation completion indicator in sequential mode";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } sequential_finish[20:20];
+
+        field {
+            name = "sequential_tx_fifo_cnt";
+            desc = "Number of completed operations in sequential mode";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } sequential_tx_fifo_cnt[19:0];
+    } I2C_SEQUENCE_CMD0 @ 0xB8;
+
+    reg {
+        name = "I2C_SEQUENCE_CMD1 register";
+        desc = "I2C_SEQUENCE_CMD1 is an I2C_SEQUENCE_CMD1 register.
+
+Data sheet 12.1.5 I2C_SEQUENCE_CMD1 (offset 0xBC, printed page 12-27, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 79028).";
+
+        field {
+            name = "sequential_addr";
+            desc = "Start address in sequential mode";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } sequential_addr[31:0];
+    } I2C_SEQUENCE_CMD1 @ 0xBC;
+
+    reg {
+        name = "I2C_SEQUENCE_CMD2 register";
+        desc = "I2C_SEQUENCE_CMD2 is an I2C_SEQUENCE_CMD2 register.
+
+Data sheet 12.1.5 I2C_SEQUENCE_CMD2 (offset 0xC0, printed page 12-27, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 79049).";
+
+        field {
+            name = "sequential_length";
+            desc = "Sequential mode length The configured value is the actual value minus 1.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } sequential_length[31:0];
+    } I2C_SEQUENCE_CMD2 @ 0xC0;
+
+};
+
+`endif

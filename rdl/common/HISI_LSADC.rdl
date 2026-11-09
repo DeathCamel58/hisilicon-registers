@@ -1,0 +1,405 @@
+`ifndef HISI_LSADC_RDL
+`define HISI_LSADC_RDL
+
+regfile eHISI_LSADC {
+    name = "HiSilicon LSADC controller (SAR ADC, 4 channels)";
+    desc = "
+    Low-speed SAR ADC controller (`LSADC_CTRL`, data sheet 12.8) of the Hi3518E V20X / Hi3516C V200 at 0x200B0000 (\"SAR_ADC register\" in Table 1-4), four independent channels A-D, 3.3 V,
+    up to 200000 samples per second, used for keypad / key-value scanning. Single-scan mode (one channel per start, interrupt or polling, no deglitch) and continuous-scan mode
+    (channels polled per `ch_*_vld`, scan interval `time_scan` x 0.333 ms, majority-decision deglitch over `glitch_sample`, key press / key change interrupts). The conversion result precision is 6 bits.
+    The interrupt shares VIC line 19 with the IR receiver (\"IR/SAR_ADC\", Table 3-8). The soft reset of the controller is PERI_CRG31 `sar_adc_srst_req` [2] (there is no clock-gate bit in the CRG listing);
+    the ADC macro itself is held in reset by LSADC_CTRL0 `lsadc_reset` (reset value 1).
+
+    All registers are 32 bits; the register names LSADC_CTRL0..8 are the data sheet's (the summary table calls the block LSADC_CRTL, the register descriptions `LSDAC_CTRL`: typos in the data sheet).
+    Source: data sheet 12.8.4/12.8.5 (`hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` lines 90768-91203). No vendor driver for this SoC is in the source trees; data-sheet only, not hardware verified.
+    ";
+
+
+    reg {
+        name = "LSADC_CTRL configuration register";
+        desc = "LSADC_CTRL0 is an LSDAC_CTRL configuration register.
+
+Total reset 0x80FF: `lsadc_reset` = 1 (the converter is held in reset out of reset: clear it before use) and `lsadc_zero` = 0xFF. `lsadc_active_bit` precision values: 8'b11111100 = 6 bit, 8'b11111000 = 5 bit, ... (the data sheet lists only these two and `...`); the conversion result precision is 6 bits (DS 12.8.3).
+
+Data sheet 12.8.5 LSADC_CTRL0 (offset 0x0, printed page 12-247, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 90806).";
+
+        field {
+            name = "lsadc_active_bit";
+            desc = "LSADC conversion result precision. 8'b11111100: 6-bit precision 8'b11111000: 5-bit precision ……";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } lsadc_active_bit[31:24];
+
+        field {
+            name = "lsadc_data_delta";
+            desc = "Error range of the LSADC conversion result. In continuous scanning mode, if the difference between two conversion results falls within the error range, the two results are considered as the same.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } lsadc_data_delta[23:20];
+
+        enum LSADC_CTRL0_deglitch_bypass_enum {
+            ENABLED = 0 { name = "Enabled"; desc = "enabled"; };
+            BYPASSED = 1 { name = "Bypassed"; desc = "bypassed"; };
+        };
+
+        field {
+            name = "deglitch_bypass";
+            desc = "Deglitch bypass (used in continuous scanning mode)";
+            sw = rw;
+            hw = r;
+            encode = LSADC_CTRL0_deglitch_bypass_enum;
+            reset = 0x0;
+        } deglitch_bypass[17:17];
+
+        enum LSADC_CTRL0_lsadc_reset_enum {
+            LSADC_EXITS_RESET = 0 { name = "Lsadc Exits Reset"; desc = "The LSADC exits the reset status."; };
+            LSADC_ENTERS_RESET = 1 { name = "Lsadc Enters Reset"; desc = "The LSADC enters the reset status."; };
+        };
+
+        field {
+            name = "lsadc_reset";
+            desc = "Whether the LSADC enters the reset status";
+            sw = rw;
+            hw = r;
+            encode = LSADC_CTRL0_lsadc_reset_enum;
+            reset = 0x1;
+        } lsadc_reset[15:15];
+
+        enum LSADC_CTRL0_power_down_model_enum {
+            NOT_SUPPORTED = 0 { name = "Not Supported"; desc = "not supported"; };
+            SUPPORTED = 1 { name = "Supported"; desc = "supported"; };
+        };
+
+        field {
+            name = "power_down_model";
+            desc = "Whether power_down is supported";
+            sw = rw;
+            hw = r;
+            encode = LSADC_CTRL0_power_down_model_enum;
+            reset = 0x0;
+        } power_down_model[14:14];
+
+        enum LSADC_CTRL0_model_sel_enum {
+            SINGLE_SCANNING_MODE = 0 { name = "Single Scanning Mode"; desc = "single scanning mode"; };
+            CONTINUOUS_SCANNING_MODE = 1 { name = "Continuous Scanning Mode"; desc = "continuous scanning mode"; };
+        };
+
+        field {
+            name = "model_sel";
+            desc = "Scanning mode of the LSADC_CTRL";
+            sw = rw;
+            hw = r;
+            encode = LSADC_CTRL0_model_sel_enum;
+            reset = 0x0;
+        } model_sel[13:13];
+
+        enum LSADC_CTRL0_ch_d_vld_enum {
+            INVALID = 0 { name = "Invalid"; desc = "invalid"; };
+            VALID = 1 { name = "Valid"; desc = "valid"; };
+        };
+
+        field {
+            name = "ch_d_vld";
+            desc = "LSADC channel D validity";
+            sw = rw;
+            hw = r;
+            encode = LSADC_CTRL0_ch_d_vld_enum;
+            reset = 0x0;
+        } ch_d_vld[11:11];
+
+        enum LSADC_CTRL0_ch_c_vld_enum {
+            INVALID = 0 { name = "Invalid"; desc = "invalid"; };
+            VALID = 1 { name = "Valid"; desc = "valid"; };
+        };
+
+        field {
+            name = "ch_c_vld";
+            desc = "LSADC channel C validity";
+            sw = rw;
+            hw = r;
+            encode = LSADC_CTRL0_ch_c_vld_enum;
+            reset = 0x0;
+        } ch_c_vld[10:10];
+
+        enum LSADC_CTRL0_ch_b_vld_enum {
+            INVALID = 0 { name = "Invalid"; desc = "invalid"; };
+            VALID = 1 { name = "Valid"; desc = "valid"; };
+        };
+
+        field {
+            name = "ch_b_vld";
+            desc = "LSADC channel B validity";
+            sw = rw;
+            hw = r;
+            encode = LSADC_CTRL0_ch_b_vld_enum;
+            reset = 0x0;
+        } ch_b_vld[9:9];
+
+        enum LSADC_CTRL0_ch_a_vld_enum {
+            INVALID = 0 { name = "Invalid"; desc = "invalid"; };
+            VALID = 1 { name = "Valid"; desc = "valid"; };
+        };
+
+        field {
+            name = "ch_a_vld";
+            desc = "LSADC channel A validity";
+            sw = rw;
+            hw = r;
+            encode = LSADC_CTRL0_ch_a_vld_enum;
+            reset = 0x0;
+        } ch_a_vld[8:8];
+
+        field {
+            name = "lsadc_zero";
+            desc = "LSADC value when no key is pressed.";
+            sw = rw;
+            hw = r;
+            reset = 0xFF;
+        } lsadc_zero[7:0];
+    } LSADC_CTRL0 @ 0x0;
+
+    reg {
+        name = "Deglitch configuration register";
+        desc = "LSADC_CTRL1 is a deglitch configuration register
+
+Data sheet 12.8.5 LSADC_CTRL1 (offset 0x4, printed page 12-248, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 90885).";
+
+        field {
+            name = "glitch_sample";
+            desc = "Deglitch time window (in ms typically). When the LSADC conversion result is retained in the deglitch time window, the conversion result is considered as a valid value; otherwise, a glitch is considered. The deglitch time window cannot be 0 in continuous";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } glitch_sample[31:0];
+    } LSADC_CTRL1 @ 0x4;
+
+    reg {
+        name = "Scanning interval configuration register";
+        desc = "LSADC_CTRL2 is a scanning interval configuration register.
+
+Unit 0.333 ms (3 kHz scan clock); the value must be >= 14 so that the interval exceeds the conversion time.
+
+Data sheet 12.8.5 LSADC_CTRL2 (offset 0x8, printed page 12-249, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 90916).";
+
+        field {
+            name = "time_scan";
+            desc = "Interval of scanning two channels in continuous scanning mode (in the unit of 0.333 ms). The interval must be greater than the LSADC conversion time, that is, the configured value must be greater than or equal to 14.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } time_scan[31:0];
+    } LSADC_CTRL2 @ 0x8;
+
+    reg {
+        name = "LSADC data hold register";
+        desc = "LSADC_CTRL3 is an LSADC data hold register.
+
+Data sheet 12.8.5 LSADC_CTRL3 (offset 0xC, printed page 12-249, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 90939).";
+
+        field {
+            name = "lsadc_data_ind";
+            desc = "Scanned value of LSADC channel D.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } lsadc_data_ind[31:24];
+
+        field {
+            name = "lsadc_data_inc";
+            desc = "Scanned value of LSADC channel C.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } lsadc_data_inc[23:16];
+
+        field {
+            name = "lsadc_data_inb";
+            desc = "Scanned value of LSADC channel B.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } lsadc_data_inb[15:8];
+
+        field {
+            name = "lsadc_data_ina";
+            desc = "Scanned value of LSADC channel A.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } lsadc_data_ina[7:0];
+    } LSADC_CTRL3 @ 0xC;
+
+    reg {
+        name = "Interrupt enable register";
+        desc = "LSADC_CTRL4 is an interrupt enable register.
+
+Data sheet 12.8.5 LSADC_CTRL4 (offset 0x10, printed page 12-250, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 90971).";
+
+        enum LSADC_CTRL4_int_enable_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "int_enable";
+            desc = "Scanned value valid interrupt enable";
+            sw = rw;
+            hw = r;
+            encode = LSADC_CTRL4_int_enable_enum;
+            reset = 0x0;
+        } int_enable[0:0];
+    } LSADC_CTRL4 @ 0x10;
+
+    reg {
+        name = "Interrupt status register";
+        desc = "LSADC_CTRL5 is an interrupt status register.
+
+Data sheet 12.8.5 LSADC_CTRL5 (offset 0x14, printed page 12-250, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 91000).";
+
+        enum LSADC_CTRL5_lsadc_auto_busy_enum {
+            IDLE = 0 { name = "Idle"; desc = "idle"; };
+            BUSY = 1 { name = "Busy"; desc = "busy"; };
+        };
+
+        field {
+            name = "lsadc_auto_busy";
+            desc = "LSADC busy indicator in automatic scanning mode";
+            sw = r;
+            hw = w;
+            encode = LSADC_CTRL5_lsadc_auto_busy_enum;
+            reset = 0x0;
+        } lsadc_auto_busy[4:4];
+
+        field {
+            name = "int_flag_ind";
+            desc = "Scanned value valid interrupt flag of channel D";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } int_flag_ind[3:3];
+
+        field {
+            name = "int_flag_inc";
+            desc = "Scanned value valid interrupt flag of channel C";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } int_flag_inc[2:2];
+
+        field {
+            name = "int_flag_inb";
+            desc = "Scanned value valid interrupt flag of channel B";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } int_flag_inb[1:1];
+
+        field {
+            name = "int_flag_ina";
+            desc = "Scanned value valid interrupt flag of channel A";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } int_flag_ina[0:0];
+    } LSADC_CTRL5 @ 0x14;
+
+    reg {
+        name = "Interrupt clear register";
+        desc = "LSADC_CTRL6 is an interrupt clear register.
+
+Data sheet 12.8.5 LSADC_CTRL6 (offset 0x18, printed page 12-251, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 91044).";
+
+        enum LSADC_CTRL6_clr_int_flag_ind_enum {
+            NOT_CLEARED = 0 { name = "Not Cleared"; desc = "not cleared"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "clr_int_flag_ind";
+            desc = "Channel D interrupt clear";
+            sw = w;
+            hw = r;
+            encode = LSADC_CTRL6_clr_int_flag_ind_enum;
+            reset = 0x0;
+        } clr_int_flag_ind[3:3];
+
+        enum LSADC_CTRL6_clr_int_flag_inc_enum {
+            NOT_CLEARED = 0 { name = "Not Cleared"; desc = "not cleared"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "clr_int_flag_inc";
+            desc = "Channel C interrupt clear";
+            sw = w;
+            hw = r;
+            encode = LSADC_CTRL6_clr_int_flag_inc_enum;
+            reset = 0x0;
+        } clr_int_flag_inc[2:2];
+
+        enum LSADC_CTRL6_clr_int_flag_inb_enum {
+            NOT_CLEARED = 0 { name = "Not Cleared"; desc = "not cleared"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "clr_int_flag_inb";
+            desc = "Channel B interrupt clear";
+            sw = w;
+            hw = r;
+            encode = LSADC_CTRL6_clr_int_flag_inb_enum;
+            reset = 0x0;
+        } clr_int_flag_inb[1:1];
+
+        enum LSADC_CTRL6_clr_int_flag_ina_enum {
+            NOT_CLEARED = 0 { name = "Not Cleared"; desc = "not cleared"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "clr_int_flag_ina";
+            desc = "Channel A interrupt clear";
+            sw = w;
+            hw = r;
+            encode = LSADC_CTRL6_clr_int_flag_ina_enum;
+            reset = 0x0;
+        } clr_int_flag_ina[0:0];
+    } LSADC_CTRL6 @ 0x18;
+
+    reg {
+        name = "Start configuration register";
+        desc = "LSADC_CTRL7 is a start configuration register.
+
+Write-only: any write starts the LSADC_CTRL (single scan of the channels flagged in ch_*_vld, or continuous scanning when model_sel = 1).
+
+Data sheet 12.8.5 LSADC_CTRL7 (offset 0x1C, printed page 12-252, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 91091).";
+
+        field {
+            name = "start";
+            desc = "LSADC_CTRL start signal. Writing any value to this register starts the LSADC_CTRL.";
+            sw = w;
+            hw = r;
+            reset = 0x0;
+        } start[31:0];
+    } LSADC_CTRL7 @ 0x1C;
+
+    reg {
+        name = "Stop configuration register";
+        desc = "LSADC_CTRL8 is a stop configuration register.
+
+Data sheet 12.8.5 LSADC_CTRL8 (offset 0x20, printed page 12-252, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 91111).";
+
+        field {
+            name = "stop";
+            desc = "Automatic scanning stop. In automatic scanning mode, writing any value to this register stops automatic scanning of the LSADC_CTRL. Automatic scanning is restarted only after the start bit is enabled.";
+            sw = w;
+            hw = r;
+            reset = 0x0;
+        } stop[31:0];
+    } LSADC_CTRL8 @ 0x20;
+
+};
+
+`endif

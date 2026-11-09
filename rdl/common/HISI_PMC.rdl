@@ -1,0 +1,506 @@
+`ifndef HISI_PMC_RDL
+`define HISI_PMC_RDL
+
+regfile eHISI_PMC {
+    name = "HiSilicon Power Management Controller (AVS PWM, core HPM, temperature sensor)";
+    desc = "
+    Power management controller (PMC) of the Hi3518E V20X / Hi3516C V200 at 0x20270000 (data sheet 3.11): the PWM that drives the external core-voltage regulator (adaptive voltage scaling, AVS),
+    one core HPM (hardware performance monitor: a ring-oscillator code used to read the process/voltage/temperature corner) with a hardware AVS state machine, and the on-chip temperature sensor
+    (-40..+140 degC, 8 recorded codes, over/under-temperature alarms). Only 12 of the PMC registers are documented (PERI_PMC0, 4, 5, 10-13, 31, 68-71; the offsets are not contiguous, other offsets are
+    undocumented). No interrupt line is listed for it in Table 3-8. Needed for thermal and AVS support, not for U-Boot or basic Linux bring-up.
+
+    Source: data sheet 3.11.3/3.11.4 (`hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` lines 31114-31640). Data-sheet only, no vendor driver in the source trees, not hardware verified.
+    ";
+
+
+    reg {
+        name = "PMC register 0";
+        desc = "PERI_PMC0 is PMC register 0.
+
+PWM output for the core-voltage AVS regulator: period = 24 MHz / f_pwm - 1, duty = 24 MHz / f_pwm x duty - 1 (DS example: 200 kHz, 75% -> period 0x77, duty 0x59).
+
+Data sheet 3.11.4 PERI_PMC0 (offset 0x0, printed page 3-163, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 31155).";
+
+        field {
+            name = "core_pwm_duty";
+            desc = "Number of PWM high-level beats for the core AVS output. If the number is greater than or equal to the number of PWM cycles, the output level is always high. The value cannot be 0. If the configured value is 0, the value 1 is used.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } core_pwm_duty[31:16];
+
+        field {
+            name = "core_pwm_period";
+            desc = "Number of PWM cycles for the core AVS output";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } core_pwm_period[15:0];
+    } PERI_PMC0 @ 0x0;
+
+    reg {
+        name = "PMC register 4";
+        desc = "PERI_PMC4 is PMC register 4.
+
+Data sheet 3.11.4 PERI_PMC4 (offset 0x10, printed page 3-164, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 31189).";
+
+        enum PERI_PMC4_core_pwm_inv_enum {
+            POSITIVE_PHASE_OUTPUT = 0 { name = "Positive Phase Output"; desc = "positive-phase output"; };
+            NEGATIVE_PHASE_OUTPUT = 1 { name = "Negative Phase Output"; desc = "negative-phase output"; };
+        };
+
+        field {
+            name = "core_pwm_inv";
+            desc = "PWM phase control for the core AVS output";
+            sw = rw;
+            hw = r;
+            encode = PERI_PMC4_core_pwm_inv_enum;
+            reset = 0x0;
+        } core_pwm_inv[1:1];
+
+        enum PERI_PMC4_core_pwm_enable_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "core_pwm_enable";
+            desc = "PWM enable for the core AVS output";
+            sw = rw;
+            hw = r;
+            encode = PERI_PMC4_core_pwm_enable_enum;
+            reset = 0x0;
+        } core_pwm_enable[0:0];
+    } PERI_PMC4 @ 0x10;
+
+    reg {
+        name = "PMC register 5";
+        desc = "PERI_PMC5 is PMC register 5.
+
+Data sheet 3.11.4 PERI_PMC5 (offset 0x14, printed page 3-164, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 31220).";
+
+        field {
+            name = "core_avs_fsm_inc_pwm_step";
+            desc = "Automatic increase step of the core AVS FSM PWM";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } core_avs_fsm_inc_pwm_step[31:24];
+
+        field {
+            name = "core_avs_fsm_dec_pwm_step";
+            desc = "Automatic decrease step of the core AVS FSM PWM";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } core_avs_fsm_dec_pwm_step[23:16];
+
+        enum PERI_PMC5_core_avs_hpm_fsm_calc_mode_enum {
+            AVERAGE_VALUE_FOUR = 0 { name = "Average Value Four"; desc = "average value of four samplings"; };
+            AVERAGE_VALUE_EIGHT = 1 { name = "Average Value Eight"; desc = "average value of eight samplings"; };
+            AVERAGE_VALUE_16 = 2 { name = "Average Value 16"; desc = "average value of 16 samplings"; };
+            AVERAGE_VALUE_32 = 3 { name = "Average Value 32"; desc = "average value of 32 samplings"; };
+        };
+
+        field {
+            name = "core_avs_hpm_fsm_calc_mode";
+            desc = "Calculation mode of the core AVS HPM FSM";
+            sw = rw;
+            hw = r;
+            encode = PERI_PMC5_core_avs_hpm_fsm_calc_mode_enum;
+            reset = 0x0;
+        } core_avs_hpm_fsm_calc_mode[2:1];
+
+        enum PERI_PMC5_core_hpm_fsm_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "core_hpm_fsm_en";
+            desc = "Core AVS HPM FSM enable";
+            sw = rw;
+            hw = r;
+            encode = PERI_PMC5_core_hpm_fsm_en_enum;
+            reset = 0x0;
+        } core_hpm_fsm_en[0:0];
+    } PERI_PMC5 @ 0x14;
+
+    reg {
+        name = "Core HPM control register 1";
+        desc = "PERI_PMC10 is core HPM control register 1.
+
+DS example for a 600 MHz CPU clock: core_hpm_div = 600/50 - 1 = 11; write 0x0400000B (reset deasserted, monitor) then 0x0500000B (hpm enable). The HPM reference clock is the CPU working clock divided down to about 50 MHz.
+
+Data sheet 3.11.4 PERI_PMC10 (offset 0x28, printed page 3-165, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 31272).";
+
+        enum PERI_PMC10_core_hpm_srst_req_enum {
+            DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
+            RESET_F = 1 { name = "Reset F"; desc = "reset"; };
+        };
+
+        field {
+            name = "core_hpm_srst_req";
+            desc = "Core HPM reset request, active high";
+            sw = rw;
+            hw = r;
+            encode = PERI_PMC10_core_hpm_srst_req_enum;
+            reset = 0x0;
+        } core_hpm_srst_req[27:27];
+
+        enum PERI_PMC10_core_hpm_monitor_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "core_hpm_monitor_en";
+            desc = "Core HPM cyclic monitoring enable";
+            sw = rw;
+            hw = r;
+            encode = PERI_PMC10_core_hpm_monitor_en_enum;
+            reset = 0x0;
+        } core_hpm_monitor_en[26:26];
+
+        enum PERI_PMC10_core_hpm_en_enum {
+            VALUE_RETAINS_0 = 0 { name = "Value Retains 0"; desc = "The value retains 0 before a process is started."; };
+            FREQUENCY_MODULATION_PROCESS = 1 { name = "Frequency Modulation Process"; desc = "A frequency modulation process is started."; };
+        };
+
+        field {
+            name = "core_hpm_en";
+            desc = "Core HPM measurement enable";
+            sw = rw;
+            hw = r;
+            encode = PERI_PMC10_core_hpm_en_enum;
+            reset = 0x0;
+        } core_hpm_en[24:24];
+
+        field {
+            name = "core_hpm_offset";
+            desc = "Core HPM offset";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } core_hpm_offset[21:12];
+
+        field {
+            name = "core_hpm_shift";
+            desc = "Core HPM shift";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } core_hpm_shift[9:8];
+
+        field {
+            name = "core_hpm_div";
+            desc = "Divider of the core HPM reference clock n: (n + 1) frequency division (n must be greater than 0)";
+            sw = rw;
+            hw = r;
+            reset = 0xA;
+        } core_hpm_div[5:0];
+    } PERI_PMC10 @ 0x28;
+
+    reg {
+        name = "Core HPM status register 1";
+        desc = "PERI_PMC11 is core HPM status register 1.
+
+Data sheet 3.11.4 PERI_PMC11 (offset 0x2C, printed page 3-166, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 31329).";
+
+        field {
+            name = "core_hpm_up_warning";
+            desc = "Upper limit for the core HPM warning";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } core_hpm_up_warning[25:25];
+
+        field {
+            name = "core_hpm_low_warning";
+            desc = "Lower limit for the core HPM warning";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } core_hpm_low_warning[24:24];
+
+        field {
+            name = "core_hpm_pc_record1";
+            desc = "Core HPM original code pattern 1";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } core_hpm_pc_record1[21:12];
+
+        enum PERI_PMC11_core_hpm_pc_valid_enum {
+            INVALID = 0 { name = "Invalid"; desc = "invalid"; };
+            VALID = 1 { name = "Valid"; desc = "valid"; };
+        };
+
+        field {
+            name = "core_hpm_pc_valid";
+            desc = "Core HPM output validity indicator";
+            sw = r;
+            hw = w;
+            encode = PERI_PMC11_core_hpm_pc_valid_enum;
+            reset = 0x0;
+        } core_hpm_pc_valid[10:10];
+
+        field {
+            name = "core_hpm_pc_record0";
+            desc = "Core HPM original code pattern 0";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } core_hpm_pc_record0[9:0];
+    } PERI_PMC11 @ 0x2C;
+
+    reg {
+        name = "Core HPM status register 2";
+        desc = "PERI_PMC12 is core HPM status register 2.
+
+Data sheet 3.11.4 PERI_PMC12 (offset 0x30, printed page 3-167, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 31381).";
+
+        field {
+            name = "core_hpm_rcc";
+            desc = "Core HPM output with the RCC code";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } core_hpm_rcc[28:24];
+
+        field {
+            name = "core_hpm_pc_record3";
+            desc = "Core HPM original code pattern 3";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } core_hpm_pc_record3[21:12];
+
+        field {
+            name = "core_hpm_pc_record2";
+            desc = "Core HPM original code pattern 2";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } core_hpm_pc_record2[9:0];
+    } PERI_PMC12 @ 0x30;
+
+    reg {
+        name = "Core HPM control register 2";
+        desc = "PERI_PMC13 is core HPM control register 2.
+
+Cyclic monitoring period T = (N x 2048 + M x 16) / 1000 ms with N = core_hpm_monitor_period (this register), M = PERI_PMC31 `core_hpm_monitor_period` (data sheet 3.11.2; the PMC13 field text prints the formula garbled).
+
+Data sheet 3.11.4 PERI_PMC13 (offset 0x34, printed page 3-168, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 31423).";
+
+        field {
+            name = "core_hpm_monitor_period";
+            desc = "Core HPM cyclic monitoring period If the configured value is N, the monitoring period (T) is as follows: T = x 2048/1000 ms The maximum monitoring interval is 522 ms, and the minimum interval is 2 ms.";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } core_hpm_monitor_period[31:24];
+
+        field {
+            name = "core_hpm_lowlimit";
+            desc = "Core HPM lower limit";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } core_hpm_lowlimit[21:12];
+
+        field {
+            name = "core_hpm_uplimit";
+            desc = "Core HPM upper limit";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } core_hpm_uplimit[9:0];
+    } PERI_PMC13 @ 0x34;
+
+    reg {
+        name = "HPM control register (fine 2)";
+        desc = "PERI_PMC31 is an HPM control register (fine 2).
+
+The field has the same name as the one in PERI_PMC13 (data sheet); it is the fine adjustment M (units of 16 us).
+
+Data sheet 3.11.4 PERI_PMC31 (offset 0x7C, printed page 3-168, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 31456).";
+
+        field {
+            name = "core_hpm_monitor_period";
+            desc = "Parameter for fine tuning the core HPM cyclic monitoring cycle";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } core_hpm_monitor_period[7:0];
+    } PERI_PMC31 @ 0x7C;
+
+    reg {
+        name = "PMC register 68";
+        desc = "PERI_PMC68 is PMC register 68.
+
+Temperature T (degC) = tsensor_temp_code x 180/256 - 40 (DS 3.11.2); capture cycle = tsensor_monitor_period x 2 ms. The data sheet bit table prints garbled names for bits 23:0; the names used here are from the bit-diagram row.
+
+Data sheet 3.11.4 PERI_PMC68 (offset 0x110, printed page 3-169, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 31487).";
+
+        enum PERI_PMC68_tsensor_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "tsensor_en";
+            desc = "Temperature sensor enable";
+            sw = rw;
+            hw = r;
+            encode = PERI_PMC68_tsensor_en_enum;
+            reset = 0x0;
+        } tsensor_en[30:30];
+
+        enum PERI_PMC68_tsensor_monitor_en_enum {
+            SINGLE_MODE = 0 { name = "Single Mode"; desc = "single mode"; };
+            CYCLIC_MODE = 1 { name = "Cyclic Mode"; desc = "cyclic mode"; };
+        };
+
+        field {
+            name = "tsensor_monitor_en";
+            desc = "Cyclic temperature monitoring enable";
+            sw = rw;
+            hw = r;
+            encode = PERI_PMC68_tsensor_monitor_en_enum;
+            reset = 0x0;
+        } tsensor_monitor_en[29:29];
+
+        field {
+            name = "tsensor_monitor_period";
+            desc = "Cyclic temperature monitoring cycle. The timing reference is 2 ms.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } tsensor_monitor_period[23:16];
+
+        field {
+            name = "tsensor_temp_uplimit";
+            desc = "Temperature overflow value";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } tsensor_temp_uplimit[15:8];
+
+        field {
+            name = "tsensor_temp_lowlimit";
+            desc = "Temperature underflow value";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } tsensor_temp_lowlimit[7:0];
+    } PERI_PMC68 @ 0x110;
+
+    reg {
+        name = "PMC register 69";
+        desc = "PERI_PMC69 is PMC register 69.
+
+Recorded temperature codes 0..3 (code 0 is the latest in cyclic mode; in single mode only code 0 is valid).
+
+Data sheet 3.11.4 PERI_PMC69 (offset 0x114, printed page 3-170, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 31542).";
+
+        field {
+            name = "tsensor_temp_code3";
+            desc = "Temperature record value 3";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } tsensor_temp_code3[31:24];
+
+        field {
+            name = "tsensor_temp_code2";
+            desc = "Temperature record value 2";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } tsensor_temp_code2[23:16];
+
+        field {
+            name = "tsensor_temp_code1";
+            desc = "Temperature record value 1";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } tsensor_temp_code1[15:8];
+
+        field {
+            name = "tsensor_temp_code0";
+            desc = "Temperature record value 0";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } tsensor_temp_code0[7:0];
+    } PERI_PMC69 @ 0x114;
+
+    reg {
+        name = "PMC register 70";
+        desc = "PERI_PMC70 is PMC register 70.
+
+Recorded temperature codes 4..7.
+
+Data sheet 3.11.4 PERI_PMC70 (offset 0x118, printed page 3-170, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 31571).";
+
+        field {
+            name = "tsensor_temp_code7";
+            desc = "Temperature record value 7";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } tsensor_temp_code7[31:24];
+
+        field {
+            name = "tsensor_temp_code6";
+            desc = "Temperature record value 6";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } tsensor_temp_code6[23:16];
+
+        field {
+            name = "tsensor_temp_code5";
+            desc = "Temperature record value 5";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } tsensor_temp_code5[15:8];
+
+        field {
+            name = "tsensor_temp_code4";
+            desc = "Temperature record value 4";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } tsensor_temp_code4[7:0];
+    } PERI_PMC70 @ 0x118;
+
+    reg {
+        name = "PMC register 71";
+        desc = "PERI_PMC71 is PMC register 71.
+
+Data sheet 3.11.4 PERI_PMC71 (offset 0x11C, printed page 3-171, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 31611).";
+
+        field {
+            name = "tsensor_low_warning";
+            desc = "Temperature underflow alarm, active high";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } tsensor_low_warning[1:1];
+
+        field {
+            name = "tsensor_up_warning";
+            desc = "Temperature overflow alarm, active high";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } tsensor_up_warning[0:0];
+    } PERI_PMC71 @ 0x11C;
+
+};
+
+`endif

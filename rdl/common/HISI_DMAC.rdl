@@ -1,0 +1,1040 @@
+`ifndef HISI_DMAC_RDL
+`define HISI_DMAC_RDL
+
+regfile eHISI_DMAC_CH {
+    name = "HiSilicon DMAC channel registers (one channel)";
+    desc = "Registers of DMA channel n (n = 0-3) at 0x100 + n x 0x20 (data sheet names: DMAC_Cn_SRC_ADDR, DMAC_Cn_DEST_ADDR, DMAC_Cn_LLI, DMAC_Cn_CONTROL, DMAC_Cn_CONFIG). Offsets are relative to the channel base.";
+
+    reg {
+        name = "Source address register of DMA channel n (n = 0-3)";
+        desc = "DMAC_Cn_SRC_ADDR is a source address register of DMA channel n (n = 0-3). Its offset address is 0x100 + n x 0x20. The value of n ranges from 0 to 3. The values 0-3 correspond to DMA channels 0-3. Before a channel is enabled, its corresponding register must be programmed by using software. After the channel is enabled, the register is updated in any of the following cases:     The source address is incremented.     A complete data block is transferred and then loaded from LLI nodes.     If a channel is active, no valid information is obtained when this register is read. This is because that after software obtains the register value, the value changes during data transfer. Therefore, the register is read after the channel stops data transfer. At this time, the read value is the last source address read by the DMAC.
+
+Data sheet 3.6.6 DMAC_Cn_SRC_ADDR (offset 0x100, printed page 3-112, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 28250).";
+
+        field {
+            name = "src_addr";
+            desc = "DMA source address";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } src_addr[31:0];
+    } SRC_ADDR @ 0x0;
+
+    reg {
+        name = "Destination address register of DMA channel n (n = 0-3)";
+        desc = "DMAC_Cn_DEST_ADDR is a destination address register of DMA channel n (n = 0-3). Its offset address is 0x104 + n x 0x20. The value of n ranges from 0 to 3. The values 0-3 correspond to DMA channels 0-3. This register contains the destination address for the data to be transferred. Before a channel is enabled, its corresponding register must be programmed by using software. After the channel is enabled, the register is updated in any of the following cases:     Destination address increment.     A complete data block is transferred and then loaded from LLI nodes.     If a channel is active, no valid information is obtained when this register is read. This is because that after software obtains the register value, the value changes during data transfer. Therefore, the register is read after the channel stops data transfer. At this time, the read value is the last destination address written by the DMAC.
+
+Data sheet 3.6.6 DMAC_Cn_DEST_ADDR (offset 0x104, printed page 3-113, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 28288).";
+
+        field {
+            name = "dest_addr";
+            desc = "DMA destination address";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } dest_addr[31:0];
+    } DEST_ADDR @ 0x4;
+
+    reg {
+        name = "Linked-list item (LLI) information register of DMA channel n (n = 0-3)";
+        desc = "DMAC_Cn_LLI is the linked-list item (LLI) information register of DMA channel n (n = 0-3). Its offset address is 0x108 + n x 0x20. It holds the address of the next LLI node (SRC_ADDR, DEST_ADDR, LLI, CONTROL, in this order); 0 means the current node is the last one. The LLI address must be less than or equal to 0xFFFF_FFF0.
+
+Data sheet 3.6.6 DMAC_Cn_LLI (offset 0x108, printed page 3-114, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 28321).";
+
+        field {
+            name = "ll_item";
+            desc = "The bit[31:2] in the next LLI node address and the address bit[1:0] are set to 0. A linked list address must be 4-byte aligned.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ll_item[31:2];
+
+        enum LLI_ll_master_enum {
+            MASTER_1 = 0 { name = "Master 1"; desc = "master 1"; };
+            MASTER_2 = 1 { name = "Master 2"; desc = "master 2"; };
+        };
+
+        field {
+            name = "ll_master";
+            desc = "Master for loading the next LLI node";
+            sw = rw;
+            hw = r;
+            encode = LLI_ll_master_enum;
+            reset = 0x0;
+        } ll_master[0:0];
+    } LLI @ 0x8;
+
+    reg {
+        name = "Control register of DMA channel n (n = 0-3)";
+        desc = "DMAC_Cn_CONTROL is the control register of DMA channel n (n = 0-3). Its offset address is 0x10C + n x 0x20. Before a channel is enabled it must be programmed by software; after the channel is enabled it is updated when the next LLI node is loaded. Never do common write/read tests on it: `trans_size` is a control field when written and a status field (remaining data count) when read.
+
+Data sheet 3.6.6 DMAC_Cn_CONTROL (offset 0x10C, printed page 3-115, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 28368).";
+
+        enum CONTROL_int_tc_enable_enum {
+            DO_NOT_TRIGGER = 0 { name = "Do Not Trigger"; desc = "do not trigger"; };
+            TRIGGER = 1 { name = "Trigger"; desc = "trigger"; };
+        };
+
+        field {
+            name = "int_tc_enable";
+            desc = "Transfer terminal interrupt enable. This bit determines whether the current LLI node triggers a transfer terminal interrupt.";
+            sw = rw;
+            hw = r;
+            encode = CONTROL_int_tc_enable_enum;
+            reset = 0x0;
+        } int_tc_enable[31:31];
+
+        field {
+            name = "prot_stat";
+            desc = "Protection bits transmitted by the master, called HPROT[2:0] in the bit table; the data sheet Table 3-15 defines them as: bit 2 cacheable (0 = non-cacheable, 1 = cacheable; drives the bus signal HPROT[3]), bit 1 bufferable (0 = non-bufferable, 1 = bufferable; HPROT[2]), bit 0 privileged (0 = user mode, 1 = privileged mode; HPROT[1]).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } prot_stat[30:28];
+
+        enum CONTROL_dest_incr_enum {
+            DESTINATION_ADDRESS_NOT = 0 { name = "Destination Address Not"; desc = "The destination address is not incremented"; };
+            DESTINATION_ADDRESS_INCREMENTE = 1 { name = "Destination Address Incremente"; desc = "The destination address is incremented once after a data segment is transferred If the destination device is a peripheral, the destination address is not incremented. If the destination device is a memory, the destination address is incremented."; };
+        };
+
+        field {
+            name = "dest_incr";
+            desc = "Destination address increment";
+            sw = rw;
+            hw = r;
+            encode = CONTROL_dest_incr_enum;
+            reset = 0x0;
+        } dest_incr[27:27];
+
+        enum CONTROL_src_incr_enum {
+            SOURCE_ADDRESS_NOT = 0 { name = "Source Address Not"; desc = "The source address is not incremented"; };
+            SOURCE_ADDRESS_INCREMENTED = 1 { name = "Source Address Incremented"; desc = "The source address is incremented once after a data segment is transferred If the source device is a peripheral, the source address is not incremented. If the source device is a memory, the source address is incremented."; };
+        };
+
+        field {
+            name = "src_incr";
+            desc = "Source address increment";
+            sw = rw;
+            hw = r;
+            encode = CONTROL_src_incr_enum;
+            reset = 0x0;
+        } src_incr[26:26];
+
+        enum CONTROL_dest_select_enum {
+            MASTER_1 = 0 { name = "Master 1"; desc = "master 1"; };
+            MASTER_2 = 1 { name = "Master 2"; desc = "master 2"; };
+        };
+
+        field {
+            name = "dest_select";
+            desc = "Master for accessing the destination device";
+            sw = rw;
+            hw = r;
+            encode = CONTROL_dest_select_enum;
+            reset = 0x0;
+        } dest_select[25:25];
+
+        enum CONTROL_src_select_enum {
+            MASTER_1 = 0 { name = "Master 1"; desc = "master 1"; };
+            MASTER_2 = 1 { name = "Master 2"; desc = "master 2"; };
+        };
+
+        field {
+            name = "src_select";
+            desc = "Master for accessing the source device";
+            sw = rw;
+            hw = r;
+            encode = CONTROL_src_select_enum;
+            reset = 0x0;
+        } src_select[24:24];
+
+        enum CONTROL_dwidth_enum {
+            BYTE = 0 { name = "Byte"; desc = "BYTE (byte, 8 bits)"; };
+            HALFWORD = 1 { name = "Halfword"; desc = "HALFWORD (halfword, 16 bits)"; };
+            WORD = 2 { name = "Word"; desc = "WORD (word, 32 bits)"; };
+        };
+
+        field {
+            name = "dwidth";
+            desc = "Transfer bit width of the destination device (Table 3-14). The transfer bit width is invalid if it is greater than the bit width of the master. The data widths of the destination and source devices can differ; the hardware packs and unpacks the data. Values 011..111 are reserved.";
+            sw = rw;
+            hw = r;
+            encode = CONTROL_dwidth_enum;
+            reset = 0x0;
+        } dwidth[23:21];
+
+        enum CONTROL_swidth_enum {
+            BYTE = 0 { name = "Byte"; desc = "BYTE (byte, 8 bits)"; };
+            HALFWORD = 1 { name = "Halfword"; desc = "HALFWORD (halfword, 16 bits)"; };
+            WORD = 2 { name = "Word"; desc = "WORD (word, 32 bits)"; };
+        };
+
+        field {
+            name = "swidth";
+            desc = "Transfer bit width of the source device (Table 3-14). The transfer bit width is invalid if it is greater than the bit width of the master. Values 011..111 are reserved.";
+            sw = rw;
+            hw = r;
+            encode = CONTROL_swidth_enum;
+            reset = 0x0;
+        } swidth[20:18];
+
+        enum CONTROL_dbsize_enum {
+            BURST_1 = 0 { name = "Burst 1"; desc = "BURST_1 (burst length 1)"; };
+            BURST_4 = 1 { name = "Burst 4"; desc = "BURST_4 (burst length 4)"; };
+            BURST_8 = 2 { name = "Burst 8"; desc = "BURST_8 (burst length 8)"; };
+            BURST_16 = 3 { name = "Burst 16"; desc = "BURST_16 (burst length 16)"; };
+            BURST_32 = 4 { name = "Burst 32"; desc = "BURST_32 (burst length 32)"; };
+            BURST_64 = 5 { name = "Burst 64"; desc = "BURST_64 (burst length 64)"; };
+            BURST_128 = 6 { name = "Burst 128"; desc = "BURST_128 (burst length 128)"; };
+            BURST_256 = 7 { name = "Burst 256"; desc = "BURST_256 (burst length 256)"; };
+        };
+
+        field {
+            name = "dbsize";
+            desc = "Burst size of the destination device: the number of data segments transferred by the destination device in a burst transfer (when DMACCxBREQ is valid). It must be a burst size supported by the destination device; for a memory it is set to the storage area size beyond the storage address boundary (Table 3-13). Values 011..111 select 16..256 as in Table 3-13.";
+            sw = rw;
+            hw = r;
+            encode = CONTROL_dbsize_enum;
+            reset = 0x0;
+        } dbsize[17:15];
+
+        enum CONTROL_sbsize_enum {
+            BURST_1 = 0 { name = "Burst 1"; desc = "BURST_1 (burst length 1)"; };
+            BURST_4 = 1 { name = "Burst 4"; desc = "BURST_4 (burst length 4)"; };
+            BURST_8 = 2 { name = "Burst 8"; desc = "BURST_8 (burst length 8)"; };
+            BURST_16 = 3 { name = "Burst 16"; desc = "BURST_16 (burst length 16)"; };
+            BURST_32 = 4 { name = "Burst 32"; desc = "BURST_32 (burst length 32)"; };
+            BURST_64 = 5 { name = "Burst 64"; desc = "BURST_64 (burst length 64)"; };
+            BURST_128 = 6 { name = "Burst 128"; desc = "BURST_128 (burst length 128)"; };
+            BURST_256 = 7 { name = "Burst 256"; desc = "BURST_256 (burst length 256)"; };
+        };
+
+        field {
+            name = "sbsize";
+            desc = "Burst size of the source device: the amount of data transferred by the source device in a burst transfer (when DMACCxBREQ is valid). It must be a burst size supported by the source device; for a memory it is set to the storage area size beyond the storage address boundary (Table 3-13).";
+            sw = rw;
+            hw = r;
+            encode = CONTROL_sbsize_enum;
+            reset = 0x0;
+        } sbsize[14:12];
+
+        field {
+            name = "trans_size";
+            desc = "The DMA transfer size can be configured by writing to this register only when the DMAC is a flow controller. This field indicates the amount of data to be transferred by the source device. When this register is read, the amount of data transferred through the bus connected to the destination device is obtained. If a channel is active, no valid information is obtained when this register is read. This is because that after software obtains the register value, the value changes during data transfer. Therefore, the register is read after the channel is enabled and data transfer stops.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } trans_size[11:0];
+    } CONTROL @ 0xC;
+
+    reg {
+        name = "Configuration register of channel n (n = 0-3)";
+        desc = "DMAC_Cn_CONFIG is a configuration register of channel n (n = 0-3). Its offset address is 0x110 + n x 0x20. The value of n ranges from 0 to 3. The values 0-3 correspond to DMA channels 0-3. This register is not updated when a new LLI node is loaded.
+
+The data sheet lists `ch_active` (bit 17) as RW; in the ARM PL080 this bit is read-only status (vendor code only reads it). The data sheet access type is kept. `tc_int_msk` / `err_int_msk`: 1 = interrupt NOT masked (enabled), as printed. The vendor header uses CONFIG values 0xC000 (M2M, both interrupts enabled), 0xD000/0xC800 style values for P2M/M2P.
+
+Data sheet 3.6.6 DMAC_Cn_CONFIG (offset 0x110, printed page 3-117, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 28485).";
+
+        enum CONFIG_ch_halt_enum {
+            DMA_REQUEST_ALLOWED = 0 { name = "Dma Request Allowed"; desc = "The DMA request is allowed."; };
+            SUBSEQUENT_DMA_REQUESTS = 1 { name = "Subsequent Dma Requests"; desc = "The subsequent DMA requests are ignored and the contents in the channel FIFO are completely transmitted. This bit can disable a DMA channel without data loss by working with the Active bit and the Channel Enable bit."; };
+        };
+
+        field {
+            name = "ch_halt";
+            desc = "Halt bit";
+            sw = rw;
+            hw = r;
+            encode = CONFIG_ch_halt_enum;
+            reset = 0x0;
+        } ch_halt[18:18];
+
+        enum CONFIG_ch_active_enum {
+            THERE_NO_DATA = 0 { name = "There No Data"; desc = "There is no data in the channel FIFO."; };
+            THERE_DATA_CHANNEL = 1 { name = "There Data Channel"; desc = "There is data in the channel FIFO. This bit can disable a DMA channel without data loss by working with the Halt bit and Channel Enable bit."; };
+        };
+
+        field {
+            name = "ch_active";
+            desc = "Active bit";
+            sw = rw;
+            hw = r;
+            encode = CONFIG_ch_active_enum;
+            reset = 0x0;
+        } ch_active[17:17];
+
+        enum CONFIG_ch_lock_enum {
+            LOCK_TRANSFER_BUS = 0 { name = "Lock Transfer Bus"; desc = "Lock transfer on the bus is disabled."; };
+            LOCK_TRANSFER_BUS_2 = 1 { name = "Lock Transfer Bus 2"; desc = "Lock transfer on the bus is enabled."; };
+        };
+
+        field {
+            name = "ch_lock";
+            desc = "Lock bit";
+            sw = rw;
+            hw = r;
+            encode = CONFIG_ch_lock_enum;
+            reset = 0x0;
+        } ch_lock[16:16];
+
+        enum CONFIG_tc_int_msk_enum {
+            TRANSFER_TERMINAL_INTERRUPTS = 0 { name = "Transfer Terminal Interrupts"; desc = "The transfer terminal interrupts of the channel are masked."; };
+            TRANSFER_TERMINAL_INTERRUPTS_2 = 1 { name = "Transfer Terminal Interrupts 2"; desc = "The transfer terminal interrupts of the channel are not masked."; };
+        };
+
+        field {
+            name = "tc_int_msk";
+            desc = "Transfer terminal interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = CONFIG_tc_int_msk_enum;
+            reset = 0x0;
+        } tc_int_msk[15:15];
+
+        enum CONFIG_err_int_msk_enum {
+            ERROR_INTERRUPTS_CHANNEL = 0 { name = "Error Interrupts Channel"; desc = "The error interrupts of the channel are masked."; };
+            ERROR_INTERRUPTS_CHANNEL_2 = 1 { name = "Error Interrupts Channel 2"; desc = "The error interrupts of the channel are not masked."; };
+        };
+
+        field {
+            name = "err_int_msk";
+            desc = "Transfer error interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = CONFIG_err_int_msk_enum;
+            reset = 0x0;
+        } err_int_msk[14:14];
+
+        enum CONFIG_flow_ctrl_enum {
+            M2M_DMAC = 0 { name = "M2M Dmac"; desc = "M2M DMAC (memory to memory, flow controller is the DMAC)"; };
+            M2P_DMAC = 1 { name = "M2P Dmac"; desc = "M2P DMAC (memory to peripheral, flow controller is the DMAC)"; };
+            P2M_DMAC = 2 { name = "P2M Dmac"; desc = "P2M DMAC (peripheral to memory, flow controller is the DMAC)"; };
+            S2D_DMAC = 3 { name = "S2D Dmac"; desc = "S2D DMAC (source device to destination device, flow controller is the DMAC)"; };
+            S2D_DEST = 4 { name = "S2D Dest"; desc = "S2D DEST (source device to destination device, flow controller is the destination device)"; };
+            M2P_DEST = 5 { name = "M2P Dest"; desc = "M2P DEST (memory to peripheral, flow controller is the destination device)"; };
+            P2M_SRC = 6 { name = "P2M Src"; desc = "P2M SRC (peripheral to memory, flow controller is the source device)"; };
+            S2D_SRC = 7 { name = "S2D Src"; desc = "S2D SRC (source device to destination device, flow controller is the source device)"; };
+        };
+
+        field {
+            name = "flow_ctrl";
+            desc = "Flow control and transfer type. It specifies the flow controller (DMAC, source device or destination device) and the transfer type (Table 3-16).";
+            sw = rw;
+            hw = r;
+            encode = CONFIG_flow_ctrl_enum;
+            reset = 0x0;
+        } flow_ctrl[13:11];
+
+        field {
+            name = "dest_periph";
+            desc = "Destination device. This field is used to select a peripheral request signal as the request signal for the DMA destination device of the channel. If the destination device for DMA transfer is a memory, this field is ignored.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } dest_periph[9:6];
+
+        field {
+            name = "src_periph";
+            desc = "Source device. This field is used to select a peripheral request signal as the request signal for the DMA source device of the channel. If the source device for DMA transfer is a memory, this field is ignored.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } src_periph[4:1];
+
+        enum CONFIG_ch_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED_CLEARING_THIS = 1 { name = "Enabled Clearing This"; desc = "enabled Clearing this bit can disable a channel. When this bit is cleared, the current bus transfer continues until the data transfer is complete. Then, the channel is disabled and the remaining data in the FIFO is lost. When the last LLI node is transferred or an error occurs during transfer, the channel is also disabled and this bit is cleared. If you want to disable a channel without data loss, the Halt bit must be set to 1 so the subsequent DMA requests are ignored by the channel. After this, the Active bit must be polled until its value becomes 0, indicating that there is no data in the channel FIFO. At this time, the Enable bit can be cleared. Before enabling a channel by setting this bit to 1, you must reinitialize the channel; otherwise, unexpected results may occur. When a channel is disabled by writing DMAC_Cn_CONFIG [ch_en], DMAC_Cn_CONFIG [ch_en] can be reset again only after the corresponding bit of DMAC_ENABLED_CHNS is 0. This is because the channel is not disabled immediately after the Channel Enable bit is cleared. The running delay during a bus"; };
+        };
+
+        field {
+            name = "ch_en";
+            desc = "Channel enable. The current status of the channel can be queried by reading this field or DMAC_ENABLED_CHNS.";
+            sw = rw;
+            hw = r;
+            encode = CONFIG_ch_en_enum;
+            reset = 0x0;
+        } ch_en[0:0];
+    } CONFIG @ 0x10;
+
+};
+
+regfile eHISI_DMAC {
+    name = "HiSilicon DMA controller (PL080-compatible, 4 channels)";
+    desc = "
+    DMA controller of the Hi3518E V20X / Hi3516C V200 at 0x10060000 (data sheet issue 02, section 3.6), interrupt 14 of the VIC. It has the register layout of an **ARM PrimeCell PL080**
+    (the vendor driver `hi_pl08x.c` is derived from the Linux `amba-pl08x` driver) but with **4 channels** and 16 request lines; the data sheet documents no PrimeCell ID registers (PL080
+    has PeriphID/PCellID at 0xFE0..0xFFC): they are not modelled here and the DMAC is not AMBA-probed on this SoC (the vendor device tree binds it as the platform device
+    `hisilicon,hisi-dmac`). Global registers 0x000-0x034, per-channel registers `CH[4]` at 0x100 + n x 0x20 (SRC_ADDR, DEST_ADDR, LLI, CONTROL, CONFIG; the data sheet names them DMAC_Cn_*).
+    Two AHB masters (`src_select`/`dest_select`, `ll_master`, `DMAC_CONFIG.m1/m2_endianness`).
+
+    Bring-up: clock/reset PERI_CRG54 `dma_cken` [5] / `dma_srst_req` [4] (reset = 0: clock off, not in reset); initialisation sequence (DS 3.6.4): write DMAC_CONFIG (endianness, `dmac_enable`), write 1s to
+    DMAC_INT_TC_CLR / DMAC_INT_ERR_CLR, write DMAC_SYNC, disable all channels (`ch_en` = 0). Enabling a channel: pick an idle channel from DMAC_ENABLED_CHNS, clear its interrupts, program SRC_ADDR, DEST_ADDR,
+    LLI, CONTROL, CONFIG, then set `ch_en`. For memory-to-memory transfers use channel 2 or 3 (an idle cycle is inserted after each bus operation on those channels, DS 3.6.3).
+
+    **DMA request line numbers (data sheet Table 3-12; `DMAC_Cn_CONFIG.src_periph` / `dest_periph`):** 0 I2C0 RX, 1 I2C0 TX, 2 I2C1 RX, 3 I2C1 TX, 4 UART0 RX, 5 UART0 TX, 6 UART1 RX, 7 UART1 TX,
+    8 UART2 RX, 9 UART2 TX, 10 I2C2 RX, 11 I2C2 TX, 12 SSP1 RX, 13 SSP1 TX, 14 SSP0 RX, 15 SSP0 TX. The vendor header `hidmac_hi3518ev20x.h` uses the same table.
+
+    Source: data sheet 3.6.5/3.6.6 (`hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` lines 27600-28696) and the vendor driver `drivers/hidmac/hidmac_hi3518ev20x.h` (register offsets and the channel control/config values the driver writes agree with the data sheet). The channel registers
+    are modelled as the nested regfile `eHISI_DMAC_CH` instantiated `CH[4] @ 0x100 += 0x20`. No hardware verification.
+    ";
+
+    reg {
+        name = "DMAC interrupt status register";
+        desc = "DMAC_INT_STAT is an interrupt status register.
+
+Data sheet 3.6.6 DMAC_INT_STAT (offset 0x0, printed page 3-101, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 27666).";
+
+        enum DMAC_INT_STAT_ch3_int_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            TRANSFER_ERROR_INTERRUPT = 1 { name = "Transfer Error Interrupt"; desc = "A transfer error interrupt or transfer terminal interrupt is generated."; };
+        };
+
+        field {
+            name = "ch3_int_stat";
+            desc = "Masked interrupt status of channel 3";
+            sw = r;
+            hw = w;
+            encode = DMAC_INT_STAT_ch3_int_stat_enum;
+            reset = 0x0;
+        } ch3_int_stat[3:3];
+
+        enum DMAC_INT_STAT_ch2_int_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            TRANSFER_ERROR_INTERRUPT = 1 { name = "Transfer Error Interrupt"; desc = "A transfer error interrupt or transfer terminal interrupt is generated."; };
+        };
+
+        field {
+            name = "ch2_int_stat";
+            desc = "Masked interrupt status of channel 2";
+            sw = r;
+            hw = w;
+            encode = DMAC_INT_STAT_ch2_int_stat_enum;
+            reset = 0x0;
+        } ch2_int_stat[2:2];
+
+        enum DMAC_INT_STAT_ch1_int_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            TRANSFER_ERROR_INTERRUPT = 1 { name = "Transfer Error Interrupt"; desc = "A transfer error interrupt or transfer terminal interrupt is generated."; };
+        };
+
+        field {
+            name = "ch1_int_stat";
+            desc = "Masked interrupt status of channel 1";
+            sw = r;
+            hw = w;
+            encode = DMAC_INT_STAT_ch1_int_stat_enum;
+            reset = 0x0;
+        } ch1_int_stat[1:1];
+
+        enum DMAC_INT_STAT_ch0_int_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            TRANSFER_ERROR_INTERRUPT = 1 { name = "Transfer Error Interrupt"; desc = "A transfer error interrupt or transfer terminal interrupt is generated."; };
+        };
+
+        field {
+            name = "ch0_int_stat";
+            desc = "Masked interrupt status of channel 0";
+            sw = r;
+            hw = w;
+            encode = DMAC_INT_STAT_ch0_int_stat_enum;
+            reset = 0x0;
+        } ch0_int_stat[0:0];
+    } DMAC_INT_STAT @ 0x0;
+
+    reg {
+        name = "DMAC transfer terminal interrupt status register";
+        desc = "DMAC_INT_TC_STAT is a DMAC transfer terminal interrupt status register.
+
+Data sheet 3.6.6 DMAC_INT_TC_STAT (offset 0x4, printed page 3-102, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 27723).";
+
+        enum DMAC_INT_TC_STAT_ch3_int_tc_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "ch3_int_tc_stat";
+            desc = "Status of the masked transfer terminal interrupt of channel 3";
+            sw = r;
+            hw = w;
+            encode = DMAC_INT_TC_STAT_ch3_int_tc_stat_enum;
+            reset = 0x0;
+        } ch3_int_tc_stat[3:3];
+
+        enum DMAC_INT_TC_STAT_ch2_int_tc_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "ch2_int_tc_stat";
+            desc = "Status of the masked transfer terminal interrupt of channel 2";
+            sw = r;
+            hw = w;
+            encode = DMAC_INT_TC_STAT_ch2_int_tc_stat_enum;
+            reset = 0x0;
+        } ch2_int_tc_stat[2:2];
+
+        enum DMAC_INT_TC_STAT_ch1_int_tc_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "ch1_int_tc_stat";
+            desc = "Status of the masked transfer terminal interrupt of channel 1";
+            sw = r;
+            hw = w;
+            encode = DMAC_INT_TC_STAT_ch1_int_tc_stat_enum;
+            reset = 0x0;
+        } ch1_int_tc_stat[1:1];
+
+        enum DMAC_INT_TC_STAT_ch0_int_tc_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "ch0_int_tc_stat";
+            desc = "Status of the masked transfer terminal interrupt of channel 0";
+            sw = r;
+            hw = w;
+            encode = DMAC_INT_TC_STAT_ch0_int_tc_stat_enum;
+            reset = 0x0;
+        } ch0_int_tc_stat[0:0];
+    } DMAC_INT_TC_STAT @ 0x4;
+
+    reg {
+        name = "DMAC transfer terminal interrupt clear register";
+        desc = "DMAC_INT_TC_CLR is a DMAC transfer terminal interrupt clear register.
+
+Data sheet 3.6.6 DMAC_INT_TC_CLR (offset 0x8, printed page 3-103, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 27771).";
+
+        enum DMAC_INT_TC_CLR_ch3_int_tc_clr_enum {
+            NOT_CLEARED = 0 { name = "Not Cleared"; desc = "not cleared"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "ch3_int_tc_clr";
+            desc = "Transfer terminal interrupt clear for channel 3";
+            sw = w;
+            hw = r;
+            encode = DMAC_INT_TC_CLR_ch3_int_tc_clr_enum;
+            reset = 0x0;
+        } ch3_int_tc_clr[3:3];
+
+        enum DMAC_INT_TC_CLR_ch2_int_tc_clr_enum {
+            NOT_CLEARED = 0 { name = "Not Cleared"; desc = "not cleared"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "ch2_int_tc_clr";
+            desc = "Transfer terminal interrupt clear for channel 2";
+            sw = w;
+            hw = r;
+            encode = DMAC_INT_TC_CLR_ch2_int_tc_clr_enum;
+            reset = 0x0;
+        } ch2_int_tc_clr[2:2];
+
+        enum DMAC_INT_TC_CLR_ch1_int_tc_clr_enum {
+            NOT_CLEARED = 0 { name = "Not Cleared"; desc = "not cleared"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "ch1_int_tc_clr";
+            desc = "Transfer terminal interrupt clear for channel 1";
+            sw = w;
+            hw = r;
+            encode = DMAC_INT_TC_CLR_ch1_int_tc_clr_enum;
+            reset = 0x0;
+        } ch1_int_tc_clr[1:1];
+
+        enum DMAC_INT_TC_CLR_ch0_int_tc_clr_enum {
+            NOT_CLEARED = 0 { name = "Not Cleared"; desc = "not cleared"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "ch0_int_tc_clr";
+            desc = "Transfer terminal interrupt clear for channel 0";
+            sw = w;
+            hw = r;
+            encode = DMAC_INT_TC_CLR_ch0_int_tc_clr_enum;
+            reset = 0x0;
+        } ch0_int_tc_clr[0:0];
+    } DMAC_INT_TC_CLR @ 0x8;
+
+    reg {
+        name = "DMAC error interrupt status register";
+        desc = "DMAC_INT_ERR_STAT is a DMAC error interrupt status register.
+
+Data sheet 3.6.6 DMAC_INT_ERR_STAT (offset 0xC, printed page 3-104, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 27814).";
+
+        enum DMAC_INT_ERR_STAT_ch3_int_err_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "ch3_int_err_stat";
+            desc = "Status of the masked error interrupt of channel 3";
+            sw = r;
+            hw = w;
+            encode = DMAC_INT_ERR_STAT_ch3_int_err_stat_enum;
+            reset = 0x0;
+        } ch3_int_err_stat[3:3];
+
+        enum DMAC_INT_ERR_STAT_ch2_int_err_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "ch2_int_err_stat";
+            desc = "Status of the masked error interrupt of channel 2";
+            sw = r;
+            hw = w;
+            encode = DMAC_INT_ERR_STAT_ch2_int_err_stat_enum;
+            reset = 0x0;
+        } ch2_int_err_stat[2:2];
+
+        enum DMAC_INT_ERR_STAT_ch1_int_err_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "ch1_int_err_stat";
+            desc = "Status of the masked error interrupt of channel 1";
+            sw = r;
+            hw = w;
+            encode = DMAC_INT_ERR_STAT_ch1_int_err_stat_enum;
+            reset = 0x0;
+        } ch1_int_err_stat[1:1];
+
+        enum DMAC_INT_ERR_STAT_ch0_int_err_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "ch0_int_err_stat";
+            desc = "Status of the masked error interrupt of channel 0";
+            sw = r;
+            hw = w;
+            encode = DMAC_INT_ERR_STAT_ch0_int_err_stat_enum;
+            reset = 0x0;
+        } ch0_int_err_stat[0:0];
+    } DMAC_INT_ERR_STAT @ 0xC;
+
+    reg {
+        name = "DMAC error interrupt clear register";
+        desc = "DMAC_INT_ERR_CLR is a DMAC transfer error interrupt clear register.
+
+Data sheet 3.6.6 DMAC_INT_ERR_CLR (offset 0x10, printed page 3-105, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 27857).";
+
+        enum DMAC_INT_ERR_CLR_ch3_int_err_clr_enum {
+            NOT_CLEARED = 0 { name = "Not Cleared"; desc = "not cleared"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "ch3_int_err_clr";
+            desc = "Error interrupt clear for channel 3";
+            sw = w;
+            hw = r;
+            encode = DMAC_INT_ERR_CLR_ch3_int_err_clr_enum;
+            reset = 0x0;
+        } ch3_int_err_clr[3:3];
+
+        enum DMAC_INT_ERR_CLR_ch2_int_err_clr_enum {
+            NOT_CLEARED = 0 { name = "Not Cleared"; desc = "not cleared"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "ch2_int_err_clr";
+            desc = "Error interrupt clear for channel 2";
+            sw = w;
+            hw = r;
+            encode = DMAC_INT_ERR_CLR_ch2_int_err_clr_enum;
+            reset = 0x0;
+        } ch2_int_err_clr[2:2];
+
+        enum DMAC_INT_ERR_CLR_ch1_int_err_clr_enum {
+            NOT_CLEARED = 0 { name = "Not Cleared"; desc = "not cleared"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "ch1_int_err_clr";
+            desc = "Error interrupt clear for channel 1";
+            sw = w;
+            hw = r;
+            encode = DMAC_INT_ERR_CLR_ch1_int_err_clr_enum;
+            reset = 0x0;
+        } ch1_int_err_clr[1:1];
+
+        enum DMAC_INT_ERR_CLR_ch0_int_err_clr_enum {
+            NOT_CLEARED = 0 { name = "Not Cleared"; desc = "not cleared"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "ch0_int_err_clr";
+            desc = "Error interrupt clear for channel 0";
+            sw = w;
+            hw = r;
+            encode = DMAC_INT_ERR_CLR_ch0_int_err_clr_enum;
+            reset = 0x0;
+        } ch0_int_err_clr[0:0];
+    } DMAC_INT_ERR_CLR @ 0x10;
+
+    reg {
+        name = "DMAC raw transfer terminal interrupt TAT status register";
+        desc = "DMAC_RAW_INT_TC_STAT is a DMAC raw transfer terminal interrupt status register.
+
+Data sheet 3.6.6 DMAC_RAW_INT_TC_STAT (offset 0x14, printed page 3-106, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 27901).";
+
+        enum DMAC_RAW_INT_TC_STAT_ch3_raw_int_tc_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "ch3_raw_int_tc";
+            desc = "Status of the raw transfer terminal interrupt of channel 3";
+            sw = r;
+            hw = w;
+            encode = DMAC_RAW_INT_TC_STAT_ch3_raw_int_tc_enum;
+            reset = 0x0;
+        } ch3_raw_int_tc[3:3];
+
+        enum DMAC_RAW_INT_TC_STAT_ch2_raw_int_tc_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "ch2_raw_int_tc";
+            desc = "Status of the raw transfer terminal interrupt of channel 2";
+            sw = r;
+            hw = w;
+            encode = DMAC_RAW_INT_TC_STAT_ch2_raw_int_tc_enum;
+            reset = 0x0;
+        } ch2_raw_int_tc[2:2];
+
+        enum DMAC_RAW_INT_TC_STAT_ch1_raw_int_tc_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "ch1_raw_int_tc";
+            desc = "Status of the raw transfer terminal interrupt of channel 1";
+            sw = r;
+            hw = w;
+            encode = DMAC_RAW_INT_TC_STAT_ch1_raw_int_tc_enum;
+            reset = 0x0;
+        } ch1_raw_int_tc[1:1];
+
+        enum DMAC_RAW_INT_TC_STAT_ch0_raw_int_tc_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "ch0_raw_int_tc";
+            desc = "Status of the raw transfer terminal interrupt of channel 0";
+            sw = r;
+            hw = w;
+            encode = DMAC_RAW_INT_TC_STAT_ch0_raw_int_tc_enum;
+            reset = 0x0;
+        } ch0_raw_int_tc[0:0];
+    } DMAC_RAW_INT_TC_STAT @ 0x14;
+
+    reg {
+        name = "DMAC raw error interrupt status STAT register";
+        desc = "DMAC_RAW_INT_ERR_STAT is a DMAC raw error interrupt status register.
+
+Data sheet 3.6.6 DMAC_RAW_INT_ERR_STAT (offset 0x18, printed page 3-107, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 27945).";
+
+        enum DMAC_RAW_INT_ERR_STAT_ch3_raw_int_err_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "ch3_raw_int_err";
+            desc = "Status of the raw error interrupt of channel 3";
+            sw = r;
+            hw = w;
+            encode = DMAC_RAW_INT_ERR_STAT_ch3_raw_int_err_enum;
+            reset = 0x0;
+        } ch3_raw_int_err[3:3];
+
+        enum DMAC_RAW_INT_ERR_STAT_ch2_raw_int_err_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "ch2_raw_int_err";
+            desc = "Status of the raw error interrupt of channel 2";
+            sw = r;
+            hw = w;
+            encode = DMAC_RAW_INT_ERR_STAT_ch2_raw_int_err_enum;
+            reset = 0x0;
+        } ch2_raw_int_err[2:2];
+
+        enum DMAC_RAW_INT_ERR_STAT_ch1_raw_int_err_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "ch1_raw_int_err";
+            desc = "Status of the raw error interrupt of channel 1";
+            sw = r;
+            hw = w;
+            encode = DMAC_RAW_INT_ERR_STAT_ch1_raw_int_err_enum;
+            reset = 0x0;
+        } ch1_raw_int_err[1:1];
+
+        enum DMAC_RAW_INT_ERR_STAT_ch0_raw_int_err_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "ch0_raw_int_err";
+            desc = "Status of the raw error interrupt of channel 0";
+            sw = r;
+            hw = w;
+            encode = DMAC_RAW_INT_ERR_STAT_ch0_raw_int_err_enum;
+            reset = 0x0;
+        } ch0_raw_int_err[0:0];
+    } DMAC_RAW_INT_ERR_STAT @ 0x18;
+
+    reg {
+        name = "DMAC channel enable status register S";
+        desc = "DMAC_ENABLED_CHNS is a DMAC channel enable status register.
+
+Data sheet 3.6.6 DMAC_ENABLED_CHNS (offset 0x1C, printed page 3-108, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 27989).";
+
+        enum DMAC_ENABLED_CHNS_ch3_enabled_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "ch3_enabled";
+            desc = "Channel 3 enable";
+            sw = r;
+            hw = w;
+            encode = DMAC_ENABLED_CHNS_ch3_enabled_enum;
+            reset = 0x0;
+        } ch3_enabled[3:3];
+
+        enum DMAC_ENABLED_CHNS_ch2_enabled_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "ch2_enabled";
+            desc = "Channel 2 enable";
+            sw = r;
+            hw = w;
+            encode = DMAC_ENABLED_CHNS_ch2_enabled_enum;
+            reset = 0x0;
+        } ch2_enabled[2:2];
+
+        enum DMAC_ENABLED_CHNS_ch1_enabled_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "ch1_enabled";
+            desc = "Channel 1 enable";
+            sw = r;
+            hw = w;
+            encode = DMAC_ENABLED_CHNS_ch1_enabled_enum;
+            reset = 0x0;
+        } ch1_enabled[1:1];
+
+        enum DMAC_ENABLED_CHNS_ch0_enabled_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "ch0_enabled";
+            desc = "Channel 0 enable";
+            sw = r;
+            hw = w;
+            encode = DMAC_ENABLED_CHNS_ch0_enabled_enum;
+            reset = 0x0;
+        } ch0_enabled[0:0];
+    } DMAC_ENABLED_CHNS @ 0x1C;
+
+    reg {
+        name = "DMAC software burst transfer request register";
+        desc = "DMAC_SOFT_BREQ is a DMAC software burst transfer request register. Software controls the generation of DMA burst transfer requests by using this register. When this register is read, the peripherals that are requesting a DMA burst transfer can be queried.
+
+Data sheet 3.6.6 DMAC_SOFT_BREQ (offset 0x20, printed page 3-109, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 28040).";
+
+        field {
+            name = "soft_breq";
+            desc = "Controls whether to generate a DMA burst transfer request When this register is written: 0: no effect 1: A DMA burst transfer request is generated. When the transfer is complete, the corresponding bit is cleared. When this register is read: 0: The peripheral corresponding to the request signal DMACBREQ[15:0] does not send any DMA burst request. 1: The peripheral corresponding to the request signal DMACBREQ[15:0] is requesting the DMA burst transfer.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } soft_breq[15:0];
+    } DMAC_SOFT_BREQ @ 0x20;
+
+    reg {
+        name = "DMAC software single transfer request register";
+        desc = "DMAC_SOFT_SREQ is a DMAC software single transfer request register. Software controls the generation of DMA single transfer requests by using this register. When this register is read, the device that is requesting the DMA single transfer can be queried. This register and any of the 16 DMA request input signals of the DMAC can generate a DMA request each.
+
+Data sheet 3.6.6 DMAC_SOFT_SREQ (offset 0x24, printed page 3-109, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 28073).";
+
+        enum DMAC_SOFT_SREQ_soft_sreq_enum {
+            NO_EFFECT = 0x0 { name = "No Effect"; desc = "no effect"; };
+            DMA_SINGLE_TRANSFER = 0x1 { name = "Dma Single Transfer"; desc = "A DMA single transfer request is generated. When the transfer is complete, the corresponding bit is cleared."; };
+        };
+
+        field {
+            name = "soft_sreq";
+            desc = "Controls whether to generate a DMA single transfer request When this register is written:";
+            sw = rw;
+            hw = r;
+            encode = DMAC_SOFT_SREQ_soft_sreq_enum;
+            reset = 0x0;
+        } soft_sreq[15:0];
+    } DMAC_SOFT_SREQ @ 0x24;
+
+    reg {
+        name = "DMAC software last burst request register";
+        desc = "DMAC_SOFT_LBREQ is a DMAC software last burst request register. Software controls the generation of the DMA last burst transfer requests by using this register.
+
+Data sheet 3.6.6 DMAC_SOFT_LBREQ (offset 0x28, printed page 3-110, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 28113).";
+
+        enum DMAC_SOFT_LBREQ_soft_lbreq_enum {
+            NO_EFFECT = 0x0 { name = "No Effect"; desc = "no effect"; };
+            DMA_LAST_BURST = 0x1 { name = "Dma Last Burst"; desc = "A DMA last burst transfer request is generated. When the transfer is complete, the corresponding bit is cleared."; };
+        };
+
+        field {
+            name = "soft_lbreq";
+            desc = "Last burst request issued by the software";
+            sw = rw;
+            hw = r;
+            encode = DMAC_SOFT_LBREQ_soft_lbreq_enum;
+            reset = 0x0;
+        } soft_lbreq[15:0];
+    } DMAC_SOFT_LBREQ @ 0x28;
+
+    reg {
+        name = "DMAC software last single request register";
+        desc = "DMAC_SOFT_LSREQ is a DMAC software last single transfer request register. Software controls the generation of the DMA last single transfer requests by using this register.
+
+Data sheet 3.6.6 DMAC_SOFT_LSREQ (offset 0x2C, printed page 3-110, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 28139).";
+
+        enum DMAC_SOFT_LSREQ_soft_lsreq_enum {
+            NO_EFFECT = 0x0 { name = "No Effect"; desc = "no effect"; };
+            DMA_LAST_SINGLE = 0x1 { name = "Dma Last Single"; desc = "A DMA last single transfer request is generated. When the transfer is complete, the corresponding bit is cleared."; };
+        };
+
+        field {
+            name = "soft_lsreq";
+            desc = "Last single transfer request issued by software";
+            sw = rw;
+            hw = r;
+            encode = DMAC_SOFT_LSREQ_soft_lsreq_enum;
+            reset = 0x0;
+        } soft_lsreq[15:0];
+    } DMAC_SOFT_LSREQ @ 0x2C;
+
+    reg {
+        name = "DMAC configuration register";
+        desc = "DMAC_CONFIG is a DMAC configuration register.
+
+The vendor driver writes 0x01 (little endian, DMAC enabled) here at init (`DMAC_CONFIG_VAL`). Clock gate and soft reset of the DMAC: PERI_CRG54 `dma_cken` [5], `dma_srst_req` [4].
+
+Data sheet 3.6.6 DMAC_CONFIG (offset 0x30, printed page 3-111, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 28174).";
+
+        enum DMAC_CONFIG_m2_endianness_enum {
+            LITTLE_ENDIAN = 0 { name = "Little Endian"; desc = "little endian"; };
+            BIG_ENDIAN = 1 { name = "Big Endian"; desc = "big endian"; };
+        };
+
+        field {
+            name = "m2_endianness";
+            desc = "Byte endianness of master 2";
+            sw = rw;
+            hw = r;
+            encode = DMAC_CONFIG_m2_endianness_enum;
+            reset = 0x0;
+        } m2_endianness[2:2];
+
+        enum DMAC_CONFIG_m1_endianness_enum {
+            LITTLE_ENDIAN = 0 { name = "Little Endian"; desc = "little endian"; };
+            BIG_ENDIAN = 1 { name = "Big Endian"; desc = "big endian"; };
+        };
+
+        field {
+            name = "m1_endianness";
+            desc = "Byte endianness of master 1";
+            sw = rw;
+            hw = r;
+            encode = DMAC_CONFIG_m1_endianness_enum;
+            reset = 0x0;
+        } m1_endianness[1:1];
+
+        enum DMAC_CONFIG_dmac_enable_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "dmac_enable";
+            desc = "DMA enable";
+            sw = rw;
+            hw = r;
+            encode = DMAC_CONFIG_dmac_enable_enum;
+            reset = 0x0;
+        } dmac_enable[0:0];
+    } DMAC_CONFIG @ 0x30;
+
+    reg {
+        name = "DMAC request line sync enable register";
+        desc = "DMAC_SYNC is a DMAC request line sync enable register.
+
+The vendor driver writes 0 (sync logic enabled for all 16 request lines, `DMAC_SYNC_VAL`).
+
+Data sheet 3.6.6 DMAC_SYNC (offset 0x34, printed page 3-112, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 28215).";
+
+        enum DMAC_SYNC_dmac_sync_enum {
+            SYNC_LOGIC_PROVIDED = 0x0 { name = "Sync Logic Provided"; desc = "The sync logic provided for the DMA request signals of the corresponding peripheral is enabled."; };
+            SYNC_LOGIC_PROVIDED_2 = 0x1 { name = "Sync Logic Provided 2"; desc = "The sync logic provided for the DMA request signals of the corresponding peripheral is disabled."; };
+        };
+
+        field {
+            name = "dmac_sync";
+            desc = "Controls whether to synchronize the request signals";
+            sw = rw;
+            hw = r;
+            encode = DMAC_SYNC_dmac_sync_enum;
+            reset = 0x0;
+        } dmac_sync[15:0];
+    } DMAC_SYNC @ 0x34;
+
+    eHISI_DMAC_CH CH[4] @ 0x100 += 0x20;
+};
+
+`endif
