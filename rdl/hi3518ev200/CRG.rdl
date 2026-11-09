@@ -10,6 +10,14 @@ regfile eCRG {
 
     Clock facts used by the bring-up code: ARM926 runs from the 24 MHz crystal after reset (cpu_sc_sel = 0); bus/APB mux PERI_CRG12 bit 0 (24 MHz / 198 MHz, APB = /4);
     UART mux PERI_CRG57 [20:19] (APB / 24 MHz / 6 MHz); timers use 3 MHz or the APB clock (SYS_CTRL SC_CTRL).
+    Vendor clock tree (clk-hi3518ev20x.c, `hisilicon,hi3518ev20x-clock`): sysapb = bus mux / 4 (6 or 49.5 MHz, parent of the I2Cs, GPIOs and timers); SSP0/SSP1 (PERI_CRG57 bits 13/14)
+    are clocked from the bus mux itself (24 or 198 MHz), DMAC (PERI_CRG54 bit 5) from a fixed 50 MHz, FMC from the PERI_CRG48 mux, ETH from the PERI_CRG59 mux, SDIO0/1 from the PERI_CRG49 muxes.
+
+    Sources: HiSilicon's own English data sheet (issue 02, 2017-06-12; the `Hi3518E` data sheet issue 03 of 2015 in the same dump folder is the Hi3518E V100, SC_SYSID 0x3518_0100, and
+    does not apply). No Chinese original of the Hi3518E V20X/Hi3516C V200 data sheet is available locally, so disputed values were settled with the vendor U-Boot
+    (`arch-hi3518ev200/platform.h`, `hiusb-3518ev200.c`) and the vendor Linux clock driver; each such case is noted in the register description. The reserved-bit resets follow
+    the `Total Reset Value` header where it disagrees with the bit row. Register names, offsets, bit ranges and resets of all 35 registers were checked against the data
+    sheet on 2026-11-09. The Hi3516C V200 uses the same CRG (same data sheet chapter); only the APLL target (600 MHz CPU) differs.
     ";
 
     reg {
@@ -500,7 +508,7 @@ Data sheet 3.2.7 PERI_CRG10 (offset 0x28, printed page 3-17, `hi3518ev200-datash
 
         enum PERI_CRG10_arm_core_srst_req_enum {
             DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
-            RESET_F = 1 { name = "Reset F"; desc = "reset"; };
+            RESET = 1 { name = "Reset"; desc = "reset"; };
         };
 
         field {
@@ -517,11 +525,13 @@ Data sheet 3.2.7 PERI_CRG10 (offset 0x28, printed page 3-17, `hi3518ev200-datash
         name = "VICAP&MIPI CTRL and sensor clock and reset configuration register";
         desc = "PERI_CRG11 is a VICAP&MIPI CTRL and sensor clock and reset configuration register.
 
+Bit 11: the data sheet's bit-name row prints `mipi_hrst_req` (MIPI bus reset) for it, but the bit table lists [11] as reserved (RO); modelled as reserved, treat as a possible MIPI AHB reset. The sensor clock table is `000` 74.25, `001` 37.125, `010` 54, `011` 27, `1X0` 24, `1X1` 25 MHz (the vendor clock driver has no sensor clock entry).
+
 Data sheet 3.2.7 PERI_CRG11 (offset 0x2C, printed page 3-18, `hi3518ev200-datasheet.txt` line 23145).";
 
         enum PERI_CRG11_sensor_srst_req_enum {
             DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
-            RESET_F = 1 { name = "Reset F"; desc = "reset"; };
+            RESET = 1 { name = "Reset"; desc = "reset"; };
         };
 
         field {
@@ -548,10 +558,14 @@ Data sheet 3.2.7 PERI_CRG11 (offset 0x2C, printed page 3-18, `hi3518ev200-datash
         } sensor_cken[19:19];
 
         enum PERI_CRG11_sensor_cksel_enum {
-            V_74_25_MHZ = 0 { name = "V 74 25 Mhz"; desc = "74.25 MHz"; };
-            V_37_125_MHZ = 1 { name = "V 37 125 Mhz"; desc = "37.125 MHz"; };
-            V_54_MHZ = 2 { name = "V 54 Mhz"; desc = "54 MHz"; };
-            V_27_MHZ_1X0 = 3 { name = "V 27 Mhz 1X0"; desc = "27 MHz 1X0: 24 MHz 1X1: 25 MHz"; };
+            V_74_25_MHZ = 0 { name = "74.25 MHz"; desc = "74.25 MHz"; };
+            V_37_125_MHZ = 1 { name = "37.125 MHz"; desc = "37.125 MHz"; };
+            V_54_MHZ = 2 { name = "54 MHz"; desc = "54 MHz"; };
+            V_27_MHZ = 3 { name = "27 MHz"; desc = "27 MHz"; };
+            V_24_MHZ = 4 { name = "24 MHz"; desc = "24 MHz (data sheet `1X0`)"; };
+            V_25_MHZ = 5 { name = "25 MHz"; desc = "25 MHz (data sheet `1X1`)"; };
+            V_24_MHZ_2 = 6 { name = "24 MHz (alias)"; desc = "24 MHz (data sheet `1X0`)"; };
+            V_25_MHZ_2 = 7 { name = "25 MHz (alias)"; desc = "25 MHz (data sheet `1X1`)"; };
         };
 
         field {
@@ -579,7 +593,7 @@ Data sheet 3.2.7 PERI_CRG11 (offset 0x2C, printed page 3-18, `hi3518ev200-datash
 
         enum PERI_CRG11_isp_cfg_srst_req_enum {
             DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
-            RESET_F = 1 { name = "Reset F"; desc = "reset"; };
+            RESET = 1 { name = "Reset"; desc = "reset"; };
         };
 
         field {
@@ -593,7 +607,7 @@ Data sheet 3.2.7 PERI_CRG11 (offset 0x2C, printed page 3-18, `hi3518ev200-datash
 
         enum PERI_CRG11_isp_core_srst_req_enum {
             DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
-            RESET_F = 1 { name = "Reset F"; desc = "reset"; };
+            RESET = 1 { name = "Reset"; desc = "reset"; };
         };
 
         field {
@@ -607,7 +621,7 @@ Data sheet 3.2.7 PERI_CRG11 (offset 0x2C, printed page 3-18, `hi3518ev200-datash
 
         enum PERI_CRG11_mipi_srst_req_enum {
             DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
-            RESET_F = 1 { name = "Reset F"; desc = "reset"; };
+            RESET = 1 { name = "Reset"; desc = "reset"; };
         };
 
         field {
@@ -621,7 +635,7 @@ Data sheet 3.2.7 PERI_CRG11 (offset 0x2C, printed page 3-18, `hi3518ev200-datash
 
         enum PERI_CRG11_vi_hrst_req_enum {
             DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
-            RESET_F = 1 { name = "Reset F"; desc = "reset"; };
+            RESET = 1 { name = "Reset"; desc = "reset"; };
         };
 
         field {
@@ -635,7 +649,7 @@ Data sheet 3.2.7 PERI_CRG11 (offset 0x2C, printed page 3-18, `hi3518ev200-datash
 
         enum PERI_CRG11_vi0_srst_req_enum {
             DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
-            RESET_F = 1 { name = "Reset F"; desc = "reset"; };
+            RESET = 1 { name = "Reset"; desc = "reset"; };
         };
 
         field {
@@ -664,8 +678,8 @@ Data sheet 3.2.7 PERI_CRG11 (offset 0x2C, printed page 3-18, `hi3518ev200-datash
         } phy_hs_lat[5:4];
 
         enum PERI_CRG11_vi0_sc_sel_enum {
-            V_99_MHZ = 0 { name = "V 99 Mhz"; desc = "99 MHz"; };
-            V_148_5_MHZ = 1 { name = "V 148 5 Mhz"; desc = "148.5 MHz"; };
+            V_99_MHZ = 0 { name = "99 MHz"; desc = "99 MHz"; };
+            V_148_5_MHZ = 1 { name = "148.5 MHz"; desc = "148.5 MHz"; };
         };
 
         field {
@@ -723,8 +737,8 @@ Data sheet 3.2.7 PERI_CRG12 (offset 0x30, printed page 3-20, `hi3518ev200-datash
         } mem_adjust_bypass[20:20];
 
         enum PERI_CRG12_cpu_sc_sel_enum {
-            V_24_MHZ = 0 { name = "V 24 Mhz"; desc = "24 MHz"; };
-            APLL_POSTDIV = 1 { name = "Apll Postdiv"; desc = "APLL_POSTDIV (configurable frequency of 540, 600, 660, or 750 MHz)"; };
+            V_24_MHZ = 0 { name = "24 MHz"; desc = "24 MHz"; };
+            APLL_POSTDIV = 1 { name = "APLL POSTDIV"; desc = "APLL_POSTDIV (configurable frequency of 540, 600, 660, or 750 MHz)"; };
         };
 
         field {
@@ -736,17 +750,22 @@ Data sheet 3.2.7 PERI_CRG12 (offset 0x30, printed page 3-20, `hi3518ev200-datash
             reset = 0x0;
         } cpu_sc_sel[8:8];
 
+        enum PERI_CRG12_cpu_clk_div_enum {
+            CPU_DIV_3 = 2 { name = "CPU Clock / 3"; desc = "DDR bus clock = CPU clock divided by 3 (the only documented value; others reserved)"; };
+        };
+
         field {
             name = "cpu_clk_div";
             desc = "DDR bus clock 10: CPU clock after being divided by 3 Other values: reserved";
             sw = rw;
             hw = r;
+            encode = PERI_CRG12_cpu_clk_div_enum;
             reset = 0x2;
         } cpu_clk_div[5:4];
 
         enum PERI_CRG12_bus_sc_sel_enum {
-            V_24_MHZ = 0 { name = "V 24 Mhz"; desc = "24 MHz"; };
-            V_198_MHZ = 1 { name = "V 198 Mhz"; desc = "198 MHz"; };
+            V_24_MHZ = 0 { name = "24 MHz"; desc = "24 MHz"; };
+            V_198_MHZ = 1 { name = "198 MHz"; desc = "198 MHz"; };
         };
 
         field {
@@ -766,8 +785,8 @@ Data sheet 3.2.7 PERI_CRG12 (offset 0x30, printed page 3-20, `hi3518ev200-datash
 Data sheet 3.2.7 PERI_CRG13 (offset 0x34, printed page 3-21, `hi3518ev200-datasheet.txt` line 23296).";
 
         enum PERI_CRG13_lcd_cksel_enum {
-            LCD_CLOCK_AFTER = 0 { name = "Lcd Clock After"; desc = "LCD clock after being divided by 3"; };
-            LCD_CLOCK_AFTER_2 = 1 { name = "Lcd Clock After 2"; desc = "LCD clock after being divided by 4"; };
+            LCD_CLOCK_AFTER = 0 { name = "LCD Clock / 3"; desc = "LCD clock after being divided by 3"; };
+            LCD_CLOCK_AFTER_2 = 1 { name = "LCD Clock / 4"; desc = "LCD clock after being divided by 4"; };
         };
 
         field {
@@ -794,8 +813,8 @@ Data sheet 3.2.7 PERI_CRG13 (offset 0x34, printed page 3-21, `hi3518ev200-datash
         } lcd_cken[18:18];
 
         enum PERI_CRG13_hd_lcd_cksel_enum {
-            HD_FREQUENCY_DIVISION = 0 { name = "Hd Frequency Division"; desc = "The HD frequency division clock is used as the DHD1 channel clock."; };
-            LCD_FREQUENCY_DIVISION = 1 { name = "Lcd Frequency Division"; desc = "The LCD frequency division clock is used as the DHD1 channel clock."; };
+            HD_FREQUENCY_DIVISION = 0 { name = "HD Divided Clock"; desc = "The HD frequency division clock is used as the DHD1 channel clock."; };
+            LCD_FREQUENCY_DIVISION = 1 { name = "LCD Divided Clock"; desc = "The LCD frequency division clock is used as the DHD1 channel clock."; };
         };
 
         field {
@@ -808,8 +827,8 @@ Data sheet 3.2.7 PERI_CRG13 (offset 0x34, printed page 3-21, `hi3518ev200-datash
         } hd_lcd_cksel[17:17];
 
         enum PERI_CRG13_vo_out_cksel_enum {
-            HD_CLOCK_USED = 0 { name = "Hd Clock Used"; desc = "The HD clock is used as the VDP output associated clock."; };
-            LCD_CLOCK_USED = 1 { name = "Lcd Clock Used"; desc = "The LCD clock is used as the VDP output associated clock."; };
+            HD_CLOCK_USED = 0 { name = "HD Clock"; desc = "The HD clock is used as the VDP output associated clock."; };
+            LCD_CLOCK_USED = 1 { name = "LCD Clock"; desc = "The LCD clock is used as the VDP output associated clock."; };
         };
 
         field {
@@ -821,11 +840,19 @@ Data sheet 3.2.7 PERI_CRG13 (offset 0x34, printed page 3-21, `hi3518ev200-datash
             reset = 0x0;
         } vo_out_cksel[14:14];
 
+        enum PERI_CRG13_hd_cksel_enum {
+            HD_27_MHZ_DIV2 = 0 { name = "27 MHz, / 2"; desc = "HD clock 27 MHz, HD divided clock = HD clock / 2"; };
+            HD_74_25_MHZ_DIV2 = 1 { name = "74.25 MHz, / 2"; desc = "HD clock 74.25 MHz, HD divided clock = HD clock / 2"; };
+            HD_27_MHZ_DIV1 = 2 { name = "27 MHz, / 1"; desc = "HD clock 27 MHz, HD divided clock = HD clock / 1"; };
+            HD_74_25_MHZ_DIV1 = 3 { name = "74.25 MHz, / 1"; desc = "HD clock 74.25 MHz, HD divided clock = HD clock / 1"; };
+        };
+
         field {
             name = "hd_cksel";
-            desc = "DHD frequency bit[12] 0: The HD clock frequency is 27 MHz. 1: The HD clock frequency is 74.25 MHz. bit[13] 0: HD frequency division clock with the clock divider of 2 1: HD frequency division clock with the clock divider of 1";
+            desc = "DHD frequency. bit[12]: 0 = the HD clock is 27 MHz, 1 = 74.25 MHz. bit[13]: 0 = HD divided clock with a divider of 2, 1 = divider of 1 (one data sheet field with per-bit meanings).";
             sw = rw;
             hw = r;
+            encode = PERI_CRG13_hd_cksel_enum;
             reset = 0x0;
         } hd_cksel[13:12];
 
@@ -923,7 +950,7 @@ Data sheet 3.2.7 PERI_CRG13 (offset 0x34, printed page 3-21, `hi3518ev200-datash
 
         enum PERI_CRG13_vo_srst_req_enum {
             DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
-            RESET_F = 1 { name = "Reset F"; desc = "reset"; };
+            RESET = 1 { name = "Reset"; desc = "reset"; };
         };
 
         field {
@@ -945,8 +972,10 @@ PWM clock: 00 = 3 MHz, 01 = 50 MHz, 1X = 24 MHz.
 Data sheet 3.2.7 PERI_CRG14 (offset 0x38, printed page 3-23, `hi3518ev200-datasheet.txt` line 23394).";
 
         enum PERI_CRG14_pwm_cksel_enum {
-            V_3_MHZ = 0 { name = "V 3 Mhz"; desc = "3 MHz"; };
-            V_50_MHZ_1X = 1 { name = "V 50 Mhz 1X"; desc = "50 MHz 1x: 24 MHz"; };
+            V_3_MHZ = 0 { name = "3 MHz"; desc = "3 MHz"; };
+            V_50_MHZ = 1 { name = "50 MHz"; desc = "50 MHz"; };
+            V_24_MHZ = 2 { name = "24 MHz"; desc = "24 MHz (data sheet `1x`)"; };
+            V_24_MHZ_2 = 3 { name = "24 MHz (alias)"; desc = "24 MHz (data sheet `1x`)"; };
         };
 
         field {
@@ -974,7 +1003,7 @@ Data sheet 3.2.7 PERI_CRG14 (offset 0x38, printed page 3-23, `hi3518ev200-datash
 
         enum PERI_CRG14_pwm_srst_req_enum {
             DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
-            RESET_F = 1 { name = "Reset F"; desc = "reset"; };
+            RESET = 1 { name = "Reset"; desc = "reset"; };
         };
 
         field {
@@ -1025,7 +1054,7 @@ Data sheet 3.2.7 PERI_CRG16 (offset 0x40, printed page 3-24, `hi3518ev200-datash
 
         enum PERI_CRG16_avc_srst_req_enum {
             DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset."; };
-            RESET_F = 1 { name = "Reset F"; desc = "reset"; };
+            RESET = 1 { name = "Reset"; desc = "reset"; };
         };
 
         field {
@@ -1076,7 +1105,7 @@ Data sheet 3.2.7 PERI_CRG18 (offset 0x48, printed page 3-25, `hi3518ev200-datash
 
         enum PERI_CRG18_vps_srst_req_enum {
             DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
-            RESET_F = 1 { name = "Reset F"; desc = "reset"; };
+            RESET = 1 { name = "Reset"; desc = "reset"; };
         };
 
         field {
@@ -1127,7 +1156,7 @@ Data sheet 3.2.7 PERI_CRG22 (offset 0x58, printed page 3-26, `hi3518ev200-datash
 
         enum PERI_CRG22_tde_srst_req_enum {
             DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
-            RESET_F = 1 { name = "Reset F"; desc = "reset"; };
+            RESET = 1 { name = "Reset"; desc = "reset"; };
         };
 
         field {
@@ -1178,7 +1207,7 @@ Data sheet 3.2.7 PERI_CRG23 (offset 0x5C, printed page 3-27, `hi3518ev200-datash
 
         enum PERI_CRG23_vgs_srst_req_enum {
             DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
-            RESET_F = 1 { name = "Reset F"; desc = "reset"; };
+            RESET = 1 { name = "Reset"; desc = "reset"; };
         };
 
         field {
@@ -1229,7 +1258,7 @@ Data sheet 3.2.7 PERI_CRG24 (offset 0x60, printed page 3-28, `hi3518ev200-datash
 
         enum PERI_CRG24_jpge_srst_req_enum {
             DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
-            RESET_F = 1 { name = "Reset F"; desc = "reset"; };
+            RESET = 1 { name = "Reset"; desc = "reset"; };
         };
 
         field {
@@ -1279,7 +1308,7 @@ Data sheet 3.2.7 PERI_CRG27 (offset 0x6C, printed page 3-29, `hi3518ev200-datash
 
         enum PERI_CRG27_hash_srst_req_enum {
             DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
-            RESET_F = 1 { name = "Reset F"; desc = "reset"; };
+            RESET = 1 { name = "Reset"; desc = "reset"; };
         };
 
         field {
@@ -1307,7 +1336,7 @@ Data sheet 3.2.7 PERI_CRG27 (offset 0x6C, printed page 3-29, `hi3518ev200-datash
 
         enum PERI_CRG27_ive_srst_req_enum {
             DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
-            RESET_F = 1 { name = "Reset F"; desc = "reset"; };
+            RESET = 1 { name = "Reset"; desc = "reset"; };
         };
 
         field {
@@ -1328,7 +1357,7 @@ Data sheet 3.2.7 PERI_CRG31 (offset 0x7C, printed page 3-30, `hi3518ev200-datash
 
         enum PERI_CRG31_sar_adc_srst_req_enum {
             DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
-            RESET_F = 1 { name = "Reset F"; desc = "reset"; };
+            RESET = 1 { name = "Reset"; desc = "reset"; };
         };
 
         field {
@@ -1356,7 +1385,7 @@ Data sheet 3.2.7 PERI_CRG31 (offset 0x7C, printed page 3-30, `hi3518ev200-datash
 
         enum PERI_CRG31_cipher_srst_req_enum {
             DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
-            RESET_F = 1 { name = "Reset F"; desc = "reset"; };
+            RESET = 1 { name = "Reset"; desc = "reset"; };
         };
 
         field {
@@ -1391,7 +1420,7 @@ Data sheet 3.2.7 PERI_CRG35 (offset 0x8C, printed page 3-30, `hi3518ev200-datash
 
         enum PERI_CRG35_aiao_srst_req_enum {
             DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
-            RESET_F = 1 { name = "Reset F"; desc = "reset"; };
+            RESET = 1 { name = "Reset"; desc = "reset"; };
         };
 
         field {
@@ -1408,13 +1437,13 @@ Data sheet 3.2.7 PERI_CRG35 (offset 0x8C, printed page 3-30, `hi3518ev200-datash
         name = "USB clock and soft reset control register";
         desc = "PERI_CRG46 is a USB2.0 clock and soft reset control register.
 
-USB 2.0 host/device clock and reset. Reset deassert order (DS 12.7.3): wait >= 10 us, clear usb_phy_port0_treq, clear usb_phy_req, wait 250 us, clear usb_ctrl_utmi0_req, clear usb_hrst_req. The vendor U-Boot driver (hiusb-3518ev200.c) uses PERI_CRG46 at 0xB8 as the data sheet does; the vendor Linux clock driver (clk-hi3518ev20x.c) uses offset 0xB4 for the same bits (see docs/UPSTREAM-PR-NOTES.md). Reset 0xA7 = clock on, ctrl/phy/bus in reset.
+USB 2.0 host/device clock and reset. Reset deassert order (DS 12.7.3): wait >= 10 us, clear usb_phy_port0_treq, clear usb_phy_req, wait 250 us, clear usb_ctrl_utmi0_req, clear usb_hrst_req. The vendor U-Boot driver (hiusb-3518ev200.c, `REG_CRG46 0xb8`) and the vendor U-Boot platform.h use PERI_CRG46 at 0xB8 as the data sheet does; the vendor Linux clock driver (clk-hi3518ev20x.c) uses offset 0xB4 (= PERI_CRG45, undocumented) for `usb2_cttl_utmi0_req` bit 5 and `usb2_hrst_req` bit 0 (see docs/UPSTREAM-PR-NOTES.md); 0xB8 is modelled (data sheet + U-Boot, 2 sources against 1). Reset: the header total reset value 0xA7 is modelled (clock on, ctrl/phy/bus in reset); the data sheet bit row prints 1 for all of bits 7:0 (0xFF, i.e. also for the reserved bits 6, 4, 3).
 
 Data sheet 3.2.7 PERI_CRG46 (offset 0xB8, printed page 3-31, `hi3518ev200-datasheet.txt` line 23857).";
 
         enum PERI_CRG46_usb_device_ctrl_srst_req_enum {
             DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
-            RESET_F = 1 { name = "Reset F"; desc = "reset"; };
+            RESET = 1 { name = "Reset"; desc = "reset"; };
         };
 
         field {
@@ -1442,7 +1471,7 @@ Data sheet 3.2.7 PERI_CRG46 (offset 0xB8, printed page 3-31, `hi3518ev200-datash
 
         enum PERI_CRG46_usb_ctrl_utmi0_req_enum {
             DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
-            RESET_F = 1 { name = "Reset F"; desc = "reset"; };
+            RESET = 1 { name = "Reset"; desc = "reset"; };
         };
 
         field {
@@ -1456,7 +1485,7 @@ Data sheet 3.2.7 PERI_CRG46 (offset 0xB8, printed page 3-31, `hi3518ev200-datash
 
         enum PERI_CRG46_usb_phy_port0_treq_enum {
             DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
-            RESET_F = 1 { name = "Reset F"; desc = "reset"; };
+            RESET = 1 { name = "Reset"; desc = "reset"; };
         };
 
         field {
@@ -1470,7 +1499,7 @@ Data sheet 3.2.7 PERI_CRG46 (offset 0xB8, printed page 3-31, `hi3518ev200-datash
 
         enum PERI_CRG46_usb_phy_req_enum {
             DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
-            RESET_F = 1 { name = "Reset F"; desc = "reset"; };
+            RESET = 1 { name = "Reset"; desc = "reset"; };
         };
 
         field {
@@ -1484,7 +1513,7 @@ Data sheet 3.2.7 PERI_CRG46 (offset 0xB8, printed page 3-31, `hi3518ev200-datash
 
         enum PERI_CRG46_usb_hrst_req_enum {
             DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
-            RESET_F = 1 { name = "Reset F"; desc = "reset"; };
+            RESET = 1 { name = "Reset"; desc = "reset"; };
         };
 
         field {
@@ -1506,10 +1535,10 @@ FMC clock: 00 = 24 MHz, 01 = 148.5 MHz, 10 = 125 MHz, 11 = 198 MHz (vendor U-Boo
 Data sheet 3.2.7 PERI_CRG48 (offset 0xC0, printed page 3-32, `hi3518ev200-datasheet.txt` line 23917).";
 
         enum PERI_CRG48_sfc_cksel_enum {
-            V_24_MHZ = 0 { name = "V 24 Mhz"; desc = "24 MHz"; };
-            V_148_5_MHZ = 1 { name = "V 148 5 Mhz"; desc = "148.5 MHz"; };
-            V_125_MHZ = 2 { name = "V 125 Mhz"; desc = "125 MHz"; };
-            V_198_MHZ = 3 { name = "V 198 Mhz"; desc = "198 MHz"; };
+            V_24_MHZ = 0 { name = "24 MHz"; desc = "24 MHz"; };
+            V_148_5_MHZ = 1 { name = "148.5 MHz"; desc = "148.5 MHz"; };
+            V_125_MHZ = 2 { name = "125 MHz"; desc = "125 MHz"; };
+            V_198_MHZ = 3 { name = "198 MHz"; desc = "198 MHz"; };
         };
 
         field {
@@ -1537,7 +1566,7 @@ Data sheet 3.2.7 PERI_CRG48 (offset 0xC0, printed page 3-32, `hi3518ev200-datash
 
         enum PERI_CRG48_sfc_srst_req_enum {
             DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
-            RESET_F = 1 { name = "Reset F"; desc = "reset"; };
+            RESET = 1 { name = "Reset"; desc = "reset"; };
         };
 
         field {
@@ -1554,13 +1583,13 @@ Data sheet 3.2.7 PERI_CRG48 (offset 0xC0, printed page 3-32, `hi3518ev200-datash
         name = "SDIO0/1 clock and soft reset control register";
         desc = "PERI_CRG49 is an SDIO0/1 clock and soft reset control register.
 
-SDIO clocks. SDIO0: 00 = 99 MHz, 01 = 74.25 MHz, 10 = 49.5 MHz, 11 = 148.5 MHz in the vendor driver (the DS calls 11 reserved). SDIO1: only 49.5 MHz (value 0).
+SDIO clocks. SDIO0: 00 = 99 MHz, 01 = 74.25 MHz, 10 = 49.5 MHz, 11 = 148.5 MHz in the vendor U-Boot (platform.h SDIO0_CLK_SEL_148_5M) and the vendor Linux clock driver (mmc0_mux); the data sheet calls 11 reserved, so it is kept as reserved here with this note. SDIO1: only 49.5 MHz (value 0, all three sources agree; the different encodings of 49.5 MHz for SDIO0 (2) and SDIO1 (0) are a property of the two muxes, not a bug). The SDIO0 DLL bits [15:14] have no vendor driver user.
 
 Data sheet 3.2.7 PERI_CRG49 (offset 0xC4, printed page 3-33, `hi3518ev200-datasheet.txt` line 23963).";
 
         enum PERI_CRG49_sdxc0_dll_srst_req_enum {
             DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
-            RESET_F = 1 { name = "Reset F"; desc = "reset"; };
+            RESET = 1 { name = "Reset"; desc = "reset"; };
         };
 
         field {
@@ -1587,9 +1616,9 @@ Data sheet 3.2.7 PERI_CRG49 (offset 0xC4, printed page 3-33, `hi3518ev200-datash
         } sdxc0_dll_cken[14:14];
 
         enum PERI_CRG49_sdxc0_cksel_enum {
-            V_99_MHZ = 0 { name = "V 99 Mhz"; desc = "99 MHz"; };
-            V_74_25_MHZ = 1 { name = "V 74 25 Mhz"; desc = "74.25 MHz"; };
-            V_49_5_MHZ = 2 { name = "V 49 5 Mhz"; desc = "49.5 MHz"; };
+            V_99_MHZ = 0 { name = "99 MHz"; desc = "99 MHz"; };
+            V_74_25_MHZ = 1 { name = "74.25 MHz"; desc = "74.25 MHz"; };
+            V_49_5_MHZ = 2 { name = "49.5 MHz"; desc = "49.5 MHz"; };
             RESERVED = 3 { name = "Reserved"; desc = "reserved"; };
         };
 
@@ -1618,7 +1647,7 @@ Data sheet 3.2.7 PERI_CRG49 (offset 0xC4, printed page 3-33, `hi3518ev200-datash
 
         enum PERI_CRG49_sdxc0_srst_req_enum {
             DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
-            RESET_F = 1 { name = "Reset F"; desc = "reset"; };
+            RESET = 1 { name = "Reset"; desc = "reset"; };
         };
 
         field {
@@ -1631,7 +1660,7 @@ Data sheet 3.2.7 PERI_CRG49 (offset 0xC4, printed page 3-33, `hi3518ev200-datash
         } sdxc0_srst_req[8:8];
 
         enum PERI_CRG49_sdxc1_cksel_enum {
-            V_49_5_MHZ = 0 { name = "V 49 5 Mhz"; desc = "49.5 MHz"; };
+            V_49_5_MHZ = 0 { name = "49.5 MHz"; desc = "49.5 MHz"; };
             RESERVED = 1 { name = "Reserved"; desc = "reserved"; };
             RESERVED_2 = 2 { name = "Reserved 2"; desc = "reserved"; };
             RESERVED_3 = 3 { name = "Reserved 3"; desc = "reserved"; };
@@ -1662,7 +1691,7 @@ Data sheet 3.2.7 PERI_CRG49 (offset 0xC4, printed page 3-33, `hi3518ev200-datash
 
         enum PERI_CRG49_sdxc1_srst_req_enum {
             DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
-            RESET_F = 1 { name = "Reset F"; desc = "reset"; };
+            RESET = 1 { name = "Reset"; desc = "reset"; };
         };
 
         field {
@@ -1683,7 +1712,7 @@ Data sheet 3.2.7 PERI_CRG53 (offset 0xD4, printed page 3-34, `hi3518ev200-datash
 
         enum PERI_CRG53_gzip_srst_req_enum {
             DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
-            RESET_F = 1 { name = "Reset F"; desc = "reset"; };
+            RESET = 1 { name = "Reset"; desc = "reset"; };
         };
 
         field {
@@ -1760,7 +1789,7 @@ Data sheet 3.2.7 PERI_CRG54 (offset 0xD8, printed page 3-35, `hi3518ev200-datash
 
         enum PERI_CRG54_dma_srst_req_enum {
             DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
-            RESET_F = 1 { name = "Reset F"; desc = "reset"; };
+            RESET = 1 { name = "Reset"; desc = "reset"; };
         };
 
         field {
@@ -1788,7 +1817,7 @@ Data sheet 3.2.7 PERI_CRG54 (offset 0xD8, printed page 3-35, `hi3518ev200-datash
 
         enum PERI_CRG54_ddrtest_srst_req_enum {
             DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
-            RESET_F = 1 { name = "Reset F"; desc = "reset"; };
+            RESET = 1 { name = "Reset"; desc = "reset"; };
         };
 
         field {
@@ -1851,13 +1880,15 @@ Data sheet 3.2.7 PERI_CRG56 (offset 0xE0, printed page 3-36, `hi3518ev200-datash
         name = "Soft reset control register for other CRG interface modules";
         desc = "PERI_CRG57 is a soft reset control register for other CRG interface modules.
 
-UART clock select: 00 = APB clock, 01 = 24 MHz, 1X = 6 MHz (vendor driver mux table {sysapb, 24m, 6m}, U-Boot UART_CKSEL_*). Reset 01 = 24 MHz. I2C clock select reset: the data sheet total reset value 0x040BF001 has bit 26 set, i.e. i2c_cksel resets to 01 (24 MHz) although the data sheet bit row prints 0.
+UART clock select: 00 = APB clock, 01 = 24 MHz, 1X = 6 MHz (vendor U-Boot platform.h UART_CKSEL_APB/24M/6M = 0/1/2 << 19; the vendor U-Boot board_init selects 24 MHz; the vendor Linux clock driver registers the same mux {sysapb, 24m, 6m} at 0xE4 bit 19 but with a width of 1 bit, which cannot select the 6 MHz entry: a vendor driver bug, the data sheet 2-bit field is modelled). Reset 01 = 24 MHz. I2C clock select reset: the data sheet total reset value 0x040BF001 has bit 26 set, i.e. i2c_cksel resets to 01 (24 MHz) although the data sheet bit row prints 0 (the header is modelled; no vendor code reads this field, the vendor device tree clocks the I2Cs from sysapb). The vendor clock driver gates SSP0/SSP1 (bits 13/14) and UART0..2 (bits 15..17) here. Bit 2: the data sheet calls it `t_cap soft reset request` in the text and `rtc_srst_req` in the name column (the RTC's temperature-capture block); bits [22:21] and [18] are reserved but RW in the data sheet.
 
 Data sheet 3.2.7 PERI_CRG57 (offset 0xE4, printed page 3-37, `hi3518ev200-datasheet.txt` line 24196).";
 
         enum PERI_CRG57_i2c_cksel_enum {
-            APB_CLOCK = 0 { name = "Apb Clock"; desc = "APB clock"; };
-            V_24_MHZ_CLOCK = 1 { name = "V 24 Mhz Clock"; desc = "24 MHz clock 1x: 6 MHz clock"; };
+            APB_CLOCK = 0 { name = "APB Clock"; desc = "APB clock"; };
+            V_24_MHZ_CLOCK = 1 { name = "24 MHz Clock"; desc = "24 MHz clock"; };
+            V_6_MHZ_CLOCK = 2 { name = "6 MHz Clock"; desc = "6 MHz clock (data sheet `1x`)"; };
+            V_6_MHZ_CLOCK_2 = 3 { name = "6 MHz Clock (alias)"; desc = "6 MHz clock (data sheet `1x`)"; };
         };
 
         field {
@@ -1871,7 +1902,7 @@ Data sheet 3.2.7 PERI_CRG57 (offset 0xE4, printed page 3-37, `hi3518ev200-datash
 
         enum PERI_CRG57_i2c2_srst_req_enum {
             DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
-            RESET_F = 1 { name = "Reset F"; desc = "reset"; };
+            RESET = 1 { name = "Reset"; desc = "reset"; };
         };
 
         field {
@@ -1885,7 +1916,7 @@ Data sheet 3.2.7 PERI_CRG57 (offset 0xE4, printed page 3-37, `hi3518ev200-datash
 
         enum PERI_CRG57_i2c1_srst_req_enum {
             DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
-            RESET_F = 1 { name = "Reset F"; desc = "reset"; };
+            RESET = 1 { name = "Reset"; desc = "reset"; };
         };
 
         field {
@@ -1899,7 +1930,7 @@ Data sheet 3.2.7 PERI_CRG57 (offset 0xE4, printed page 3-37, `hi3518ev200-datash
 
         enum PERI_CRG57_i2c0_srst_req_enum {
             DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
-            RESET_F = 1 { name = "Reset F"; desc = "reset"; };
+            RESET = 1 { name = "Reset"; desc = "reset"; };
         };
 
         field {
@@ -1912,8 +1943,10 @@ Data sheet 3.2.7 PERI_CRG57 (offset 0xE4, printed page 3-37, `hi3518ev200-datash
         } i2c0_srst_req[23:23];
 
         enum PERI_CRG57_uart_cksel_enum {
-            APB_CLOCK = 0 { name = "Apb Clock"; desc = "APB clock"; };
-            V_24_MHZ_CLOCK = 1 { name = "V 24 Mhz Clock"; desc = "24 MHz clock 1x: 6 MHz clock"; };
+            APB_CLOCK = 0 { name = "APB Clock"; desc = "APB clock"; };
+            V_24_MHZ_CLOCK = 1 { name = "24 MHz Clock"; desc = "24 MHz clock"; };
+            V_6_MHZ_CLOCK = 2 { name = "6 MHz Clock"; desc = "6 MHz clock (data sheet `1x`; vendor U-Boot UART_CKSEL_6M = 2)"; };
+            V_6_MHZ_CLOCK_2 = 3 { name = "6 MHz Clock (alias)"; desc = "6 MHz clock (data sheet `1x`)"; };
         };
 
         field {
@@ -2011,7 +2044,7 @@ Data sheet 3.2.7 PERI_CRG57 (offset 0xE4, printed page 3-37, `hi3518ev200-datash
 
         enum PERI_CRG57_uart2_srst_req_enum {
             DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
-            RESET_F = 1 { name = "Reset F"; desc = "reset"; };
+            RESET = 1 { name = "Reset"; desc = "reset"; };
         };
 
         field {
@@ -2025,7 +2058,7 @@ Data sheet 3.2.7 PERI_CRG57 (offset 0xE4, printed page 3-37, `hi3518ev200-datash
 
         enum PERI_CRG57_uart1_srst_req_enum {
             DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
-            RESET_F = 1 { name = "Reset F"; desc = "reset"; };
+            RESET = 1 { name = "Reset"; desc = "reset"; };
         };
 
         field {
@@ -2039,7 +2072,7 @@ Data sheet 3.2.7 PERI_CRG57 (offset 0xE4, printed page 3-37, `hi3518ev200-datash
 
         enum PERI_CRG57_uart0_srst_req_enum {
             DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
-            RESET_F = 1 { name = "Reset F"; desc = "reset"; };
+            RESET = 1 { name = "Reset"; desc = "reset"; };
         };
 
         field {
@@ -2053,7 +2086,7 @@ Data sheet 3.2.7 PERI_CRG57 (offset 0xE4, printed page 3-37, `hi3518ev200-datash
 
         enum PERI_CRG57_ssp1_srst_req_enum {
             DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
-            RESET_F = 1 { name = "Reset F"; desc = "reset"; };
+            RESET = 1 { name = "Reset"; desc = "reset"; };
         };
 
         field {
@@ -2067,7 +2100,7 @@ Data sheet 3.2.7 PERI_CRG57 (offset 0xE4, printed page 3-37, `hi3518ev200-datash
 
         enum PERI_CRG57_ssp0_srst_req_enum {
             DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
-            RESET_F = 1 { name = "Reset F"; desc = "reset"; };
+            RESET = 1 { name = "Reset"; desc = "reset"; };
         };
 
         field {
@@ -2081,7 +2114,7 @@ Data sheet 3.2.7 PERI_CRG57 (offset 0xE4, printed page 3-37, `hi3518ev200-datash
 
         enum PERI_CRG57_ir_srst_req_enum {
             DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
-            RESET_F = 1 { name = "Reset F"; desc = "reset"; };
+            RESET = 1 { name = "Reset"; desc = "reset"; };
         };
 
         field {
@@ -2095,7 +2128,7 @@ Data sheet 3.2.7 PERI_CRG57 (offset 0xE4, printed page 3-37, `hi3518ev200-datash
 
         enum PERI_CRG57_rtc_srst_req_enum {
             DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
-            RESET_F = 1 { name = "Reset F"; desc = "reset"; };
+            RESET = 1 { name = "Reset"; desc = "reset"; };
         };
 
         field {
@@ -2108,8 +2141,8 @@ Data sheet 3.2.7 PERI_CRG57 (offset 0xE4, printed page 3-37, `hi3518ev200-datash
         } rtc_srst_req[2:2];
 
         enum PERI_CRG57_test_clk_en_enum {
-            ALL_TEST_CLOCKS = 0 { name = "All Test Clocks"; desc = "All test clocks are disabled."; };
-            ALL_TEST_CLOCKS_2 = 1 { name = "All Test Clocks 2"; desc = "All test clocks are enabled."; };
+            ALL_TEST_CLOCKS = 0 { name = "Disabled"; desc = "All test clocks are disabled."; };
+            ALL_TEST_CLOCKS_2 = 1 { name = "Enabled"; desc = "All test clocks are enabled."; };
         };
 
         field {
@@ -2177,13 +2210,13 @@ Data sheet 3.2.7 PERI_CRG58 (offset 0xE8, printed page 3-39, `hi3518ev200-datash
         name = "ETH clock and soft reset control register";
         desc = "PERI_CRG59 is an ETH clock and soft reset control register.
 
-ETH clock/reset. Vendor eth_mux: ethcore_cksel 0 = 99 MHz, 1 = 54 MHz; clock gate bit 1; reset bit 0 (hrst_eth_s). eth_rmiick_sel 0 = internal CRG clock, 1 = RMII clock from the PAD.
+ETH clock/reset. Vendor eth_mux: ethcore_cksel 0 = 99 MHz, 1 = 54 MHz (clk-hi3518ev20x.c registers it at 0xEC bit 7 with a width of 0 bits, a vendor bug; the data sheet 1-bit field is modelled); clock gate bit 1; reset bit 0 (hrst_eth_s). eth_rmiick_sel 0 = internal CRG clock, 1 = RMII clock from the PAD. ethphy_cksel: 00 = 25 MHz, 01 = 24 MHz, 1X = 27 MHz (clock output to the external/embedded PHY). Reserved bits [31:8] and [6] are RW in the data sheet.
 
 Data sheet 3.2.7 PERI_CRG59 (offset 0xEC, printed page 3-40, `hi3518ev200-datasheet.txt` line 24354).";
 
         enum PERI_CRG59_ethcore_cksel_enum {
-            V_99_MHZ = 0 { name = "V 99 Mhz"; desc = "99 MHz"; };
-            V_54_MHZ = 1 { name = "V 54 Mhz"; desc = "54 MHz"; };
+            V_99_MHZ = 0 { name = "99 MHz"; desc = "99 MHz"; };
+            V_54_MHZ = 1 { name = "54 MHz"; desc = "54 MHz"; };
         };
 
         field {
@@ -2196,8 +2229,10 @@ Data sheet 3.2.7 PERI_CRG59 (offset 0xEC, printed page 3-40, `hi3518ev200-datash
         } ethcore_cksel[7:7];
 
         enum PERI_CRG59_ethphy_cksel_enum {
-            V_25_MHZ = 0 { name = "V 25 Mhz"; desc = "25 MHz"; };
-            V_24_MHZ_1X = 1 { name = "V 24 Mhz 1X"; desc = "24 MHz 1x: 27 MHz"; };
+            V_25_MHZ = 0 { name = "25 MHz"; desc = "25 MHz"; };
+            V_24_MHZ = 1 { name = "24 MHz"; desc = "24 MHz"; };
+            V_27_MHZ = 2 { name = "27 MHz"; desc = "27 MHz (data sheet `1x`)"; };
+            V_27_MHZ_2 = 3 { name = "27 MHz (alias)"; desc = "27 MHz (data sheet `1x`)"; };
         };
 
         field {
@@ -2211,7 +2246,7 @@ Data sheet 3.2.7 PERI_CRG59 (offset 0xEC, printed page 3-40, `hi3518ev200-datash
 
         enum PERI_CRG59_ext_fephy_srst_req_enum {
             DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
-            RESET_F = 1 { name = "Reset F"; desc = "reset"; };
+            RESET = 1 { name = "Reset"; desc = "reset"; };
         };
 
         field {
@@ -2224,8 +2259,8 @@ Data sheet 3.2.7 PERI_CRG59 (offset 0xEC, printed page 3-40, `hi3518ev200-datash
         } ext_fephy_srst_req[3:3];
 
         enum PERI_CRG59_eth_rmiick_sel_enum {
-            INTERNAL_CRG_CLOCK = 0 { name = "Internal Crg Clock"; desc = "internal CRG clock"; };
-            PAD_INPUT_CLOCK = 1 { name = "Pad Input Clock"; desc = "PAD input clock"; };
+            INTERNAL_CRG_CLOCK = 0 { name = "Internal CRG Clock"; desc = "internal CRG clock"; };
+            PAD_INPUT_CLOCK = 1 { name = "PAD Input Clock"; desc = "PAD input clock"; };
         };
 
         field {
@@ -2253,7 +2288,7 @@ Data sheet 3.2.7 PERI_CRG59 (offset 0xEC, printed page 3-40, `hi3518ev200-datash
 
         enum PERI_CRG59_hrst_eth_s_enum {
             DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
-            RESET_F = 1 { name = "Reset F"; desc = "reset"; };
+            RESET = 1 { name = "Reset"; desc = "reset"; };
         };
 
         field {
@@ -2288,7 +2323,7 @@ Data sheet 3.2.7 PERI_CRG64 (offset 0x100, printed page 3-41, `hi3518ev200-datas
 
         enum PERI_CRG64_rsa_srst_req_enum {
             DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
-            RESET_F = 1 { name = "Reset F"; desc = "reset"; };
+            RESET = 1 { name = "Reset"; desc = "reset"; };
         };
 
         field {
@@ -2308,57 +2343,381 @@ Data sheet 3.2.7 PERI_CRG64 (offset 0x100, printed page 3-41, `hi3518ev200-datas
 Data sheet 3.2.7 PERI_CRG65 (offset 0x104, printed page 3-41, `hi3518ev200-datasheet.txt` line 24445).";
 
         field {
-            name = "eco_reserv";
-            desc = "Bit [5]: clock select for the FMC MUX I0 end 0: 24 MHz 1: 99 MHz Bit[3]: VGS source clock select 0: 148.5 MHz 1: 198 MHz Bit[2:1]: AVC source clock select 00: 148.5 MHz 01: 99 MHz 1x: 198 MHz Bit[0]: VPSS source clock select 0: 99 MHz 1: 148.5 MHz";
+            name = "eco_reserv_hi";
+            desc = "eco_reserv[15:6]: no meaning given in the data sheet (the data sheet documents one 16-bit `eco_reserv` field; the sub-fields below follow its per-bit text, their names are ours).";
             sw = rw;
             hw = r;
             reset = 0x0;
-        } eco_reserv[15:0];
+        } eco_reserv_hi[15:6];
+
+        enum PERI_CRG65_fmc_muxio_cksel_enum {
+            V_24_MHZ = 0 { name = "24 MHz"; desc = "24 MHz"; };
+            V_99_MHZ = 1 { name = "99 MHz"; desc = "99 MHz"; };
+        };
+
+        field {
+            name = "fmc_muxio_cksel";
+            desc = "eco_reserv[5]: clock select for the FMC MUX I0 end (the vendor U-Boot reads it as `GET_FMC_MUXIO_CLK(FMC_CRG65)` and clears it before changing the FMC clock)";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG65_fmc_muxio_cksel_enum;
+            reset = 0x0;
+        } fmc_muxio_cksel[5:5];
+
+        field {
+            name = "eco_reserv_4";
+            desc = "eco_reserv[4]: no meaning given in the data sheet";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } eco_reserv_4[4:4];
+
+        enum PERI_CRG65_vgs_cksel_enum {
+            V_148_5_MHZ = 0 { name = "148.5 MHz"; desc = "148.5 MHz"; };
+            V_198_MHZ = 1 { name = "198 MHz"; desc = "198 MHz"; };
+        };
+
+        field {
+            name = "vgs_cksel";
+            desc = "eco_reserv[3]: VGS source clock select";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG65_vgs_cksel_enum;
+            reset = 0x0;
+        } vgs_cksel[3:3];
+
+        enum PERI_CRG65_avc_cksel_enum {
+            V_148_5_MHZ = 0 { name = "148.5 MHz"; desc = "148.5 MHz"; };
+            V_99_MHZ = 1 { name = "99 MHz"; desc = "99 MHz"; };
+            V_198_MHZ = 2 { name = "198 MHz"; desc = "198 MHz (data sheet `1x`)"; };
+            V_198_MHZ_2 = 3 { name = "198 MHz (alias)"; desc = "198 MHz (data sheet `1x`)"; };
+        };
+
+        field {
+            name = "avc_cksel";
+            desc = "eco_reserv[2:1]: AVC (H.264 encoder) source clock select";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG65_avc_cksel_enum;
+            reset = 0x0;
+        } avc_cksel[2:1];
+
+        enum PERI_CRG65_vpss_cksel_enum {
+            V_99_MHZ = 0 { name = "99 MHz"; desc = "99 MHz"; };
+            V_148_5_MHZ = 1 { name = "148.5 MHz"; desc = "148.5 MHz"; };
+        };
+
+        field {
+            name = "vpss_cksel";
+            desc = "eco_reserv[0]: VPSS source clock select";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG65_vpss_cksel_enum;
+            reset = 0x0;
+        } vpss_cksel[0:0];
     } PERI_CRG65 @ 0x104;
 
     reg {
         name = "APLL spread spectrum configuration register";
         desc = "PERI_CRG66 is an APLL spread spectrum configuration register.
 
+The data sheet documents one 12-bit field `apll_ssmod_ctrl` and gives the meaning of its bits in the text; the bits are modelled as separate fields with the data sheet's sub-field names. Reset 0x4 = SSMOD disabled, clock off, spread 0.
+
 Data sheet 3.2.7 PERI_CRG66 (offset 0x108, printed page 3-42, `hi3518ev200-datasheet.txt` line 24488).";
 
         field {
-            name = "apll_ssmod_ctrl";
-            desc = "ssmod divval[11:8]: SSMOD divval control ssmod spread[6:4]: SSMOD spread control 000: 0 001: 0.049% 010: 0.098% 011: 0.195% 100: 0.391% 101: 0.781% 110: 1.563% 111: 3.125% ssmod downspread[3]: SSMOD downspread control 0: central spread spectrum 1: down spread spectrum ssmod_disable[2]: SSMOD disable control";
+            name = "ssmod_divval";
+            desc = "SSMOD divval control (apll_ssmod_ctrl[11:8])";
             sw = rw;
             hw = r;
-            reset = 0x4;
-        } apll_ssmod_ctrl[11:0];
+            reset = 0x0;
+        } ssmod_divval[11:8];
+
+        field {
+            name = "ssmod_ctrl_7";
+            desc = "apll_ssmod_ctrl[7]: no meaning given in the data sheet";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ssmod_ctrl_7[7:7];
+
+        enum PERI_CRG66_ssmod_spread_enum {
+            SPREAD_0 = 0 { name = "0"; desc = "0 (no spread)"; };
+            SPREAD_0_049 = 1 { name = "0.049%"; desc = "0.049%"; };
+            SPREAD_0_098 = 2 { name = "0.098%"; desc = "0.098%"; };
+            SPREAD_0_195 = 3 { name = "0.195%"; desc = "0.195%"; };
+            SPREAD_0_391 = 4 { name = "0.391%"; desc = "0.391%"; };
+            SPREAD_0_781 = 5 { name = "0.781%"; desc = "0.781%"; };
+            SPREAD_1_563 = 6 { name = "1.563%"; desc = "1.563%"; };
+            SPREAD_3_125 = 7 { name = "3.125%"; desc = "3.125%"; };
+        };
+
+        field {
+            name = "ssmod_spread";
+            desc = "SSMOD spread control (apll_ssmod_ctrl[6:4])";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG66_ssmod_spread_enum;
+            reset = 0x0;
+        } ssmod_spread[6:4];
+
+        enum PERI_CRG66_ssmod_downspread_enum {
+            CENTRAL_SPREAD = 0 { name = "Central Spread"; desc = "central spread spectrum"; };
+            DOWN_SPREAD = 1 { name = "Down Spread"; desc = "down spread spectrum"; };
+        };
+
+        field {
+            name = "ssmod_downspread";
+            desc = "SSMOD downspread control (apll_ssmod_ctrl[3])";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG66_ssmod_downspread_enum;
+            reset = 0x0;
+        } ssmod_downspread[3:3];
+
+        enum PERI_CRG66_ssmod_disable_enum {
+            ENABLED = 0 { name = "Enabled"; desc = "enabled"; };
+            DISABLED = 1 { name = "Disabled"; desc = "disabled"; };
+        };
+
+        field {
+            name = "ssmod_disable";
+            desc = "SSMOD disable control (apll_ssmod_ctrl[2])";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG66_ssmod_disable_enum;
+            reset = 0x1;
+        } ssmod_disable[2:2];
+
+        enum PERI_CRG66_ssmod_rst_req_enum {
+            NOT_RESET = 0 { name = "Not Reset"; desc = "not reset"; };
+            RESET = 1 { name = "Reset"; desc = "reset"; };
+        };
+
+        field {
+            name = "ssmod_rst_req";
+            desc = "SSMOD reset control (apll_ssmod_ctrl[1])";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG66_ssmod_rst_req_enum;
+            reset = 0x0;
+        } ssmod_rst_req[1:1];
+
+        enum PERI_CRG66_ssmod_cken_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled (default)"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "ssmod_cken";
+            desc = "SSMOD clock gating (apll_ssmod_ctrl[0])";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG66_ssmod_cken_enum;
+            reset = 0x0;
+        } ssmod_cken[0:0];
     } PERI_CRG66 @ 0x108;
 
     reg {
         name = "VPLL spread spectrum configuration register";
-        desc = "PERI_CRG68 is a VPLL spread spectrum configuration register.
+        desc = "PERI_CRG68 is an VPLL spread spectrum configuration register.
+
+The data sheet documents one 12-bit field `vpll_ssmod_ctrl` and gives the meaning of its bits in the text; the bits are modelled as separate fields with the data sheet's sub-field names. Reset 0x4 = SSMOD disabled, clock off, spread 0.
 
 Data sheet 3.2.7 PERI_CRG68 (offset 0x110, printed page 3-43, `hi3518ev200-datasheet.txt` line 24538).";
 
         field {
-            name = "vpll_ssmod_ctrl";
-            desc = "ssmod divval[11:8]: SSMOD divval control ssmod spread[6:4]: SSMOD spread control 000: 0 001: 0.049% 010: 0.098% 011: 0.195% 100: 0.391% 101: 0.781% 110: 1.563% 111: 3.125% ssmod downspread[3]: SSMOD downspread control 0: central spread spectrum 1: down spread spectrum ssmod_disable[2]: SSMOD disable control 0: enabled 1: disabled ssmod_rst_req[1]: SSMOD reset control 0: not reset 1: reset";
+            name = "ssmod_divval";
+            desc = "SSMOD divval control (vpll_ssmod_ctrl[11:8])";
             sw = rw;
             hw = r;
-            reset = 0x4;
-        } vpll_ssmod_ctrl[11:0];
+            reset = 0x0;
+        } ssmod_divval[11:8];
+
+        field {
+            name = "ssmod_ctrl_7";
+            desc = "vpll_ssmod_ctrl[7]: no meaning given in the data sheet";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ssmod_ctrl_7[7:7];
+
+        enum PERI_CRG68_ssmod_spread_enum {
+            SPREAD_0 = 0 { name = "0"; desc = "0 (no spread)"; };
+            SPREAD_0_049 = 1 { name = "0.049%"; desc = "0.049%"; };
+            SPREAD_0_098 = 2 { name = "0.098%"; desc = "0.098%"; };
+            SPREAD_0_195 = 3 { name = "0.195%"; desc = "0.195%"; };
+            SPREAD_0_391 = 4 { name = "0.391%"; desc = "0.391%"; };
+            SPREAD_0_781 = 5 { name = "0.781%"; desc = "0.781%"; };
+            SPREAD_1_563 = 6 { name = "1.563%"; desc = "1.563%"; };
+            SPREAD_3_125 = 7 { name = "3.125%"; desc = "3.125%"; };
+        };
+
+        field {
+            name = "ssmod_spread";
+            desc = "SSMOD spread control (vpll_ssmod_ctrl[6:4])";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG68_ssmod_spread_enum;
+            reset = 0x0;
+        } ssmod_spread[6:4];
+
+        enum PERI_CRG68_ssmod_downspread_enum {
+            CENTRAL_SPREAD = 0 { name = "Central Spread"; desc = "central spread spectrum"; };
+            DOWN_SPREAD = 1 { name = "Down Spread"; desc = "down spread spectrum"; };
+        };
+
+        field {
+            name = "ssmod_downspread";
+            desc = "SSMOD downspread control (vpll_ssmod_ctrl[3])";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG68_ssmod_downspread_enum;
+            reset = 0x0;
+        } ssmod_downspread[3:3];
+
+        enum PERI_CRG68_ssmod_disable_enum {
+            ENABLED = 0 { name = "Enabled"; desc = "enabled"; };
+            DISABLED = 1 { name = "Disabled"; desc = "disabled"; };
+        };
+
+        field {
+            name = "ssmod_disable";
+            desc = "SSMOD disable control (vpll_ssmod_ctrl[2])";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG68_ssmod_disable_enum;
+            reset = 0x1;
+        } ssmod_disable[2:2];
+
+        enum PERI_CRG68_ssmod_rst_req_enum {
+            NOT_RESET = 0 { name = "Not Reset"; desc = "not reset"; };
+            RESET = 1 { name = "Reset"; desc = "reset"; };
+        };
+
+        field {
+            name = "ssmod_rst_req";
+            desc = "SSMOD reset control (vpll_ssmod_ctrl[1])";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG68_ssmod_rst_req_enum;
+            reset = 0x0;
+        } ssmod_rst_req[1:1];
+
+        enum PERI_CRG68_ssmod_cken_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled (default)"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "ssmod_cken";
+            desc = "SSMOD clock gating (vpll_ssmod_ctrl[0])";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG68_ssmod_cken_enum;
+            reset = 0x0;
+        } ssmod_cken[0:0];
     } PERI_CRG68 @ 0x110;
 
     reg {
         name = "EPLL spread spectrum configuration register";
         desc = "PERI_CRG70 is an EPLL spread spectrum configuration register.
 
+The data sheet documents one 12-bit field `epll_ssmod_ctrl` and gives the meaning of its bits in the text; the bits are modelled as separate fields with the data sheet's sub-field names. Reset 0x4 = SSMOD disabled, clock off, spread 0.
+
 Data sheet 3.2.7 PERI_CRG70 (offset 0x118, printed page 3-44, `hi3518ev200-datasheet.txt` line 24588).";
 
         field {
-            name = "epll_ssmod_ctrl";
-            desc = "ssmod divval[11:8]: SSMOD divval control ssmod spread[6:4]: SSMOD spread control 000: 0 001: 0.049% 010: 0.098% 011: 0.195% 100: 0.391% 101: 0.781% 110: 1.563% 111: 3.125% ssmod downspread[3]: SSMOD downspread control 0: central spread spectrum 1: down spread spectrum ssmod_disable[2]: SSMOD disable control 0: enabled 1: disabled ssmod_rst_req[1]: SSMOD reset control 0: not reset 1: reset ssmod_cken[0]: SSMOD clock gating 0: disabled (default) 1: enabled";
+            name = "ssmod_divval";
+            desc = "SSMOD divval control (epll_ssmod_ctrl[11:8])";
             sw = rw;
             hw = r;
-            reset = 0x4;
-        } epll_ssmod_ctrl[11:0];
+            reset = 0x0;
+        } ssmod_divval[11:8];
+
+        field {
+            name = "ssmod_ctrl_7";
+            desc = "epll_ssmod_ctrl[7]: no meaning given in the data sheet";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ssmod_ctrl_7[7:7];
+
+        enum PERI_CRG70_ssmod_spread_enum {
+            SPREAD_0 = 0 { name = "0"; desc = "0 (no spread)"; };
+            SPREAD_0_049 = 1 { name = "0.049%"; desc = "0.049%"; };
+            SPREAD_0_098 = 2 { name = "0.098%"; desc = "0.098%"; };
+            SPREAD_0_195 = 3 { name = "0.195%"; desc = "0.195%"; };
+            SPREAD_0_391 = 4 { name = "0.391%"; desc = "0.391%"; };
+            SPREAD_0_781 = 5 { name = "0.781%"; desc = "0.781%"; };
+            SPREAD_1_563 = 6 { name = "1.563%"; desc = "1.563%"; };
+            SPREAD_3_125 = 7 { name = "3.125%"; desc = "3.125%"; };
+        };
+
+        field {
+            name = "ssmod_spread";
+            desc = "SSMOD spread control (epll_ssmod_ctrl[6:4])";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG70_ssmod_spread_enum;
+            reset = 0x0;
+        } ssmod_spread[6:4];
+
+        enum PERI_CRG70_ssmod_downspread_enum {
+            CENTRAL_SPREAD = 0 { name = "Central Spread"; desc = "central spread spectrum"; };
+            DOWN_SPREAD = 1 { name = "Down Spread"; desc = "down spread spectrum"; };
+        };
+
+        field {
+            name = "ssmod_downspread";
+            desc = "SSMOD downspread control (epll_ssmod_ctrl[3])";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG70_ssmod_downspread_enum;
+            reset = 0x0;
+        } ssmod_downspread[3:3];
+
+        enum PERI_CRG70_ssmod_disable_enum {
+            ENABLED = 0 { name = "Enabled"; desc = "enabled"; };
+            DISABLED = 1 { name = "Disabled"; desc = "disabled"; };
+        };
+
+        field {
+            name = "ssmod_disable";
+            desc = "SSMOD disable control (epll_ssmod_ctrl[2])";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG70_ssmod_disable_enum;
+            reset = 0x1;
+        } ssmod_disable[2:2];
+
+        enum PERI_CRG70_ssmod_rst_req_enum {
+            NOT_RESET = 0 { name = "Not Reset"; desc = "not reset"; };
+            RESET = 1 { name = "Reset"; desc = "reset"; };
+        };
+
+        field {
+            name = "ssmod_rst_req";
+            desc = "SSMOD reset control (epll_ssmod_ctrl[1])";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG70_ssmod_rst_req_enum;
+            reset = 0x0;
+        } ssmod_rst_req[1:1];
+
+        enum PERI_CRG70_ssmod_cken_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled (default)"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "ssmod_cken";
+            desc = "SSMOD clock gating (epll_ssmod_ctrl[0])";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG70_ssmod_cken_enum;
+            reset = 0x0;
+        } ssmod_cken[0:0];
     } PERI_CRG70 @ 0x118;
 
 };
