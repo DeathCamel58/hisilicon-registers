@@ -1,0 +1,1678 @@
+`ifndef HISI_USB_HOST_RDL
+`define HISI_USB_HOST_RDL
+
+regfile eHISI_USB_EHCI {
+    name = "HiSilicon USB 2.0 host controller - EHCI";
+    desc = "
+    Standard Enhanced Host Controller Interface 1.0 register set (capability registers at 0x00, operational registers at CAPLENGTH) plus the vendor registers INTNREG00..07 at
+    0x90-0xAC. The data sheet (14.6.4) says the USB module is a standard USB 2.0 host controller whose internal registers are the standard EHCI and OHCI registers and only describes
+    the vendor-defined INTNREG registers (`datasheet.txt` lines 56726-56960); the standard registers below are therefore written from the EHCI 1.0 specification, not from the data sheet.
+    Two root-hub ports. CAPLENGTH is 0x10 and HCIVERSION 0x0100, read on hardware 2026-11-08 (the data sheet does not document it), so the operational registers are at 0x10..0x58 as modelled; the capability, USBCMD, USBSTS, PORTSC and INTNREG01..04 reset values are hardware reads (`docs/rdl-sweep/hw-reads-2026-11-08.md`) and override the specification values. Interrupt: GIC ID 53 (SPI 21, DS Table 3-16). The companion OHCI
+    (full/low speed) is `eHISI_USB_OHCI` at 0x100A0000 (GIC ID 54). Clock, resets and PHY are configured outside this block: PERI_CRG46 (usb_cken and the seven reset bits), SYS_CTRL PERIPHCTRL20
+    (AHB burst, UTMI/ULPI, port power and over-current polarity) and PERIPHCTRL21 / PERIPHCTRL22 (PHY0 / PHY1 tuning).
+
+    Vendor driver start sequence (`hiusb-hi3520d.c`): PERI_CRG46 set usb_cken and clear all reset bits, wait 100 us; PERIPHCTRL20 set ulpi_bypass_en, clear wordinterface, ss_ena_incr16_i and usbovr_p_ctrl.
+    ";
+
+    reg {
+        name = "Capability length and interface version Hardware read 2026-11-08 (nvr0408, `docs/rdl-sweep/hw-reads-2026-11-08.md`, after the vendor start sequence, before any driver use): 0x01000010 (CAPLENGTH 0x10, HCIVERSION 0x0100); operational registers therefore start at 0x10 as modelled.";
+        desc = "CAPLENGTH [7:0] and HCIVERSION [31:16] (EHCI 1.0, DS 14.6.1).
+
+EHCI 1.0 specification section 2.2.1; reset values are the specification's, not from the Hi3520D data sheet.";
+
+        field {
+            name = "hciversion";
+            desc = "Interface version, BCD (0x0100 = EHCI 1.0).";
+            sw = r;
+            hw = w;
+            reset = 0x100;
+        } hciversion[31:16];
+
+        field {
+            name = "caplength";
+            desc = "Capability register length in bytes = offset of USBCMD (modelled as 0x10).";
+            sw = r;
+            hw = w;
+            reset = 0x10;
+        } caplength[7:0];
+    } HCCAPBASE @ 0x0;
+
+    reg {
+        name = "Structural parameters Hardware read 2026-11-08 (nvr0408, `docs/rdl-sweep/hw-reads-2026-11-08.md`, after the vendor start sequence, before any driver use): 0x00001212 (N_PORTS 2, PPC 1, N_PCC 2, N_CC 1, one companion controller); these replace the specification resets.";
+        desc = "Number of ports and port power capabilities.
+
+EHCI 1.0 specification section 2.2.3; reset values are the specification's, not from the Hi3520D data sheet. INTNREG04.hcsparam_en makes this register software-writable (vendor extension).";
+
+        field {
+            name = "dpn";
+            desc = "Debug port number.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } dpn[23:20];
+
+        field {
+            name = "p_indicator";
+            desc = "Port indicators implemented.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } p_indicator[16:16];
+
+        field {
+            name = "n_cc";
+            desc = "Number of companion controllers.";
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } n_cc[15:12];
+
+        field {
+            name = "n_pcc";
+            desc = "Number of ports per companion controller.";
+            sw = r;
+            hw = w;
+            reset = 0x2;
+        } n_pcc[11:8];
+
+        field {
+            name = "prr";
+            desc = "Port routing rules.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } prr[7:7];
+
+        field {
+            name = "ppc";
+            desc = "Port power control: 1 = ports have port power switches.";
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } ppc[4:4];
+
+        field {
+            name = "n_ports";
+            desc = "Number of physical downstream ports (the data sheet lists two USB host ports).";
+            sw = r;
+            hw = w;
+            reset = 0x2;
+        } n_ports[3:0];
+    } HCSPARAMS @ 0x4;
+
+    reg {
+        name = "Capability parameters Hardware read 2026-11-08 (nvr0408, `docs/rdl-sweep/hw-reads-2026-11-08.md`, after the vendor start sequence, before any driver use): 0x0000A026 (32-bit addressing, programmable frame list, async park, IST 2, EECP 0xA0).";
+        desc = "Optional capabilities.
+
+EHCI 1.0 specification section 2.2.4; reset values are the specification's, not from the Hi3520D data sheet. INTNREG04.hccparam_en makes this register software-writable (vendor extension).";
+
+        field {
+            name = "eecp";
+            desc = "EHCI extended capabilities pointer.";
+            sw = r;
+            hw = w;
+            reset = 0xA0;
+        } eecp[15:8];
+
+        field {
+            name = "ist";
+            desc = "Isochronous scheduling threshold.";
+            sw = r;
+            hw = w;
+            reset = 0x2;
+        } ist[7:4];
+
+        field {
+            name = "aspc";
+            desc = "Asynchronous schedule park capability.";
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } aspc[2:2];
+
+        field {
+            name = "pflf";
+            desc = "Programmable frame list flag.";
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } pflf[1:1];
+
+        field {
+            name = "ac64";
+            desc = "64-bit addressing capability.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } ac64[0:0];
+    } HCCPARAMS @ 0x8;
+
+    reg {
+        name = "USB command Hardware read 2026-11-08 (nvr0408, `docs/rdl-sweep/hw-reads-2026-11-08.md`, after the vendor start sequence, before any driver use): 0x00080B00 (ITC 8, async park enabled, park count 3), so aspme/aspmc reset to 1/3 here, unlike the EHCI specification (0).";
+        desc = "Run/stop, reset and schedule control.
+
+EHCI 1.0 specification section 2.3.1; reset values are the specification's, not from the Hi3520D data sheet.";
+
+        field {
+            name = "itc";
+            desc = "Interrupt threshold control, in micro-frames (0x08 = 8 micro-frames = 1 ms).";
+            sw = rw;
+            hw = r;
+            reset = 0x8;
+        } itc[23:16];
+
+        field {
+            name = "aspme";
+            desc = "Asynchronous schedule park mode enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } aspme[11:11];
+
+        field {
+            name = "aspmc";
+            desc = "Asynchronous schedule park mode count.";
+            sw = rw;
+            hw = r;
+            reset = 0x3;
+        } aspmc[9:8];
+
+        field {
+            name = "lhcr";
+            desc = "Light host controller reset.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } lhcr[7:7];
+
+        field {
+            name = "iaad";
+            desc = "Interrupt on async advance doorbell.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } iaad[6:6];
+
+        field {
+            name = "ase";
+            desc = "Asynchronous schedule enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ase[5:5];
+
+        field {
+            name = "pse";
+            desc = "Periodic schedule enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } pse[4:4];
+
+        field {
+            name = "fls";
+            desc = "Frame list size (0 = 1024, 1 = 512, 2 = 256 elements).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } fls[3:2];
+
+        field {
+            name = "hcreset";
+            desc = "Host controller reset (self-clearing).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } hcreset[1:1];
+
+        field {
+            name = "rs";
+            desc = "Run (1) / stop (0).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } rs[0:0];
+    } USBCMD @ 0x10;
+
+    reg {
+        name = "USB status Hardware read 2026-11-08 (nvr0408, `docs/rdl-sweep/hw-reads-2026-11-08.md`, after the vendor start sequence, before any driver use): 0x00001000 (HCHalted), agrees with the modelled reset.";
+        desc = "Interrupt and schedule status (write 1 to clear bits 5:0).
+
+EHCI 1.0 specification section 2.3.2; reset values are the specification's, not from the Hi3520D data sheet.";
+
+        field {
+            name = "as";
+            desc = "Asynchronous schedule status.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } as[15:15];
+
+        field {
+            name = "ps";
+            desc = "Periodic schedule status.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } ps[14:14];
+
+        field {
+            name = "recl";
+            desc = "Reclamation.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } recl[13:13];
+
+        field {
+            name = "hch";
+            desc = "HCHalted: 1 when the run/stop bit is 0 and the controller has halted.";
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } hch[12:12];
+
+        field {
+            name = "iaa";
+            desc = "Interrupt on async advance (write 1 to clear).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } iaa[5:5];
+
+        field {
+            name = "hse";
+            desc = "Host system error (write 1 to clear).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } hse[4:4];
+
+        field {
+            name = "flr";
+            desc = "Frame list rollover (write 1 to clear).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } flr[3:3];
+
+        field {
+            name = "pcd";
+            desc = "Port change detect (write 1 to clear).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } pcd[2:2];
+
+        field {
+            name = "usberrint";
+            desc = "USB error interrupt (write 1 to clear).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } usberrint[1:1];
+
+        field {
+            name = "usbint";
+            desc = "USB interrupt (write 1 to clear).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } usbint[0:0];
+    } USBSTS @ 0x14;
+
+    reg {
+        name = "USB interrupt enable";
+        desc = "Interrupt enable bits matching USBSTS[5:0].
+
+EHCI 1.0 specification section 2.3.3; reset values are the specification's, not from the Hi3520D data sheet.";
+
+        field {
+            name = "iaae";
+            desc = "Interrupt on async advance enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } iaae[5:5];
+
+        field {
+            name = "hsee";
+            desc = "Host system error enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } hsee[4:4];
+
+        field {
+            name = "flre";
+            desc = "Frame list rollover enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } flre[3:3];
+
+        field {
+            name = "pcie";
+            desc = "Port change interrupt enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } pcie[2:2];
+
+        field {
+            name = "usberrinte";
+            desc = "USB error interrupt enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } usberrinte[1:1];
+
+        field {
+            name = "usbinte";
+            desc = "USB interrupt enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } usbinte[0:0];
+    } USBINTR @ 0x18;
+
+    reg {
+        name = "Frame index";
+        desc = "Micro-frame counter.
+
+EHCI 1.0 specification section 2.3.4; reset values are the specification's, not from the Hi3520D data sheet.";
+
+        field {
+            name = "fi";
+            desc = "Frame index.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } fi[13:0];
+    } FRINDEX @ 0x1C;
+
+    reg {
+        name = "4G segment selector";
+        desc = "Upper 32 address bits (used only when 64-bit addressing is supported; the controller reports 32-bit addressing).
+
+EHCI 1.0 specification section 2.3.5; reset values are the specification's, not from the Hi3520D data sheet.";
+
+        field {
+            name = "segment";
+            desc = "Upper address bits.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } segment[31:0];
+    } CTRLDSSEGMENT @ 0x20;
+
+    reg {
+        name = "Periodic frame list base address";
+        desc = "Physical address of the periodic frame list.
+
+EHCI 1.0 specification section 2.3.6; reset values are the specification's, not from the Hi3520D data sheet.";
+
+        field {
+            name = "base";
+            desc = "Base address bits 31:12 (4 KB aligned).";
+            sw = rw;
+            hw = r;
+        } base[31:12];
+    } PERIODICLISTBASE @ 0x24;
+
+    reg {
+        name = "Next asynchronous list address";
+        desc = "Physical address of the next asynchronous queue head.
+
+EHCI 1.0 specification section 2.3.7; reset values are the specification's, not from the Hi3520D data sheet.";
+
+        field {
+            name = "lpl";
+            desc = "Link pointer low (32-byte aligned).";
+            sw = rw;
+            hw = r;
+        } lpl[31:5];
+    } ASYNCLISTADDR @ 0x28;
+
+    reg {
+        name = "Configured flag";
+        desc = "Routes all ports to the EHCI controller.
+
+EHCI 1.0 specification section 2.3.8; reset values are the specification's, not from the Hi3520D data sheet.";
+
+        field {
+            name = "cf";
+            desc = "Configure flag: 1 routes all ports to this EHCI controller.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } cf[0:0];
+    } CONFIGFLAG @ 0x50;
+
+    reg {
+        name = "Port status and control Hardware read 2026-11-08 (nvr0408, `docs/rdl-sweep/hw-reads-2026-11-08.md`, after the vendor start sequence, before any driver use): both ports 0x00002000 (port owner = companion, port power off), agrees with the modelled reset.";
+        desc = "One register per root-hub port (port n at 0x54 + 4n).
+
+EHCI 1.0 specification section 2.3.9; reset values are the specification's, not from the Hi3520D data sheet.";
+
+        field {
+            name = "wkoc_e";
+            desc = "Wake on over-current enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } wkoc_e[22:22];
+
+        field {
+            name = "wkdscnnt_e";
+            desc = "Wake on disconnect enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } wkdscnnt_e[21:21];
+
+        field {
+            name = "wkcnnt_e";
+            desc = "Wake on connect enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } wkcnnt_e[20:20];
+
+        field {
+            name = "ptc";
+            desc = "Port test control.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ptc[19:16];
+
+        field {
+            name = "pic";
+            desc = "Port indicator control.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } pic[15:14];
+
+        field {
+            name = "po";
+            desc = "Port owner: 1 = port owned by a companion (OHCI) controller until the driver clears it.";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } po[13:13];
+
+        field {
+            name = "pp";
+            desc = "Port power.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } pp[12:12];
+
+        field {
+            name = "ls";
+            desc = "Line status (D+/D-).";
+            sw = r;
+            hw = w;
+        } ls[11:10];
+
+        field {
+            name = "pr";
+            desc = "Port reset.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } pr[8:8];
+
+        field {
+            name = "susp";
+            desc = "Suspend.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } susp[7:7];
+
+        field {
+            name = "fpr";
+            desc = "Force port resume.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } fpr[6:6];
+
+        field {
+            name = "occ";
+            desc = "Over-current change (write 1 to clear).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } occ[5:5];
+
+        field {
+            name = "oca";
+            desc = "Over-current active.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } oca[4:4];
+
+        field {
+            name = "pec";
+            desc = "Port enable/disable change (write 1 to clear).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } pec[3:3];
+
+        field {
+            name = "ped";
+            desc = "Port enabled/disabled.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ped[2:2];
+
+        field {
+            name = "csc";
+            desc = "Connect status change (write 1 to clear).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } csc[1:1];
+
+        field {
+            name = "ccs";
+            desc = "Current connect status.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } ccs[0:0];
+    } PORTSC[2] @ 0x54 += 0x4;
+
+    reg {
+        name = "Micro-frame length configuration register";
+        desc = "INTNREG00 is a micro-frame length configuration register.
+
+Data sheet 14.6.5 INTNREG00 (EHCI offset 0x90, printed page 14-89, `datasheet.txt` line 56771). Vendor-defined register (Synopsys-style INSNREG).";
+
+        field {
+            name = "val";
+            desc = "Value of the micro-frame counter. This register is used only for emulation. In normal mode, the micro-frame length is 125 us defined by the protocol. During emulation, you can change the micro-frame length by configuring this register as required to reduce the emulation time.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } val[13:1];
+
+        enum INTNREG00_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "en";
+            desc = "Register enable.";
+            sw = rw;
+            hw = r;
+            encode = INTNREG00_en_enum;
+            reset = 0x0;
+        } en[0:0];
+    } INTNREG00 @ 0x90;
+
+    reg {
+        name = "Vendor internal register 1";
+        desc = "INTNREG01. Not described in the data sheet (it documents INTNREG00 and INTNREG04..07 only); present because it was read on hardware (2026-11-08, nvr0408): 0x00200020 after reset. Bit layout unknown.";
+
+        field {
+            name = "value";
+            desc = "Register value (layout not documented).";
+            sw = rw;
+            hw = r;
+            reset = 0x200020;
+        } value[31:0];
+    } INTNREG01 @ 0x94;
+
+    reg {
+        name = "Vendor internal register 2";
+        desc = "INTNREG02. Not described in the data sheet (it documents INTNREG00 and INTNREG04..07 only); present because it was read on hardware (2026-11-08, nvr0408): 0x00000080 after reset. Bit layout unknown.";
+
+        field {
+            name = "value";
+            desc = "Register value (layout not documented).";
+            sw = rw;
+            hw = r;
+            reset = 0x80;
+        } value[31:0];
+    } INTNREG02 @ 0x98;
+
+    reg {
+        name = "Vendor internal register 3";
+        desc = "INTNREG03. Not described in the data sheet (it documents INTNREG00 and INTNREG04..07 only); present because it was read on hardware (2026-11-08, nvr0408): 0x00002001 after reset. Bit layout unknown.";
+
+        field {
+            name = "value";
+            desc = "Register value (layout not documented).";
+            sw = rw;
+            hw = r;
+            reset = 0x2001;
+        } value[31:0];
+    } INTNREG03 @ 0x9C;
+
+    reg {
+        name = "Debug register Hardware read 2026-11-08: 0x000000C0. Bits 7:6 are set at reset and are not described in the data sheet (not modelled as fields).";
+        desc = "INTNREG04 is a debug register.
+
+Data sheet 14.6.5 INTNREG04 (EHCI offset 0xA0, printed page 14-90, `datasheet.txt` line 56807). Vendor-defined register (Synopsys-style INSNREG).";
+
+        enum INTNREG04_auto_en_enum {
+            ENABLED_SUSPEND_SIGNAL = 0 { name = "Enabled Suspend Signal"; desc = "enabled. The suspend signal is valid when the run/stop bit is reset by software, but the hchalted bit is not set."; };
+            DISABLED_PORT_NOT = 1 { name = "Disabled Port Not"; desc = "disabled. The port is not suspended when software clears the run/stop bit. The default value is 0."; };
+        };
+
+        field {
+            name = "auto_en";
+            desc = "Automatic feature enable.";
+            sw = rw;
+            hw = r;
+            encode = INTNREG04_auto_en_enum;
+            reset = 0x0;
+        } auto_en[5:5];
+
+        enum INTNREG04_nak_reldfix_en_enum {
+            ENABLED = 0 { name = "Enabled"; desc = "enabled"; };
+            DISABLED = 1 { name = "Disabled"; desc = "disabled"; };
+        };
+
+        field {
+            name = "nak_reldfix_en";
+            desc = "NAK reload enable.";
+            sw = rw;
+            hw = r;
+            encode = INTNREG04_nak_reldfix_en_enum;
+            reset = 0x0;
+        } nak_reldfix_en[4:4];
+
+        enum INTNREG04_scaledwn_enum_time_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "scaledwn_enum_time";
+            desc = "Port enumeration time scale down enable.";
+            sw = rw;
+            hw = r;
+            encode = INTNREG04_scaledwn_enum_time_enum;
+            reset = 0x0;
+        } scaledwn_enum_time[2:2];
+
+        enum INTNREG04_hccparam_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "hccparam_en";
+            desc = "HCCPARAMS register write enable.";
+            sw = rw;
+            hw = r;
+            encode = INTNREG04_hccparam_en_enum;
+            reset = 0x0;
+        } hccparam_en[1:1];
+
+        enum INTNREG04_hcsparam_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "hcsparam_en";
+            desc = "HCSPARAMS register write enable.";
+            sw = rw;
+            hw = r;
+            encode = INTNREG04_hcsparam_en_enum;
+            reset = 0x0;
+        } hcsparam_en[0:0];
+    } INTNREG04 @ 0xA0;
+
+    reg {
+        name = "PHY control and status register Hardware read 2026-11-08: 0x00000000 after reset, but the data sheet total reset has vcontrol_loadm = 1 (0x00001000); the hardware value is modelled and the data sheet value is a mismatch (vcontrol_loadm enum 0 = enabled, so the load strobe is enabled after reset).";
+        desc = "INTNREG05 is a control and status register. It is used to read or write to the PHY.
+
+Data sheet 14.6.5 INTNREG05 (EHCI offset 0xA4, printed page 14-91, `datasheet.txt` line 56866). Vendor-defined register (Synopsys-style INSNREG).";
+
+        field {
+            name = "vbusy";
+            desc = "The value 1 indicates that the hardware is writing data. This bit is cleared only when the process ends.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } vbusy[17:17];
+
+        field {
+            name = "vport";
+            desc = "Port ID. It cannot exceed the supported number of ports.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } vport[16:13];
+
+        enum INTNREG05_vcontrol_loadm_enum {
+            ENABLED = 0 { name = "Enabled"; desc = "enabled"; };
+            DISABLED = 1 { name = "Disabled"; desc = "disabled"; };
+        };
+
+        field {
+            name = "vcontrol_loadm";
+            desc = "Load enable.";
+            sw = rw;
+            hw = r;
+            encode = INTNREG05_vcontrol_loadm_enum;
+            reset = 0x0;
+        } vcontrol_loadm[12:12];
+
+        field {
+            name = "vcontrol";
+            desc = "Port control signal.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } vcontrol[11:8];
+
+        field {
+            name = "vstatus";
+            desc = "Port status signal.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } vstatus[7:0];
+    } INTNREG05 @ 0xA4;
+
+    reg {
+        name = "AHB error status register";
+        desc = "INTNREG06 is an AHB error status register.
+
+Data sheet 14.6.5 INTNREG06 (EHCI offset 0xA8, printed page 14-91, `datasheet.txt` line 56899). Vendor-defined register (Synopsys-style INSNREG).";
+
+        field {
+            name = "err_capture";
+            desc = "AHB error.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } err_capture[31:31];
+
+        field {
+            name = "hbusrt_err";
+            desc = "hbrust value during a control transfer when an AHB error occurs.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } hbusrt_err[11:9];
+
+        field {
+            name = "num_beat_err";
+            desc = "Number of beats during a burst transfer when an AHB error occurs. The maximum number of beats is 16. 0x00-0x10: valid 0x11-0x1F: reserved";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } num_beat_err[8:4];
+
+        field {
+            name = "num_beat_ok";
+            desc = "Number of completed beats during a burst transfer when an AHB error occurs.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } num_beat_ok[3:0];
+    } INTNREG06 @ 0xA8;
+
+    reg {
+        name = "AHB error address register";
+        desc = "INTNREG07 is an AHB error address register.
+
+Data sheet 14.6.5 INTNREG07 (EHCI offset 0xAC, printed page 14-92, `datasheet.txt` line 56945). Vendor-defined register (Synopsys-style INSNREG).";
+
+        field {
+            name = "err_addr";
+            desc = "Address during a control transfer when an AHB error occurs.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } err_addr[31:0];
+    } INTNREG07 @ 0xAC;
+
+};
+
+regfile eHISI_USB_OHCI {
+    name = "HiSilicon USB 2.0 host controller - OHCI";
+    desc = "
+    Standard OpenHCI 1.0a register set for the full-speed/low-speed companion of the EHCI controller (data sheet 14.6: complies with OHCI V1.0a; the OHCI registers are not described in the
+    data sheet, only the base address 0x100A0000, Table 1-1). Written from the OpenHCI specification 1.0a; HcRevision, HcFmInterval, HcLSThreshold, HcRhDescriptorA and HcRhDescriptorB resets were read on hardware 2026-11-08 (others are the specification's). Two root-hub ports. Interrupt: GIC ID 54
+    (SPI 22, DS Table 3-16). Clock and reset are shared with the EHCI controller (PERI_CRG46); PERIPHCTRL20 `app_start_clk_i` / `ohci_susp_lgcy_i` control the OHCI suspend clocking.
+    ";
+
+    reg {
+        name = "OHCI revision Hardware read 2026-11-08: 0x00000110 (OHCI 1.0, legacy support bit 8 = 1).";
+        desc = "Specification revision.
+
+OHCI 1.0a specification section 7.1.1; reset values are the specification's, not from the Hi3520D data sheet.";
+
+        field {
+            name = "rev";
+            desc = "BCD revision (0x10 = 1.0).";
+            sw = r;
+            hw = w;
+            reset = 0x10;
+        } rev[7:0];
+
+        field {
+            name = "legacy_support";
+            desc = "Legacy support registers present (OHCI 1.0a bit 8). Not read-only-documented in the data sheet; reads 1 on the hardware.";
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } legacy_support[8:8];
+    } HcRevision @ 0x0;
+
+    reg {
+        name = "OHCI control";
+        desc = "Controller operating state and list enables.
+
+OHCI 1.0a specification section 7.1.2; reset values are the specification's, not from the Hi3520D data sheet.";
+
+        field {
+            name = "rwe";
+            desc = "Remote wakeup enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } rwe[10:10];
+
+        field {
+            name = "rwc";
+            desc = "Remote wakeup connected.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } rwc[9:9];
+
+        field {
+            name = "ir";
+            desc = "Interrupt routing.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ir[8:8];
+
+        field {
+            name = "hcfs";
+            desc = "Host controller functional state (0 = USBRESET, 1 = USBRESUME, 2 = USBOPERATIONAL, 3 = USBSUSPEND).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } hcfs[7:6];
+
+        field {
+            name = "ble";
+            desc = "Bulk list enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ble[5:5];
+
+        field {
+            name = "cle";
+            desc = "Control list enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } cle[4:4];
+
+        field {
+            name = "ie";
+            desc = "Isochronous enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ie[3:3];
+
+        field {
+            name = "ple";
+            desc = "Periodic list enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ple[2:2];
+
+        field {
+            name = "cbsr";
+            desc = "Control/bulk service ratio (n+1 : 1).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } cbsr[1:0];
+    } HcControl @ 0x4;
+
+    reg {
+        name = "OHCI command status";
+        desc = "Command bits (write 1) and the scheduling overrun count.
+
+OHCI 1.0a specification section 7.1.3; reset values are the specification's, not from the Hi3520D data sheet.";
+
+        field {
+            name = "soc";
+            desc = "Scheduling overrun count.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } soc[17:16];
+
+        field {
+            name = "ocr";
+            desc = "Ownership change request.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ocr[3:3];
+
+        field {
+            name = "blf";
+            desc = "Bulk list filled.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } blf[2:2];
+
+        field {
+            name = "clf";
+            desc = "Control list filled.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } clf[1:1];
+
+        field {
+            name = "hcr";
+            desc = "Host controller reset.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } hcr[0:0];
+    } HcCommandStatus @ 0x8;
+
+    reg {
+        name = "OHCI interrupt status";
+        desc = "Interrupt status (write 1 to clear).
+
+OHCI 1.0a specification section 7.1.4; reset values are the specification's, not from the Hi3520D data sheet.";
+
+        field {
+            name = "oc";
+            desc = "Ownership change.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } oc[30:30];
+
+        field {
+            name = "rhsc";
+            desc = "Root hub status change.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } rhsc[6:6];
+
+        field {
+            name = "fno";
+            desc = "Frame number overflow.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } fno[5:5];
+
+        field {
+            name = "ue";
+            desc = "Unrecoverable error.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ue[4:4];
+
+        field {
+            name = "rd";
+            desc = "Resume detected.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } rd[3:3];
+
+        field {
+            name = "sf";
+            desc = "Start of frame.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } sf[2:2];
+
+        field {
+            name = "wdh";
+            desc = "Writeback done head.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } wdh[1:1];
+
+        field {
+            name = "so";
+            desc = "Scheduling overrun.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } so[0:0];
+    } HcInterruptStatus @ 0xC;
+
+    reg {
+        name = "OHCI interrupt enable";
+        desc = "Write 1 to enable; bit 31 is the master interrupt enable.
+
+OHCI 1.0a specification section 7.1.5; reset values are the specification's, not from the Hi3520D data sheet.";
+
+        field {
+            name = "mie";
+            desc = "Master interrupt enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } mie[31:31];
+
+        field {
+            name = "oc_e";
+            desc = "Ownership change.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } oc_e[30:30];
+
+        field {
+            name = "rhsc_e";
+            desc = "Root hub status change.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } rhsc_e[6:6];
+
+        field {
+            name = "fno_e";
+            desc = "Frame number overflow.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } fno_e[5:5];
+
+        field {
+            name = "ue_e";
+            desc = "Unrecoverable error.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ue_e[4:4];
+
+        field {
+            name = "rd_e";
+            desc = "Resume detected.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } rd_e[3:3];
+
+        field {
+            name = "sf_e";
+            desc = "Start of frame.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } sf_e[2:2];
+
+        field {
+            name = "wdh_e";
+            desc = "Writeback done head.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } wdh_e[1:1];
+
+        field {
+            name = "so_e";
+            desc = "Scheduling overrun.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } so_e[0:0];
+    } HcInterruptEnable @ 0x10;
+
+    reg {
+        name = "OHCI interrupt disable";
+        desc = "Write 1 to disable; reads back the enable state.
+
+OHCI 1.0a specification section 7.1.6; reset values are the specification's, not from the Hi3520D data sheet.";
+
+        field {
+            name = "mie";
+            desc = "Master interrupt enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } mie[31:31];
+
+        field {
+            name = "oc_d";
+            desc = "Ownership change.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } oc_d[30:30];
+
+        field {
+            name = "rhsc_d";
+            desc = "Root hub status change.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } rhsc_d[6:6];
+
+        field {
+            name = "fno_d";
+            desc = "Frame number overflow.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } fno_d[5:5];
+
+        field {
+            name = "ue_d";
+            desc = "Unrecoverable error.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ue_d[4:4];
+
+        field {
+            name = "rd_d";
+            desc = "Resume detected.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } rd_d[3:3];
+
+        field {
+            name = "sf_d";
+            desc = "Start of frame.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } sf_d[2:2];
+
+        field {
+            name = "wdh_d";
+            desc = "Writeback done head.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } wdh_d[1:1];
+
+        field {
+            name = "so_d";
+            desc = "Scheduling overrun.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } so_d[0:0];
+    } HcInterruptDisable @ 0x14;
+
+    reg {
+        name = "OHCI HCCA";
+        desc = "Physical address of the Host Controller Communications Area.
+
+OHCI 1.0a specification section 7.2.1; reset values are the specification's, not from the Hi3520D data sheet.";
+
+        field {
+            name = "hcca";
+            desc = "HCCA base address (256-byte aligned).";
+            sw = rw;
+            hw = r;
+        } hcca[31:8];
+    } HcHCCA @ 0x18;
+
+    reg {
+        name = "OHCI Current periodic ED";
+        desc = "Current periodic ED physical address.
+
+OHCI 1.0a specification section 7.2; reset values are the specification's, not from the Hi3520D data sheet.";
+
+        field {
+            name = "addr";
+            desc = "Descriptor physical address (16-byte aligned).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } addr[31:4];
+    } HcPeriodCurrentED @ 0x1C;
+
+    reg {
+        name = "OHCI Control list head ED";
+        desc = "Control list head ED physical address.
+
+OHCI 1.0a specification section 7.2; reset values are the specification's, not from the Hi3520D data sheet.";
+
+        field {
+            name = "addr";
+            desc = "Descriptor physical address (16-byte aligned).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } addr[31:4];
+    } HcControlHeadED @ 0x20;
+
+    reg {
+        name = "OHCI Control list current ED";
+        desc = "Control list current ED physical address.
+
+OHCI 1.0a specification section 7.2; reset values are the specification's, not from the Hi3520D data sheet.";
+
+        field {
+            name = "addr";
+            desc = "Descriptor physical address (16-byte aligned).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } addr[31:4];
+    } HcControlCurrentED @ 0x24;
+
+    reg {
+        name = "OHCI Bulk list head ED";
+        desc = "Bulk list head ED physical address.
+
+OHCI 1.0a specification section 7.2; reset values are the specification's, not from the Hi3520D data sheet.";
+
+        field {
+            name = "addr";
+            desc = "Descriptor physical address (16-byte aligned).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } addr[31:4];
+    } HcBulkHeadED @ 0x28;
+
+    reg {
+        name = "OHCI Bulk list current ED";
+        desc = "Bulk list current ED physical address.
+
+OHCI 1.0a specification section 7.2; reset values are the specification's, not from the Hi3520D data sheet.";
+
+        field {
+            name = "addr";
+            desc = "Descriptor physical address (16-byte aligned).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } addr[31:4];
+    } HcBulkCurrentED @ 0x2C;
+
+    reg {
+        name = "OHCI Done queue head TD";
+        desc = "Done queue head TD physical address.
+
+OHCI 1.0a specification section 7.2; reset values are the specification's, not from the Hi3520D data sheet.";
+
+        field {
+            name = "addr";
+            desc = "Descriptor physical address (16-byte aligned).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } addr[31:4];
+    } HcDoneHead @ 0x30;
+
+    reg {
+        name = "OHCI frame interval";
+        desc = "Frame interval and largest data packet.
+
+OHCI 1.0a specification section 7.3.1; reset values are the specification's, not from the Hi3520D data sheet.";
+
+        field {
+            name = "fit";
+            desc = "Frame interval toggle.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } fit[31:31];
+
+        field {
+            name = "fsmps";
+            desc = "FS largest data packet.";
+            sw = rw;
+            hw = r;
+        } fsmps[30:16];
+
+        field {
+            name = "fi";
+            desc = "Frame interval (11999 bit times).";
+            sw = rw;
+            hw = r;
+            reset = 0x2EDF;
+        } fi[13:0];
+    } HcFmInterval @ 0x34;
+
+    reg {
+        name = "OHCI frame remaining";
+        desc = "Bit times remaining in the current frame.
+
+OHCI 1.0a specification section 7.3.2; reset values are the specification's, not from the Hi3520D data sheet.";
+
+        field {
+            name = "frt";
+            desc = "Frame remaining toggle.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } frt[31:31];
+
+        field {
+            name = "fr";
+            desc = "Frame remaining.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } fr[13:0];
+    } HcFmRemaining @ 0x38;
+
+    reg {
+        name = "OHCI frame number";
+        desc = "Frame counter.
+
+OHCI 1.0a specification section 7.3.3; reset values are the specification's, not from the Hi3520D data sheet.";
+
+        field {
+            name = "fn";
+            desc = "Frame number.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } fn[15:0];
+    } HcFmNumber @ 0x3C;
+
+    reg {
+        name = "OHCI periodic start";
+        desc = "Start of periodic list processing.
+
+OHCI 1.0a specification section 7.3.4; reset values are the specification's, not from the Hi3520D data sheet.";
+
+        field {
+            name = "ps";
+            desc = "Periodic start.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ps[13:0];
+    } HcPeriodicStart @ 0x40;
+
+    reg {
+        name = "OHCI low-speed threshold";
+        desc = "Low-speed packet threshold.
+
+OHCI 1.0a specification section 7.3.5; reset values are the specification's, not from the Hi3520D data sheet.";
+
+        field {
+            name = "lst";
+            desc = "Low-speed threshold.";
+            sw = rw;
+            hw = r;
+            reset = 0x628;
+        } lst[11:0];
+    } HcLSThreshold @ 0x44;
+
+    reg {
+        name = "OHCI root hub descriptor A Hardware read 2026-11-08: 0x02000902 (NDP 2, PSM 1, OCPM 1, POTPGT 2); these replace the unspecified resets.";
+        desc = "Root hub characteristics.
+
+OHCI 1.0a specification section 7.4.1; reset values are the specification's, not from the Hi3520D data sheet.";
+
+        field {
+            name = "potpgt";
+            desc = "Power on to power good time (2 ms units).";
+            sw = rw;
+            hw = r;
+            reset = 0x2;
+        } potpgt[31:24];
+
+        field {
+            name = "nocp";
+            desc = "No over-current protection.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } nocp[12:12];
+
+        field {
+            name = "ocpm";
+            desc = "Over-current protection mode.";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } ocpm[11:11];
+
+        field {
+            name = "dt";
+            desc = "Device type (always 0).";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } dt[10:10];
+
+        field {
+            name = "nps";
+            desc = "No power switching.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } nps[9:9];
+
+        field {
+            name = "psm";
+            desc = "Power switching mode.";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } psm[8:8];
+
+        field {
+            name = "ndp";
+            desc = "Number of downstream ports (two).";
+            sw = r;
+            hw = w;
+            reset = 0x2;
+        } ndp[7:0];
+    } HcRhDescriptorA @ 0x48;
+
+    reg {
+        name = "OHCI root hub descriptor B Hardware read 2026-11-08: 0x00060000 (PPCM = ports 1 and 2).";
+        desc = "Removable devices and port power control masks.
+
+OHCI 1.0a specification section 7.4.2; reset values are the specification's, not from the Hi3520D data sheet.";
+
+        field {
+            name = "ppcm";
+            desc = "Port power control mask.";
+            sw = rw;
+            hw = r;
+            reset = 0x6;
+        } ppcm[31:16];
+
+        field {
+            name = "dr";
+            desc = "Device removable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } dr[15:0];
+    } HcRhDescriptorB @ 0x4C;
+
+    reg {
+        name = "OHCI root hub status";
+        desc = "Global power / over-current status and wakeup control.
+
+OHCI 1.0a specification section 7.4.3; reset values are the specification's, not from the Hi3520D data sheet.";
+
+        field {
+            name = "crwe";
+            desc = "Clear remote wakeup enable (write 1).";
+            sw = w;
+            hw = r;
+        } crwe[31:31];
+
+        field {
+            name = "ocic";
+            desc = "Over-current indicator change.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ocic[17:17];
+
+        field {
+            name = "lpsc";
+            desc = "Local power status change (write 1 = set global power).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } lpsc[16:16];
+
+        field {
+            name = "drwe";
+            desc = "Device remote wakeup enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } drwe[15:15];
+
+        field {
+            name = "oci";
+            desc = "Over-current indicator.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } oci[1:1];
+
+        field {
+            name = "lps";
+            desc = "Local power status (write 1 = clear global power).";
+            sw = rw;
+            hw = r;
+        } lps[0:0];
+    } HcRhStatus @ 0x50;
+
+    reg {
+        name = "OHCI root hub port status";
+        desc = "One register per port (port n at 0x54 + 4n).
+
+OHCI 1.0a specification section 7.4.4; reset values are the specification's, not from the Hi3520D data sheet.";
+
+        field {
+            name = "prsc";
+            desc = "Port reset status change.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } prsc[20:20];
+
+        field {
+            name = "ocic";
+            desc = "Port over-current indicator change.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ocic[19:19];
+
+        field {
+            name = "pssc";
+            desc = "Port suspend status change.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } pssc[18:18];
+
+        field {
+            name = "pesc";
+            desc = "Port enable status change.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } pesc[17:17];
+
+        field {
+            name = "csc";
+            desc = "Connect status change.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } csc[16:16];
+
+        field {
+            name = "lsda";
+            desc = "Low-speed device attached (read) / clear port power (write).";
+            sw = rw;
+            hw = r;
+        } lsda[9:9];
+
+        field {
+            name = "pps";
+            desc = "Port power status.";
+            sw = rw;
+            hw = r;
+        } pps[8:8];
+
+        field {
+            name = "prs";
+            desc = "Port reset status.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } prs[4:4];
+
+        field {
+            name = "poci";
+            desc = "Port over-current indicator.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } poci[3:3];
+
+        field {
+            name = "pss";
+            desc = "Port suspend status.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } pss[2:2];
+
+        field {
+            name = "pes";
+            desc = "Port enable status.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } pes[1:1];
+
+        field {
+            name = "ccs";
+            desc = "Current connect status (write 1 = clear port enable).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ccs[0:0];
+    } HcRhPortStatus[2] @ 0x54 += 0x4;
+
+};
+
+`endif

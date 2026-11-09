@@ -1,0 +1,2930 @@
+`ifndef HISI_AHCI_SATA_RDL
+`define HISI_AHCI_SATA_RDL
+
+// Number of SATA ports (PORT array size): 2 on Hi3520D/Hi3515A, 1 on Hi3515C (defines.rdl: HISI_SATA_NPORTS).
+`ifndef HISI_SATA_NPORTS
+`define HISI_SATA_NPORTS 2
+`endif
+
+regfile eHISI_AHCI_SATA {
+    name = "HiSilicon AHCI 1.2 SATA host controller";
+    desc = "
+    SATA 2.5 host controller (1.5 / 3.0 Gbit/s, NCQ, port multiplier, eSATA, command completion coalescing) with an AHB slave (registers) and an AHB master (command list
+    and data DMA) interface. It implements the Advanced Host Controller Interface 1.2 register set: the generic host control registers (`SATA_GHC_*`) at 0x00-0x28 and one 0x80-byte
+    port register block per port at 0x100 + n x 0x80 (`PORT[n]`, 2 ports on Hi3520D/Hi3515A, 1 port on Hi3515C). HiSilicon adds PHY control registers between the generic
+    registers (0x50-0x6C: test status `SATA_GHC_TM`, PHY0/PHY1 control, PHY0 status, OOB control) and in every port block (0x44 FIFO threshold, 0x50-0x78 link/DMA test status and
+    `SATA_PORT_PHYCTL` / `SATA_PORT_PHYSTS`). Linux drives it with the standard `ahci` platform driver plus the HiSilicon glue in `drivers/ata/ahci_sys.c`
+    (`ahci_sys_hi3520d_defconfig.c`).
+
+    Interrupt: GIC interrupt ID 52 (SPI 20, DS Table 3-16). Clock gate, resets and reference clock select: PERI_CRG45 (sata_cken, sata0_cken, sata1_cken, sata_clk_sel, cko_alive_cksel and the
+    seven reset bits); the SATA PHY analog options are in SYS_CTRL PERIPHCTRL3 (`sata_phy0_mpll_ss_sel`, `sata_phy0_ref_clk_sel`) and PERIPHCTRL25 (`sata_test_*`).
+
+    **Bring-up sequence of the vendor driver** (`hi_sata_init`, `ahci_sys.c`, equal to data sheet 14.7.5.4): enable the clocks (PERI_CRG45 bits 10:8), clear `sata_clk_sel` and
+    `cko_alive_cksel` (150 MHz CRG reference clock) and write 0x3F24 to `PORT[i].SATA_PORT_FIFOTH`, deassert `hrst_sata_s`, then `rst_sataphy_s`; set `mpll_ck_off` (bit 12) in
+    SATA_PHY0_CTLH/PHY1_CTLH; write SATA_PHY0_CTLL/PHY1_CTLL (0x880EC788 for 1.5G or 0x880EC888 for 3G), SATA_PHY0_CTLH/PHY1_CTLH = 0x2521, SATA_OOB_CTL = 0x84060C15 and
+    `SATA_PORT_PHYCTL` of every port; pulse `rst_sataphy_s`, then deassert the controller, tx, rx and alive resets.
+
+    Source: Hi3520D/Hi3515A/Hi3515C data sheet issue 07, section 14.7 (printed pages 14-93 .. 14-135, `datasheet.txt` lines 56960-59404); 14.7.6 register summary Tables 14-13 / 14-14.
+    Registers, fields, accesses and resets were extracted programmatically from the data sheet text, enum members from the description column. Extra items from the vendor driver
+    sources (`sources/linux-vendor-3.0/drivers/ata/ahci_sys*.c`, `arch/arm/configs/hi3520d_*_defconfig`) are marked 'vendor-only' in their descriptions. Not hardware verified.
+
+    !!! NOTE
+        The AHCI standard registers `CLBU` (0x04) / `FBU` (0x0C), `EM_LOC` / `EM_CTL` (0x1C / 0x20) are not described in the data sheet (64-bit addressing and enclosure management are
+        reported as not supported in `SATA_GHC_CAP1`); the data sheet summary table (Table 14-13) only lists the registers modelled here. The data sheet text of `SATA_GHC_PI` says
+        'four ports' (copy-paste); `port_imp` has two valid bits.
+    ";
+
+    reg {
+        name = "Feature support register 1";
+        desc = "SATA_GHC_CAP1 is feature support register 1.
+
+Corresponds to the AHCI HBA CAP register of the Advanced Host Controller Interface 1.2 (the data sheet uses its own names).
+
+Data sheet 14.7.7 SATA_GHC_CAP1 (offset 0x0, printed page 14-101, `datasheet.txt` line 57364).";
+
+        field {
+            name = "s64a";
+            desc = "Fixed at 0, indicating that the 64-bit data structure cannot be accessed.";
+            sw = r;
+            hw = na;
+            reset = 0x0;
+        } s64a[31:31];
+
+        field {
+            name = "sncq";
+            desc = "Fixed at 1, indicating that NCQ is supported.";
+            sw = r;
+            hw = na;
+            reset = 0x1;
+        } sncq[30:30];
+
+        field {
+            name = "ssntf";
+            desc = "Fixed at 1, indicating that the port SNTF register is supported.";
+            sw = r;
+            hw = na;
+            reset = 0x1;
+        } ssntf[29:29];
+
+        field {
+            name = "smps";
+            desc = "Fixed at 0, indicating that mechanical hot-plugging is not supported.";
+            sw = r;
+            hw = na;
+            reset = 0x0;
+        } smps[28:28];
+
+        field {
+            name = "sss";
+            desc = "Fixed at 1, indicating that staggered spin-up is supported.";
+            sw = r;
+            hw = na;
+            reset = 0x1;
+        } sss[27:27];
+
+        field {
+            name = "salp";
+            desc = "Fixed at 1, indicating that power supply management is supported.";
+            sw = r;
+            hw = na;
+            reset = 0x1;
+        } salp[26:26];
+
+        field {
+            name = "sal";
+            desc = "Fixed at 1, indicating that the LED pin is supported.";
+            sw = r;
+            hw = na;
+            reset = 0x1;
+        } sal[25:25];
+
+        field {
+            name = "sclo";
+            desc = "Fixed at 1, indicating that command linked list override is supported.";
+            sw = r;
+            hw = na;
+            reset = 0x1;
+        } sclo[24:24];
+
+        field {
+            name = "iss";
+            desc = "Fixed at 0x2, indicating that the maximum rate of 3 Gbit/s is supported.";
+            sw = r;
+            hw = na;
+            reset = 0x2;
+        } iss[23:20];
+
+        field {
+            name = "sam";
+            desc = "Fixed at 1, indicating that only the AHCI mode is supported.";
+            sw = r;
+            hw = na;
+            reset = 0x1;
+        } sam[18:18];
+
+        field {
+            name = "spm";
+            desc = "Fixed at 1, indicating that the port multiplier is supported.";
+            sw = r;
+            hw = na;
+            reset = 0x1;
+        } spm[17:17];
+
+        field {
+            name = "fbss";
+            desc = "Fixed at 0, indicating that FIS-based switching is not supported.";
+            sw = r;
+            hw = na;
+            reset = 0x0;
+        } fbss[16:16];
+
+        field {
+            name = "pmd";
+            desc = "Fixed at 1, indicating that multiple DRQ blocks cannot be transferred in PIO mode.";
+            sw = r;
+            hw = na;
+            reset = 0x1;
+        } pmd[15:15];
+
+        field {
+            name = "ssc";
+            desc = "Fixed at 1, indicating that the transition to the slumber status is supported.";
+            sw = r;
+            hw = na;
+            reset = 0x1;
+        } ssc[14:14];
+
+        field {
+            name = "psc";
+            desc = "Fixed at 1, indicating that the transition to the partial status is supported.";
+            sw = r;
+            hw = na;
+            reset = 0x1;
+        } psc[13:13];
+
+        field {
+            name = "ncs";
+            desc = "Fixed at 0x1F, indicating that 32 command slots are supported.";
+            sw = r;
+            hw = na;
+            reset = 0x1F;
+        } ncs[12:8];
+
+        field {
+            name = "cccs";
+            desc = "Fixed at 1, indicating that the CCC function is supported.";
+            sw = r;
+            hw = na;
+            reset = 0x1;
+        } cccs[7:7];
+
+        field {
+            name = "ems";
+            desc = "Fixed at 0, indicating that enclose management is not supported.";
+            sw = r;
+            hw = na;
+            reset = 0x0;
+        } ems[6:6];
+
+        field {
+            name = "sxs";
+            desc = "Fixed at 1, indicating that the external SATA interface is supported.";
+            sw = r;
+            hw = na;
+            reset = 0x1;
+        } sxs[5:5];
+
+        field {
+            name = "np";
+            desc = "Fixed at 0x01, indicating that a maximum of two ports are supported.";
+            sw = r;
+            hw = na;
+            reset = 0x1;
+        } np[4:0];
+    } SATA_GHC_CAP1 @ 0x0;
+
+    reg {
+        name = "Global control register";
+        desc = "SATA_GHC_GHC is a global control register.
+
+Corresponds to the AHCI GHC register of the Advanced Host Controller Interface 1.2 (the data sheet uses its own names).
+
+Data sheet 14.7.7 SATA_GHC_GHC (offset 0x4, printed page 14-102, `datasheet.txt` line 57434).";
+
+        field {
+            name = "ahci_en";
+            desc = "Fixed at 1, indicating that the software can interact with the controller only through the AHCI mechanism.";
+            sw = r;
+            hw = na;
+            reset = 0x1;
+        } ahci_en[31:31];
+
+        enum SATA_GHC_GHC_int_enable_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "int_enable";
+            desc = "Controller interrupt enable.";
+            sw = rw;
+            hw = r;
+            encode = SATA_GHC_GHC_int_enable_enum;
+            reset = 0x0;
+        } int_enable[1:1];
+
+        enum SATA_GHC_GHC_hba_rst_enum {
+            NOT_RESET = 0 { name = "Not Reset"; desc = "not reset"; };
+            RESET_WRITING_1 = 1 { name = "Reset Writing 1"; desc = "reset Writing 1 resets the controller and this bit is automatically cleared after reset; writing 0 has no effect. In addition, reset has no effect on the registers SATA_GHC_BOHC, SATA_PORT_FB, and SATA_PORT_CLB."; };
+        };
+
+        field {
+            name = "hba_rst";
+            desc = "Soft reset control for the controller.";
+            sw = rw;
+            hw = r;
+            encode = SATA_GHC_GHC_hba_rst_enum;
+            reset = 0x0;
+        } hba_rst[0:0];
+    } SATA_GHC_GHC @ 0x4;
+
+    reg {
+        name = "Interrupt status register";
+        desc = "SATA_GHC_IS is an interrupt status register.
+
+Corresponds to the AHCI IS register of the Advanced Host Controller Interface 1.2 (the data sheet uses its own names).
+
+Data sheet 14.7.7 SATA_GHC_IS (offset 0x8, printed page 14-103, `datasheet.txt` line 57479).";
+
+        enum SATA_GHC_IS_ips_ccc_enum {
+            NO_CCC_INTERRUPT = 0 { name = "No Ccc Interrupt"; desc = "No CCC interrupt is generated."; };
+            CCC_INTERRUPT_GENERATED = 1 { name = "Ccc Interrupt Generated"; desc = "A CCC interrupt is generated."; };
+        };
+
+        field {
+            name = "ips_ccc";
+            desc = "CCC interrupt status.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = SATA_GHC_IS_ips_ccc_enum;
+            reset = 0x0;
+        } ips_ccc[31:31];
+
+        enum SATA_GHC_IS_ips_port1_enum {
+            NO_INTERRUPT_REPORTED = 0 { name = "No Interrupt Reported"; desc = "No interrupt is reported."; };
+            INTERRUPT_REPORTED = 1 { name = "Interrupt Reported"; desc = "An interrupt is reported."; };
+        };
+
+        field {
+            name = "ips_port1";
+            desc = "Interrupt status of port 1.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = SATA_GHC_IS_ips_port1_enum;
+            reset = 0x0;
+        } ips_port1[1:1];
+
+        enum SATA_GHC_IS_ips_port0_enum {
+            NO_INTERRUPT_REPORTED = 0 { name = "No Interrupt Reported"; desc = "No interrupt is reported."; };
+            INTERRUPT_REPORTED = 1 { name = "Interrupt Reported"; desc = "An interrupt is reported."; };
+        };
+
+        field {
+            name = "ips_port0";
+            desc = "Interrupt status of port 0.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = SATA_GHC_IS_ips_port0_enum;
+            reset = 0x0;
+        } ips_port0[0:0];
+    } SATA_GHC_IS @ 0x8;
+
+    reg {
+        name = "Port implementation register";
+        desc = "SATA_GHC_PI is a port implementation register.
+
+Corresponds to the AHCI PI register of the Advanced Host Controller Interface 1.2 (the data sheet uses its own names). On the Hi3515C (one SATA port, `Differences Between the Hi3515C and the Hi3520D`, Table 1-1) the data sheet gives no separate reset value; the 0x3 shown is the Hi3520D/Hi3515A value (two ports) and the port array below has one element on the Hi3515C.
+
+Data sheet 14.7.7 SATA_GHC_PI (offset 0xC, printed page 14-104, `datasheet.txt` line 57518).";
+
+        enum SATA_GHC_PI_port_imp_enum {
+            PORTS_INVALID = 0 { name = "Ports Invalid"; desc = "The ports are invalid."; };
+            PORTS_VALID = 1 { name = "Ports Valid"; desc = "The ports are valid."; };
+        };
+
+        field {
+            name = "port_imp";
+            desc = "Port validity indication. If the value is 0x3, the four ports, port 0 to port 1, are valid. The bits, bit[1] to bit[0], map to port 1 to port 0 respectively.";
+            sw = r;
+            hw = w;
+            encode = SATA_GHC_PI_port_imp_enum;
+            reset = 0x3;
+        } port_imp[1:0];
+    } SATA_GHC_PI @ 0xC;
+
+    reg {
+        name = "AHCI version identifier register";
+        desc = "SATA_GHC_VS is an AHCI version identifier register.
+
+Corresponds to the AHCI VS register of the Advanced Host Controller Interface 1.2 (the data sheet uses its own names).
+
+Data sheet 14.7.7 SATA_GHC_VS (offset 0x10, printed page 14-104, `datasheet.txt` line 57545).";
+
+        field {
+            name = "achi_vs";
+            desc = "The supported AHCI version is V1.2.";
+            sw = r;
+            hw = w;
+            reset = 0x00010200;
+        } achi_vs[31:0];
+    } SATA_GHC_VS @ 0x10;
+
+    reg {
+        name = "CCC control register";
+        desc = "SATA_GHC_CCC_CTL is a CCC control register.
+
+Corresponds to the AHCI CCC_CTL register of the Advanced Host Controller Interface 1.2 (the data sheet uses its own names).
+
+Data sheet 14.7.7 SATA_GHC_CCC_CTL (offset 0x14, printed page 14-105, `datasheet.txt` line 57574).";
+
+        field {
+            name = "ccc_tv";
+            desc = "CCC timeout parameter, in the unit of ms. When the CCC function is enabled, the timeout counter loads this parameter value. If a command is executed on a port involved in CCC counting, the counter decreases by 1 every 1 ms until a CCC interrupt is generated when the counter reaches 0. Then the counter reloads the parameter value for the next counting. Note that these bits cannot be set to 0s.";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } ccc_tv[31:16];
+
+        field {
+            name = "ccc_cc";
+            desc = "CCC command completion upper limit. When the CCC function is enabled, the counter is cleared after commands are executed. Then the counter starts to count the number of completed commands on the ports involved in CCC counting. If the count value is greater than or equal to the parameter value, a CCC interrupt is generated. In this case, the counter is cleared again for the next counting. If the value 0 is written, the command completion interrupt is disabled and the CCC interrupt is generated only after timeout.";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } ccc_cc[15:8];
+
+        field {
+            name = "ccc_int";
+            desc = "CCC interrupt vector ID. If the value is 0x1F (31), SATA_GHC_IS bit[31] indicates the CCC interrupt status.";
+            sw = r;
+            hw = w;
+            reset = 0x1F;
+        } ccc_int[7:3];
+
+        enum SATA_GHC_CCC_CTL_ccc_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED_WHEN_CCC = 1 { name = "Enabled When Ccc"; desc = "enabled When the CCC function is enabled, the values of ccc_tv and ccc_cc cannot be changed."; };
+        };
+
+        field {
+            name = "ccc_en";
+            desc = "CCC function enable.";
+            sw = rw;
+            hw = r;
+            encode = SATA_GHC_CCC_CTL_ccc_en_enum;
+            reset = 0x0;
+        } ccc_en[0:0];
+    } SATA_GHC_CCC_CTL @ 0x14;
+
+    reg {
+        name = "CCC port enable register";
+        desc = "SATA_GHC_CCC_PORTS is a CCC port enable register.
+
+Corresponds to the AHCI CCC_PORTS register of the Advanced Host Controller Interface 1.2 (the data sheet uses its own names).
+
+Data sheet 14.7.7 SATA_GHC_CCC_PORTS (offset 0x18, printed page 14-106, `datasheet.txt` line 57630).";
+
+        field {
+            name = "ccc_prt";
+            desc = "Specifies the port that is involved in CCC counting. Bit[1] to bit[0] map to port 1 to port 0 respectively. If the related bit is 1, the port is involved in CCC counting. If the related bit is 0. The port is not involved in CCC counting. The value of this register can be changed at any time and the changed value takes effect immediately.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ccc_prt[1:0];
+    } SATA_GHC_CCC_PORTS @ 0x18;
+
+    reg {
+        name = "Feature support register 2";
+        desc = "SATA_GHC_CAP2 is feature support register 2.
+
+Corresponds to the AHCI CAP2 register of the Advanced Host Controller Interface 1.2 (the data sheet uses its own names).
+
+Data sheet 14.7.7 SATA_GHC_CAP2 (offset 0x24, printed page 14-106, `datasheet.txt` line 57655).";
+
+        field {
+            name = "cap_boh";
+            desc = "Fixed at 1, indicating that BIOS/OS handoff control is supported.";
+            sw = r;
+            hw = na;
+            reset = 0x1;
+        } cap_boh[0:0];
+    } SATA_GHC_CAP2 @ 0x24;
+
+    reg {
+        name = "BIOS/OS handoff control register";
+        desc = "SATA_GHC_BOHC is a BIOS/OS handoff control register.
+
+Corresponds to the AHCI BOHC register of the Advanced Host Controller Interface 1.2 (the data sheet uses its own names).
+
+Data sheet 14.7.7 SATA_GHC_BOHC (offset 0x28, printed page 14-107, `datasheet.txt` line 57689).";
+
+        enum SATA_GHC_BOHC_bohc_bb_enum {
+            BIOS_NOT_BUSY = 0 { name = "Bios Not Busy"; desc = "The BIOS is not busy."; };
+            BIOS_BUSY_PERFORMING = 1 { name = "Bios Busy Performing"; desc = "The BIOS is busy in performing certain operations and is ready to hand the control permission off to the OS."; };
+        };
+
+        field {
+            name = "bohc_bb";
+            desc = "BIOS status indication.";
+            sw = rw;
+            hw = r;
+            encode = SATA_GHC_BOHC_bohc_bb_enum;
+            reset = 0x0;
+        } bohc_bb[4:4];
+
+        field {
+            name = "bohc_ooc";
+            desc = "When the value of bohc_oos is changed from 0 to 1, this bit is fixed at 1. Writing 1 clears this bit and writing 0 has no effect.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            reset = 0x0;
+        } bohc_ooc[3:3];
+
+        enum SATA_GHC_BOHC_bohc_sooe_enum {
+            NO_MESSAGE_INTERRUPT = 0 { name = "No Message Interrupt"; desc = "No message interrupt is generated."; };
+            WHEN_BOHC_OOC = 1 { name = "When Bohc Ooc"; desc = "When bohc_ooc is set to 1, a message interrupt is generated."; };
+        };
+
+        field {
+            name = "bohc_sooe";
+            desc = "Message interrupt enable.";
+            sw = rw;
+            hw = r;
+            encode = SATA_GHC_BOHC_bohc_sooe_enum;
+            reset = 0x0;
+        } bohc_sooe[2:2];
+
+        enum SATA_GHC_BOHC_bohc_oos_enum {
+            OS_DOES_NOT = 0 { name = "Os Does Not"; desc = "The OS does not apply for the control permission on the controller."; };
+            OS_APPLIES_CONTROL = 1 { name = "Os Applies Control"; desc = "The OS applies for the control permission on the controller. If bohc_oos is 1 and bios_bos is 0, it indicates that the OS has obtained the control permission on the SATA controller. Resetting the SATA controller through SATA_GHC_GHC[hab_rst] has no effect on this bit."; };
+        };
+
+        field {
+            name = "bohc_oos";
+            desc = "Request applied by the OS for controlling the controller.";
+            sw = rw;
+            hw = r;
+            encode = SATA_GHC_BOHC_bohc_oos_enum;
+            reset = 0x0;
+        } bohc_oos[1:1];
+
+        enum SATA_GHC_BOHC_bohc_bos_enum {
+            BIOS_DOES_NOT = 0 { name = "Bios Does Not"; desc = "The BIOS does not have the control permission on the controller."; };
+            BIOS_HAS_CONTROL = 1 { name = "Bios Has Control"; desc = "The BIOS has the control permission on the controller. If the OS applies for the control permission on the controller, the BIOS clears this bit. Resetting the SATA controller through SATA_GHC_GHC[hab_rst] has no effect on this bit."; };
+        };
+
+        field {
+            name = "bohc_bos";
+            desc = "Flag that indicates that the BIOS has the control permission on the controller.";
+            sw = rw;
+            hw = r;
+            encode = SATA_GHC_BOHC_bohc_bos_enum;
+            reset = 0x0;
+        } bohc_bos[0:0];
+    } SATA_GHC_BOHC @ 0x28;
+
+    reg {
+        name = "TM test status register";
+        desc = "SATA_GHC_TM is a TM test status register.
+
+Data sheet 14.7.7 SATA_GHC_TM (offset 0x50, printed page 14-108, `datasheet.txt` line 57750).";
+
+        enum SATA_GHC_TM_req_sel_enum {
+            TRANSMIT_DMAC_PORT = 0 { name = "Transmit Dmac Port"; desc = "transmit DMAC of port 0"; };
+            RECEIVE_DMAC_PORT = 1 { name = "Receive Dmac Port"; desc = "receive DMAC of port 0"; };
+            TRANSMIT_DMAC_PORT_2 = 2 { name = "Transmit Dmac Port 2"; desc = "transmit DMAC of port 1"; };
+            RECEIVE_DMAC_PORT_2 = 3 { name = "Receive Dmac Port 2"; desc = "receive DMAC of port 1 Other values: reserved"; };
+        };
+
+        field {
+            name = "req_sel";
+            desc = "Current DMAC that has the right to use the AHB master.";
+            sw = r;
+            hw = w;
+            encode = SATA_GHC_TM_req_sel_enum;
+            reset = 0x0;
+        } req_sel[2:0];
+    } SATA_GHC_TM @ 0x50;
+
+    reg {
+        name = "PHY0 global status register for lower bits";
+        desc = "SATA_PHY0_CTLL is a PHY0 global status register for lower bits.
+
+Initialization values (DS 14.7.5.4 step 5, vendor `ahci_sys.c` / `CONFIG_HI_SATA_PHY0_CTLL_*_VAL`): 1.5 Gbit/s = 0x880EC788, 3 Gbit/s = 0x880EC888. Compared with the reset value 0x8D0EC88A the 3G value changes: mpll_ncy 0x6 -> 0x4, mpll_ncy5 0x2 -> 0x0, fast_tech 0x1 -> 0x0; the 1.5G value additionally differs from the 3G value in: los_lvl 0x11 -> 0xf. The vendor driver writes the same value to SATA_PHY1_CTLL.
+
+Data sheet 14.7.7 SATA_PHY0_CTLL (offset 0x54, printed page 14-108, `datasheet.txt` line 57777).";
+
+        enum SATA_PHY0_CTLL_mpll_prescale_enum {
+            REF_CLK_USED = 0 { name = "Ref Clk Used"; desc = "ref_clk is used as it is."; };
+            REF_CLK_MULTIPLIED = 1 { name = "Ref Clk Multiplied"; desc = "ref_clk is multiplied by 2."; };
+            REF_CLK_DIVIDED = 2 { name = "Ref Clk Divided"; desc = "ref_clk is divided by 2."; };
+            RESERVED = 3 { name = "Reserved"; desc = "reserved"; };
+        };
+
+        field {
+            name = "mpll_prescale";
+            desc = "When the reference clock is changed, this value also needs to be changed.";
+            sw = rw;
+            hw = r;
+            encode = SATA_PHY0_CTLL_mpll_prescale_enum;
+            reset = 0x2;
+        } mpll_prescale[31:30];
+
+        field {
+            name = "mpll_ncy";
+            desc = "Operating parameter of the internal MPLL of the PHY. This field needs to be used with mpll_ncy5 and indicates the used multiplier.";
+            sw = rw;
+            hw = r;
+            reset = 0x6;
+        } mpll_ncy[29:25];
+
+        field {
+            name = "mpll_ncy5";
+            desc = "Operating parameter of the internal MPLL of the PHY. This field needs to be used with mpll_ncy and indicates the used multiplier.";
+            sw = rw;
+            hw = r;
+            reset = 0x2;
+        } mpll_ncy5[24:23];
+
+        field {
+            name = "mpll_int_ctl";
+            desc = "Internal bandwidth control and select signal of the MPLL. This field must be set to 0b000.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } mpll_int_ctl[22:20];
+
+        field {
+            name = "mpll_prop_ctl";
+            desc = "Internal proportional bandwidth control signal of the MPLL. This field must be set to 0b111 and can be written only when the register is reset or the MPLL is invalid.";
+            sw = rw;
+            hw = r;
+            reset = 0x7;
+        } mpll_prop_ctl[19:17];
+
+        field {
+            name = "tx_lvl";
+            desc = "Transmit level parameter that is related to the selected SATA protocol. This field must be set to 0b01100.";
+            sw = rw;
+            hw = r;
+            reset = 0xC;
+        } tx_lvl[16:12];
+
+        field {
+            name = "los_lvl";
+            desc = "LOS detection level control signal. This field must be set to 0b10001.";
+            sw = rw;
+            hw = r;
+            reset = 0x11;
+        } los_lvl[11:7];
+
+        field {
+            name = "acjt_lvl";
+            desc = "ACJTAG receiver comparator level control signal. This field must be set to 0b00010.";
+            sw = rw;
+            hw = r;
+            reset = 0x2;
+        } acjt_lvl[6:2];
+
+        field {
+            name = "fast_tech";
+            desc = "Signal that indicates that the IP is processed in a fast technology variant. This bit must be set to 0.";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } fast_tech[1:1];
+
+        field {
+            name = "pddq_h";
+            desc = "IDDQ test signal. To perform an IDDQ test, all the lanes and support blocks must be powered off before pddq_h is valid. In normal mode, this bit must be set to 0.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } pddq_h[0:0];
+    } SATA_PHY0_CTLL @ 0x54;
+
+    reg {
+        name = "PHY0 global register for upper bits";
+        desc = "SATA_PHY0_CTLH is a PHY0 global register for upper bits.
+
+The data sheet initialization (DS 14.7.5.4 step 6) writes 0x2121 (= the reset value) after setting bit 12 (`mpll_ck_off`, `HI_SATA_DIS_CLK` in the vendor driver) to disable the provided PHY reference clock (step 4). The vendor driver (`CONFIG_HI_SATA_PHYX_CTLH_VAL`) writes 0x2521 to PHY0_CTLH and PHY1_CTLH, which differs from the reset value in: mpll_ss_en 0x0 -> 0x1. Bit 13 (`use_refclk_alt`) selects whether SREFCKM/SREFCKP come from inside the chip (1) or from an external clock source (0) (DS 14.7.5.2).
+
+Data sheet 14.7.7 SATA_PHY0_CTLH (offset 0x58, printed page 14-109, `datasheet.txt` line 57846).";
+
+        enum SATA_PHY0_CTLH_use_refclk_alt_enum {
+            REFCLK_DIFFERENTIAL_SIGNALS = 0 { name = "Refclk Differential Signals"; desc = "refclk differential signals"; };
+            REFCLK_ALT_DIFFERENTIAL = 1 { name = "Refclk Alt Differential"; desc = "refclk_alt differential signals"; };
+        };
+
+        field {
+            name = "use_refclk_alt";
+            desc = "PHY reference clock select.";
+            sw = rw;
+            hw = r;
+            encode = SATA_PHY0_CTLH_use_refclk_alt_enum;
+            reset = 0x1;
+        } use_refclk_alt[13:13];
+
+        field {
+            name = "mpll_ck_off";
+            desc = "Power-on control signal of the MPLL. Control this signal by conforming to the following rules: 1. Before providing refclk to the MPLL, set mpll_ck_off to 0. 2 Before setting mpll_ck_off to 0, set mpll_ncy, mpll_ncy5, and, pll_prescale to proper values. 3 If refclk is paused or switched or the values of mpll_ncy, mpll_ncy5, and mpll_prescale need to be changed, set mpll_ck_off to 1 first.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } mpll_ck_off[12:12];
+
+        enum SATA_PHY0_CTLH_mpll_pwron_enum {
+            CKO_WORD_CLOCK = 0 { name = "Cko Word Clock"; desc = "The cko_word clock is invalid."; };
+            INTERNAL_MPLL_RESET = 1 { name = "Internal Mpll Reset"; desc = "The internal MPLL is reset and the cko_word clock signal is generated based on the frequency of refclk. Before the MPLL is disabled, tx_en must be OFF or in the CM status and rx_en and rx_pll_pwron must be set to 0."; };
+        };
+
+        field {
+            name = "mpll_pwron";
+            desc = "MPLL power-on.";
+            sw = rw;
+            hw = r;
+            encode = SATA_PHY0_CTLH_mpll_pwron_enum;
+            reset = 0x0;
+        } mpll_pwron[11:11];
+
+        enum SATA_PHY0_CTLH_mpll_ss_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED_IF_REFCLK = 1 { name = "Enabled If Refclk"; desc = "enabled If the refclk spectrum has been spread, this bit must be set to 0."; };
+        };
+
+        field {
+            name = "mpll_ss_en";
+            desc = "Spread spectrum enable signal.";
+            sw = rw;
+            hw = r;
+            encode = SATA_PHY0_CTLH_mpll_ss_en_enum;
+            reset = 0x0;
+        } mpll_ss_en[10:10];
+
+        field {
+            name = "cko_word_con";
+            desc = "cko_word output select signal.";
+            sw = rw;
+            hw = r;
+            reset = 0x2;
+        } cko_word_con[9:7];
+
+        enum SATA_PHY0_CTLH_cko_alive_con_enum {
+            INVALID = 0 { name = "Invalid"; desc = "invalid."; };
+            RETAIN_OUTPUT_FREQUENCY = 1 { name = "Retain Output Frequency"; desc = "retain the output frequency of the prescaler."; };
+            LOW_FREQUENCY_OUTPUT = 2 { name = "Low Frequency Output"; desc = "low-frequency output, that is, 1/16 of the prescaler."; };
+            RESERVED = 3 { name = "Reserved"; desc = "reserved"; };
+        };
+
+        field {
+            name = "cko_alive_con";
+            desc = "cko_alive output signal select.";
+            sw = rw;
+            hw = r;
+            encode = SATA_PHY0_CTLH_cko_alive_con_enum;
+            reset = 0x1;
+        } cko_alive_con[6:5];
+
+        enum SATA_PHY0_CTLH_rtune_do_tune_enum {
+            DO_NOT_TUNE = 0 { name = "Do Not Tune"; desc = "do not tune"; };
+            RETUNE_RESISTOR = 1 { name = "Retune Resistor"; desc = "retune the resistor"; };
+        };
+
+        field {
+            name = "rtune_do_tune";
+            desc = "Resistor tune enable signal.";
+            sw = rw;
+            hw = r;
+            encode = SATA_PHY0_CTLH_rtune_do_tune_enum;
+            reset = 0x0;
+        } rtune_do_tune[4:4];
+
+        field {
+            name = "reset_n";
+            desc = "Reset signal. This signal must be retained for 5 ns at least.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } reset_n[1:1];
+
+        enum SATA_PHY0_CTLH_wide_xface_enum {
+            V_10_BITS = 0 { name = "V 10 Bits"; desc = "10 bits"; };
+            V_20_BITS = 1 { name = "V 20 Bits"; desc = "20 bits"; };
+        };
+
+        field {
+            name = "wide_xface";
+            desc = "Interface bit width control signal.";
+            sw = rw;
+            hw = r;
+            encode = SATA_PHY0_CTLH_wide_xface_enum;
+            reset = 0x1;
+        } wide_xface[0:0];
+    } SATA_PHY0_CTLH @ 0x58;
+
+    reg {
+        name = "PHY0 global status register";
+        desc = "SATA_PHY0_STS is a PHY0 global status register.
+
+Data sheet 14.7.7 SATA_PHY0_STS (offset 0x5C, printed page 14-111, `datasheet.txt` line 57930).";
+
+        field {
+            name = "phy0_sts";
+            desc = "SATA PHY0 common status register.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } phy0_sts[31:0];
+    } SATA_PHY0_STS @ 0x5C;
+
+    reg {
+        name = "PHY OOB control register";
+        desc = "SATA_OOB_CTL is a PHY OOB control register.
+
+The value 0x84060C15 written by the DS init sequence (step 7) and by the vendor driver equals the reset value.
+
+Data sheet 14.7.7 SATA_OOB_CTL (offset 0x6C, printed page 14-111, `datasheet.txt` line 57949).";
+
+        field {
+            name = "oob_ctrl_valid";
+            desc = "Configuration bit of the OOB detection parameter. For high level, this bit is used to select the parameter configurations of this register.";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } oob_ctrl_valid[31:31];
+
+        field {
+            name = "min_comiwake";
+            desc = "Minimum space required for the COMWAKE space detection.";
+            sw = rw;
+            hw = r;
+            reset = 0x4;
+        } min_comiwake[30:24];
+
+        field {
+            name = "max_comwake";
+            desc = "Maximum space required for the COMWAKE space detection.";
+            sw = rw;
+            hw = r;
+            reset = 0x6;
+        } max_comwake[23:16];
+
+        field {
+            name = "min_cominit";
+            desc = "Minimum space required for the COMINIT space detection.";
+            sw = rw;
+            hw = r;
+            reset = 0xC;
+        } min_cominit[15:8];
+
+        field {
+            name = "max_cominit";
+            desc = "Maximum space required for the COMINIT space detection.";
+            sw = rw;
+            hw = r;
+            reset = 0x15;
+        } max_cominit[7:0];
+    } SATA_OOB_CTL @ 0x6C;
+
+    reg {
+        name = "PHY1 counterpart of SATA_PHY0_CTLL";
+        desc = "SATA_PHY1_CTLL is the PHY1 counterpart of SATA_PHY0_CTLL.
+
+Vendor-only register: NOT in the data sheet. The vendor driver (`ahci_sys.c`, `HI_SATA_PHY1_CTLL` = 0x60) writes the same value as to SATA_PHY0_CTLL; the layout is assumed to be the same as SATA_PHY0_CTLL.";
+
+        enum SATA_PHY1_CTLL_mpll_prescale_enum {
+            REF_CLK_USED = 0 { name = "Ref Clk Used"; desc = "ref_clk is used as it is."; };
+            REF_CLK_MULTIPLIED = 1 { name = "Ref Clk Multiplied"; desc = "ref_clk is multiplied by 2."; };
+            REF_CLK_DIVIDED = 2 { name = "Ref Clk Divided"; desc = "ref_clk is divided by 2."; };
+            RESERVED = 3 { name = "Reserved"; desc = "reserved"; };
+        };
+
+        field {
+            name = "mpll_prescale";
+            desc = "When the reference clock is changed, this value also needs to be changed.";
+            sw = rw;
+            hw = r;
+            encode = SATA_PHY1_CTLL_mpll_prescale_enum;
+            reset = 0x2;
+        } mpll_prescale[31:30];
+
+        field {
+            name = "mpll_ncy";
+            desc = "Operating parameter of the internal MPLL of the PHY. This field needs to be used with mpll_ncy5 and indicates the used multiplier.";
+            sw = rw;
+            hw = r;
+            reset = 0x6;
+        } mpll_ncy[29:25];
+
+        field {
+            name = "mpll_ncy5";
+            desc = "Operating parameter of the internal MPLL of the PHY. This field needs to be used with mpll_ncy and indicates the used multiplier.";
+            sw = rw;
+            hw = r;
+            reset = 0x2;
+        } mpll_ncy5[24:23];
+
+        field {
+            name = "mpll_int_ctl";
+            desc = "Internal bandwidth control and select signal of the MPLL. This field must be set to 0b000.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } mpll_int_ctl[22:20];
+
+        field {
+            name = "mpll_prop_ctl";
+            desc = "Internal proportional bandwidth control signal of the MPLL. This field must be set to 0b111 and can be written only when the register is reset or the MPLL is invalid.";
+            sw = rw;
+            hw = r;
+            reset = 0x7;
+        } mpll_prop_ctl[19:17];
+
+        field {
+            name = "tx_lvl";
+            desc = "Transmit level parameter that is related to the selected SATA protocol. This field must be set to 0b01100.";
+            sw = rw;
+            hw = r;
+            reset = 0xC;
+        } tx_lvl[16:12];
+
+        field {
+            name = "los_lvl";
+            desc = "LOS detection level control signal. This field must be set to 0b10001.";
+            sw = rw;
+            hw = r;
+            reset = 0x11;
+        } los_lvl[11:7];
+
+        field {
+            name = "acjt_lvl";
+            desc = "ACJTAG receiver comparator level control signal. This field must be set to 0b00010.";
+            sw = rw;
+            hw = r;
+            reset = 0x2;
+        } acjt_lvl[6:2];
+
+        field {
+            name = "fast_tech";
+            desc = "Signal that indicates that the IP is processed in a fast technology variant. This bit must be set to 0.";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } fast_tech[1:1];
+
+        field {
+            name = "pddq_h";
+            desc = "IDDQ test signal. To perform an IDDQ test, all the lanes and support blocks must be powered off before pddq_h is valid. In normal mode, this bit must be set to 0.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } pddq_h[0:0];
+    } SATA_PHY1_CTLL @ 0x60;
+
+    reg {
+        name = "PHY1 counterpart of SATA_PHY0_CTLH";
+        desc = "SATA_PHY1_CTLH is the PHY1 counterpart of SATA_PHY0_CTLH.
+
+Vendor-only register: NOT in the data sheet. The vendor driver (`ahci_sys.c`, `HI_SATA_PHY1_CTLH` = 0x64) sets bit 12 and writes 0x2521 as for SATA_PHY0_CTLH; the layout is assumed to be the same as SATA_PHY0_CTLH.";
+
+        enum SATA_PHY1_CTLH_use_refclk_alt_enum {
+            REFCLK_DIFFERENTIAL_SIGNALS = 0 { name = "Refclk Differential Signals"; desc = "refclk differential signals"; };
+            REFCLK_ALT_DIFFERENTIAL = 1 { name = "Refclk Alt Differential"; desc = "refclk_alt differential signals"; };
+        };
+
+        field {
+            name = "use_refclk_alt";
+            desc = "PHY reference clock select.";
+            sw = rw;
+            hw = r;
+            encode = SATA_PHY1_CTLH_use_refclk_alt_enum;
+            reset = 0x1;
+        } use_refclk_alt[13:13];
+
+        field {
+            name = "mpll_ck_off";
+            desc = "Power-on control signal of the MPLL. Control this signal by conforming to the following rules: 1. Before providing refclk to the MPLL, set mpll_ck_off to 0. 2 Before setting mpll_ck_off to 0, set mpll_ncy, mpll_ncy5, and, pll_prescale to proper values. 3 If refclk is paused or switched or the values of mpll_ncy, mpll_ncy5, and mpll_prescale need to be changed, set mpll_ck_off to 1 first.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } mpll_ck_off[12:12];
+
+        enum SATA_PHY1_CTLH_mpll_pwron_enum {
+            CKO_WORD_CLOCK = 0 { name = "Cko Word Clock"; desc = "The cko_word clock is invalid."; };
+            INTERNAL_MPLL_RESET = 1 { name = "Internal Mpll Reset"; desc = "The internal MPLL is reset and the cko_word clock signal is generated based on the frequency of refclk. Before the MPLL is disabled, tx_en must be OFF or in the CM status and rx_en and rx_pll_pwron must be set to 0."; };
+        };
+
+        field {
+            name = "mpll_pwron";
+            desc = "MPLL power-on.";
+            sw = rw;
+            hw = r;
+            encode = SATA_PHY1_CTLH_mpll_pwron_enum;
+            reset = 0x0;
+        } mpll_pwron[11:11];
+
+        enum SATA_PHY1_CTLH_mpll_ss_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED_IF_REFCLK = 1 { name = "Enabled If Refclk"; desc = "enabled If the refclk spectrum has been spread, this bit must be set to 0."; };
+        };
+
+        field {
+            name = "mpll_ss_en";
+            desc = "Spread spectrum enable signal.";
+            sw = rw;
+            hw = r;
+            encode = SATA_PHY1_CTLH_mpll_ss_en_enum;
+            reset = 0x0;
+        } mpll_ss_en[10:10];
+
+        field {
+            name = "cko_word_con";
+            desc = "cko_word output select signal.";
+            sw = rw;
+            hw = r;
+            reset = 0x2;
+        } cko_word_con[9:7];
+
+        enum SATA_PHY1_CTLH_cko_alive_con_enum {
+            INVALID = 0 { name = "Invalid"; desc = "invalid."; };
+            RETAIN_OUTPUT_FREQUENCY = 1 { name = "Retain Output Frequency"; desc = "retain the output frequency of the prescaler."; };
+            LOW_FREQUENCY_OUTPUT = 2 { name = "Low Frequency Output"; desc = "low-frequency output, that is, 1/16 of the prescaler."; };
+            RESERVED = 3 { name = "Reserved"; desc = "reserved"; };
+        };
+
+        field {
+            name = "cko_alive_con";
+            desc = "cko_alive output signal select.";
+            sw = rw;
+            hw = r;
+            encode = SATA_PHY1_CTLH_cko_alive_con_enum;
+            reset = 0x1;
+        } cko_alive_con[6:5];
+
+        enum SATA_PHY1_CTLH_rtune_do_tune_enum {
+            DO_NOT_TUNE = 0 { name = "Do Not Tune"; desc = "do not tune"; };
+            RETUNE_RESISTOR = 1 { name = "Retune Resistor"; desc = "retune the resistor"; };
+        };
+
+        field {
+            name = "rtune_do_tune";
+            desc = "Resistor tune enable signal.";
+            sw = rw;
+            hw = r;
+            encode = SATA_PHY1_CTLH_rtune_do_tune_enum;
+            reset = 0x0;
+        } rtune_do_tune[4:4];
+
+        field {
+            name = "reset_n";
+            desc = "Reset signal. This signal must be retained for 5 ns at least.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } reset_n[1:1];
+
+        enum SATA_PHY1_CTLH_wide_xface_enum {
+            V_10_BITS = 0 { name = "V 10 Bits"; desc = "10 bits"; };
+            V_20_BITS = 1 { name = "V 20 Bits"; desc = "20 bits"; };
+        };
+
+        field {
+            name = "wide_xface";
+            desc = "Interface bit width control signal.";
+            sw = rw;
+            hw = r;
+            encode = SATA_PHY1_CTLH_wide_xface_enum;
+            reset = 0x1;
+        } wide_xface[0:0];
+    } SATA_PHY1_CTLH @ 0x64;
+
+    regfile {
+        name = "SATA port registers";
+        desc = "Per-port AHCI port registers and HiSilicon port test/PHY registers. Port n is at 0x100 + n x 0x80.";
+
+
+        reg {
+            name = "Command list base address register";
+            desc = "SATA_PORT_CLB is a command list base address register.
+
+Corresponds to the AHCI PxCLB register of the Advanced Host Controller Interface 1.2 (the data sheet uses its own names).
+
+Data sheet 14.7.7 SATA_PORT_CLB (offset 0x0 + n x 0x80, printed page 14-112, `datasheet.txt` line 57990).";
+
+            field {
+                name = "port_clb";
+                desc = "Base address for storing the port command list in the memory. Resetting the SATA controller through SATA_GHC_GHC[hab_rst] has no effect on this field.";
+                sw = rw;
+                hw = r;
+                reset = 0x0;
+            } port_clb[31:10];
+        } SATA_PORT_CLB @ 0x0;
+
+        reg {
+            name = "Receive FIS base address register";
+            desc = "SATA_PORT_FB is a receive FIS base address register.
+
+Corresponds to the AHCI PxFB register of the Advanced Host Controller Interface 1.2 (the data sheet uses its own names).
+
+Data sheet 14.7.7 SATA_PORT_FB (offset 0x8 + n x 0x80, printed page 14-112, `datasheet.txt` line 58011).";
+
+            field {
+                name = "port_fb";
+                desc = "Base address in the memory for storing the frames received through the port. Resetting the SATA controller through SATA_GHC_GHC[hab_rst] has no effect on this field.";
+                sw = rw;
+                hw = r;
+                reset = 0x0;
+            } port_fb[31:8];
+        } SATA_PORT_FB @ 0x8;
+
+        reg {
+            name = "Port interrupt status register";
+            desc = "SATA_PORT_IS is a port interrupt status register.
+
+Corresponds to the AHCI PxIS register of the Advanced Host Controller Interface 1.2 (the data sheet uses its own names).
+
+Data sheet 14.7.7 SATA_PORT_IS (offset 0x10 + n x 0x80, printed page 14-113, `datasheet.txt` line 58044).";
+
+            enum SATA_PORT_IS_pxis_tfes_enum {
+                VALUE_SATA_PORT = 0 { name = "Value Sata Port"; desc = "The value of SATA_PORT_TFD bit[0] is not 1."; };
+                VALUE_SATA_PORT_2 = 1 { name = "Value Sata Port 2"; desc = "The value of SATA_PORT_TFD bit[0] is 1."; };
+            };
+
+            field {
+                name = "pxis_tfes";
+                desc = "Task file data (TFD) error interrupt status.";
+                sw = rw;
+                hw = w;
+                onwrite = woclr;
+                encode = SATA_PORT_IS_pxis_tfes_enum;
+                reset = 0x0;
+            } pxis_tfes[30:30];
+
+            enum SATA_PORT_IS_pxis_hbds_enum {
+                DMAC_ACCESSES_MEMORY = 0 { name = "Dmac Accesses Memory"; desc = "The DMAC accesses the memory properly."; };
+                ERROR_OCCURS_WHEN = 1 { name = "Error Occurs When"; desc = "An error occurs when the DMAC accesses the memory."; };
+            };
+
+            field {
+                name = "pxis_hbds";
+                desc = "Internal bus error interrupt.";
+                sw = rw;
+                hw = w;
+                onwrite = woclr;
+                encode = SATA_PORT_IS_pxis_hbds_enum;
+                reset = 0x0;
+            } pxis_hbds[28:28];
+
+            enum SATA_PORT_IS_pxis_ifs_enum {
+                NO_ERROR_OCCURS = 0 { name = "No Error Occurs"; desc = "No error occurs during the data frame transfer."; };
+                ERROR_OCCURS_DURING = 1 { name = "Error Occurs During"; desc = "An error occurs during the data frame transfer."; };
+            };
+
+            field {
+                name = "pxis_ifs";
+                desc = "Fatal error interrupt status.";
+                sw = rw;
+                hw = w;
+                onwrite = woclr;
+                encode = SATA_PORT_IS_pxis_ifs_enum;
+                reset = 0x0;
+            } pxis_ifs[27:27];
+
+            enum SATA_PORT_IS_pxis_infs_enum {
+                NO_ERROR_OCCURS = 0 { name = "No Error Occurs"; desc = "No error occurs during the non-data frame transfer."; };
+                ERROR_OCCURS_DURING = 1 { name = "Error Occurs During"; desc = "An error occurs during the non-data frame transfer."; };
+            };
+
+            field {
+                name = "pxis_infs";
+                desc = "Non-fatal error interrupt status.";
+                sw = rw;
+                hw = w;
+                onwrite = woclr;
+                encode = SATA_PORT_IS_pxis_infs_enum;
+                reset = 0x0;
+            } pxis_infs[26:26];
+
+            enum SATA_PORT_IS_pxis_ofs_enum {
+                NO_OVERFLOW_DETECTED = 0 { name = "No Overflow Detected"; desc = "No overflow is detected."; };
+                DURING_DATA_FRAME = 1 { name = "During Data Frame"; desc = "During the data frame transfer, if the size of the data memory occupied by commands is smaller than the actual data amount, an interrupt is reported at the end of the data transfer."; };
+            };
+
+            field {
+                name = "pxis_ofs";
+                desc = "Data transfer overflow interrupt status.";
+                sw = rw;
+                hw = w;
+                onwrite = woclr;
+                encode = SATA_PORT_IS_pxis_ofs_enum;
+                reset = 0x0;
+            } pxis_ofs[24:24];
+
+            enum SATA_PORT_IS_pxis_ipms_enum {
+                NO_PM_PORT = 0 { name = "No Pm Port"; desc = "No PM port number error is detected during data reception."; };
+                PM_PORT_NUMBER = 1 { name = "Pm Port Number"; desc = "A PM port number error is detected during data reception."; };
+            };
+
+            field {
+                name = "pxis_ipms";
+                desc = "PM port number error interrupt status.";
+                sw = rw;
+                hw = w;
+                onwrite = woclr;
+                encode = SATA_PORT_IS_pxis_ipms_enum;
+                reset = 0x0;
+            } pxis_ipms[23:23];
+
+            enum SATA_PORT_IS_pxis_prcs_enum {
+                NO_CHANGES_PHYRDY = 0 { name = "No Changes Phyrdy"; desc = "No changes of the phyrdy signal are detected."; };
+                CHANGES_PHYRDY_SIGNAL = 1 { name = "Changes Phyrdy Signal"; desc = "Changes of the phyrdy signal are detected. This bit directly reflects the value of SATA_PORT_SERR[diag_n]."; };
+            };
+
+            field {
+                name = "pxis_prcs";
+                desc = "PHY status change interrupt status.";
+                sw = r;
+                hw = w;
+                encode = SATA_PORT_IS_pxis_prcs_enum;
+                reset = 0x0;
+            } pxis_prcs[22:22];
+
+            enum SATA_PORT_IS_pxis_pcs_enum {
+                NO_COMINIT_SIGNAL = 0 { name = "No Cominit Signal"; desc = "No COMINIT signal transmitted from the device is detected."; };
+                COMINIT_SIGNAL_TRANSMITTED = 1 { name = "Cominit Signal Transmitted"; desc = "A COMINIT signal transmitted from the device is detected. This bit directly reflects the value of SATA_PORT_SERR[diag.x]."; };
+            };
+
+            field {
+                name = "pxis_pcs";
+                desc = "Port connection change interrupt status.";
+                sw = r;
+                hw = w;
+                encode = SATA_PORT_IS_pxis_pcs_enum;
+                reset = 0x0;
+            } pxis_pcs[6:6];
+
+            enum SATA_PORT_IS_pxis_dps_enum {
+                TRANSFER_LINKED_LIST = 0 { name = "Transfer Linked List"; desc = "The transfer of the linked list data is complete when no I bit in the PRD is 1."; };
+                TRANSFER_LINKED_LIST_2 = 1 { name = "Transfer Linked List 2"; desc = "The transfer of the linked list data is complete when an I bit in the PRD is 1."; };
+            };
+
+            field {
+                name = "pxis_dps";
+                desc = "Linked list transfer completion interrupt status.";
+                sw = rw;
+                hw = w;
+                onwrite = woclr;
+                encode = SATA_PORT_IS_pxis_dps_enum;
+                reset = 0x0;
+            } pxis_dps[5:5];
+
+            enum SATA_PORT_IS_pxis_ufs_enum {
+                NO_UNKNOWN_FIS = 0 { name = "No Unknown Fis"; desc = "No unknown FIS is received."; };
+                UNKNOWN_FIS_RECEIVED = 1 { name = "Unknown Fis Received"; desc = "An unknown FIS is received."; };
+            };
+
+            field {
+                name = "pxis_ufs";
+                desc = "Unknown FIS interrupt status.";
+                sw = r;
+                hw = w;
+                encode = SATA_PORT_IS_pxis_ufs_enum;
+                reset = 0x0;
+            } pxis_ufs[4:4];
+
+            enum SATA_PORT_IS_pxis_sdbs_enum {
+                NO_EFFECT = 0 { name = "No Effect"; desc = "no effect"; };
+                SET_DEVICE_BITS = 1 { name = "Set Device Bits"; desc = "A set device bits FIS is received and the I bit is 1."; };
+            };
+
+            field {
+                name = "pxis_sdbs";
+                desc = "Set device bits FIS interrupt status.";
+                sw = rw;
+                hw = w;
+                onwrite = woclr;
+                encode = SATA_PORT_IS_pxis_sdbs_enum;
+                reset = 0x0;
+            } pxis_sdbs[3:3];
+
+            enum SATA_PORT_IS_pxis_dss_enum {
+                NO_EFFECT = 0 { name = "No Effect"; desc = "no effect"; };
+                DMA_SETUP_FIS = 1 { name = "Dma Setup Fis"; desc = "A DMA setup FIS is received and the I bit is 1."; };
+            };
+
+            field {
+                name = "pxis_dss";
+                desc = "DMA setup FIS interrupt status.";
+                sw = rw;
+                hw = w;
+                onwrite = woclr;
+                encode = SATA_PORT_IS_pxis_dss_enum;
+                reset = 0x0;
+            } pxis_dss[2:2];
+
+            enum SATA_PORT_IS_pxis_pss_enum {
+                NO_EFFECT = 0 { name = "No Effect"; desc = "no effect"; };
+                PIO_SETUP_FIS = 1 { name = "Pio Setup Fis"; desc = "A PIO setup FIS is received and the I bit is 1."; };
+            };
+
+            field {
+                name = "pxis_pss";
+                desc = "PIO setup FIS interrupt status.";
+                sw = rw;
+                hw = w;
+                onwrite = woclr;
+                encode = SATA_PORT_IS_pxis_pss_enum;
+                reset = 0x0;
+            } pxis_pss[1:1];
+
+            enum SATA_PORT_IS_pxis_drhs_enum {
+                NO_EFFECT = 0 { name = "No Effect"; desc = "no effect"; };
+                D2H_REGISTER_FIS = 1 { name = "D2H Register Fis"; desc = "A D2H register FIS is received and the I bit is 1."; };
+            };
+
+            field {
+                name = "pxis_drhs";
+                desc = "D2H register FIS interrupt status.";
+                sw = rw;
+                hw = w;
+                onwrite = woclr;
+                encode = SATA_PORT_IS_pxis_drhs_enum;
+                reset = 0x0;
+            } pxis_drhs[0:0];
+        } SATA_PORT_IS @ 0x10;
+
+        reg {
+            name = "Port interrupt mask register";
+            desc = "SATA_PORT_IE is a port interrupt mask register.
+
+Corresponds to the AHCI PxIE register of the Advanced Host Controller Interface 1.2 (the data sheet uses its own names).
+
+Data sheet 14.7.7 SATA_PORT_IE (offset 0x14 + n x 0x80, printed page 14-114, `datasheet.txt` line 58132).";
+
+            enum SATA_PORT_IE_pxie_tfee_enum {
+                MASKED = 0 { name = "Masked"; desc = "masked"; };
+                NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+            };
+
+            field {
+                name = "pxie_tfee";
+                desc = "TFD error interrupt mask.";
+                sw = rw;
+                hw = r;
+                encode = SATA_PORT_IE_pxie_tfee_enum;
+                reset = 0x0;
+            } pxie_tfee[30:30];
+
+            enum SATA_PORT_IE_pxie_hbde_enum {
+                MASKED = 0 { name = "Masked"; desc = "masked"; };
+                NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+            };
+
+            field {
+                name = "pxie_hbde";
+                desc = "Internal bus error interrupt mask.";
+                sw = rw;
+                hw = r;
+                encode = SATA_PORT_IE_pxie_hbde_enum;
+                reset = 0x0;
+            } pxie_hbde[28:28];
+
+            enum SATA_PORT_IE_pxie_ife_enum {
+                MASKED = 0 { name = "Masked"; desc = "masked"; };
+                NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+            };
+
+            field {
+                name = "pxie_ife";
+                desc = "Fatal error interrupt mask.";
+                sw = rw;
+                hw = r;
+                encode = SATA_PORT_IE_pxie_ife_enum;
+                reset = 0x0;
+            } pxie_ife[27:27];
+
+            enum SATA_PORT_IE_pxie_infe_enum {
+                MASKED = 0 { name = "Masked"; desc = "masked"; };
+                NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+            };
+
+            field {
+                name = "pxie_infe";
+                desc = "Non-fatal error interrupt mask.";
+                sw = rw;
+                hw = r;
+                encode = SATA_PORT_IE_pxie_infe_enum;
+                reset = 0x0;
+            } pxie_infe[26:26];
+
+            enum SATA_PORT_IE_pxie_ofe_enum {
+                MASKED = 0 { name = "Masked"; desc = "masked"; };
+                NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked."; };
+            };
+
+            field {
+                name = "pxie_ofe";
+                desc = "Data transfer overflow interrupt mask.";
+                sw = rw;
+                hw = r;
+                encode = SATA_PORT_IE_pxie_ofe_enum;
+                reset = 0x0;
+            } pxie_ofe[24:24];
+
+            enum SATA_PORT_IE_pxie_ipme_enum {
+                MASKED = 0 { name = "Masked"; desc = "masked"; };
+                NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+            };
+
+            field {
+                name = "pxie_ipme";
+                desc = "PM port error interrupt mask.";
+                sw = rw;
+                hw = r;
+                encode = SATA_PORT_IE_pxie_ipme_enum;
+                reset = 0x0;
+            } pxie_ipme[23:23];
+
+            enum SATA_PORT_IE_pxie_prce_enum {
+                MASKED = 0 { name = "Masked"; desc = "masked"; };
+                NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+            };
+
+            field {
+                name = "pxie_prce";
+                desc = "PHY status change interrupt mask.";
+                sw = rw;
+                hw = r;
+                encode = SATA_PORT_IE_pxie_prce_enum;
+                reset = 0x0;
+            } pxie_prce[22:22];
+
+            enum SATA_PORT_IE_pxie_pce_enum {
+                MASKED = 0 { name = "Masked"; desc = "masked"; };
+                NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+            };
+
+            field {
+                name = "pxie_pce";
+                desc = "Port connection change interrupt mask.";
+                sw = rw;
+                hw = r;
+                encode = SATA_PORT_IE_pxie_pce_enum;
+                reset = 0x0;
+            } pxie_pce[6:6];
+
+            enum SATA_PORT_IE_pxie_dpe_enum {
+                MASKED = 0 { name = "Masked"; desc = "masked"; };
+                NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+            };
+
+            field {
+                name = "pxie_dpe";
+                desc = "Linked list transfer completion interrupt mask.";
+                sw = rw;
+                hw = r;
+                encode = SATA_PORT_IE_pxie_dpe_enum;
+                reset = 0x0;
+            } pxie_dpe[5:5];
+
+            enum SATA_PORT_IE_pxie_ufe_enum {
+                MASKED = 0 { name = "Masked"; desc = "masked"; };
+                NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+            };
+
+            field {
+                name = "pxie_ufe";
+                desc = "Unknown FIS interrupt mask.";
+                sw = rw;
+                hw = r;
+                encode = SATA_PORT_IE_pxie_ufe_enum;
+                reset = 0x0;
+            } pxie_ufe[4:4];
+
+            enum SATA_PORT_IE_pxie_sdbe_enum {
+                MASKED = 0 { name = "Masked"; desc = "masked"; };
+                NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+            };
+
+            field {
+                name = "pxie_sdbe";
+                desc = "Set device bits FIS interrupt mask.";
+                sw = rw;
+                hw = r;
+                encode = SATA_PORT_IE_pxie_sdbe_enum;
+                reset = 0x0;
+            } pxie_sdbe[3:3];
+
+            enum SATA_PORT_IE_pxie_dse_enum {
+                MASKED = 0 { name = "Masked"; desc = "masked"; };
+                NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+            };
+
+            field {
+                name = "pxie_dse";
+                desc = "DMA setup FIS interrupt mask.";
+                sw = rw;
+                hw = r;
+                encode = SATA_PORT_IE_pxie_dse_enum;
+                reset = 0x0;
+            } pxie_dse[2:2];
+
+            enum SATA_PORT_IE_pxie_pse_enum {
+                MASKED = 0 { name = "Masked"; desc = "masked"; };
+                NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+            };
+
+            field {
+                name = "pxie_pse";
+                desc = "PIO setup FIS interrupt mask.";
+                sw = rw;
+                hw = r;
+                encode = SATA_PORT_IE_pxie_pse_enum;
+                reset = 0x0;
+            } pxie_pse[1:1];
+
+            enum SATA_PORT_IE_pxie_drhe_enum {
+                MASKED = 0 { name = "Masked"; desc = "masked"; };
+                NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+            };
+
+            field {
+                name = "pxie_drhe";
+                desc = "D2H register FIS interrupt mask.";
+                sw = rw;
+                hw = r;
+                encode = SATA_PORT_IE_pxie_drhe_enum;
+                reset = 0x0;
+            } pxie_drhe[0:0];
+        } SATA_PORT_IE @ 0x14;
+
+        reg {
+            name = "Port command and status register";
+            desc = "SATA_PORT_CMD is a port command and status register.
+
+Corresponds to the AHCI PxCMD register of the Advanced Host Controller Interface 1.2 (the data sheet uses its own names).
+
+Data sheet 14.7.7 SATA_PORT_CMD (offset 0x18 + n x 0x80, printed page 14-116, `datasheet.txt` line 58222).";
+
+            enum SATA_PORT_CMD_cmd_icc_enum {
+                NO_OPERATION_IT = 0 { name = "No Operation It"; desc = "No operation. It indicates that the next port status request is allowed."; };
+                REQUEST_ENABLE_PORT = 1 { name = "Request Enable Port"; desc = "Request to enable the port to be in the active status."; };
+                REQUEST_ENABLE_PORT_2 = 2 { name = "Request Enable Port 2"; desc = "Request to enable the port to be in the partial status."; };
+                REQUEST_ENABLE_PORT_3 = 6 { name = "Request Enable Port 3"; desc = "Request to enable the port to be in the slumber status. Other values: reserved When the software writes any of the preceding values rather than the reserved value, the controller clears the cmd_icc bit after performing related operations. When the software requests the current status of the port, the controller clears the cmd_icc bit directly. If the software requests the port status change from a low-power status to another low-power status, such as from the partial status to the slumber status, it needs to request the status change from the partial status to the active status, and then to the slumber status."; };
+            };
+
+            field {
+                name = "cmd_icc";
+                desc = "Port communication control signal.";
+                sw = rw;
+                hw = r;
+                encode = SATA_PORT_CMD_cmd_icc_enum;
+                reset = 0x0;
+            } cmd_icc[31:28];
+
+            enum SATA_PORT_CMD_cmd_asp_enum {
+                PROACTIVELY_ENTER_PARTIAL = 0 { name = "Proactively Enter Partial"; desc = "proactively enter the partial status."; };
+                PROACTIVELY_ENTER_SLUMBER = 1 { name = "Proactively Enter Slumber"; desc = "proactively enter the slumber status."; };
+            };
+
+            field {
+                name = "cmd_asp";
+                desc = "Slumber or partial status select for power management.";
+                sw = rw;
+                hw = r;
+                encode = SATA_PORT_CMD_cmd_asp_enum;
+                reset = 0x0;
+            } cmd_asp[27:27];
+
+            enum SATA_PORT_CMD_cmd_alpe_enum {
+                DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+                ENABLED_IF_SATA = 1 { name = "Enabled If Sata"; desc = "enabled If SATA_PORT_CI and SATA_PORT_SACT are cleared, the controller enters the power-management status automatically. To be specific, if cmd_asp is 1, the controller enters the partial status; if cmd_asp is 0, the controller enters the slumber status."; };
+            };
+
+            field {
+                name = "cmd_alpe";
+                desc = "Automatic power management enable.";
+                sw = rw;
+                hw = r;
+                encode = SATA_PORT_CMD_cmd_alpe_enum;
+                reset = 0x0;
+            } cmd_alpe[26:26];
+
+            enum SATA_PORT_CMD_cmd_dlae_enum {
+                LED_PIN_CAN = 0 { name = "Led Pin Can"; desc = "The LED pin can be driven when cmd_atapi is 0 and commands are being executed."; };
+                LED_PIN_CAN_2 = 1 { name = "Led Pin Can 2"; desc = "The LED pin can be driven when commands are being executed."; };
+            };
+
+            field {
+                name = "cmd_dlae";
+                desc = "LED drive enable in ATAPI mode.";
+                sw = rw;
+                hw = r;
+                encode = SATA_PORT_CMD_cmd_dlae_enum;
+                reset = 0x0;
+            } cmd_dlae[25:25];
+
+            enum SATA_PORT_CMD_cmd_atapi_enum {
+                CURRENT_DEVICE_NOT = 0 { name = "Current Device Not"; desc = "The current device is not an ATAPI device."; };
+                CURRENT_DEVICE_ATAPI = 1 { name = "Current Device Atapi"; desc = "The current device is an ATAPI device."; };
+            };
+
+            field {
+                name = "cmd_atapi";
+                desc = "ATAPI device indication.";
+                sw = rw;
+                hw = r;
+                encode = SATA_PORT_CMD_cmd_atapi_enum;
+                reset = 0x0;
+            } cmd_atapi[24:24];
+
+            field {
+                name = "cmd_esp";
+                desc = "Fixed at 1, indicating that the external SATA device is supported.";
+                sw = r;
+                hw = na;
+                reset = 0x1;
+            } cmd_esp[21:21];
+
+            enum SATA_PORT_CMD_cmd_pma_enum {
+                NO_PORT_MULTIPLIER = 0 { name = "No Port Multiplier"; desc = "No port multiplier is connected to the port."; };
+                PORT_MULTIPLIER_CONNECTED = 1 { name = "Port Multiplier Connected"; desc = "A port multiplier is connected to the port."; };
+            };
+
+            field {
+                name = "cmd_pma";
+                desc = "Port multiplier detection indication.";
+                sw = rw;
+                hw = r;
+                encode = SATA_PORT_CMD_cmd_pma_enum;
+                reset = 0x0;
+            } cmd_pma[17:17];
+
+            enum SATA_PORT_CMD_cmd_cr_enum {
+                NO_COMMAND_BEING = 0 { name = "No Command Being"; desc = "No command is being executed."; };
+                COMMAND_BEING_EXECUTED = 1 { name = "Command Being Executed"; desc = "A command is being executed."; };
+            };
+
+            field {
+                name = "cmd_cr";
+                desc = "Command list processing indication.";
+                sw = r;
+                hw = w;
+                encode = SATA_PORT_CMD_cmd_cr_enum;
+                reset = 0x0;
+            } cmd_cr[15:15];
+
+            enum SATA_PORT_CMD_cmd_fr_enum {
+                NO_FIS_BEING = 0 { name = "No Fis Being"; desc = "No FIS is being received."; };
+                FIS_BEING_RECEIVED = 1 { name = "Fis Being Received"; desc = "An FIS is being received."; };
+            };
+
+            field {
+                name = "cmd_fr";
+                desc = "FIS receive processing indication.";
+                sw = r;
+                hw = w;
+                encode = SATA_PORT_CMD_cmd_fr_enum;
+                reset = 0x0;
+            } cmd_fr[14:14];
+
+            field {
+                name = "cmd_ccs";
+                desc = "Slot number of the current command. This field is valid when cmd_st is 1 and is cleared when cmd_st is 0.";
+                sw = r;
+                hw = w;
+                reset = 0x0;
+            } cmd_ccs[12:8];
+
+            enum SATA_PORT_CMD_cmd_fre_enum {
+                FORBID_WRITE_RECEIVED = 0 { name = "Forbid Write Received"; desc = "forbid to write the received FISs to the system memory"; };
+                ENABLE_RECEIVED_FISS = 1 { name = "Enable Received Fiss"; desc = "enable the received FISs and write them to the system memory The software needs to set the receive FIS base address register SATA_PORT_FB before enabling this bit to receive FISs. When cmd_st is 1, this bit must be set to 1."; };
+            };
+
+            field {
+                name = "cmd_fre";
+                desc = "FIS receive enable control.";
+                sw = rw;
+                hw = r;
+                encode = SATA_PORT_CMD_cmd_fre_enum;
+                reset = 0x0;
+            } cmd_fre[4:4];
+
+            enum SATA_PORT_CMD_cmd_clo_enum {
+                NO_EFFECT = 0 { name = "No Effect"; desc = "no effect"; };
+                CLEAR_BSY_DRQ = 1 { name = "Clear Bsy Drq"; desc = "Clear the BSY and DRQ bits of SATA_PORT_TFD[tfd_sts]. After the BSY and DRQ bits are 0, the cmd_clo bit is cleared automatically. The cmd_clo bit can be written as 1 only before the value of cmd_st is changed from 0 to 1. In addition, the software must write 1 to cmd_st after the cmd_clo bit is cleared."; };
+            };
+
+            field {
+                name = "cmd_clo";
+                desc = "BSY/DQR clear control. The software can forcibly clear the BSY and DRQ bits through this bit and transmit commands to the device.";
+                sw = rw;
+                hw = r;
+                encode = SATA_PORT_CMD_cmd_clo_enum;
+                reset = 0x0;
+            } cmd_clo[3:3];
+
+            enum SATA_PORT_CMD_cmd_sud_enum {
+                WHEN_SATA_PORT = 0 { name = "When Sata Port"; desc = "When SATA_PORT_SCTL[det] is 0, the controller enters the listen mode."; };
+                AFTER_SYSTEM_POWERED = 1 { name = "After System Powered"; desc = "After the system is powered on or the HBA is reset, the controller is enabled to transmit a COMRESET sequence to initialize the hardware device."; };
+            };
+
+            field {
+                name = "cmd_sud";
+                desc = "Spin-up device control.";
+                sw = rw;
+                hw = r;
+                encode = SATA_PORT_CMD_cmd_sud_enum;
+                reset = 0x0;
+            } cmd_sud[1:1];
+
+            enum SATA_PORT_CMD_cmd_st_enum {
+                CONTROLLER_ENTERS_IDLE = 0 { name = "Controller Enters Idle"; desc = "The controller enters the idle status."; };
+                CONTROLLER_PROCESSES_COMMANDS = 1 { name = "Controller Processes Commands"; desc = "The controller processes the commands from slot 0 that are identified as valid slots by SATA_PORT_CI. Note: The cmd_st bit can be set to 1 only after cmd_fre is 1."; };
+            };
+
+            field {
+                name = "cmd_st";
+                desc = "Command list processing enable.";
+                sw = rw;
+                hw = r;
+                encode = SATA_PORT_CMD_cmd_st_enum;
+                reset = 0x0;
+            } cmd_st[0:0];
+        } SATA_PORT_CMD @ 0x18;
+
+        reg {
+            name = "Port task file register";
+            desc = "SATA_PORT_TFD is a port task file register.
+
+Corresponds to the AHCI PxTFD register of the Advanced Host Controller Interface 1.2 (the data sheet uses its own names).
+
+Data sheet 14.7.7 SATA_PORT_TFD (offset 0x20 + n x 0x80, printed page 14-118, `datasheet.txt` line 58346).";
+
+            field {
+                name = "tfd_err";
+                desc = "Task file error. The controller updates this field after receiving a D2H register FIS, a PIO setup FIS, or an SDB FIS.";
+                sw = r;
+                hw = w;
+                reset = 0x0;
+            } tfd_err[15:8];
+
+            field {
+                name = "tfd_sts";
+                desc = "Task file status. bit[7]: BSY bit, the device is busy. bit[6:4]: meaning varies according to commands. bit[3]: DRQ bit, there is data to be transferred in the device. bit[2:1]: meaning varies according to commands. bit[0]: ERR bit, an error occurred during the data transfer. The controller updates this field after receiving a D2H register FIS, a PIO setup FIS or an SDB FIS.";
+                sw = r;
+                hw = w;
+                reset = 0x7F;
+            } tfd_sts[7:0];
+        } SATA_PORT_TFD @ 0x20;
+
+        reg {
+            name = "Port signature register";
+            desc = "SATA_PORT_SIG is a port signature register.
+
+Corresponds to the AHCI PxSIG register of the Advanced Host Controller Interface 1.2 (the data sheet uses its own names).
+
+Data sheet 14.7.7 SATA_PORT_SIG (offset 0x24 + n x 0x80, printed page 14-119, `datasheet.txt` line 58400).";
+
+            field {
+                name = "signature";
+                desc = "LBA address and sector addressing. The allocated addresses are as follows: bit[31:24]: LBA upper-bit address bit[23:16]: LBA middle-bit address bit[15:8]: LBA lower-bit address bit[7:0]: number of sectors The controller updates this register when receiving the first D2H register FIS after the hardware device is reset.";
+                sw = r;
+                hw = w;
+                reset = 0xFFFFFFFF;
+            } signature[31:0];
+        } SATA_PORT_SIG @ 0x24;
+
+        reg {
+            name = "Port status register";
+            desc = "SATA_PORT_SSTS is a port status register.
+
+Corresponds to the AHCI PxSSTS register of the Advanced Host Controller Interface 1.2 (the data sheet uses its own names).
+
+Data sheet 14.7.7 SATA_PORT_SSTS (offset 0x28 + n x 0x80, printed page 14-120, `datasheet.txt` line 58432).";
+
+            enum SATA_PORT_SSTS_pxssts_ipm_enum {
+                NO_DEVICES_EXIST = 0 { name = "No Devices Exist"; desc = "No devices exist or no communication is set up."; };
+                ACTIVE = 1 { name = "Active"; desc = "active"; };
+                PARTIAL = 2 { name = "Partial"; desc = "partial"; };
+                SLUMBER_OTHER_VALUES = 6 { name = "Slumber Other Values"; desc = "slumber Other values: reserved"; };
+            };
+
+            field {
+                name = "pxssts_ipm";
+                desc = "Current port status.";
+                sw = r;
+                hw = w;
+                encode = SATA_PORT_SSTS_pxssts_ipm_enum;
+                reset = 0x0;
+            } pxssts_ipm[11:8];
+
+            enum SATA_PORT_SSTS_pxssts_spd_enum {
+                NO_DEVICES_EXIST = 0 { name = "No Devices Exist"; desc = "No devices exist or no communication is set up."; };
+                RATE_1_NEGOTIATED = 1 { name = "Rate 1 Negotiated"; desc = "Rate 1 is negotiated for communication."; };
+                RATE_2_NEGOTIATED = 2 { name = "Rate 2 Negotiated"; desc = "Rate 2 is negotiated for communication."; };
+                RATE_3_NEGOTIATED = 3 { name = "Rate 3 Negotiated"; desc = "Rate 3 is negotiated for communication. Other values: reserved"; };
+            };
+
+            field {
+                name = "pxssts_spd";
+                desc = "Port negotiation speed.";
+                sw = r;
+                hw = w;
+                encode = SATA_PORT_SSTS_pxssts_spd_enum;
+                reset = 0x0;
+            } pxssts_spd[7:4];
+
+            enum SATA_PORT_SSTS_pxssts_det_enum {
+                NO_DEVICE_DETECTED = 0 { name = "No Device Detected"; desc = "No device is detected and no PHY communication is set up."; };
+                DEVICE_DETECTED_BUT = 1 { name = "Device Detected But"; desc = "A device is detected but no PHY communication is set up."; };
+                DEVICE_DETECTED_BUT_2 = 3 { name = "Device Detected But 2"; desc = "A device is detected but the PHY communication is set up."; };
+                PHY_OFFLINE_BUILT = 4 { name = "Phy Offline Built"; desc = "The PHY is offline or in the built-in self test (BIST) status. Other values: reserved"; };
+            };
+
+            field {
+                name = "pxssts_det";
+                desc = "Device detection and PHY status.";
+                sw = r;
+                hw = w;
+                encode = SATA_PORT_SSTS_pxssts_det_enum;
+                reset = 0x0;
+            } pxssts_det[3:0];
+        } SATA_PORT_SSTS @ 0x28;
+
+        reg {
+            name = "Port control register";
+            desc = "SATA_PORT_SCTL is a port control register.
+
+Corresponds to the AHCI PxSCTL register of the Advanced Host Controller Interface 1.2 (the data sheet uses its own names).
+
+Data sheet 14.7.7 SATA_PORT_SCTL (offset 0x2C + n x 0x80, printed page 14-120, `datasheet.txt` line 58472).";
+
+            enum SATA_PORT_SCTL_pxsctl_ipm_enum {
+                NO_REQUIREMENTS = 0 { name = "No Requirements"; desc = "no requirements"; };
+                FORBID_ENTER_PARTIAL = 1 { name = "Forbid Enter Partial"; desc = "forbid to enter the partial status."; };
+                FORBID_ENTER_SLUMBER = 2 { name = "Forbid Enter Slumber"; desc = "forbid to enter the slumber status"; };
+                FORBID_ENTER_PARTIAL_2 = 3 { name = "Forbid Enter Partial 2"; desc = "forbid to enter the partial or slumber state. Other values: reserved"; };
+            };
+
+            field {
+                name = "pxsctl_ipm";
+                desc = "Port power management status control.";
+                sw = rw;
+                hw = r;
+                encode = SATA_PORT_SCTL_pxsctl_ipm_enum;
+                reset = 0x0;
+            } pxsctl_ipm[11:8];
+
+            enum SATA_PORT_SCTL_pxsctl_spd_enum {
+                NO_REQUIREMENTS = 0 { name = "No Requirements"; desc = "no requirements"; };
+                LIMIT_COMMUNICATION_SPEED = 1 { name = "Limit Communication Speed"; desc = "limit the communication speed to rate 1"; };
+                LIMIT_COMMUNICATION_SPEED_2 = 2 { name = "Limit Communication Speed 2"; desc = "limit the communication speed to rate 2"; };
+                LIMIT_COMMUNICATION_SPEED_3 = 3 { name = "Limit Communication Speed 3"; desc = "limit the communication speed to rate 3 Other values: reserved"; };
+            };
+
+            field {
+                name = "pxsctl_spd";
+                desc = "Port communication speed control.";
+                sw = rw;
+                hw = r;
+                encode = SATA_PORT_SCTL_pxsctl_spd_enum;
+                reset = 0x0;
+            } pxsctl_spd[7:4];
+
+            enum SATA_PORT_SCTL_pxsctl_det_enum {
+                NO_DEVICE_DETECTION = 0 { name = "No Device Detection"; desc = "no device detection or initialization request"; };
+                REQUEST_PORT_RESET = 1 { name = "Request Port Reset"; desc = "request the port to reset the initialization sequence COMRESET"; };
+                FORCE_PORT_OFFLINE = 4 { name = "Force Port Offline"; desc = "force the port to be offline Other values: reserved When pxsctl_det is set to 1, the controller transmits the COMRESET sequence to the device. In this case, to ensure that the device receives the COMRESET sequence, the software must retain the value 1 of pxsctl_det for at least 1 ms."; };
+            };
+
+            field {
+                name = "pxsctl_det";
+                desc = "Device detection and port initialization control.";
+                sw = rw;
+                hw = r;
+                encode = SATA_PORT_SCTL_pxsctl_det_enum;
+                reset = 0x0;
+            } pxsctl_det[3:0];
+        } SATA_PORT_SCTL @ 0x2C;
+
+        reg {
+            name = "Error diagnosis status register";
+            desc = "SATA_PORT_SERR is an error diagnosis status register.
+
+Corresponds to the AHCI PxSERR register of the Advanced Host Controller Interface 1.2 (the data sheet uses its own names).
+
+Data sheet 14.7.7 SATA_PORT_SERR (offset 0x30 + n x 0x80, printed page 14-121, `datasheet.txt` line 58524).";
+
+            enum SATA_PORT_SERR_diag_x_enum {
+                NO_COMINIT_SIGNAL = 0 { name = "No Cominit Signal"; desc = "No COMINIT signal transmitted from the device is detected."; };
+                COMINIT_SIGNAL_TRANSMITTED = 1 { name = "Cominit Signal Transmitted"; desc = "A COMINIT signal transmitted from the device is detected."; };
+            };
+
+            field {
+                name = "diag_x";
+                desc = "Device detection status.";
+                sw = rw;
+                hw = w;
+                onwrite = woclr;
+                encode = SATA_PORT_SERR_diag_x_enum;
+                reset = 0x0;
+            } diag_x[26:26];
+
+            enum SATA_PORT_SERR_diag_f_enum {
+                NO_UNKNOWN_FIS = 0 { name = "No Unknown Fis"; desc = "No unknown FIS is received."; };
+                UNKNOWN_FIS_RECEIVED = 1 { name = "Unknown Fis Received"; desc = "An unknown FIS is received and this bit is set to 1 when the cyclic redundancy check (CRC) is correct."; };
+            };
+
+            field {
+                name = "diag_f";
+                desc = "Detection status of the unknown FIS.";
+                sw = rw;
+                hw = w;
+                onwrite = woclr;
+                encode = SATA_PORT_SERR_diag_f_enum;
+                reset = 0x0;
+            } diag_f[25:25];
+
+            enum SATA_PORT_SERR_diag_s_enum {
+                NO_STATUS_TRANSITION = 0 { name = "No Status Transition"; desc = "No status transition error occurs at the link layer."; };
+                STATUS_TRANSITION_ERROR = 1 { name = "Status Transition Error"; desc = "A status transition error occurs at the link layer."; };
+            };
+
+            field {
+                name = "diag_s";
+                desc = "Link layer error status.";
+                sw = rw;
+                hw = w;
+                onwrite = woclr;
+                encode = SATA_PORT_SERR_diag_s_enum;
+                reset = 0x0;
+            } diag_s[23:23];
+
+            enum SATA_PORT_SERR_diag_h_enum {
+                NO_R_ERR = 0 { name = "No R Err"; desc = "No R_ERR primitive transmitted from the device is received."; };
+                ONE_MORE_R = 1 { name = "One More R"; desc = "One or more R_ERR primitives transmitted from the device are received."; };
+            };
+
+            field {
+                name = "diag_h";
+                desc = "Handshake error status.";
+                sw = rw;
+                hw = w;
+                onwrite = woclr;
+                encode = SATA_PORT_SERR_diag_h_enum;
+                reset = 0x0;
+            } diag_h[22:22];
+
+            enum SATA_PORT_SERR_diag_c_enum {
+                NO_CRC_ERROR = 0 { name = "No Crc Error"; desc = "No CRC error occurs during FIS receiving."; };
+                CRC_ERROR_OCCURS = 1 { name = "Crc Error Occurs"; desc = "A CRC error occurs during FIS receiving."; };
+            };
+
+            field {
+                name = "diag_c";
+                desc = "CRC error status.";
+                sw = rw;
+                hw = w;
+                onwrite = woclr;
+                encode = SATA_PORT_SERR_diag_c_enum;
+                reset = 0x0;
+            } diag_c[21:21];
+
+            enum SATA_PORT_SERR_diag_b_enum {
+                NO_8B_10B = 0 { name = "No 8B 10B"; desc = "No 8B/10B decoding error is detected."; };
+                V_8B_10B_DECODING = 1 { name = "V 8B 10B Decoding"; desc = "An 8B/10B decoding error is detected."; };
+            };
+
+            field {
+                name = "diag_b";
+                desc = "Decoding error status.";
+                sw = rw;
+                hw = w;
+                onwrite = woclr;
+                encode = SATA_PORT_SERR_diag_b_enum;
+                reset = 0x0;
+            } diag_b[19:19];
+
+            enum SATA_PORT_SERR_diag_w_enum {
+                NO_COMWAKE_SIGNAL = 0 { name = "No Comwake Signal"; desc = "No COMWAKE signal transmitted from the device is detected."; };
+                COMWAKE_SIGNAL_TRANSMITTED = 1 { name = "Comwake Signal Transmitted"; desc = "A COMWAKE signal transmitted from the device is detected."; };
+            };
+
+            field {
+                name = "diag_w";
+                desc = "COMWAKE status.";
+                sw = rw;
+                hw = w;
+                onwrite = woclr;
+                encode = SATA_PORT_SERR_diag_w_enum;
+                reset = 0x0;
+            } diag_w[18:18];
+
+            enum SATA_PORT_SERR_diag_i_enum {
+                NO_PHY_INTERNAL = 0 { name = "No Phy Internal"; desc = "No PHY internal error is detected."; };
+                PHY_INTERNAL_ERROR = 1 { name = "Phy Internal Error"; desc = "A PHY internal error is detected."; };
+            };
+
+            field {
+                name = "diag_i";
+                desc = "PHY internal error status.";
+                sw = rw;
+                hw = w;
+                onwrite = woclr;
+                encode = SATA_PORT_SERR_diag_i_enum;
+                reset = 0x0;
+            } diag_i[17:17];
+
+            enum SATA_PORT_SERR_diag_n_enum {
+                PHYRDY_SIGNAL_NOT = 0 { name = "Phyrdy Signal Not"; desc = "The PhyRdy signal is not changed."; };
+                PHYRDY_SIGNAL_CHANGED = 1 { name = "Phyrdy Signal Changed"; desc = "The PhyRdy signal is changed. This bit is set to 1 when the value of the PhyRdy signal is changed from 1 to 0 or from 0 to 1."; };
+            };
+
+            field {
+                name = "diag_n";
+                desc = "PhyRdy signal change status.";
+                sw = rw;
+                hw = w;
+                onwrite = woclr;
+                encode = SATA_PORT_SERR_diag_n_enum;
+                reset = 0x0;
+            } diag_n[16:16];
+
+            enum SATA_PORT_SERR_err_p_enum {
+                NO_DEVICE_BEHAVIORS = 0 { name = "No Device Behaviors"; desc = "No device behaviors do not comply with the SATA protocol."; };
+                SOME_DEVICE_BEHAVIORS = 1 { name = "Some Device Behaviors"; desc = "Some device behaviors do not comply with the SATA protocol."; };
+            };
+
+            field {
+                name = "err_p";
+                desc = "SATA protocol incompliance error status.";
+                sw = rw;
+                hw = w;
+                onwrite = woclr;
+                encode = SATA_PORT_SERR_err_p_enum;
+                reset = 0x0;
+            } err_p[10:10];
+
+            enum SATA_PORT_SERR_err_t_enum {
+                NO_DATA_INTEGRITY = 0 { name = "No Data Integrity"; desc = "No data integrity error is detected."; };
+                DATA_INTEGRITY_ERROR = 1 { name = "Data Integrity Error"; desc = "A data integrity error is detected."; };
+            };
+
+            field {
+                name = "err_t";
+                desc = "Data integrity error status.";
+                sw = rw;
+                hw = w;
+                onwrite = woclr;
+                encode = SATA_PORT_SERR_err_t_enum;
+                reset = 0x0;
+            } err_t[8:8];
+        } SATA_PORT_SERR @ 0x30;
+
+        reg {
+            name = "NCQ command identifier control register";
+            desc = "SATA_PORT_SACT is an NCQ command identifier control register.
+
+Corresponds to the AHCI PxSACT register of the Advanced Host Controller Interface 1.2 (the data sheet uses its own names).
+
+Data sheet 14.7.7 SATA_PORT_SACT (offset 0x34 + n x 0x80, printed page 14-123, `datasheet.txt` line 58610).";
+
+            enum SATA_PORT_SACT_port_sact_enum {
+                SLOT_3_COMMAND = 0x0 { name = "Slot 3 Command"; desc = "The slot 3 command is a non-NCQ command."; };
+                SLOT_3_COMMAND_2 = 0x1 { name = "Slot 3 Command 2"; desc = "The slot 3 command is an NCQ command. Before setting SATA_PORT_SACT bit[3] to 1, the software must clear SATA_PORT_CI bit[3]. After the command data transfer, the device transmits an SDB FIS. Then, the controller clears SATA_PORT_SACT bit[3] based on the SActive in the FIS. The software can set SATA_PORT_SACT only when cmd_st is 1. When cmd_st is 0, all bits of SATA_PORT_SACT are cleared."; };
+            };
+
+            field {
+                name = "port_sact";
+                desc = "NCQ command identifier control. Each bit of this register maps to a tag ID and an NCQ command in the memory. To be specific, bit[31:0] map to the commands of slot 31-0 and tag 31-0 respectively. The following describes the meaning of each bit by taking bit[3] as an example:";
+                sw = rw;
+                hw = r;
+                encode = SATA_PORT_SACT_port_sact_enum;
+                reset = 0x0;
+            } port_sact[31:0];
+        } SATA_PORT_SACT @ 0x34;
+
+        reg {
+            name = "Command transmit control register";
+            desc = "SATA_PORT_CI is a command transmit control register.
+
+Corresponds to the AHCI PxCI register of the Advanced Host Controller Interface 1.2 (the data sheet uses its own names).
+
+Data sheet 14.7.7 SATA_PORT_CI (offset 0x38 + n x 0x80, printed page 14-123, `datasheet.txt` line 58640).";
+
+            enum SATA_PORT_CI_port_ci_enum {
+                THERE_NO_SLOT = 0x0 { name = "There No Slot"; desc = "There is no slot 3 command to be transmitted and executed."; };
+                SLOT_3_COMMAND = 0x1 { name = "Slot 3 Command"; desc = "A slot 3 command is created in the memory. Then the controller can transmit this command. After running this command and receiving a corresponding FIS, the controller clears SATA_PORT_CI bit[3] and the BSY, DRQ, and ERR bits of SATA_PORT_TFD. The bits of SATA_PORT_CI can be set to 1 only when cmd_st is 1 and all bits of SATA_PORT_CI are cleared when cmd_st is 0."; };
+            };
+
+            field {
+                name = "port_ci";
+                desc = "Control for the commands to be transmitted. Each bit of this register maps to a command in the memory. To be specific, bit[31:0] map to the commands of slot 31-0 respectively. The following describes the meaning of each bit by taking bit[3] as an example:";
+                sw = rw;
+                hw = r;
+                encode = SATA_PORT_CI_port_ci_enum;
+                reset = 0x0;
+            } port_ci[31:0];
+        } SATA_PORT_CI @ 0x38;
+
+        reg {
+            name = "Async notification event indication register";
+            desc = "SATA_PORT_SNTF is an async notification event indication register.
+
+Corresponds to the AHCI PxSNTF register of the Advanced Host Controller Interface 1.2 (the data sheet uses its own names).
+
+Data sheet 14.7.7 SATA_PORT_SNTF (offset 0x3C + n x 0x80, printed page 14-124, `datasheet.txt` line 58680).";
+
+            enum SATA_PORT_SNTF_pxsntf_pmn_enum {
+                NO_ASYNC_NOTIFICATION = 0x0 { name = "No Async Notification"; desc = "No async notification event occurs on the device whose PM port number is 3."; };
+                ASYNC_NOTIFICATION_EVENT = 0x1 { name = "Async Notification Event"; desc = "An async notification event occurs on the device whose PM port number is 3."; };
+            };
+
+            field {
+                name = "pxsntf_pmn";
+                desc = "Async notification event status. If the controller receives an SDB FIS from the device on the PM port and the N bit of this FIS is 1, the controller sets the bit of this register corresponding to this port number to 1. The following describes the meaning of each bit by taking bit[3] as an example:";
+                sw = rw;
+                hw = w;
+                onwrite = woclr;
+                encode = SATA_PORT_SNTF_pxsntf_pmn_enum;
+                reset = 0x0;
+            } pxsntf_pmn[15:0];
+        } SATA_PORT_SNTF @ 0x3C;
+
+        reg {
+            name = "Receive FIFO threshold register";
+            desc = "SATA_PORT_FIFOTH is a receive FIFO threshold register.
+
+Bits 13:9 are 'reserved' in the data sheet (the DS still prints reset 0xF24, with bits 11:9 set) but the vendor driver `ahci_sys_hi3520d_defconfig.c` (`hi_sata_phy_clk_sel`) writes 0x3F24 to this register of every port with the comment that, due to bugs of the sata controller, specific values are set for both ports to bypass it: [13] data transmit control bypass, [12] record bypass, [11] port-multiplier reset bypass, [10] fetch bypass, [9] 'avoid Seagate rerror bug'. These five bits are added from the vendor driver (not in the data sheet); reset 0, 0, 1, 1, 1 follows the DS total reset 0xF24.
+
+Data sheet 14.7.7 SATA_PORT_FIFOTH (offset 0x44 + n x 0x80, printed page 14-125, `datasheet.txt` line 58718).";
+
+            field {
+                name = "bypass_dmac_tx_ctrl";
+                desc = "Vendor-only (not in the data sheet): data transmit control bypass (written 1 by the vendor driver).";
+                sw = rw;
+                hw = r;
+                reset = 0x0;
+            } bypass_dmac_tx_ctrl[13:13];
+
+            field {
+                name = "bypass_record";
+                desc = "Vendor-only (not in the data sheet): record bypass (written 1 by the vendor driver).";
+                sw = rw;
+                hw = r;
+                reset = 0x0;
+            } bypass_record[12:12];
+
+            field {
+                name = "bypass_pm_reset";
+                desc = "Vendor-only (not in the data sheet): port multiplier reset bypass (written 1 by the vendor driver).";
+                sw = rw;
+                hw = r;
+                reset = 0x1;
+            } bypass_pm_reset[11:11];
+
+            field {
+                name = "bypass_fetch";
+                desc = "Vendor-only (not in the data sheet): command fetch bypass (written 1 by the vendor driver).";
+                sw = rw;
+                hw = r;
+                reset = 0x1;
+            } bypass_fetch[10:10];
+
+            field {
+                name = "seagate_rerror_fix";
+                desc = "Vendor-only (not in the data sheet): workaround for the 'Seagate rerror bug' (written 1 by the vendor driver).";
+                sw = rw;
+                hw = r;
+                reset = 0x1;
+            } seagate_rerror_fix[9:9];
+
+            field {
+                name = "dmac_rxfifo_th";
+                desc = "Flow control threshold of the DMAC receive FIFO. During data reception, if the data amount in the DMAC FIFO is above the threshold, the controller starts to control the data flow.";
+                sw = rw;
+                hw = r;
+                reset = 0x12;
+            } dmac_rxfifo_th[8:4];
+
+            enum SATA_PORT_FIFOTH_rxfifo_th_sel_enum {
+                FLOW_CONTROL_LINK = 0 { name = "Flow Control Link"; desc = "The flow control for the link receive FIFO is valid."; };
+                FLOW_CONTROL_DMAC = 1 { name = "Flow Control Dmac"; desc = "The flow control for the DMAC receive FIFO is valid."; };
+            };
+
+            field {
+                name = "rxfifo_th_sel";
+                desc = "Flow control FIFO select.";
+                sw = rw;
+                hw = r;
+                encode = SATA_PORT_FIFOTH_rxfifo_th_sel_enum;
+                reset = 0x0;
+            } rxfifo_th_sel[3:3];
+
+            field {
+                name = "link_rxfifo_th";
+                desc = "Flow control threshold of the link receive FIFO. During data reception, if the data amount in the DMAC FIFO is above the threshold, the controller starts to control the data flow.";
+                sw = rw;
+                hw = r;
+                reset = 0x4;
+            } link_rxfifo_th[2:0];
+        } SATA_PORT_FIFOTH @ 0x44;
+
+        reg {
+            name = "HBA test status register";
+            desc = "SATA_PORT_HBA is an HBA test status register.
+
+Data sheet 14.7.7 SATA_PORT_HBA (offset 0x50 + n x 0x80, printed page 14-125, `datasheet.txt` line 58752).";
+
+            field {
+                name = "p_curr_st";
+                desc = "Current status of the HBA_PINIT_STATE state machine.";
+                sw = r;
+                hw = w;
+                reset = 0x1;
+            } p_curr_st[27:24];
+
+            field {
+                name = "ndr_curr_st";
+                desc = "Current status of the HBA_NDR_STATE state machine.";
+                sw = r;
+                hw = w;
+                reset = 0x0;
+            } ndr_curr_st[20:16];
+
+            field {
+                name = "cfis_curr_st";
+                desc = "Current status of the HBA_CFIS_STATE state machine.";
+                sw = r;
+                hw = w;
+                reset = 0x0;
+            } cfis_curr_st[15:12];
+
+            field {
+                name = "pio_curr_st";
+                desc = "Current status of the HBA_PIO_STATE state machine.";
+                sw = r;
+                hw = w;
+                reset = 0x0;
+            } pio_curr_st[10:8];
+
+            field {
+                name = "pm_curr_st";
+                desc = "Current status of the HBA_PM_STATE state machine.";
+                sw = r;
+                hw = w;
+                reset = 0x0;
+            } pm_curr_st[6:4];
+
+            field {
+                name = "err_curr_st";
+                desc = "Current status of the HBA_ERR_STATE state machine.";
+                sw = r;
+                hw = w;
+                reset = 0x0;
+            } err_curr_st[2:0];
+        } SATA_PORT_HBA @ 0x50;
+
+        reg {
+            name = "Link test status register";
+            desc = "SATA_PORT_LINK is a link test status register.
+
+Data sheet 14.7.7 SATA_PORT_LINK (offset 0x54 + n x 0x80, printed page 14-126, `datasheet.txt` line 58797).";
+
+            field {
+                name = "link_curr_st";
+                desc = "Current status of the LINK_CTL_STATE state machine.";
+                sw = r;
+                hw = w;
+                reset = 0x0;
+            } link_curr_st[28:24];
+
+            enum SATA_PORT_LINK_link_df_fifo_full_enum {
+                NOT_FULL = 0 { name = "Not Full"; desc = "not full"; };
+                FULL = 1 { name = "Full"; desc = "full"; };
+            };
+
+            field {
+                name = "link_df_fifo_full";
+                desc = "Full flag of the link frequency difference FIFO.";
+                sw = r;
+                hw = w;
+                encode = SATA_PORT_LINK_link_df_fifo_full_enum;
+                reset = 0x0;
+            } link_df_fifo_full[22:22];
+
+            enum SATA_PORT_LINK_link_df_fifo_empty_enum {
+                NOT_EMPTY = 0 { name = "Not Empty"; desc = "not empty"; };
+                EMPTY = 1 { name = "Empty"; desc = "empty"; };
+            };
+
+            field {
+                name = "link_df_fifo_empty";
+                desc = "Empty flag of the link frequency difference FIFO.";
+                sw = r;
+                hw = w;
+                encode = SATA_PORT_LINK_link_df_fifo_empty_enum;
+                reset = 0x1;
+            } link_df_fifo_empty[21:21];
+
+            field {
+                name = "link_df_fifo_count";
+                desc = "Data amount in the link frequency difference FIFO.";
+                sw = r;
+                hw = w;
+                reset = 0x0;
+            } link_df_fifo_count[20:16];
+
+            enum SATA_PORT_LINK_link_rx_fifo_full_enum {
+                NOT_FULL = 0 { name = "Not Full"; desc = "not full"; };
+                FULL = 1 { name = "Full"; desc = "full"; };
+            };
+
+            field {
+                name = "link_rx_fifo_full";
+                desc = "Full flag of the link receive FIFO.";
+                sw = r;
+                hw = w;
+                encode = SATA_PORT_LINK_link_rx_fifo_full_enum;
+                reset = 0x0;
+            } link_rx_fifo_full[14:14];
+
+            enum SATA_PORT_LINK_link_rx_fifo_empty_enum {
+                NOT_EMPTY = 0 { name = "Not Empty"; desc = "not empty"; };
+                EMPTY = 1 { name = "Empty"; desc = "empty"; };
+            };
+
+            field {
+                name = "link_rx_fifo_empty";
+                desc = "Empty flag of the link receive FIFO.";
+                sw = r;
+                hw = w;
+                encode = SATA_PORT_LINK_link_rx_fifo_empty_enum;
+                reset = 0x1;
+            } link_rx_fifo_empty[13:13];
+
+            field {
+                name = "link_rx_fifo_count";
+                desc = "Data amount in the link receive FIFO.";
+                sw = r;
+                hw = w;
+                reset = 0x0;
+            } link_rx_fifo_count[12:8];
+
+            enum SATA_PORT_LINK_link_tx_fifo_full_enum {
+                NOT_FULL = 0 { name = "Not Full"; desc = "not full"; };
+                FULL = 1 { name = "Full"; desc = "full"; };
+            };
+
+            field {
+                name = "link_tx_fifo_full";
+                desc = "Full flag of the link transmit FIFO.";
+                sw = r;
+                hw = w;
+                encode = SATA_PORT_LINK_link_tx_fifo_full_enum;
+                reset = 0x0;
+            } link_tx_fifo_full[6:6];
+
+            enum SATA_PORT_LINK_link_tx_fifo_empty_enum {
+                NOT_EMPTY = 0 { name = "Not Empty"; desc = "not empty"; };
+                EMPTY = 1 { name = "Empty"; desc = "empty"; };
+            };
+
+            field {
+                name = "link_tx_fifo_empty";
+                desc = "Empty flag of the link transmit FIFO.";
+                sw = r;
+                hw = w;
+                encode = SATA_PORT_LINK_link_tx_fifo_empty_enum;
+                reset = 0x1;
+            } link_tx_fifo_empty[5:5];
+
+            field {
+                name = "link_tx_fifo_count";
+                desc = "Data amount in the link transmit FIFO.";
+                sw = r;
+                hw = w;
+                reset = 0x0;
+            } link_tx_fifo_count[4:0];
+        } SATA_PORT_LINK @ 0x54;
+
+        reg {
+            name = "DMAC test status register 1";
+            desc = "SATA_PORT_DMA1 is DMAC test status register 1.
+
+Data sheet 14.7.7 SATA_PORT_DMA1 (offset 0x58 + n x 0x80, printed page 14-127, `datasheet.txt` line 58860).";
+
+            field {
+                name = "txdmac_cur_state";
+                desc = "Current status of the SATA_TX_DMAC state machine.";
+                sw = r;
+                hw = w;
+                reset = 0x0;
+            } txdmac_cur_state[27:24];
+
+            field {
+                name = "txdmac_prd_i";
+                desc = "I bit in the entry of the PRD linked list of SATA_TX_DAMC.";
+                sw = r;
+                hw = w;
+                reset = 0x0;
+            } txdmac_prd_i[23:23];
+
+            field {
+                name = "tx_entry_dbc_cnt";
+                desc = "Down counter in SATA_TX_DMAC. It indicates the number of data bytes in the current entry.";
+                sw = r;
+                hw = w;
+                reset = 0x0;
+            } tx_entry_dbc_cnt[22:0];
+        } SATA_PORT_DMA1 @ 0x58;
+
+        reg {
+            name = "DMAC test status register 2";
+            desc = "SATA_PORT_DMA2 is DMAC test status register 2.
+
+Data sheet 14.7.7 SATA_PORT_DMA2 (offset 0x5C + n x 0x80, printed page 14-128, `datasheet.txt` line 58896).";
+
+            field {
+                name = "tx_data_fis_cnt";
+                desc = "Down counter in SATA_TX_DMAC. It indicates the number of data FIS bytes during the operation of PIO, legacy DMA, or first party DMA. For the PIO operation, the initial value is equal to the value of transcount in the PIO setup FIS; for the legacy DMA or first party DMA operation, the initial value is 16'h2000 (2048 DWORD).";
+                sw = r;
+                hw = w;
+                reset = 0x2000;
+            } tx_data_fis_cnt[23:8];
+
+            field {
+                name = "tx_cmdh_prdtl";
+                desc = "Down counter in SATA_TX_DMAC. The parameter in the command header indicates the number of entries in the PRDT.";
+                sw = r;
+                hw = w;
+                reset = 0x0;
+            } tx_cmdh_prdtl[7:0];
+        } SATA_PORT_DMA2 @ 0x5C;
+
+        reg {
+            name = "DMAC test status register 3";
+            desc = "SATA_PORT_DMA3 is DMAC test status register 3.
+
+Data sheet 14.7.7 SATA_PORT_DMA3 (offset 0x60 + n x 0x80, printed page 14-128, `datasheet.txt` line 58925).";
+
+            field {
+                name = "tx_fpdma_tran_cnt";
+                desc = "Down counter in SATA_TX_DMAC. It indicates the number of data FIS bytes during the first party DMA operation.";
+                sw = r;
+                hw = w;
+                reset = 0x0;
+            } tx_fpdma_tran_cnt[31:0];
+        } SATA_PORT_DMA3 @ 0x60;
+
+        reg {
+            name = "DMAC test status register 4";
+            desc = "SATA_PORT_DMA4 is DMAC test status register 4.
+
+Data sheet 14.7.7 SATA_PORT_DMA4 (offset 0x64 + n x 0x80, printed page 14-129, `datasheet.txt` line 58956).";
+
+            field {
+                name = "rxdmac_cur_state";
+                desc = "Current status of the SATA_RX_DMAC state machine.";
+                sw = r;
+                hw = w;
+                reset = 0x0;
+            } rxdmac_cur_state[27:24];
+
+            field {
+                name = "rxdmac_prd_i";
+                desc = "I bit in the entry of the PRD linked list of SATA_RX_DAMC.";
+                sw = r;
+                hw = w;
+                reset = 0x0;
+            } rxdmac_prd_i[23:23];
+
+            field {
+                name = "rx_entry_dbc_cnt";
+                desc = "Down counter in SATA_RX_DMAC. It indicates the number of data bytes in the current entry.";
+                sw = r;
+                hw = w;
+                reset = 0x0;
+            } rx_entry_dbc_cnt[22:0];
+        } SATA_PORT_DMA4 @ 0x64;
+
+        reg {
+            name = "DMAC test status register 5";
+            desc = "SATA_PORT_DMA5 is DMAC test status register 5.
+
+Data sheet 14.7.7 SATA_PORT_DMA5 (offset 0x68 + n x 0x80, printed page 14-129, `datasheet.txt` line 58987).";
+
+            field {
+                name = "rx_data_fis_cnt";
+                desc = "Down counter in SATA_RX_DMAC. It indicates the number of data FIS bytes during the operation of PIO, legacy DMA, or first party DMA. For the PIO operation, the initial value is equal to the value of transcount in the PIO setup FIS; for the legacy DMA or first party DMA operation, the initial value is 0x2000 (2048 DWORD).";
+                sw = r;
+                hw = w;
+                reset = 0x2000;
+            } rx_data_fis_cnt[23:8];
+
+            field {
+                name = "rx_cmdh_prdtl";
+                desc = "Down counter in SATA_RX_DMAC. The parameter in the command header indicates the number of entries in the PRDT.";
+                sw = r;
+                hw = w;
+                reset = 0x0;
+            } rx_cmdh_prdtl[7:0];
+        } SATA_PORT_DMA5 @ 0x68;
+
+        reg {
+            name = "DMAC test status register 6";
+            desc = "SATA_PORT_DMA6 is DMAC test status register 6.
+
+Data sheet 14.7.7 SATA_PORT_DMA6 (offset 0x6C + n x 0x80, printed page 14-130, `datasheet.txt` line 59021).";
+
+            field {
+                name = "rx_fpdma_tran_cnt";
+                desc = "Down counter in SATA_RX_DMAC. It indicates the number of data FIS bytes during the first party DMA operation. The initial value is equal to the value of transcount in the DMA setup FIS.";
+                sw = r;
+                hw = w;
+                reset = 0x0;
+            } rx_fpdma_tran_cnt[31:0];
+        } SATA_PORT_DMA6 @ 0x6C;
+
+        reg {
+            name = "DMAC test status register 7";
+            desc = "SATA_PORT_DMA7 is DMAC test status register 7.
+
+Data sheet 14.7.7 SATA_PORT_DMA7 (offset 0x70 + n x 0x80, printed page 14-130, `datasheet.txt` line 59041).";
+
+            enum SATA_PORT_DMA7_pio_op_enum {
+                CURRENT_COMMAND_NOT = 0 { name = "Current Command Not"; desc = "The current command is not used for the PIO operation."; };
+                CURRENT_COMMAND_USED = 1 { name = "Current Command Used"; desc = "The current command is used for the PIO operation."; };
+            };
+
+            field {
+                name = "pio_op";
+                desc = "PIO operation indication.";
+                sw = r;
+                hw = w;
+                encode = SATA_PORT_DMA7_pio_op_enum;
+                reset = 0x0;
+            } pio_op[21:21];
+
+            enum SATA_PORT_DMA7_fpdma_op_enum {
+                CURRENT_COMMAND_NOT = 0 { name = "Current Command Not"; desc = "The current command is not used for the first party DMA operation."; };
+                CURRENT_COMMAND_USED = 1 { name = "Current Command Used"; desc = "The current command is used for the first party DMA operation."; };
+            };
+
+            field {
+                name = "fpdma_op";
+                desc = "First party DMA operation indication.";
+                sw = r;
+                hw = w;
+                encode = SATA_PORT_DMA7_fpdma_op_enum;
+                reset = 0x0;
+            } fpdma_op[20:20];
+
+            field {
+                name = "dmac_rx_fifo_full";
+                desc = "Full status of SATA_DMAC_RX_FIFO. 0: not full. 1: full.";
+                sw = r;
+                hw = w;
+                reset = 0x0;
+            } dmac_rx_fifo_full[19:19];
+
+            field {
+                name = "dmac_rx_fifo_empty";
+                desc = "Empty status of SATA_DMAC_RX_FIFO. 0: not empty. 1: empty.";
+                sw = r;
+                hw = w;
+                reset = 0x1;
+            } dmac_rx_fifo_empty[18:18];
+
+            field {
+                name = "dmac_tx_fifo_full";
+                desc = "Full status of SATA_DMAC_TX_FIFO. 0: not full. 1: full.";
+                sw = r;
+                hw = w;
+                reset = 0x0;
+            } dmac_tx_fifo_full[17:17];
+
+            field {
+                name = "dmac_tx_fifo_empty";
+                desc = "Empty status of SATA_DMAC_TX_FIFO. 0: not empty. 1: empty.";
+                sw = r;
+                hw = w;
+                reset = 0x1;
+            } dmac_tx_fifo_empty[16:16];
+
+            field {
+                name = "dmac_rx_fifo_cnt";
+                desc = "Number of data segments in SATA_DMAC_RX_FIFO (in DWORD).";
+                sw = r;
+                hw = w;
+                reset = 0x0;
+            } dmac_rx_fifo_cnt[15:8];
+
+            field {
+                name = "dmac_tx_fifo_cnt";
+                desc = "Number of data segments in SATA_DMAC_TX_FIFO (in DWORD).";
+                sw = r;
+                hw = w;
+                reset = 0x0;
+            } dmac_tx_fifo_cnt[7:0];
+        } SATA_PORT_DMA7 @ 0x70;
+
+        reg {
+            name = "PHY control register";
+            desc = "SATA_PORT_PHYCTL is a PHY control register.
+
+Per-port value written by the init sequence. Data sheet 14.7.5.4 step 8: 0x0E262709 for 1.5 Gbit/s, 0x0E662709 for 3 Gbit/s (this is the vendor default `CONFIG_HI_SATA_PHY_CONFIG=0x0e262709` of the godnet/godarm SoCs). The Hi3520D vendor kernel configs (`hi3520d_full_defconfig`, `hi3520d_mini_defconfig`) use `CONFIG_HI_SATA_PHY_CONFIG=0x0e276716` (1.5G) and `CONFIG_HI_SATA_3G_PHY_CONFIG=0x0e676706` (3G); the driver writes the 3G value instead when the module parameter `mode_3g` is set. Differences from the reset value 0x0E636159: DS 1.5G 0x0E262709: gen2_en 0x1 -> 0x0, rx_dpll_mode 0x1 -> 0x3, rx_eq_val 0x5 -> 0x0, tx_edgerate 0x0 -> 0x1, tx_cko_en 0x0 -> 0x1, tx_atten 0x5 -> 0x0; vendor Hi3520D 1.5G 0x0E276716: gen2_en 0x1 -> 0x0, rx_dpll_mode 0x1 -> 0x3, tx_edgerate 0x0 -> 0x1, tx_cko_en 0x0 -> 0x1, tx_atten 0x5 -> 0x1, tx_boost 0x9 -> 0x6; vendor Hi3520D 3G 0x0E676706: rx_dpll_mode 0x1 -> 0x3, tx_edgerate 0x0 -> 0x1, tx_cko_en 0x0 -> 0x1, tx_atten 0x5 -> 0x0, tx_boost 0x9 -> 0x6.
+
+Data sheet 14.7.7 SATA_PORT_PHYCTL (offset 0x74 + n x 0x80, printed page 14-132, `datasheet.txt` line 59137).";
+
+            enum SATA_PORT_PHYCTL_phy_disable_enum {
+                USED = 0 { name = "Used"; desc = "used"; };
+                NOT_USED = 1 { name = "Not Used"; desc = "not used"; };
+            };
+
+            field {
+                name = "phy_disable";
+                desc = "Whether to use the PHY.";
+                sw = rw;
+                hw = r;
+                encode = SATA_PORT_PHYCTL_phy_disable_enum;
+                reset = 0x0;
+            } phy_disable[28:28];
+
+            enum SATA_PORT_PHYCTL_phy_calibrated_enum {
+                NOT_CALIBRATED = 0 { name = "Not Calibrated"; desc = "not calibrated"; };
+                CALIBRATED = 1 { name = "Calibrated"; desc = "calibrated"; };
+            };
+
+            field {
+                name = "phy_calibrated";
+                desc = "Whether to calibrate the PHY.";
+                sw = rw;
+                hw = r;
+                encode = SATA_PORT_PHYCTL_phy_calibrated_enum;
+                reset = 0x1;
+            } phy_calibrated[27:27];
+
+            enum SATA_PORT_PHYCTL_spd_change_ack_enum {
+                NOT_ALLOWED = 0 { name = "Not Allowed"; desc = "not allowed"; };
+                ALLOWED = 1 { name = "Allowed"; desc = "allowed"; };
+            };
+
+            field {
+                name = "spd_change_ack";
+                desc = "Whether the rate is allowed to switch.";
+                sw = rw;
+                hw = r;
+                encode = SATA_PORT_PHYCTL_spd_change_ack_enum;
+                reset = 0x1;
+            } spd_change_ack[26:26];
+
+            enum SATA_PORT_PHYCTL_dp_rdy_enum {
+                NOT_READY = 0 { name = "Not Ready"; desc = "not ready"; };
+                READY = 1 { name = "Ready"; desc = "ready"; };
+            };
+
+            field {
+                name = "dp_rdy";
+                desc = "Whether the PHY is ready to transmit data.";
+                sw = rw;
+                hw = r;
+                encode = SATA_PORT_PHYCTL_dp_rdy_enum;
+                reset = 0x1;
+            } dp_rdy[25:25];
+
+            enum SATA_PORT_PHYCTL_bist_tx_fspd_enum {
+                NOT_FORCED = 0 { name = "Not Forced"; desc = "not forced"; };
+                FORCED = 1 { name = "Forced"; desc = "forced"; };
+            };
+
+            field {
+                name = "bist_tx_fspd";
+                desc = "Whether the clock frequency is forced to transmit in BIST mode.";
+                sw = rw;
+                hw = r;
+                encode = SATA_PORT_PHYCTL_bist_tx_fspd_enum;
+                reset = 0x0;
+            } bist_tx_fspd[24:24];
+
+            enum SATA_PORT_PHYCTL_neg_mode_b_enum {
+                NOT_SUPPORTED = 0 { name = "Not Supported"; desc = "not supported"; };
+                SUPPORTED = 1 { name = "Supported"; desc = "supported"; };
+            };
+
+            field {
+                name = "neg_mode_b";
+                desc = "Negotiation mode B select.";
+                sw = rw;
+                hw = r;
+                encode = SATA_PORT_PHYCTL_neg_mode_b_enum;
+                reset = 0x0;
+            } neg_mode_b[23:23];
+
+            enum SATA_PORT_PHYCTL_gen2_en_enum {
+                NOT_SUPPORTED = 0 { name = "Not Supported"; desc = "not supported"; };
+                SUPPORTED = 1 { name = "Supported"; desc = "supported"; };
+            };
+
+            field {
+                name = "gen2_en";
+                desc = "Transmit control signal. It indicates whether to support the 3G mode.";
+                sw = rw;
+                hw = r;
+                encode = SATA_PORT_PHYCTL_gen2_en_enum;
+                reset = 0x1;
+            } gen2_en[22:22];
+
+            enum SATA_PORT_PHYCTL_los_ctl_enum {
+                LOS_DETECTION_DISABLED = 0 { name = "Los Detection Disabled"; desc = "The LOS detection is disabled."; };
+                RESERVED = 1 { name = "Reserved"; desc = "reserved"; };
+                OOB_SIGNAL_BEING = 2 { name = "Oob Signal Being"; desc = "The OOB signal is being detected."; };
+                RESERVED_2 = 3 { name = "Reserved 2"; desc = "reserved"; };
+            };
+
+            field {
+                name = "los_ctl";
+                desc = "LOS detection control.";
+                sw = rw;
+                hw = r;
+                encode = SATA_PORT_PHYCTL_los_ctl_enum;
+                reset = 0x2;
+            } los_ctl[21:20];
+
+            field {
+                name = "rx_dpll_mode";
+                desc = "Control mode of the receive DPLL. 000: indicates PHUG is 1 and FRUG is 1. 010: indicates PHUG is 2 and FRUG is 2. 010: indicates PHUG is 1 and FRUG is 4. 011: indicates PHUG is 2 and FRUG is 4. Other values: reserved";
+                sw = rw;
+                hw = r;
+                reset = 0x1;
+            } rx_dpll_mode[19:17];
+
+            field {
+                name = "rx_eq_val";
+                desc = "Receive equalization control. The internal balancing value is ~ (rx_eq_val + 1) x 0.5 dB.";
+                sw = rw;
+                hw = r;
+                reset = 0x5;
+            } rx_eq_val[16:14];
+
+            enum SATA_PORT_PHYCTL_rx_term_en_enum {
+                DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+                ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+            };
+
+            field {
+                name = "rx_term_en";
+                desc = "Receive termination enable.";
+                sw = rw;
+                hw = r;
+                encode = SATA_PORT_PHYCTL_rx_term_en_enum;
+                reset = 0x1;
+            } rx_term_en[13:13];
+
+            field {
+                name = "tx_calc";
+                desc = "Reserved, fixed at 0.";
+                sw = rw;
+                hw = r;
+                reset = 0x0;
+            } tx_calc[12:12];
+
+            field {
+                name = "tx_edgerate";
+                desc = "Edge control for the transmitted signal. The default value is 0x0.";
+                sw = rw;
+                hw = r;
+                reset = 0x0;
+            } tx_edgerate[11:10];
+
+            enum SATA_PORT_PHYCTL_tx_cko_en_enum {
+                DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+                ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+            };
+
+            field {
+                name = "tx_cko_en";
+                desc = "tx_cko_clk clock enable.";
+                sw = rw;
+                hw = r;
+                encode = SATA_PORT_PHYCTL_tx_cko_en_enum;
+                reset = 0x0;
+            } tx_cko_en[9:9];
+
+            enum SATA_PORT_PHYCTL_rx_align_en_enum {
+                NOT_SUPPORTED = 0 { name = "Not Supported"; desc = "not supported"; };
+                SUPPORTED = 1 { name = "Supported"; desc = "supported"; };
+            };
+
+            field {
+                name = "rx_align_en";
+                desc = "Received data alignment.";
+                sw = rw;
+                hw = r;
+                encode = SATA_PORT_PHYCTL_rx_align_en_enum;
+                reset = 0x1;
+            } rx_align_en[8:8];
+
+            enum SATA_PORT_PHYCTL_tx_clk_align_enum {
+                DO_NOT_ALIGN = 0 { name = "Do Not Align"; desc = "do not align"; };
+                ALIGN = 1 { name = "Align"; desc = "align"; };
+            };
+
+            field {
+                name = "tx_clk_align";
+                desc = "Transmit clock alignment.";
+                sw = rw;
+                hw = r;
+                encode = SATA_PORT_PHYCTL_tx_clk_align_enum;
+                reset = 0x0;
+            } tx_clk_align[7:7];
+
+            enum SATA_PORT_PHYCTL_tx_atten_enum {
+                V_16_16 = 0 { name = "V 16 16"; desc = "16/16"; };
+                V_14_16 = 1 { name = "V 14 16"; desc = "14/16"; };
+                V_12_16 = 2 { name = "V 12 16"; desc = "12/16"; };
+                V_10_16 = 3 { name = "V 10 16"; desc = "10/16"; };
+                V_9_16 = 4 { name = "V 9 16"; desc = "9/16"; };
+                V_8_16_11X = 5 { name = "V 8 16 11X"; desc = "8/16 11X: reserved"; };
+            };
+
+            field {
+                name = "tx_atten";
+                desc = "Transmit attenuation control.";
+                sw = rw;
+                hw = r;
+                encode = SATA_PORT_PHYCTL_tx_atten_enum;
+                reset = 0x5;
+            } tx_atten[6:4];
+
+            field {
+                name = "tx_boost";
+                desc = "Transmit boost control. The value is -20 log [1 - (tx_boost[3:0] + 0.5)/32] dB.";
+                sw = rw;
+                hw = r;
+                reset = 0x9;
+            } tx_boost[3:0];
+        } SATA_PORT_PHYCTL @ 0x74;
+
+        reg {
+            name = "PHY test status register";
+            desc = "SATA_PORT_PHYSTS is a PHY test status register.
+
+Data sheet 14.7.7 SATA_PORT_PHYSTS (offset 0x78 + n x 0x80, printed page 14-134, `datasheet.txt` line 59250).";
+
+            field {
+                name = "tx_cko_word";
+                desc = "Indicates the word receive clock of each lane, reserved currently.";
+                sw = rw;
+                hw = r;
+                reset = 0x0;
+            } tx_cko_word[18:18];
+
+            field {
+                name = "tx_rxpres";
+                desc = "Indicates the receive detection, reserved currently.";
+                sw = rw;
+                hw = r;
+                reset = 0x0;
+            } tx_rxpres[17:17];
+
+            field {
+                name = "tx_done";
+                desc = "Indicates that the operation of transmitting part of requests is complete, active high and reserved currently.";
+                sw = rw;
+                hw = r;
+                reset = 0x0;
+            } tx_done[16:16];
+
+            field {
+                name = "spd_change";
+                desc = "Indicates the rate change, active high.";
+                sw = rw;
+                hw = r;
+                reset = 0x0;
+            } spd_change[15:15];
+
+            field {
+                name = "link_rdy";
+                desc = "Indicates that sufficient D10.2 is transmitted in high level.";
+                sw = rw;
+                hw = r;
+                reset = 0x0;
+            } link_rdy[14:14];
+
+            field {
+                name = "init_compl";
+                desc = "Indicates that non-align primitive is received in high level and initialization is complete.";
+                sw = rw;
+                hw = r;
+                reset = 0x0;
+            } init_compl[13:13];
+
+            field {
+                name = "pwr_state";
+                desc = "Indicates the low-power mode (partial or slumber status) when the bit is 1; indicates the active status in other cases.";
+                sw = rw;
+                hw = r;
+                reset = 0x0;
+            } pwr_state[12:12];
+
+            field {
+                name = "rx_pll_pwron";
+                desc = "Indicates the power-on control signal of the received PLL.";
+                sw = rw;
+                hw = r;
+                reset = 0x0;
+            } rx_pll_pwron[11:11];
+
+            field {
+                name = "rx_en";
+                desc = "Indicates the control status of the rx_en signal.";
+                sw = rw;
+                hw = r;
+                reset = 0x0;
+            } rx_en[10:10];
+
+            field {
+                name = "tx_en";
+                desc = "Indicates the control status of the tx_en signal.";
+                sw = rw;
+                hw = r;
+                reset = 0x0;
+            } tx_en[9:7];
+
+            field {
+                name = "mpll_pwron";
+                desc = "Indicates the power-on control signal of the MPLL.";
+                sw = rw;
+                hw = r;
+                reset = 0x0;
+            } mpll_pwron[6:6];
+
+            field {
+                name = "phy_comwake";
+                desc = "Indicates that the PHY detects the COMWAKE signal, active high.";
+                sw = rw;
+                hw = r;
+                reset = 0x0;
+            } phy_comwake[5:5];
+
+            field {
+                name = "phy_cominit";
+                desc = "Indicates that the PHY detects the COMINIT signal, active high.";
+                sw = rw;
+                hw = r;
+                reset = 0x0;
+            } phy_cominit[4:4];
+
+            field {
+                name = "half_rate";
+                desc = "Indicates the rate of 1.5 Gbit/s when the bit is 1.";
+                sw = rw;
+                hw = r;
+                reset = 0x0;
+            } half_rate[3:3];
+
+            field {
+                name = "phyrdy";
+                desc = "Indicates that the PHY is initialized and then the PHY can communicate with the link layer, active high.";
+                sw = rw;
+                hw = r;
+                reset = 0x0;
+            } phyrdy[2:2];
+
+            field {
+                name = "los";
+                desc = "Indicates the loss of signal output, active high.";
+                sw = rw;
+                hw = r;
+                reset = 0x0;
+            } los[1:1];
+
+            field {
+                name = "op_done";
+                desc = "Indicates that the operations requested by the MPLL are complete, active high.";
+                sw = rw;
+                hw = r;
+                reset = 0x0;
+            } op_done[0:0];
+        } SATA_PORT_PHYSTS @ 0x78;
+
+    } PORT[`HISI_SATA_NPORTS] @ 0x100 += 0x80;
+};
+
+`endif
