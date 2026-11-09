@@ -12,6 +12,32 @@ regfile eHISI_CIPHER_MC {
         * Channels 1-7 are linked-list DMA channels with an input queue and an output queue each (registers CHANn_* in the `CHAN1` .. `CHAN7` groups).
         * Eight CPU-configured keys (CIPHER_KEY, 8 words each) are shared by all channels; every channel selects one with key_adder.
 
+        **Multi-packet queue node (channels 1-7).** The input queue (start address CHANn_SRC_LST_SADDR) and the output queue (CHANn_DEST_LST_SADDR) are arrays of 16-byte nodes in DDR, four 32-bit words each (data sheet Figure 3-17 and Table 3-18; the vendor code of the sibling SoC does not contain the word order or the flag bit numbers). HARDWARE VERIFIED (Hi3520D board, channel 1, 2026-11-09): input node = word0 data addr, word1 cas (last_lst bit 22, iv_set bit 21) | buf_len[15:0], word2 data_len[15:0], word3 iv_start_addr; output node = word0 addr, word1 = last_lst (bit 22) | buf_len[15:0], word2 data_len. AES-128 ECB of one 16-byte block with last_lst set on both nodes gave the correct FIPS-197 ciphertext. After one packet: IBUF_CNT 0, IEMPTY_CNT 1, OBUF_CNT N-1, OFULL_CNT 1, as the data sheet describes:
+
+        | Word | Offset | Bits | Field | Meaning |
+        |------|--------|------|-------|---------|
+        | 0 | 0x0 | [31:0] | addr | First address of the buffer this node points to; may be a byte address. |
+        | 1 | 0x4 | [31:16] | cas | Cipher control flags, flags only in bits 31..20: bit 22 last_lst, bit 21 iv_set, bits 31:23 and 20 reserved (bits 19:16 not described). |
+        | 1 | 0x4 | [15:0] | buf_len | Hatched in the figure: length of the output buffer (output queue nodes). |
+        | 2 | 0x8 | [31:16] | reserved | |
+        | 2 | 0x8 | [15:0] | data_len | Length of the valid data this node indicates (input queue nodes). |
+        | 3 | 0xC | [31:0] | iv_start_addr | Word aligned DDR address of the IV to load when iv_set is 1. |
+
+        * `iv_set` (cas bit 21): the data of this node needs a new initial vector, taken from iv_start_addr.
+        * `last_lst` (cas bit 22): this node is the last list node of a data block; if the hardware finds less than one cipher block left when it finishes the node, it writes the remaining data straight to the output buffer without encrypting it.
+        * The vendor code names the fields u32DataAddr / U32DataLen / u32IVStartAddr / u32Flags with the flag bits IVSET and EOL (same meaning as iv_set / last_lst).
+        * The input node and the output node of one task use the same index in the two queues; software wraps the index at ibuf_num / obuf_num.
+
+        **Queue programming and completion (data sheet 3.5.4 steps 1-6 and the vendor drv_cipher.c).**
+
+        1. Program CHANn_SRC_LST_SADDR / CHANn_DEST_LST_SADDR (word aligned), CHANn_IBUF_NUM = CHANn_OBUF_NUM = N, CHANn_IBUF_CNT = 0 and CHANn_OBUF_CNT = N (all output buffers available), plus the interrupt thresholds, aging timers and CHANn_CIPHER_CTRL.
+        2. For each task fill the input node and the output node (same index), set CTRL and the key, then write the number of added nodes K to CHANn_IBUF_CNT (the logic adds it).
+        3. On the output queue interrupt read CHANn_OFULL_CNT = F, process F output nodes, then write F to CHANn_IEMPTY_CNT and CHANn_OFULL_CNT (both subtract it) and to CHANn_OBUF_CNT (adds the F buffers back).
+        4. All counters are 16 bits.
+
+        !!! NOTE
+            Interrupt bit assignment: [7:1] are the INPUT queue interrupts and [15:9] the OUTPUT queue interrupts (hardware verified), the opposite of the data sheet text and as in the vendor code of the sibling SoC. See INT_STATUS.
+
         !!! NOTE
             The data sheet summary table (Table 3-18) prints the per-channel addresses as `0x1000 + n x 0x128 + ...`, while every register description says `n x 128`. 0x128 cannot be right: channel 7 would sit at 0x1818, beyond INT_STATUS at 0x1400. The channel stride is 128 bytes (0x80): channel n (n = 1..7) registers are at 0x1000 + n x 0x80 + offset, and channel 0 uses the 0x1000-0x1020 slot.
     ";
@@ -120,6 +146,9 @@ regfile eHISI_CIPHER_MC {
             * 0x0060-0x006C: channel 5
             * 0x0070-0x007C: channel 6
             * 0x0080-0x008C: channel 7
+
+            !!! NOTE
+                Channel n (n = 1..7) is at 0x0020 + (n-1) x 0x10, as in the data sheet. The vendor header macro CIPHER_REG_CHAN_CIPHER_IVOUT(id) = base + 0x0010 + id x 32 does not match this (channel 1 would be at 0x0030 and the stride is 0x20); it looks like a vendor bug, the data sheet layout is kept.
         ";
         field {
             name = "chan_cipher_ivout";
@@ -214,7 +243,7 @@ regfile eHISI_CIPHER_MC {
 
         reg {
             name = "CHANn_INT_ICNTCFG";
-            desc = "Input queue multi-packet interrupt threshold register. When the count of buffers processed from the input queue is above the threshold, an input queue interrupt is reported.";
+            desc = "Input queue multi-packet interrupt threshold register. When the count of buffers processed from the input queue reaches the threshold (greater than or equal to it, data sheet wording), an input queue interrupt is reported.";
             field { name = "int_icnt_cfg"; desc = "Input queue multi-packet interrupt threshold."; reset = 0x0; } int_icnt_cfg[15:0];
         } CHANn_INT_ICNTCFG @ 0x0C;
 
@@ -225,11 +254,15 @@ regfile eHISI_CIPHER_MC {
 
                 !!! NOTE
                     The data sheet gives the weight field no access type ('-'); it is modelled read/write.
+
+                !!! NOTE
+                    The data sheet bit table lists bit 8 as reserved (the bit diagram also labels bits 12:11 `byte_seq` / `ts_vld`; the table calls them reserved). ivin_sel[8] is NOT IN THE DATA SHEET for channels 1-7: it is modelled from the vendor driver (sources/u-boot-vendor-2010.06 product/cipher/hal_cipher.c, HAL_Cipher_Config, ~line 712-775), which writes bit 8 of CHANn_CIPHER_CTRL as it does for channel 0 (set together with iv_set in the queue node).
             ";
             field { name = "weight"; desc = "Weighted value of the current channel, in units of 64 bytes."; reset = 0x0; } weight[31:22];
             field { name = "key_adder"; desc = "ID of the key used by the current channel; any of the keys 0-7."; encode = CIPHER_MC_key_adder_enum; reset = 0x0; } key_adder[16:14];
             field { name = "key_sel"; desc = "Key select."; encode = CIPHER_MC_key_sel_enum; reset = 0x0; } key_sel[13:13];
             field { name = "key_length"; desc = "Key length select (AES / DES differ, see the values)."; encode = CIPHER_MC_key_length_enum; reset = 0x0; } key_length[10:9];
+            field { name = "ivin_sel"; desc = "NOT IN THE DATA SHEET (bit 8 is reserved there): vendor driver bit, new IV select as in CHAN0_CIPHER_CTRL (0 = no new IV, 1 = new IV). Meaning inferred from the vendor code, not verified on hardware."; encode = CIPHER_MC_ivin_sel_enum; reset = 0x0; } ivin_sel[8:8];
             field { name = "width"; desc = "Bit width control (DES/3DES and AES differ, see the values)."; encode = CIPHER_MC_width_enum; reset = 0x0; } width[7:6];
             field { name = "alg_sel"; desc = "Algorithm select."; encode = CIPHER_MC_alg_sel_enum; reset = 0x0; } alg_sel[5:4];
             field { name = "mode"; desc = "Operating mode select. AES: ECB, CBC, CFB, OFB, CTR; DES/3DES: ECB, CBC, CFB, OFB; other values select ECB."; encode = CIPHER_MC_mode_enum; reset = 0x0; } mode[3:1];
@@ -247,6 +280,70 @@ regfile eHISI_CIPHER_MC {
             desc = "Input queue interrupt aging time configuration register. If the aging time counter overflows and the count of processed buffers in the input queue is greater than 0, an input queue processing-complete interrupt is reported.";
             field { name = "iage_timer"; desc = "Aging interrupt timer."; reset = 0x0; } iage_timer[15:0];
         } CHANn_IAGE_TIMER @ 0x18;
+
+        reg {
+            name = "CHANn_IAGE_CNT (vendor)";
+            desc = "Input queue aging counter register (vendor).
+
+NOT IN THE DATA SHEET: register defined only in the vendor driver header product/cipher/drv_cipher_reg.h (sources/u-boot-vendor-2010.06, a sibling SoC with base 0x10080000 and the same channel layout). Offset from that header; layout and reset unknown, meaning inferred from the name. The vendor HAL_Cipher_SetAGEThreshold (hal_cipher.c ~line 787-805) writes the aging threshold here (16-bit value, 0 by default), while the data sheet names the aging time register CHANn_IAGE_TIMER at 0x18: which of the two is the real aging timer is uncertain.";
+            field { name = "iage_cnt"; desc = "Layout unknown (modelled as one 32-bit field)."; sw = rw; hw = r; } iage_cnt[31:0];
+        } CHANn_IAGE_CNT @ 0x1C;
+
+        reg {
+            name = "CHANn_SRC_LST_RADDR (vendor)";
+            desc = "Input queue hardware read address (read-only status).
+
+NOT IN THE DATA SHEET: register defined only in the vendor driver header product/cipher/drv_cipher_reg.h (sources/u-boot-vendor-2010.06, a sibling SoC with base 0x10080000 and the same channel layout). Offset from that header; layout and reset unknown, meaning inferred from the name.";
+            field { name = "src_lst_raddr"; desc = "Layout unknown (modelled as one 32-bit field)."; sw = r; hw = w; } src_lst_raddr[31:0];
+        } CHANn_SRC_LST_RADDR @ 0x20;
+
+        reg {
+            name = "CHANn_SRC_ADDR (vendor)";
+            desc = "Input data address being processed (read-only status).
+
+NOT IN THE DATA SHEET: register defined only in the vendor driver header product/cipher/drv_cipher_reg.h (sources/u-boot-vendor-2010.06, a sibling SoC with base 0x10080000 and the same channel layout). Offset from that header; layout and reset unknown, meaning inferred from the name.";
+            field { name = "src_addr"; desc = "Layout unknown (modelled as one 32-bit field)."; sw = r; hw = w; } src_addr[31:0];
+        } CHANn_SRC_ADDR @ 0x24;
+
+        reg {
+            name = "CHANn_SRC_LENGTH (vendor)";
+            desc = "Input data length being processed (read-only status).
+
+NOT IN THE DATA SHEET: register defined only in the vendor driver header product/cipher/drv_cipher_reg.h (sources/u-boot-vendor-2010.06, a sibling SoC with base 0x10080000 and the same channel layout). Offset from that header; layout and reset unknown, meaning inferred from the name.";
+            field { name = "src_length"; desc = "Layout unknown (modelled as one 32-bit field)."; sw = r; hw = w; } src_length[31:0];
+        } CHANn_SRC_LENGTH @ 0x28;
+
+        reg {
+            name = "CHANn_IN_LEFT_BYTE0 (vendor)";
+            desc = "Input side leftover bytes (read-only status).
+
+NOT IN THE DATA SHEET: register defined only in the vendor driver header product/cipher/drv_cipher_reg.h (sources/u-boot-vendor-2010.06, a sibling SoC with base 0x10080000 and the same channel layout). Offset from that header; layout and reset unknown, meaning inferred from the name.";
+            field { name = "in_left_byte0"; desc = "Layout unknown (modelled as one 32-bit field)."; sw = r; hw = w; } in_left_byte0[31:0];
+        } CHANn_IN_LEFT_BYTE0 @ 0x2C;
+
+        reg {
+            name = "CHANn_IN_LEFT_WORD0 (vendor)";
+            desc = "Input side leftover word 0 (read-only status).
+
+NOT IN THE DATA SHEET: register defined only in the vendor driver header product/cipher/drv_cipher_reg.h (sources/u-boot-vendor-2010.06, a sibling SoC with base 0x10080000 and the same channel layout). Offset from that header; layout and reset unknown, meaning inferred from the name.";
+            field { name = "in_left_word0"; desc = "Layout unknown (modelled as one 32-bit field)."; sw = r; hw = w; } in_left_word0[31:0];
+        } CHANn_IN_LEFT_WORD0 @ 0x30;
+
+        reg {
+            name = "CHANn_IN_LEFT_WORD1 (vendor)";
+            desc = "Input side leftover word 1 (read-only status).
+
+NOT IN THE DATA SHEET: register defined only in the vendor driver header product/cipher/drv_cipher_reg.h (sources/u-boot-vendor-2010.06, a sibling SoC with base 0x10080000 and the same channel layout). Offset from that header; layout and reset unknown, meaning inferred from the name.";
+            field { name = "in_left_word1"; desc = "Layout unknown (modelled as one 32-bit field)."; sw = r; hw = w; } in_left_word1[31:0];
+        } CHANn_IN_LEFT_WORD1 @ 0x34;
+
+        reg {
+            name = "CHANn_IN_LEFT_WORD2 (vendor)";
+            desc = "Input side leftover word 2 (read-only status).
+
+NOT IN THE DATA SHEET: register defined only in the vendor driver header product/cipher/drv_cipher_reg.h (sources/u-boot-vendor-2010.06, a sibling SoC with base 0x10080000 and the same channel layout). Offset from that header; layout and reset unknown, meaning inferred from the name.";
+            field { name = "in_left_word2"; desc = "Layout unknown (modelled as one 32-bit field)."; sw = r; hw = w; } in_left_word2[31:0];
+        } CHANn_IN_LEFT_WORD2 @ 0x38;
 
         reg {
             name = "CHANn_OBUF_NUM";
@@ -268,7 +365,7 @@ regfile eHISI_CIPHER_MC {
 
         reg {
             name = "CHANn_INT_OCNTCFG";
-            desc = "Output queue multi-packet interrupt threshold register. When the count of buffers processed in the output queue is above the threshold, an output queue interrupt is reported.";
+            desc = "Output queue multi-packet interrupt threshold register. When the count of buffers processed in the output queue reaches the threshold (greater than or equal to it, data sheet wording), an output queue interrupt is reported.";
             field { name = "int_ocnt_cfg"; desc = "Output queue multi-packet interrupt threshold."; reset = 0x0; } int_ocnt_cfg[15:0];
         } CHANn_INT_OCNTCFG @ 0x48;
 
@@ -283,6 +380,46 @@ regfile eHISI_CIPHER_MC {
             desc = "Output queue interrupt aging time configuration register. If the aging time counter overflows and the count of processed buffers in the output queue is greater than 0, an output queue processing-complete interrupt is reported.";
             field { name = "oage_timer"; desc = "Aging interrupt timer."; reset = 0x0; } oage_timer[15:0];
         } CHANn_OAGE_TIMER @ 0x50;
+
+        reg {
+            name = "CHANn_OAGE_CNT (vendor)";
+            desc = "Output queue aging counter register (vendor).
+
+NOT IN THE DATA SHEET: register defined only in the vendor driver header product/cipher/drv_cipher_reg.h (sources/u-boot-vendor-2010.06, a sibling SoC with base 0x10080000 and the same channel layout). Offset from that header; layout and reset unknown, meaning inferred from the name. The vendor HAL_Cipher_SetAGEThreshold (hal_cipher.c ~line 787-805) writes the aging threshold here (16-bit value, 0 by default), while the data sheet names the aging time register CHANn_OAGE_TIMER at 0x50: which of the two is the real aging timer is uncertain.";
+            field { name = "oage_cnt"; desc = "Layout unknown (modelled as one 32-bit field)."; sw = rw; hw = r; } oage_cnt[31:0];
+        } CHANn_OAGE_CNT @ 0x54;
+
+        reg {
+            name = "CHANn_DEST_LST_RADDR (vendor)";
+            desc = "Output queue hardware read address (read-only status).
+
+NOT IN THE DATA SHEET: register defined only in the vendor driver header product/cipher/drv_cipher_reg.h (sources/u-boot-vendor-2010.06, a sibling SoC with base 0x10080000 and the same channel layout). Offset from that header; layout and reset unknown, meaning inferred from the name.";
+            field { name = "dest_lst_raddr"; desc = "Layout unknown (modelled as one 32-bit field)."; sw = r; hw = w; } dest_lst_raddr[31:0];
+        } CHANn_DEST_LST_RADDR @ 0x58;
+
+        reg {
+            name = "CHANn_DEST_ADDR (vendor)";
+            desc = "Output data address being written (read-only status).
+
+NOT IN THE DATA SHEET: register defined only in the vendor driver header product/cipher/drv_cipher_reg.h (sources/u-boot-vendor-2010.06, a sibling SoC with base 0x10080000 and the same channel layout). Offset from that header; layout and reset unknown, meaning inferred from the name.";
+            field { name = "dest_addr"; desc = "Layout unknown (modelled as one 32-bit field)."; sw = r; hw = w; } dest_addr[31:0];
+        } CHANn_DEST_ADDR @ 0x5C;
+
+        reg {
+            name = "CHANn_DEST_LENGTH (vendor)";
+            desc = "Output data length being written (read-only status).
+
+NOT IN THE DATA SHEET: register defined only in the vendor driver header product/cipher/drv_cipher_reg.h (sources/u-boot-vendor-2010.06, a sibling SoC with base 0x10080000 and the same channel layout). Offset from that header; layout and reset unknown, meaning inferred from the name.";
+            field { name = "dest_length"; desc = "Layout unknown (modelled as one 32-bit field)."; sw = r; hw = w; } dest_length[31:0];
+        } CHANn_DEST_LENGTH @ 0x60;
+
+        reg {
+            name = "CHANn_OUT_LEFT_BYTE (vendor)";
+            desc = "Output side leftover bytes (read-only status).
+
+NOT IN THE DATA SHEET: register defined only in the vendor driver header product/cipher/drv_cipher_reg.h (sources/u-boot-vendor-2010.06, a sibling SoC with base 0x10080000 and the same channel layout). Offset from that header; layout and reset unknown, meaning inferred from the name.";
+            field { name = "out_left_byte"; desc = "Layout unknown (modelled as one 32-bit field)."; sw = r; hw = w; } out_left_byte[31:0];
+        } CHANn_OUT_LEFT_BYTE @ 0x64;
     };
 
     eHISI_CIPHER_MC_CHAN CHAN1 @ 0x1080;
@@ -296,63 +433,72 @@ regfile eHISI_CIPHER_MC {
     /* Interrupt and status block, 0x1400 - 0x1410 */
     reg {
         name = "INT_STATUS";
-        desc = "Interrupt status register. Bit 0 is reserved (channel 0 has no output queue).";
-        field { name = "ch7_ibuf_int"; desc = "Input queue data interrupt for channel 7."; sw = r; hw = w; reset = 0x0; } ch7_ibuf_int[15:15];
-        field { name = "ch6_ibuf_int"; desc = "Input queue data interrupt for channel 6."; sw = r; hw = w; reset = 0x0; } ch6_ibuf_int[14:14];
-        field { name = "ch5_ibuf_int"; desc = "Input queue data interrupt for channel 5."; sw = r; hw = w; reset = 0x0; } ch5_ibuf_int[13:13];
-        field { name = "ch4_ibuf_int"; desc = "Input queue data interrupt for channel 4."; sw = r; hw = w; reset = 0x0; } ch4_ibuf_int[12:12];
-        field { name = "ch3_ibuf_int"; desc = "Input queue data interrupt for channel 3."; sw = r; hw = w; reset = 0x0; } ch3_ibuf_int[11:11];
-        field { name = "ch2_ibuf_int"; desc = "Input queue data interrupt for channel 2."; sw = r; hw = w; reset = 0x0; } ch2_ibuf_int[10:10];
-        field { name = "ch1_ibuf_int"; desc = "Input queue data interrupt for channel 1."; sw = r; hw = w; reset = 0x0; } ch1_ibuf_int[9:9];
+        desc = "Interrupt status register. Bit 0 is reserved (channel 0 has no output queue).
+
+        !!! NOTE
+            Input/output bit assignment: HARDWARE VERIFIED on the Hi3520D (channel 1, AES-ECB through the queue, 2026-11-09), contradicting the data sheet text (the data sheet puts the input queue bits at [15:9] and the output queue bits at [7:1]). Bits [7:1] are the INPUT queue interrupts (channel 7..1), bits [15:9] the OUTPUT queue interrupts (channel 7..1), bit 8 is channel 0 done (as in the data sheet). Evidence: with CHAN1_INT_OCNTCFG = 100 and CHAN1_INT_ICNTCFG = 0 one processed packet raised only INT_RAW bit 1 (INT_RAW = 0x2); with both thresholds low INT_RAW = 0x202; the masked INT_STATUS follows INT_EN exactly. This matches the vendor code of the sibling SoC (hal_cipher.c:866-935, HAL_Cipher_EnableInt: `1 << (8 + chnId)` for output, `1 << (0 + chnId)` for input) and the field names here follow it, not the data sheet.";
+        field { name = "ch7_obuf_int"; desc = "Output queue data interrupt for channel 7."; sw = r; hw = w; reset = 0x0; } ch7_obuf_int[15:15];
+        field { name = "ch6_obuf_int"; desc = "Output queue data interrupt for channel 6."; sw = r; hw = w; reset = 0x0; } ch6_obuf_int[14:14];
+        field { name = "ch5_obuf_int"; desc = "Output queue data interrupt for channel 5."; sw = r; hw = w; reset = 0x0; } ch5_obuf_int[13:13];
+        field { name = "ch4_obuf_int"; desc = "Output queue data interrupt for channel 4."; sw = r; hw = w; reset = 0x0; } ch4_obuf_int[12:12];
+        field { name = "ch3_obuf_int"; desc = "Output queue data interrupt for channel 3."; sw = r; hw = w; reset = 0x0; } ch3_obuf_int[11:11];
+        field { name = "ch2_obuf_int"; desc = "Output queue data interrupt for channel 2."; sw = r; hw = w; reset = 0x0; } ch2_obuf_int[10:10];
+        field { name = "ch1_obuf_int"; desc = "Output queue data interrupt for channel 1."; sw = r; hw = w; reset = 0x0; } ch1_obuf_int[9:9];
         field { name = "ch0_ibuf_int"; desc = "Data processing complete interrupt for channel 0."; sw = r; hw = w; reset = 0x0; } ch0_ibuf_int[8:8];
-        field { name = "ch7_obuf_int"; desc = "Output queue data interrupt for channel 7."; sw = r; hw = w; reset = 0x0; } ch7_obuf_int[7:7];
-        field { name = "ch6_obuf_int"; desc = "Output queue data interrupt for channel 6."; sw = r; hw = w; reset = 0x0; } ch6_obuf_int[6:6];
-        field { name = "ch5_obuf_int"; desc = "Output queue data interrupt for channel 5."; sw = r; hw = w; reset = 0x0; } ch5_obuf_int[5:5];
-        field { name = "ch4_obuf_int"; desc = "Output queue data interrupt for channel 4."; sw = r; hw = w; reset = 0x0; } ch4_obuf_int[4:4];
-        field { name = "ch3_obuf_int"; desc = "Output queue data interrupt for channel 3."; sw = r; hw = w; reset = 0x0; } ch3_obuf_int[3:3];
-        field { name = "ch2_obuf_int"; desc = "Output queue data interrupt for channel 2."; sw = r; hw = w; reset = 0x0; } ch2_obuf_int[2:2];
-        field { name = "ch1_obuf_int"; desc = "Output queue data interrupt for channel 1."; sw = r; hw = w; reset = 0x0; } ch1_obuf_int[1:1];
+        field { name = "ch7_ibuf_int"; desc = "Input queue data interrupt for channel 7."; sw = r; hw = w; reset = 0x0; } ch7_ibuf_int[7:7];
+        field { name = "ch6_ibuf_int"; desc = "Input queue data interrupt for channel 6."; sw = r; hw = w; reset = 0x0; } ch6_ibuf_int[6:6];
+        field { name = "ch5_ibuf_int"; desc = "Input queue data interrupt for channel 5."; sw = r; hw = w; reset = 0x0; } ch5_ibuf_int[5:5];
+        field { name = "ch4_ibuf_int"; desc = "Input queue data interrupt for channel 4."; sw = r; hw = w; reset = 0x0; } ch4_ibuf_int[4:4];
+        field { name = "ch3_ibuf_int"; desc = "Input queue data interrupt for channel 3."; sw = r; hw = w; reset = 0x0; } ch3_ibuf_int[3:3];
+        field { name = "ch2_ibuf_int"; desc = "Input queue data interrupt for channel 2."; sw = r; hw = w; reset = 0x0; } ch2_ibuf_int[2:2];
+        field { name = "ch1_ibuf_int"; desc = "Input queue data interrupt for channel 1."; sw = r; hw = w; reset = 0x0; } ch1_ibuf_int[1:1];
     } INT_STATUS @ 0x1400;
 
     reg {
         name = "INT_EN";
-        desc = "Interrupt enable register. Bit 0 is reserved.";
+        desc = "Interrupt enable register. Bit 0 is reserved. Bit 31 (int_en) is the master enable of the module: the vendor HAL_Cipher_EnableInt sets it whenever it enables a channel interrupt and HAL_Cipher_DisableInt clears it when no other enable bit is left (hal_cipher.c:874, 927).
+
+        !!! NOTE
+            Input/output bit assignment: HARDWARE VERIFIED on the Hi3520D (channel 1, AES-ECB through the queue, 2026-11-09), contradicting the data sheet text (the data sheet puts the input queue bits at [15:9] and the output queue bits at [7:1]). Bits [7:1] are the INPUT queue interrupts (channel 7..1), bits [15:9] the OUTPUT queue interrupts (channel 7..1), bit 8 is channel 0 done (as in the data sheet). Evidence: with CHAN1_INT_OCNTCFG = 100 and CHAN1_INT_ICNTCFG = 0 one processed packet raised only INT_RAW bit 1 (INT_RAW = 0x2); with both thresholds low INT_RAW = 0x202; the masked INT_STATUS follows INT_EN exactly. This matches the vendor code of the sibling SoC (hal_cipher.c:866-935, HAL_Cipher_EnableInt: `1 << (8 + chnId)` for output, `1 << (0 + chnId)` for input) and the field names here follow it, not the data sheet.";
         field { name = "int_en"; desc = "Total interrupt enable for the CIPHER module."; encode = CIPHER_MC_enabled_enum; sw = rw; hw = r; reset = 0x0; } int_en[31:31];
-        field { name = "ch7_ibuf_en"; desc = "Input queue data interrupt enable for channel 7."; encode = CIPHER_MC_enabled_enum; sw = rw; hw = r; reset = 0x0; } ch7_ibuf_en[15:15];
-        field { name = "ch6_ibuf_en"; desc = "Input queue data interrupt enable for channel 6."; encode = CIPHER_MC_enabled_enum; sw = rw; hw = r; reset = 0x0; } ch6_ibuf_en[14:14];
-        field { name = "ch5_ibuf_en"; desc = "Input queue data interrupt enable for channel 5."; encode = CIPHER_MC_enabled_enum; sw = rw; hw = r; reset = 0x0; } ch5_ibuf_en[13:13];
-        field { name = "ch4_ibuf_en"; desc = "Input queue data interrupt enable for channel 4."; encode = CIPHER_MC_enabled_enum; sw = rw; hw = r; reset = 0x0; } ch4_ibuf_en[12:12];
-        field { name = "ch3_ibuf_en"; desc = "Input queue data interrupt enable for channel 3."; encode = CIPHER_MC_enabled_enum; sw = rw; hw = r; reset = 0x0; } ch3_ibuf_en[11:11];
-        field { name = "ch2_ibuf_en"; desc = "Input queue data interrupt enable for channel 2."; encode = CIPHER_MC_enabled_enum; sw = rw; hw = r; reset = 0x0; } ch2_ibuf_en[10:10];
-        field { name = "ch1_ibuf_en"; desc = "Input queue data interrupt enable for channel 1."; encode = CIPHER_MC_enabled_enum; sw = rw; hw = r; reset = 0x0; } ch1_ibuf_en[9:9];
+        field { name = "ch7_obuf_en"; desc = "Output queue data interrupt enable for channel 7."; encode = CIPHER_MC_enabled_enum; sw = rw; hw = r; reset = 0x0; } ch7_obuf_en[15:15];
+        field { name = "ch6_obuf_en"; desc = "Output queue data interrupt enable for channel 6."; encode = CIPHER_MC_enabled_enum; sw = rw; hw = r; reset = 0x0; } ch6_obuf_en[14:14];
+        field { name = "ch5_obuf_en"; desc = "Output queue data interrupt enable for channel 5."; encode = CIPHER_MC_enabled_enum; sw = rw; hw = r; reset = 0x0; } ch5_obuf_en[13:13];
+        field { name = "ch4_obuf_en"; desc = "Output queue data interrupt enable for channel 4."; encode = CIPHER_MC_enabled_enum; sw = rw; hw = r; reset = 0x0; } ch4_obuf_en[12:12];
+        field { name = "ch3_obuf_en"; desc = "Output queue data interrupt enable for channel 3."; encode = CIPHER_MC_enabled_enum; sw = rw; hw = r; reset = 0x0; } ch3_obuf_en[11:11];
+        field { name = "ch2_obuf_en"; desc = "Output queue data interrupt enable for channel 2."; encode = CIPHER_MC_enabled_enum; sw = rw; hw = r; reset = 0x0; } ch2_obuf_en[10:10];
+        field { name = "ch1_obuf_en"; desc = "Output queue data interrupt enable for channel 1."; encode = CIPHER_MC_enabled_enum; sw = rw; hw = r; reset = 0x0; } ch1_obuf_en[9:9];
         field { name = "ch0_ibuf_en"; desc = "Data processing complete interrupt enable for channel 0."; encode = CIPHER_MC_enabled_enum; sw = rw; hw = r; reset = 0x0; } ch0_ibuf_en[8:8];
-        field { name = "ch7_obuf_en"; desc = "Output queue data interrupt enable for channel 7."; encode = CIPHER_MC_enabled_enum; sw = rw; hw = r; reset = 0x0; } ch7_obuf_en[7:7];
-        field { name = "ch6_obuf_en"; desc = "Output queue data interrupt enable for channel 6."; encode = CIPHER_MC_enabled_enum; sw = rw; hw = r; reset = 0x0; } ch6_obuf_en[6:6];
-        field { name = "ch5_obuf_en"; desc = "Output queue data interrupt enable for channel 5."; encode = CIPHER_MC_enabled_enum; sw = rw; hw = r; reset = 0x0; } ch5_obuf_en[5:5];
-        field { name = "ch4_obuf_en"; desc = "Output queue data interrupt enable for channel 4."; encode = CIPHER_MC_enabled_enum; sw = rw; hw = r; reset = 0x0; } ch4_obuf_en[4:4];
-        field { name = "ch3_obuf_en"; desc = "Output queue data interrupt enable for channel 3."; encode = CIPHER_MC_enabled_enum; sw = rw; hw = r; reset = 0x0; } ch3_obuf_en[3:3];
-        field { name = "ch2_obuf_en"; desc = "Output queue data interrupt enable for channel 2."; encode = CIPHER_MC_enabled_enum; sw = rw; hw = r; reset = 0x0; } ch2_obuf_en[2:2];
-        field { name = "ch1_obuf_en"; desc = "Output queue data interrupt enable for channel 1."; encode = CIPHER_MC_enabled_enum; sw = rw; hw = r; reset = 0x0; } ch1_obuf_en[1:1];
+        field { name = "ch7_ibuf_en"; desc = "Input queue data interrupt enable for channel 7."; encode = CIPHER_MC_enabled_enum; sw = rw; hw = r; reset = 0x0; } ch7_ibuf_en[7:7];
+        field { name = "ch6_ibuf_en"; desc = "Input queue data interrupt enable for channel 6."; encode = CIPHER_MC_enabled_enum; sw = rw; hw = r; reset = 0x0; } ch6_ibuf_en[6:6];
+        field { name = "ch5_ibuf_en"; desc = "Input queue data interrupt enable for channel 5."; encode = CIPHER_MC_enabled_enum; sw = rw; hw = r; reset = 0x0; } ch5_ibuf_en[5:5];
+        field { name = "ch4_ibuf_en"; desc = "Input queue data interrupt enable for channel 4."; encode = CIPHER_MC_enabled_enum; sw = rw; hw = r; reset = 0x0; } ch4_ibuf_en[4:4];
+        field { name = "ch3_ibuf_en"; desc = "Input queue data interrupt enable for channel 3."; encode = CIPHER_MC_enabled_enum; sw = rw; hw = r; reset = 0x0; } ch3_ibuf_en[3:3];
+        field { name = "ch2_ibuf_en"; desc = "Input queue data interrupt enable for channel 2."; encode = CIPHER_MC_enabled_enum; sw = rw; hw = r; reset = 0x0; } ch2_ibuf_en[2:2];
+        field { name = "ch1_ibuf_en"; desc = "Input queue data interrupt enable for channel 1."; encode = CIPHER_MC_enabled_enum; sw = rw; hw = r; reset = 0x0; } ch1_ibuf_en[1:1];
     } INT_EN @ 0x1404;
 
     reg {
         name = "INT_RAW";
-        desc = "Raw interrupt status register. The data sheet access type is RWC (read, write to clear); the clear polarity is not stated and is modelled as write-1-to-clear. Bit 0 is reserved.";
-        field { name = "ch7_ibuf_raw"; desc = "Raw input queue data interrupt for channel 7."; sw = rw; onwrite = woclr; hw = w; reset = 0x0; } ch7_ibuf_raw[15:15];
-        field { name = "ch6_ibuf_raw"; desc = "Raw input queue data interrupt for channel 6."; sw = rw; onwrite = woclr; hw = w; reset = 0x0; } ch6_ibuf_raw[14:14];
-        field { name = "ch5_ibuf_raw"; desc = "Raw input queue data interrupt for channel 5."; sw = rw; onwrite = woclr; hw = w; reset = 0x0; } ch5_ibuf_raw[13:13];
-        field { name = "ch4_ibuf_raw"; desc = "Raw input queue data interrupt for channel 4."; sw = rw; onwrite = woclr; hw = w; reset = 0x0; } ch4_ibuf_raw[12:12];
-        field { name = "ch3_ibuf_raw"; desc = "Raw input queue data interrupt for channel 3."; sw = rw; onwrite = woclr; hw = w; reset = 0x0; } ch3_ibuf_raw[11:11];
-        field { name = "ch2_ibuf_raw"; desc = "Raw input queue data interrupt for channel 2."; sw = rw; onwrite = woclr; hw = w; reset = 0x0; } ch2_ibuf_raw[10:10];
-        field { name = "ch1_ibuf_raw"; desc = "Raw input queue data interrupt for channel 1."; sw = rw; onwrite = woclr; hw = w; reset = 0x0; } ch1_ibuf_raw[9:9];
+        desc = "Raw interrupt status register. The data sheet access type is RWC (read, write to clear); the clear polarity is not stated and is modelled as write-1-to-clear. The vendor HAL_Cipher_ClrIntState (hal_cipher.c:1003) clears pending bits by writing 1s to this register (drv_cipher.c:878 writes 0xffffffff to clear everything), which supports write-1-to-clear. Bit 0 is reserved.
+
+        !!! NOTE
+            Input/output bit assignment: HARDWARE VERIFIED on the Hi3520D (channel 1, AES-ECB through the queue, 2026-11-09), contradicting the data sheet text (the data sheet puts the input queue bits at [15:9] and the output queue bits at [7:1]). Bits [7:1] are the INPUT queue interrupts (channel 7..1), bits [15:9] the OUTPUT queue interrupts (channel 7..1), bit 8 is channel 0 done (as in the data sheet). Evidence: with CHAN1_INT_OCNTCFG = 100 and CHAN1_INT_ICNTCFG = 0 one processed packet raised only INT_RAW bit 1 (INT_RAW = 0x2); with both thresholds low INT_RAW = 0x202; the masked INT_STATUS follows INT_EN exactly. This matches the vendor code of the sibling SoC (hal_cipher.c:866-935, HAL_Cipher_EnableInt: `1 << (8 + chnId)` for output, `1 << (0 + chnId)` for input) and the field names here follow it, not the data sheet.";
+        field { name = "ch7_obuf_raw"; desc = "Raw output queue data interrupt for channel 7."; sw = rw; onwrite = woclr; hw = w; reset = 0x0; } ch7_obuf_raw[15:15];
+        field { name = "ch6_obuf_raw"; desc = "Raw output queue data interrupt for channel 6."; sw = rw; onwrite = woclr; hw = w; reset = 0x0; } ch6_obuf_raw[14:14];
+        field { name = "ch5_obuf_raw"; desc = "Raw output queue data interrupt for channel 5."; sw = rw; onwrite = woclr; hw = w; reset = 0x0; } ch5_obuf_raw[13:13];
+        field { name = "ch4_obuf_raw"; desc = "Raw output queue data interrupt for channel 4."; sw = rw; onwrite = woclr; hw = w; reset = 0x0; } ch4_obuf_raw[12:12];
+        field { name = "ch3_obuf_raw"; desc = "Raw output queue data interrupt for channel 3."; sw = rw; onwrite = woclr; hw = w; reset = 0x0; } ch3_obuf_raw[11:11];
+        field { name = "ch2_obuf_raw"; desc = "Raw output queue data interrupt for channel 2."; sw = rw; onwrite = woclr; hw = w; reset = 0x0; } ch2_obuf_raw[10:10];
+        field { name = "ch1_obuf_raw"; desc = "Raw output queue data interrupt for channel 1."; sw = rw; onwrite = woclr; hw = w; reset = 0x0; } ch1_obuf_raw[9:9];
         field { name = "ch0_ibuf_raw"; desc = "Raw data processing complete interrupt for channel 0."; sw = rw; onwrite = woclr; hw = w; reset = 0x0; } ch0_ibuf_raw[8:8];
-        field { name = "ch7_obuf_raw"; desc = "Raw output queue data interrupt for channel 7."; sw = rw; onwrite = woclr; hw = w; reset = 0x0; } ch7_obuf_raw[7:7];
-        field { name = "ch6_obuf_raw"; desc = "Raw output queue data interrupt for channel 6."; sw = rw; onwrite = woclr; hw = w; reset = 0x0; } ch6_obuf_raw[6:6];
-        field { name = "ch5_obuf_raw"; desc = "Raw output queue data interrupt for channel 5."; sw = rw; onwrite = woclr; hw = w; reset = 0x0; } ch5_obuf_raw[5:5];
-        field { name = "ch4_obuf_raw"; desc = "Raw output queue data interrupt for channel 4."; sw = rw; onwrite = woclr; hw = w; reset = 0x0; } ch4_obuf_raw[4:4];
-        field { name = "ch3_obuf_raw"; desc = "Raw output queue data interrupt for channel 3."; sw = rw; onwrite = woclr; hw = w; reset = 0x0; } ch3_obuf_raw[3:3];
-        field { name = "ch2_obuf_raw"; desc = "Raw output queue data interrupt for channel 2."; sw = rw; onwrite = woclr; hw = w; reset = 0x0; } ch2_obuf_raw[2:2];
-        field { name = "ch1_obuf_raw"; desc = "Raw output queue data interrupt for channel 1."; sw = rw; onwrite = woclr; hw = w; reset = 0x0; } ch1_obuf_raw[1:1];
+        field { name = "ch7_ibuf_raw"; desc = "Raw input queue data interrupt for channel 7."; sw = rw; onwrite = woclr; hw = w; reset = 0x0; } ch7_ibuf_raw[7:7];
+        field { name = "ch6_ibuf_raw"; desc = "Raw input queue data interrupt for channel 6."; sw = rw; onwrite = woclr; hw = w; reset = 0x0; } ch6_ibuf_raw[6:6];
+        field { name = "ch5_ibuf_raw"; desc = "Raw input queue data interrupt for channel 5."; sw = rw; onwrite = woclr; hw = w; reset = 0x0; } ch5_ibuf_raw[5:5];
+        field { name = "ch4_ibuf_raw"; desc = "Raw input queue data interrupt for channel 4."; sw = rw; onwrite = woclr; hw = w; reset = 0x0; } ch4_ibuf_raw[4:4];
+        field { name = "ch3_ibuf_raw"; desc = "Raw input queue data interrupt for channel 3."; sw = rw; onwrite = woclr; hw = w; reset = 0x0; } ch3_ibuf_raw[3:3];
+        field { name = "ch2_ibuf_raw"; desc = "Raw input queue data interrupt for channel 2."; sw = rw; onwrite = woclr; hw = w; reset = 0x0; } ch2_ibuf_raw[2:2];
+        field { name = "ch1_ibuf_raw"; desc = "Raw input queue data interrupt for channel 1."; sw = rw; onwrite = woclr; hw = w; reset = 0x0; } ch1_ibuf_raw[1:1];
     } INT_RAW @ 0x1408;
 
     enum CIPHER_MC_rst_status_enum {
@@ -390,5 +536,69 @@ regfile eHISI_CIPHER_MC {
             reset = 0x0;
         } ch0_start[0:0];
     } CHAN0_CFG @ 0x1410;
+
+    reg {
+        name = "BRAM_ST0 (vendor)";
+        desc = "Debug state register of the buffer RAM (read-only status).
+
+NOT IN THE DATA SHEET: register defined only in the vendor driver header product/cipher/drv_cipher_reg.h (sources/u-boot-vendor-2010.06, a sibling SoC with base 0x10080000; macro CIPHER_REG_BRAM_ST0). Offset from that header; layout and reset unknown, meaning inferred from the name.";
+        field { name = "bram_st0"; desc = "Layout unknown (modelled as one 32-bit field)."; sw = r; hw = w; } bram_st0[31:0];
+    } BRAM_ST0 @ 0x1420;
+
+    reg {
+        name = "IN_ST0 (vendor)";
+        desc = "Debug state register of the input path (read-only status).
+
+NOT IN THE DATA SHEET: register defined only in the vendor driver header product/cipher/drv_cipher_reg.h (sources/u-boot-vendor-2010.06, a sibling SoC with base 0x10080000; macro CIPHER_REG_IN_ST0). Offset from that header; layout and reset unknown, meaning inferred from the name.";
+        field { name = "in_st0"; desc = "Layout unknown (modelled as one 32-bit field)."; sw = r; hw = w; } in_st0[31:0];
+    } IN_ST0 @ 0x1424;
+
+    reg {
+        name = "IN_ST1 (vendor)";
+        desc = "Debug state register of the input path (read-only status).
+
+NOT IN THE DATA SHEET: register defined only in the vendor driver header product/cipher/drv_cipher_reg.h (sources/u-boot-vendor-2010.06, a sibling SoC with base 0x10080000; macro CIPHER_REG_IN_ST1). Offset from that header; layout and reset unknown, meaning inferred from the name.";
+        field { name = "in_st1"; desc = "Layout unknown (modelled as one 32-bit field)."; sw = r; hw = w; } in_st1[31:0];
+    } IN_ST1 @ 0x1428;
+
+    reg {
+        name = "IN_ST2 (vendor)";
+        desc = "Debug state register of the input path (read-only status).
+
+NOT IN THE DATA SHEET: register defined only in the vendor driver header product/cipher/drv_cipher_reg.h (sources/u-boot-vendor-2010.06, a sibling SoC with base 0x10080000; macro CIPHER_REG_IN_ST2). Offset from that header; layout and reset unknown, meaning inferred from the name.";
+        field { name = "in_st2"; desc = "Layout unknown (modelled as one 32-bit field)."; sw = r; hw = w; } in_st2[31:0];
+    } IN_ST2 @ 0x142C;
+
+    reg {
+        name = "IN_ST3 (vendor)";
+        desc = "Debug state register of the input path (read-only status).
+
+NOT IN THE DATA SHEET: register defined only in the vendor driver header product/cipher/drv_cipher_reg.h (sources/u-boot-vendor-2010.06, a sibling SoC with base 0x10080000; macro CIPHER_REG_IN_ST3). Offset from that header; layout and reset unknown, meaning inferred from the name.";
+        field { name = "in_st3"; desc = "Layout unknown (modelled as one 32-bit field)."; sw = r; hw = w; } in_st3[31:0];
+    } IN_ST3 @ 0x1430;
+
+    reg {
+        name = "OUT_ST0 (vendor)";
+        desc = "Debug state register of the output path (read-only status).
+
+NOT IN THE DATA SHEET: register defined only in the vendor driver header product/cipher/drv_cipher_reg.h (sources/u-boot-vendor-2010.06, a sibling SoC with base 0x10080000; macro CIPHER_REG_OUT_ST0). Offset from that header; layout and reset unknown, meaning inferred from the name.";
+        field { name = "out_st0"; desc = "Layout unknown (modelled as one 32-bit field)."; sw = r; hw = w; } out_st0[31:0];
+    } OUT_ST0 @ 0x1434;
+
+    reg {
+        name = "OUT_ST1 (vendor)";
+        desc = "Debug state register of the output path (read-only status).
+
+NOT IN THE DATA SHEET: register defined only in the vendor driver header product/cipher/drv_cipher_reg.h (sources/u-boot-vendor-2010.06, a sibling SoC with base 0x10080000; macro CIPHER_REG_OUT_ST1). Offset from that header; layout and reset unknown, meaning inferred from the name.";
+        field { name = "out_st1"; desc = "Layout unknown (modelled as one 32-bit field)."; sw = r; hw = w; } out_st1[31:0];
+    } OUT_ST1 @ 0x1438;
+
+    reg {
+        name = "OUT_ST2 (vendor)";
+        desc = "Debug state register of the output path (read-only status).
+
+NOT IN THE DATA SHEET: register defined only in the vendor driver header product/cipher/drv_cipher_reg.h (sources/u-boot-vendor-2010.06, a sibling SoC with base 0x10080000; macro CIPHER_REG_OUT_ST2). Offset from that header; layout and reset unknown, meaning inferred from the name.";
+        field { name = "out_st2"; desc = "Layout unknown (modelled as one 32-bit field)."; sw = r; hw = w; } out_st2[31:0];
+    } OUT_ST2 @ 0x143C;
 };
 `endif
