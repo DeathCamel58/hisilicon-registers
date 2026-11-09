@@ -1,0 +1,770 @@
+`ifndef HISI_VOIE_RDL
+`define HISI_VOIE_RDL
+
+
+regfile eHISI_VOIE {
+    name = "HiSilicon voice encoder";
+    desc = "
+    HiSilicon voice encoder (VOIE, the data sheet's chapter 12 \"Audio Encoding\") at 0x20640000, GIC interrupt ID 65. It encodes 16-bit linear PCM (8/16/32/48 kHz, frame length 10-60 ms, up to 17 channels per frame: 16 encode channels plus one talk-back) into G.726 (16/24/32/40 kbit/s), G.711 A/U-law or ADPCM (DVI4, ORG_DVI4) with an optional HiSilicon frame header, driven by linked lists in DDR (section 12.7, Figures 12-x; the list nodes are memory structures and not modelled). Registers are from Hi3520D/Hi3515A/Hi3515C data sheet issue 07, chapter 12.5/12.6 (`datasheet.txt` lines 48187-49525). Note the address table of this repository lists the window as \"448 KB\"; the data sheet Table 1-1 gives 64 KB at 0x20640000. Clock and reset: PERI_CRG28. Not hardware verified.
+    ";
+
+    reg {
+        name = "Interrupt status register";
+        desc = "VOIE_INTSTAT is an interrupt status register.
+
+Data sheet 12.6 VOIE_INTSTAT (offset 0x0, printed page 12-5, `datasheet.txt` line 48442).";
+
+        enum VOIE_INTSTAT_cfgErr_enum {
+            CORRECT = 0 { name = "Correct"; desc = "correct"; };
+            ERROR = 1 { name = "Error"; desc = "error"; };
+        };
+
+        field {
+            name = "cfgErr";
+            desc = "Configuration error flag.";
+            sw = r;
+            hw = w;
+            encode = VOIE_INTSTAT_cfgErr_enum;
+            reset = 0x0;
+        } cfgErr[24:24];
+
+        enum VOIE_INTSTAT_chkErr_enum {
+            CORRECT = 0 { name = "Correct"; desc = "correct"; };
+            ERROR = 1 { name = "Error"; desc = "error"; };
+        };
+
+        field {
+            name = "chkErr";
+            desc = "Channel variable check error flag.";
+            sw = r;
+            hw = w;
+            encode = VOIE_INTSTAT_chkErr_enum;
+            reset = 0x0;
+        } chkErr[16:16];
+
+        enum VOIE_INTSTAT_VoieEndofSingle_enum {
+            INCOMPLETE = 0 { name = "Incomplete"; desc = "incomplete"; };
+            COMPLETE = 1 { name = "Complete"; desc = "complete"; };
+        };
+
+        field {
+            name = "VoieEndofSingle";
+            desc = "Single channel encoding completion flag.";
+            sw = r;
+            hw = w;
+            encode = VOIE_INTSTAT_VoieEndofSingle_enum;
+            reset = 0x0;
+        } VoieEndofSingle[8:8];
+
+        enum VOIE_INTSTAT_VoieEndOfFrame_enum {
+            INCOMPLETE = 0 { name = "Incomplete"; desc = "incomplete"; };
+            COMPLETE = 1 { name = "Complete"; desc = "complete"; };
+        };
+
+        field {
+            name = "VoieEndOfFrame";
+            desc = "Frame encoding completion flag.";
+            sw = r;
+            hw = w;
+            encode = VOIE_INTSTAT_VoieEndOfFrame_enum;
+            reset = 0x0;
+        } VoieEndOfFrame[0:0];
+    } VOIE_INTSTAT @ 0x0;
+
+    reg {
+        name = "Interrupt mask register";
+        desc = "VOIE_INTMASK is an interrupt mask register.
+
+Data sheet 12.6 VOIE_INTMASK (offset 0x4, printed page 12-6, `datasheet.txt` line 48490).";
+
+        enum VOIE_INTMASK_cfgErrMask_enum {
+            ENABLED = 0 { name = "Enabled"; desc = "enabled"; };
+            DISABLED = 1 { name = "Disabled"; desc = "disabled"; };
+        };
+
+        field {
+            name = "cfgErrMask";
+            desc = "Configuration error flag mask enable.";
+            sw = rw;
+            hw = r;
+            encode = VOIE_INTMASK_cfgErrMask_enum;
+            reset = 0x1;
+        } cfgErrMask[24:24];
+
+        enum VOIE_INTMASK_chkErrMask_enum {
+            ENABLED = 0 { name = "Enabled"; desc = "enabled"; };
+            DISABLED = 1 { name = "Disabled"; desc = "disabled"; };
+        };
+
+        field {
+            name = "chkErrMask";
+            desc = "Check error flag mask enable.";
+            sw = rw;
+            hw = r;
+            encode = VOIE_INTMASK_chkErrMask_enum;
+            reset = 0x1;
+        } chkErrMask[16:16];
+
+        enum VOIE_INTMASK_VoieEndofSingleMask_enum {
+            ENABLED = 0 { name = "Enabled"; desc = "enabled"; };
+            DISABLED = 1 { name = "Disabled"; desc = "disabled"; };
+        };
+
+        field {
+            name = "VoieEndofSingleMask";
+            desc = "Single channel encoding completion mask enable.";
+            sw = rw;
+            hw = r;
+            encode = VOIE_INTMASK_VoieEndofSingleMask_enum;
+            reset = 0x1;
+        } VoieEndofSingleMask[8:8];
+
+        enum VOIE_INTMASK_VoieEndOfPicMask_enum {
+            ENABLED = 0 { name = "Enabled"; desc = "enabled"; };
+            DISABLED = 1 { name = "Disabled"; desc = "disabled"; };
+        };
+
+        field {
+            name = "VoieEndOfPicMask";
+            desc = "Frame encoding completion mask enable.";
+            sw = rw;
+            hw = r;
+            encode = VOIE_INTMASK_VoieEndOfPicMask_enum;
+            reset = 0x1;
+        } VoieEndOfPicMask[0:0];
+    } VOIE_INTMASK @ 0x4;
+
+    reg {
+        name = "Raw interrupt status register";
+        desc = "VOIE_RAWINT is a raw interrupt status register.
+
+Data sheet 12.6 VOIE_RAWINT (offset 0x8, printed page 12-7, `datasheet.txt` line 48542).";
+
+        enum VOIE_RAWINT_cfgErr_enum {
+            CORRECT = 0 { name = "Correct"; desc = "correct"; };
+            INCORRECT = 1 { name = "Incorrect"; desc = "incorrect"; };
+        };
+
+        field {
+            name = "cfgErr";
+            desc = "Configuration error flag.";
+            sw = r;
+            hw = w;
+            encode = VOIE_RAWINT_cfgErr_enum;
+            reset = 0x0;
+        } cfgErr[24:24];
+
+        enum VOIE_RAWINT_chkErr_enum {
+            CORRECT = 0 { name = "Correct"; desc = "correct"; };
+            ERROR = 1 { name = "Error"; desc = "error"; };
+        };
+
+        field {
+            name = "chkErr";
+            desc = "Channel variable check error flag.";
+            sw = r;
+            hw = w;
+            encode = VOIE_RAWINT_chkErr_enum;
+            reset = 0x0;
+        } chkErr[16:16];
+
+        enum VOIE_RAWINT_VoieEndofSingle_enum {
+            INCOMPLETE = 0 { name = "Incomplete"; desc = "incomplete"; };
+            COMPLETE = 1 { name = "Complete"; desc = "complete"; };
+        };
+
+        field {
+            name = "VoieEndofSingle";
+            desc = "Single channel encoding completion flag.";
+            sw = r;
+            hw = w;
+            encode = VOIE_RAWINT_VoieEndofSingle_enum;
+            reset = 0x0;
+        } VoieEndofSingle[8:8];
+
+        enum VOIE_RAWINT_VoieEndOfFrame_enum {
+            INCOMPLETE = 0 { name = "Incomplete"; desc = "incomplete"; };
+            COMPLETE = 1 { name = "Complete"; desc = "complete"; };
+        };
+
+        field {
+            name = "VoieEndOfFrame";
+            desc = "Frame encoding completion flag.";
+            sw = r;
+            hw = w;
+            encode = VOIE_RAWINT_VoieEndOfFrame_enum;
+            reset = 0x0;
+        } VoieEndOfFrame[0:0];
+    } VOIE_RAWINT @ 0x8;
+
+    reg {
+        name = "Interrupt clear register";
+        desc = "VOIE_INTCLR is an interrupt clear register.
+
+Data sheet 12.6 VOIE_INTCLR (offset 0xC, printed page 12-8, `datasheet.txt` line 48594).";
+
+        field {
+            name = "cfgErrClr";
+            desc = "Configuration error source interrupt clear. Writing 1 clears this bit.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            reset = 0x0;
+        } cfgErrClr[24:24];
+
+        field {
+            name = "chkErrClr";
+            desc = "Channel variable check error flag source interrupt clear. Writing 1 clears this bit.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            reset = 0x0;
+        } chkErrClr[16:16];
+
+        field {
+            name = "r";
+            desc = "Single channel encoding completion source interrupt clear. Writing 1 clears this bit.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            reset = 0x0;
+        } r_f[8:8];
+
+        field {
+            name = "lr";
+            desc = "Frame encoding completion source interrupt clear. Writing 1 clears this bit.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            reset = 0x0;
+        } lr[0:0];
+    } VOIE_INTCLR @ 0xC;
+
+    reg {
+        name = "Encoding start signal register";
+        desc = "VIOE_START is an encoding start signal register.
+
+Data sheet 12.6 VIOE_START (offset 0x10, printed page 12-9, `datasheet.txt` line 48645).";
+
+        enum VIOE_START_Start_enum {
+            NOT_START = 0 { name = "Not Start"; desc = "not start"; };
+            START = 1 { name = "Start"; desc = "start"; };
+        };
+
+        field {
+            name = "Start";
+            desc = "Encoding start signal.";
+            sw = w;
+            hw = r;
+            encode = VIOE_START_Start_enum;
+            reset = 0x0;
+        } Start[0:0];
+    } VIOE_START @ 0x10;
+
+    reg {
+        name = "Outstanding configuration register";
+        desc = "VOIE_OUTSTDING is an outstanding configuration register.
+
+Data sheet 12.6 VOIE_OUTSTDING (offset 0x14, printed page 12-9, `datasheet.txt` line 48668).";
+
+        field {
+            name = "voieoutstd";
+            desc = "Outstanding depth of the AXI port. The depth range is 0-7.";
+            sw = rw;
+            hw = r;
+            reset = 0x7;
+        } voieoutstd[3:0];
+    } VOIE_OUTSTDING @ 0x14;
+
+    reg {
+        name = "VOIE working mode register";
+        desc = "VOIE_MODE is a VOIE working mode register.
+
+Data sheet 12.6 VOIE_MODE (offset 0x20, printed page 12-10, `datasheet.txt` line 48694).";
+
+        field {
+            name = "memClkGateEn";
+            desc = "Memory clock gating enable. Note: This field is invalid and can be ignored.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } memClkGateEn[18:18];
+
+        field {
+            name = "clkGateEn";
+            desc = "Clock gating enable Note: This field is invalid and can be ignored.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } clkGateEn[17:16];
+
+        field {
+            name = "accesslockEn";
+            desc = "Internal configuration lock enable. Note: This field is invalid and can be ignored.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } accesslockEn[8:8];
+
+        field {
+            name = "timeEn";
+            desc = "Timeout check enable. Note: This field is invalid and can be ignored.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } timeEn[1:0];
+    } VOIE_MODE @ 0x20;
+
+    reg {
+        name = "First linked list address register";
+        desc = "VOIE_CFG is a first linked list address register.
+
+Data sheet 12.6 VOIE_CFG (offset 0x28, printed page 12-11, `datasheet.txt` line 48746).";
+
+        field {
+            name = "AddrOfFirstLLI";
+            desc = "Address for the first linked list for storing the current audio frame. Note: The address must be configured before encoding and must be 128-bit-aligned.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } AddrOfFirstLLI[31:0];
+    } VOIE_CFG @ 0x28;
+
+    reg {
+        name = "Linked list member register (SrcPhyAddr)";
+        desc = "VOIE_LLICFG0 is a linked list member register (SrcPhyAddr).
+
+Data sheet 12.6 VOIE_LLICFG0 (offset 0x30, printed page 12-11, `datasheet.txt` line 48766).";
+
+        field {
+            name = "SrcPhyAddr";
+            desc = "Start physical address for storing the voice frame data to be encoded in the DDR. The address must be 128-bit-aligned. The address is written to the corresponding linked list DDR addresses by the software before encoding and is loaded by the AXI bus after encoding starts. Note: This register is provided only for readback during debugging.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } SrcPhyAddr[31:0];
+    } VOIE_LLICFG0 @ 0x30;
+
+    reg {
+        name = "Linked list member register (DstPhyAddr)";
+        desc = "VOIE_LLICFG1 is a linked list member register (DstPhyAddr).
+
+Data sheet 12.6 VOIE_LLICFG1 (offset 0x34, printed page 12-11, `datasheet.txt` line 48790).";
+
+        field {
+            name = "DstPhyAddr";
+            desc = "The physical address of streams output to the DDR after encoding. The 128-bit address must be aligned. The address is written to the corresponding linked list DDR addresses by the software before encoding and is loaded by the AXI bus after encoding starts. Note: This register is provided only for readback during debugging.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } DstPhyAddr[31:0];
+    } VOIE_LLICFG1 @ 0x34;
+
+    reg {
+        name = "Linked list member register (StatePhyAddr)";
+        desc = "VOIE_LLICFG2 is a linked list member register (StatePhyAddr).
+
+Data sheet 12.6 VOIE_LLICFG2 (offset 0x38, printed page 12-12, `datasheet.txt` line 48825).";
+
+        field {
+            name = "StatePhyAddr";
+            desc = "The physical address for storing the voice frame data to be encoded in the DDR. The address must be 128-bit aligned. This address must be configured during the G726 encoding and ADPCM encoding. As channel variables are not used during the G711 encoding, this register can be ignored. The address is written to the corresponding linked list DDR addresses by the software before encoding and is loaded by the AXI bus. Note: This register is provided only for readback during debugging.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } StatePhyAddr[31:0];
+    } VOIE_LLICFG2 @ 0x38;
+
+    reg {
+        name = "Linked list member register (NextLLiAddr)";
+        desc = "VOIE_LLICFG3 is a linked list member register (NextLLiAddr).
+
+Data sheet 12.6 VOIE_LLICFG3 (offset 0x3C, printed page 12-12, `datasheet.txt` line 48853).";
+
+        field {
+            name = "NextLLiAddr";
+            desc = "Memory address of the next channel linked list. The address must be 128-bit aligned. If the current channel is the last channel of this frame, set the next linked list address to 0x00000000; otherwise, the next linked list address cannot be set to 0. The address is written to the corresponding linked list DDR addresses by the software before encoding and is loaded by the AXI bus after encoding starts. Note: This register is provided only for readback during debugging.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } NextLLiAddr[31:0];
+    } VOIE_LLICFG3 @ 0x3C;
+
+    reg {
+        name = "Linked list member register (StCtrl)";
+        desc = "VOIE_LLICFG4 is a linked list member register (StCtrl, encoding control).
+
+Data sheet 12.6 VOIE_LLICFG4 (offset 0x40, printed page 12-13, `datasheet.txt` line 48892).";
+
+        field {
+            name = "SamplesPerFrame";
+            desc = "Number of audio sampling points in the current voice frame. The values range is 80-2880 and the value must an integral multiple of 80. The address is written to the corresponding linked list DDR addresses by the software before encoding and is loaded by the AXI bus after encoding starts. Note: This register is provided only for readback during debugging.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } SamplesPerFrame[31:16];
+
+        enum VOIE_LLICFG4_Codec_enum {
+            G711_ALAW = 0x1 { name = "G711 Alaw"; desc = "G711 Alaw"; };
+            G711_ULAW = 0x2 { name = "G711 Ulaw"; desc = "G711 Ulaw"; };
+            ADPCM_DIV4 = 0x3 { name = "Adpcm Div4"; desc = "ADPCM_DIV4"; };
+            G726_16_KBPS = 0x4 { name = "G726 16 Kbps"; desc = "G726_16 kbps"; };
+            G726_24_KBPS = 0x5 { name = "G726 24 Kbps"; desc = "G726_24 kbps"; };
+            G726_32_KBPS = 0x6 { name = "G726 32 Kbps"; desc = "G726_32 kbps"; };
+            G726_40_KBPS = 0x7 { name = "G726 40 Kbps"; desc = "G726_40 kbps"; };
+            MEDIA_G726_16 = 0x24 { name = "Media G726 16"; desc = "MEDIA_G726_16 kbps"; };
+            MEDIA_G726_24 = 0x25 { name = "Media G726 24"; desc = "MEDIA_G726_24 kbps"; };
+            MEDIA_G726_32 = 0x26 { name = "Media G726 32"; desc = "MEDIA_G726_32 kbps"; };
+            MEDIA_G726_40 = 0x27 { name = "Media G726 40"; desc = "MEDIA_G726_40 kbps"; };
+            ADPCM_ORG_DIV4 = 0x43 { name = "Adpcm Org Div4"; desc = "ADPCM_ORG_DIV4 Other values: invalid configuration. If the VOIE receives other configurations, a configuration error interrupt is reported. The address is written to the corresponding linked list DDR addresses by the software before encoding and is loaded by the AXI bus after encoding starts. Note: This register is provided only for readback during debugging."; };
+        };
+
+        field {
+            name = "Codec";
+            desc = "Encoding type configuration.";
+            sw = r;
+            hw = w;
+            encode = VOIE_LLICFG4_Codec_enum;
+            reset = 0x0;
+        } Codec[15:8];
+
+        enum VOIE_LLICFG4_hisi_head_enum {
+            EXCLUDE_HISILICON_FRAME = 0 { name = "Exclude Hisilicon Frame"; desc = "exclude HiSilicon frame header"; };
+            INCLUDE_HISILICON_FRAME = 1 { name = "Include Hisilicon Frame"; desc = "include HiSilicon frame header This bit is set to 0x1 by default. The address is written to the corresponding linked list DDR addresses by the software before encoding and is loaded by the AXI bus after encoding starts. Note: This register is provided only for readback during debugging."; };
+        };
+
+        field {
+            name = "hisi_head";
+            desc = "Output stream HiSilicon frame header enable.";
+            sw = rw;
+            hw = r;
+            encode = VOIE_LLICFG4_hisi_head_enum;
+            reset = 0x1;
+        } hisi_head[7:7];
+    } VOIE_LLICFG4 @ 0x40;
+
+    reg {
+        name = "G726 encoding channel variable register 0";
+        desc = "VOIE_LLISTATE0 is G726 encoding channel variable register 0.
+
+Data sheet 12.6 VOIE_LLISTATE0 (offset 0x50, printed page 12-15, `datasheet.txt` line 48974).";
+
+        field {
+            name = "A1";
+            desc = "G726 encoding channel variable. Two-tap pole predictor coefficient 1.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } A1[31:16];
+
+        field {
+            name = "A2";
+            desc = "G726 encoding channel variable. Two-tap pole predictor coefficient 2.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } A2[15:0];
+    } VOIE_LLISTATE0 @ 0x50;
+
+    reg {
+        name = "G726 encoding channel variable register 1";
+        desc = "VOIE_LLISTATE1 is G726 encoding channel variable register 1.
+
+Data sheet 12.6 VOIE_LLISTATE1 (offset 0x54, printed page 12-15, `datasheet.txt` line 48998).";
+
+        field {
+            name = "AP";
+            desc = "G726 encoding channel variable. Delay speed control.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } AP[31:22];
+
+        field {
+            name = "PK1";
+            desc = "G726 encoding channel variable. DQ+SEZ signed bit when the delay is 1.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } PK1[15:15];
+
+        field {
+            name = "PK2";
+            desc = "G726 encoding channel variable. DQ+SEZ signed bit when the delay is 2.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } PK2[14:14];
+
+        field {
+            name = "TD";
+            desc = "G726 encoding channel variable. Single audio detection signal.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } TD[0:0];
+    } VOIE_LLISTATE1 @ 0x54;
+
+    reg {
+        name = "G726 encoding channel variable register 2";
+        desc = "VOIE_LLISTATE2 is G726 encoding channel variable register 2.
+
+Data sheet 12.6 VOIE_LLISTATE2 (offset 0x58, printed page 12-16, `datasheet.txt` line 49037).";
+
+        field {
+            name = "B1";
+            desc = "G726 encoding channel variable. Six-tap pole predictor coefficient 1.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } B1[31:16];
+
+        field {
+            name = "B2";
+            desc = "G726 encoding channel variable. Six-tap pole predictor coefficient 2.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } B2[15:0];
+    } VOIE_LLISTATE2 @ 0x58;
+
+    reg {
+        name = "G726 encoding channel variable register 3";
+        desc = "VOIE_LLISTATE3 is G726 encoding channel variable register 3.
+
+Data sheet 12.6 VOIE_LLISTATE3 (offset 0x5C, printed page 12-16, `datasheet.txt` line 49061).";
+
+        field {
+            name = "B3";
+            desc = "G726 encoding channel variable. Six-tap pole predictor coefficient 3.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } B3[31:16];
+
+        field {
+            name = "B4";
+            desc = "G726 encoding channel variable. Six-tap pole predictor coefficient 4.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } B4[15:0];
+    } VOIE_LLISTATE3 @ 0x5C;
+
+    reg {
+        name = "G726 encoding channel variable register 4";
+        desc = "VOIE_LLISTATE4 is G726 encoding channel variable register 4.
+
+Data sheet 12.6 VOIE_LLISTATE4 (offset 0x60, printed page 12-17, `datasheet.txt` line 49091).";
+
+        field {
+            name = "B5";
+            desc = "G726 encoding channel variable. Six-tap pole predictor coefficient 5.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } B5[31:16];
+
+        field {
+            name = "B6";
+            desc = "G726 encoding channel variable. Six-tap pole predictor coefficient 6.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } B6[15:0];
+    } VOIE_LLISTATE4 @ 0x60;
+
+    reg {
+        name = "G726 encoding channel variable register 5";
+        desc = "VOIE_LLISTATE5 is G726 encoding channel variable register 5.
+
+Data sheet 12.6 VOIE_LLISTATE5 (offset 0x64, printed page 12-17, `datasheet.txt` line 49115).";
+
+        field {
+            name = "DML";
+            desc = "G726 encoding channel variable. F (I) long-term average value of the delay.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } DML[31:18];
+
+        field {
+            name = "DMS";
+            desc = "G726 encoding channel variable. F (I) short-term average value of the delay.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } DMS[15:4];
+    } VOIE_LLISTATE5 @ 0x64;
+
+    reg {
+        name = "G726 encoding channel variable register 6";
+        desc = "VOIE_LLISTATE6 is G726 encoding channel variable register 6.
+
+Data sheet 12.6 VOIE_LLISTATE6 (offset 0x68, printed page 12-18, `datasheet.txt` line 49152).";
+
+        field {
+            name = "DQ1";
+            desc = "G726 encoding channel variable. Quantization difference signal when the delay is 1.";
+            sw = r;
+            hw = w;
+            reset = 0x20;
+        } DQ1[31:21];
+
+        field {
+            name = "DQ2";
+            desc = "G726 encoding channel variable. Quantization difference signal when the delay is 2.";
+            sw = r;
+            hw = w;
+            reset = 0x20;
+        } DQ2[15:5];
+    } VOIE_LLISTATE6 @ 0x68;
+
+    reg {
+        name = "G726 encoding channel variable register 7";
+        desc = "VOIE_LLISTATE7 is G726 encoding channel variable register 7.
+
+Data sheet 12.6 VOIE_LLISTATE7 (offset 0x6C, printed page 12-18, `datasheet.txt` line 49178).";
+
+        field {
+            name = "DQ3";
+            desc = "G726 encoding channel variable. Quantization difference signal when the delay is 3.";
+            sw = r;
+            hw = w;
+            reset = 0x20;
+        } DQ3[31:21];
+
+        field {
+            name = "DQ4";
+            desc = "G726 encoding channel variable. Quantization difference signal when the delay is 4.";
+            sw = r;
+            hw = w;
+            reset = 0x20;
+        } DQ4[15:5];
+    } VOIE_LLISTATE7 @ 0x6C;
+
+    reg {
+        name = "G726 encoding channel variable register 8";
+        desc = "VOIE_LLISTATE8 is G726 encoding channel variable register 8.
+
+Data sheet 12.6 VOIE_LLISTATE8 (offset 0x70, printed page 12-19, `datasheet.txt` line 49210).";
+
+        field {
+            name = "DQ5";
+            desc = "G726 encoding channel variable. Quantization difference signal when the delay is 5.";
+            sw = r;
+            hw = w;
+            reset = 0x20;
+        } DQ5[31:21];
+
+        field {
+            name = "DQ6";
+            desc = "G726 encoding channel variable. Quantization difference signal when the delay is 6.";
+            sw = r;
+            hw = w;
+            reset = 0x20;
+        } DQ6[15:5];
+    } VOIE_LLISTATE8 @ 0x70;
+
+    reg {
+        name = "G726 encoding channel variable register 9";
+        desc = "VOIE_LLISTATE9 is G726 encoding channel variable register 9.
+
+Data sheet 12.6 VOIE_LLISTATE9 (offset 0x74, printed page 12-19, `datasheet.txt` line 49236).";
+
+        field {
+            name = "SR1";
+            desc = "G726 encoding channel variable. Reconstruction signal when the delay is 1.";
+            sw = r;
+            hw = w;
+            reset = 0x20;
+        } SR1[31:21];
+
+        field {
+            name = "SR2";
+            desc = "G726 encoding channel variable. Reconstruction signal when the delay is 2.";
+            sw = r;
+            hw = w;
+            reset = 0x20;
+        } SR2[15:5];
+    } VOIE_LLISTATE9 @ 0x74;
+
+    reg {
+        name = "G726 encoding channel variable register 10";
+        desc = "VOIE_LLISTATE10 is G726 encoding channel variable register 10.
+
+Data sheet 12.6 VOIE_LLISTATE10 (offset 0x78, printed page 12-20, `datasheet.txt` line 49268).";
+
+        field {
+            name = "YL";
+            desc = "G726 encoding channel variable. Low-speed quantization scaling factor.";
+            sw = r;
+            hw = w;
+            reset = 0x8800;
+        } YL[31:13];
+
+        field {
+            name = "YU";
+            desc = "G726 encoding channel variable. High-speed quantization scaling factor.";
+            sw = r;
+            hw = w;
+            reset = 0x220;
+        } YU[12:0];
+    } VOIE_LLISTATE10 @ 0x78;
+
+    reg {
+        name = "G726 channel variable check register 0";
+        desc = "VOIE_STATE_CHK0 is a G726 channel variable check register.
+
+Data sheet 12.6 VOIE_STATE_CHK0 (offset 0x7C, printed page 12-20, `datasheet.txt` line 49292).";
+
+        field {
+            name = "g726_check";
+            desc = "G726 channel variable check result.";
+            sw = r;
+            hw = w;
+            reset = 0x21001220;
+        } g726_check[31:0];
+    } VOIE_STATE_CHK0 @ 0x7C;
+
+    reg {
+        name = "ADPCM encoding channel variable register 11";
+        desc = "VOIE_LLISTATE11 is ADPCM encoding channel variable register 11.
+
+Data sheet 12.6 VOIE_LLISTATE11 (offset 0x80, printed page 12-21, `datasheet.txt` line 49317).";
+
+        field {
+            name = "valprev";
+            desc = "ADPCM encoding channel variable, indicating the reconstruction value of the previous audio point.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } valprev[31:16];
+
+        field {
+            name = "index";
+            desc = "ADPCM encoding channel variable, indicating the index value of the quantization table.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } index[7:0];
+    } VOIE_LLISTATE11 @ 0x80;
+
+    reg {
+        name = "ADPCM channel variable check register 1";
+        desc = "VOIE_STATE_CHK1 is an ADPCM channel variable check register.
+
+Data sheet 12.6 VOIE_STATE_CHK1 (offset 0x84, printed page 12-21, `datasheet.txt` line 49342).";
+
+        field {
+            name = "adpcm_check";
+            desc = "ADPCM channel variable check result.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } adpcm_check[31:0];
+    } VOIE_STATE_CHK1 @ 0x84;
+
+};
+
+`endif

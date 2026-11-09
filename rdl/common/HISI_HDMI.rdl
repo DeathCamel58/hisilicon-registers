@@ -1,0 +1,1461 @@
+`ifndef HISI_HDMI_RDL
+`define HISI_HDMI_RDL
+
+regfile eHISI_HDMI {
+    name = "HiSilicon HDMI transmitter (SiI9134-style)";
+    desc = "Partly described: offsets and names are exact for the 74 registers the vendor U-Boot header (`defstx.h`) defines (and the access method: 8-bit registers at a 32-bit stride, I2C pages memory-mapped); bit names are the vendor `BIT_*` macros; the five PHY registers at 0x1800.. are known only by the values the vendor writes. NOT known: reset values (none were read on hardware), the names and layouts of the PHY registers, every SiI9134 register the vendor header does not define (info-frame data, DDC/EDID, ...), and whether the silicon behaves exactly like a SiI9134 (the identification as a SiI9134-style core is inferred from the vendor sources, unverified). Registers whose meaning is guessed say \"Meaning unverified\". Not in the data sheet.
+
+    HiSilicon HDMI transmitter at 0x201F0000 (GIC interrupt ID 66), Table 1-1 of the data sheet lists only the 64 KB window; **the data sheet has no register description**. In the Hi3520D vendor U-Boot (`product/hiosd/hdmi/hdmi_v1/hi3520d`) the transmitter is a Silicon Image SiI9134-style TX core (Silicon Image copyright in `defstx.h`/`registers.h`) whose two I2C register pages are memory mapped: the byte registers of the slave 0x72 page are at 0x201F0000 + 4 x register (`HDMI_TX_SLV0_ADDR_BASE`), those of the slave 0x7A page at 0x201F0400 + 4 x register (`HDMI_TX_SLV1_ADDR_BASE`), i.e. 8-bit registers at a 32-bit stride (modelled as 32-bit registers, data in bits 7:0). A small PHY block sits at 0x201F1800.. (five registers written by `hdmiPhyInit()`). Clock and soft reset of the block are in PERI_CRG15 (CRG 0x2003003C, `HDMI_HARDWARE_RESET_ADDR` in `drv_hlviic.c`; `HdmiHardwareReset()` toggles it). Page 0 holds system control, HDCP, video timing/colour and interrupt registers; page 1 the audio, info-frame and packet registers. Only the registers that the vendor code uses (names from `defstx.h`; bit names from the `BIT_*` macros) are listed; the SiI9134 has many more (info-frame data at 0x40+ on page 1, EDID/DDC registers, ...), they are not defined in the vendor header copy and are not invented here. Reset values: unknown (not read on hardware). The `HDMI_REG_BASE 0x205D0000` of the Hi3531-family platform header does not apply to the Hi3520D (the data sheet puts HDMI at 0x201F0000 and 0x205D0000 is Reserved); `HDMI_PHY_BASE_ADDR 0x205d0000` in `hlviic.h` is a leftover of that family. AOP1 of the AIO feeds the transmitter over I2S.
+    ";
+
+    reg {
+        name = "Software reset";
+        desc = "Page 0 register 0x05 (host address base + 0x0 + 4 x 0x05). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "fifo_rst";
+            desc = "FIFO reset (BIT_TX_FIFO_RST).";
+            sw = rw;
+            hw = r;
+        } fifo_rst[1:1];
+
+        field {
+            name = "sw_rst";
+            desc = "Transmitter soft reset (BIT_TX_SW_RST).";
+            sw = rw;
+            hw = r;
+        } sw_rst[0:0];
+    } SWRST @ 0x14;
+
+    reg {
+        name = "System control 1";
+        desc = "Page 0 register 0x08 (host address base + 0x0 + 4 x 0x08). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "data";
+            desc = "8-bit register value (bit layout not given in the vendor header).";
+            sw = rw;
+            hw = r;
+        } data[7:0];
+    } SYS_CTRL1 @ 0x20;
+
+    reg {
+        name = "Status";
+        desc = "Page 0 register 0x09 (host address base + 0x0 + 4 x 0x09). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "rsen";
+            desc = "Receiver sense (BIT_RSEN).";
+            sw = r;
+            hw = w;
+        } rsen[2:2];
+
+        field {
+            name = "hpd_pin";
+            desc = "Hot-plug detect pin (BIT_HPD_PIN).";
+            sw = r;
+            hw = w;
+        } hpd_pin[1:1];
+
+        field {
+            name = "pstable";
+            desc = "Pixel clock stable (BIT_HDMI_PSTABLE).";
+            sw = r;
+            hw = w;
+        } pstable[0:0];
+    } STAT @ 0x24;
+
+    reg {
+        name = "System control 4";
+        desc = "Page 0 register 0x0C (host address base + 0x0 + 4 x 0x0C). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "bsel24bits";
+            desc = "24-bit input bus (BIT_BSEL24BITS).";
+            sw = rw;
+            hw = r;
+        } bsel24bits[2:2];
+
+        field {
+            name = "tx_clock_rising_edge";
+            desc = "Clock rising-edge select (BIT_TX_CLOCK_RISING_EDGE).";
+            sw = rw;
+            hw = r;
+        } tx_clock_rising_edge[1:1];
+
+        field {
+            name = "tx_pd";
+            desc = "Transmitter power down (BIT_TX_PD).";
+            sw = rw;
+            hw = r;
+        } tx_pd[0:0];
+    } SYS_CTRL4 @ 0x30;
+
+    reg {
+        name = "Data control";
+        desc = "Page 0 register 0x0D (host address base + 0x0 + 4 x 0x0D). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "vid_blank";
+            desc = "Blank video (BIT_VID_BLANK).";
+            sw = rw;
+            hw = r;
+        } vid_blank[2:2];
+
+        field {
+            name = "aud_mute";
+            desc = "Mute audio (BIT_AUD_MUTE).";
+            sw = rw;
+            hw = r;
+        } aud_mute[1:1];
+    } DATA_CTRL @ 0x34;
+
+    reg {
+        name = "HDCP control";
+        desc = "Page 0 register 0x0F (host address base + 0x0 + 4 x 0x0F). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "enc_on";
+            desc = "Encryption on (BIT_ENC_ON).";
+            sw = r;
+            hw = w;
+        } enc_on[6:6];
+
+        field {
+            name = "bksv_error";
+            desc = "BKSV error (BIT_BKSV_ERROR).";
+            sw = r;
+            hw = w;
+        } bksv_error[5:5];
+
+        field {
+            name = "rx_repeater";
+            desc = "Receiver is a repeater (BIT_RX_REPEATER).";
+            sw = rw;
+            hw = r;
+        } rx_repeater[4:4];
+
+        field {
+            name = "an_stop";
+            desc = "Stop An generation (BIT_AN_STOP).";
+            sw = rw;
+            hw = r;
+        } an_stop[3:3];
+
+        field {
+            name = "cp_reset_n";
+            desc = "Content-protection reset, active low (BIT_CP_RESET_N).";
+            sw = rw;
+            hw = r;
+        } cp_reset_n[2:2];
+
+        field {
+            name = "ri_ready";
+            desc = "Ri ready (BIT_RiREADY).";
+            sw = rw;
+            hw = r;
+        } ri_ready[1:1];
+
+        field {
+            name = "enc_en";
+            desc = "Encryption enable (BIT_ENC_EN).";
+            sw = rw;
+            hw = r;
+        } enc_en[0:0];
+    } HDCP_CTRL @ 0x3C;
+
+    reg {
+        name = "Receiver KSV (5 bytes)";
+        desc = "Page 0 register 0x10 (host address base + 0x0 + 4 x 0x10). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "data";
+            desc = "8-bit register value (bit layout not given in the vendor header).";
+            sw = rw;
+            hw = r;
+        } data[7:0];
+    } BKSV[5] @ 0x40 += 0x4;
+
+    reg {
+        name = "Random number An (8 bytes)";
+        desc = "Page 0 register 0x15 (host address base + 0x0 + 4 x 0x15). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "data";
+            desc = "8-bit register value (bit layout not given in the vendor header).";
+            sw = rw;
+            hw = r;
+        } data[7:0];
+    } AN[8] @ 0x54 += 0x4;
+
+    reg {
+        name = "Transmitter KSV (5 bytes)";
+        desc = "Page 0 register 0x1D (host address base + 0x0 + 4 x 0x1D). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "data";
+            desc = "8-bit register value (bit layout not given in the vendor header).";
+            sw = rw;
+            hw = r;
+        } data[7:0];
+    } AKSV[5] @ 0x74 += 0x4;
+
+    reg {
+        name = "Ri (2 bytes)";
+        desc = "Page 0 register 0x22 (host address base + 0x0 + 4 x 0x22). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "data";
+            desc = "8-bit register value (bit layout not given in the vendor header).";
+            sw = rw;
+            hw = r;
+        } data[7:0];
+    } RI[2] @ 0x88 += 0x4;
+
+    reg {
+        name = "Ri check status";
+        desc = "Page 0 register 0x26 (host address base + 0x0 + 4 x 0x26). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "ri_on";
+            desc = "Ri check started: handshake with the DDC master (BIT_RI_STARTED).";
+            sw = r;
+            hw = w;
+        } ri_on[0:0];
+    } RI_STAT @ 0x98;
+
+    reg {
+        name = "Ri command";
+        desc = "Page 0 register 0x27 (host address base + 0x0 + 4 x 0x27). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "bcap_en";
+            desc = "Poll the BCAP done bit (BIT_RI_CMD_BCAP_EN).";
+            sw = rw;
+            hw = r;
+        } bcap_en[1:1];
+
+        field {
+            name = "ri_en";
+            desc = "Enable Ri check (BIT_RI_CMD_RI_EN).";
+            sw = rw;
+            hw = r;
+        } ri_en[0:0];
+    } RI_CMD @ 0x9C;
+
+    reg {
+        name = "Ri check start line";
+        desc = "Page 0 register 0x28 (host address base + 0x0 + 4 x 0x28). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "line";
+            desc = "Line number to start the auto Ri check within frame 127 or 0, two LSBs 0 (vendor comment: default 16).";
+            sw = rw;
+            hw = r;
+        } line[7:0];
+    } RI_START @ 0xA0;
+
+    reg {
+        name = "Ri RX value (2 bytes)";
+        desc = "Page 0 register 0x29 (host address base + 0x0 + 4 x 0x29). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "data";
+            desc = "8-bit register value (bit layout not given in the vendor header).";
+            sw = rw;
+            hw = r;
+        } data[7:0];
+    } RI_RX[2] @ 0xA4 += 0x4;
+
+    reg {
+        name = "DE horizontal start";
+        desc = "Page 0 register 0x32 (host address base + 0x0 + 4 x 0x32). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "data";
+            desc = "8-bit register value (bit layout not given in the vendor header).";
+            sw = rw;
+            hw = r;
+        } data[7:0];
+    } DE_HSTART @ 0xC8;
+
+    reg {
+        name = "DE control";
+        desc = "Page 0 register 0x33 (host address base + 0x0 + 4 x 0x33). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "de_enabled";
+            desc = "DE generator enabled (BIT_DE_ENABLED).";
+            sw = rw;
+            hw = r;
+        } de_enabled[6:6];
+    } DE_CNTRL @ 0xCC;
+
+    reg {
+        name = "DE vertical start";
+        desc = "Page 0 register 0x34 (host address base + 0x0 + 4 x 0x34). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "data";
+            desc = "8-bit register value (bit layout not given in the vendor header).";
+            sw = rw;
+            hw = r;
+        } data[7:0];
+    } DE_VSTART @ 0xD0;
+
+    reg {
+        name = "DE horizontal resolution (2 bytes)";
+        desc = "Page 0 register 0x36 (host address base + 0x0 + 4 x 0x36). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "data";
+            desc = "8-bit register value (bit layout not given in the vendor header).";
+            sw = rw;
+            hw = r;
+        } data[7:0];
+    } DE_HRES[2] @ 0xD8 += 0x4;
+
+    reg {
+        name = "DE vertical resolution (2 bytes)";
+        desc = "Page 0 register 0x38 (host address base + 0x0 + 4 x 0x38). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "data";
+            desc = "8-bit register value (bit layout not given in the vendor header).";
+            sw = rw;
+            hw = r;
+        } data[7:0];
+    } DE_VRES[2] @ 0xE0 += 0x4;
+
+    reg {
+        name = "Interlace adjust mode";
+        desc = "Page 0 register 0x3E (host address base + 0x0 + 4 x 0x3E). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "data";
+            desc = "8-bit register value (bit layout not given in the vendor header).";
+            sw = rw;
+            hw = r;
+        } data[7:0];
+    } INTERLACE_ADJ_MODE @ 0xF8;
+
+    reg {
+        name = "HBIT to HSYNC (2 bytes)";
+        desc = "Page 0 register 0x40 (host address base + 0x0 + 4 x 0x40). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "data";
+            desc = "8-bit register value (bit layout not given in the vendor header).";
+            sw = rw;
+            hw = r;
+        } data[7:0];
+    } HBIT_TO_HSYNC[2] @ 0x100 += 0x4;
+
+    reg {
+        name = "Field 2 HSYNC offset (2 bytes)";
+        desc = "Page 0 register 0x42 (host address base + 0x0 + 4 x 0x42). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "data";
+            desc = "8-bit register value (bit layout not given in the vendor header).";
+            sw = rw;
+            hw = r;
+        } data[7:0];
+    } FIELD2_HSYNC_OFFSET[2] @ 0x108 += 0x4;
+
+    reg {
+        name = "HSYNC length (2 bytes)";
+        desc = "Page 0 register 0x44 (host address base + 0x0 + 4 x 0x44). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "data";
+            desc = "8-bit register value (bit layout not given in the vendor header).";
+            sw = rw;
+            hw = r;
+        } data[7:0];
+    } HLENGTH[2] @ 0x110 += 0x4;
+
+    reg {
+        name = "VBIT to VSYNC";
+        desc = "Page 0 register 0x46 (host address base + 0x0 + 4 x 0x46). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "data";
+            desc = "8-bit register value (bit layout not given in the vendor header).";
+            sw = rw;
+            hw = r;
+        } data[7:0];
+    } VBIT_TO_VSYNC @ 0x118;
+
+    reg {
+        name = "VSYNC length";
+        desc = "Page 0 register 0x47 (host address base + 0x0 + 4 x 0x47). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "data";
+            desc = "8-bit register value (bit layout not given in the vendor header).";
+            sw = rw;
+            hw = r;
+        } data[7:0];
+    } VLENGTH @ 0x11C;
+
+    reg {
+        name = "Video control";
+        desc = "Page 0 register 0x48 (host address base + 0x0 + 4 x 0x48). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "data";
+            desc = "8-bit register value (bit layout not given in the vendor header).";
+            sw = rw;
+            hw = r;
+        } data[7:0];
+    } TX_VID_CTRL @ 0x120;
+
+    reg {
+        name = "Video analog / colour-space enable";
+        desc = "Page 0 register 0x49 (host address base + 0x0 + 4 x 0x49). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "clip_cs_id";
+            desc = "Colour space on the link: 0 RGB, 1 YCbCr.";
+            sw = rw;
+            hw = r;
+        } clip_cs_id[4:4];
+
+        field {
+            name = "range_clip";
+            desc = "Range clip 16..235 (RGB and Y) / 240 (C).";
+            sw = rw;
+            hw = r;
+        } range_clip[3:3];
+
+        field {
+            name = "rgb2ycbcr";
+            desc = "RGB to YCbCr converter.";
+            sw = rw;
+            hw = r;
+        } rgb2ycbcr[2:2];
+
+        field {
+            name = "range_comp";
+            desc = "Range compression.";
+            sw = rw;
+            hw = r;
+        } range_comp[1:1];
+
+        field {
+            name = "dwn_sample";
+            desc = "4: 4:4 to 4:2:2 chroma down-sampler.";
+            sw = rw;
+            hw = r;
+        } dwn_sample[0:0];
+    } VID_ACEN @ 0x124;
+
+    reg {
+        name = "Video mode";
+        desc = "Page 0 register 0x4A (host address base + 0x0 + 4 x 0x4A). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "dither";
+            desc = "Dither (BIT_TX_DITHER).";
+            sw = rw;
+            hw = r;
+        } dither[5:5];
+
+        field {
+            name = "range_16_235";
+            desc = "Expand range 16-235 (BIT_TX_16_235_RANGE).";
+            sw = rw;
+            hw = r;
+        } range_16_235[4:4];
+
+        field {
+            name = "csc";
+            desc = "Colour space conversion (BIT_TX_CSC).";
+            sw = rw;
+            hw = r;
+        } csc[3:3];
+
+        field {
+            name = "up_422to444";
+            desc = "4: 2:2 to 4:4:4 up-sampling.";
+            sw = rw;
+            hw = r;
+        } up_422to444[2:2];
+
+        field {
+            name = "demux_yc";
+            desc = "Demultiplex Y/C (BIT_TX_DEMUX_YC).";
+            sw = rw;
+            hw = r;
+        } demux_yc[1:1];
+
+        field {
+            name = "sync_extr";
+            desc = "Extract syncs from the embedded stream (BIT_TX_SYNC_EXTR).";
+            sw = rw;
+            hw = r;
+        } sync_extr[0:0];
+    } TX_VID_MODE @ 0x128;
+
+    reg {
+        name = "Interrupt state";
+        desc = "Page 0 register 0x70 (host address base + 0x0 + 4 x 0x70). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "data";
+            desc = "8-bit register value (bit layout not given in the vendor header).";
+            sw = rw;
+            hw = r;
+        } data[7:0];
+    } HDMI_INT_STATE @ 0x1C0;
+
+    reg {
+        name = "Interrupt status 1";
+        desc = "Page 0 register 0x71 (host address base + 0x0 + 4 x 0x71). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "data";
+            desc = "8-bit register value (bit layout not given in the vendor header).";
+            sw = rw;
+            hw = r;
+        } data[7:0];
+    } HDMI_INT1 @ 0x1C4;
+
+    reg {
+        name = "Interrupt status 2";
+        desc = "Page 0 register 0x72 (host address base + 0x0 + 4 x 0x72). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "data";
+            desc = "8-bit register value (bit layout not given in the vendor header).";
+            sw = rw;
+            hw = r;
+        } data[7:0];
+    } HDMI_INT2 @ 0x1C8;
+
+    reg {
+        name = "Interrupt status 3 (Ri error, DDC FIFO)";
+        desc = "Page 0 register 0x73 (host address base + 0x0 + 4 x 0x73). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "ri_err_3";
+            desc = "Ri reading was not done within one frame (write 1 to clear).";
+            sw = rw;
+            hw = r;
+        } ri_err_3[7:7];
+
+        field {
+            name = "ri_err_2";
+            desc = "Ri did not change between frames 127 and 0 (w1c).";
+            sw = rw;
+            hw = r;
+        } ri_err_2[6:6];
+
+        field {
+            name = "ri_err_1";
+            desc = "Ri mismatch during the 2nd frame (0) (w1c).";
+            sw = rw;
+            hw = r;
+        } ri_err_1[5:5];
+
+        field {
+            name = "ri_err_0";
+            desc = "Ri mismatch during the 1st frame (127) (w1c).";
+            sw = rw;
+            hw = r;
+        } ri_err_0[4:4];
+
+        field {
+            name = "ddc_cmd_done";
+            desc = "DDC command done (w1c).";
+            sw = rw;
+            hw = r;
+        } ddc_cmd_done[3:3];
+
+        field {
+            name = "ddc_fifo_half";
+            desc = "DDC FIFO half full (w1c).";
+            sw = rw;
+            hw = r;
+        } ddc_fifo_half[2:2];
+
+        field {
+            name = "ddc_fifo_full";
+            desc = "DDC FIFO full (w1c).";
+            sw = rw;
+            hw = r;
+        } ddc_fifo_full[1:1];
+
+        field {
+            name = "ddc_fifo_empty";
+            desc = "DDC FIFO empty (w1c).";
+            sw = rw;
+            hw = r;
+        } ddc_fifo_empty[0:0];
+    } HDMI_INT3 @ 0x1CC;
+
+    reg {
+        name = "Interrupt mask 1";
+        desc = "Page 0 register 0x75 (host address base + 0x0 + 4 x 0x75). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "data";
+            desc = "8-bit register value (bit layout not given in the vendor header).";
+            sw = rw;
+            hw = r;
+        } data[7:0];
+    } HDMI_INT1_MASK @ 0x1D4;
+
+    reg {
+        name = "Interrupt mask 2";
+        desc = "Page 0 register 0x76 (host address base + 0x0 + 4 x 0x76). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "data";
+            desc = "8-bit register value (bit layout not given in the vendor header).";
+            sw = rw;
+            hw = r;
+        } data[7:0];
+    } HDMI_INT2_MASK @ 0x1D8;
+
+    reg {
+        name = "Interrupt mask 3";
+        desc = "Page 0 register 0x77 (host address base + 0x0 + 4 x 0x77). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "ri_err_3_mask";
+            desc = "Enable (1) / disable (0, default) Ri error 3 interrupt.";
+            sw = rw;
+            hw = r;
+        } ri_err_3_mask[7:7];
+
+        field {
+            name = "ri_err_2_mask";
+            desc = "Ri error 2 mask.";
+            sw = rw;
+            hw = r;
+        } ri_err_2_mask[6:6];
+
+        field {
+            name = "ri_err_1_mask";
+            desc = "Ri error 1 mask.";
+            sw = rw;
+            hw = r;
+        } ri_err_1_mask[5:5];
+
+        field {
+            name = "ri_err_0_mask";
+            desc = "Ri error 0 mask.";
+            sw = rw;
+            hw = r;
+        } ri_err_0_mask[4:4];
+
+        field {
+            name = "ddc_cmd_done_mask";
+            desc = "DDC command done mask.";
+            sw = rw;
+            hw = r;
+        } ddc_cmd_done_mask[3:3];
+
+        field {
+            name = "ddc_fifo_half_mask";
+            desc = "DDC FIFO half-full mask.";
+            sw = rw;
+            hw = r;
+        } ddc_fifo_half_mask[2:2];
+
+        field {
+            name = "ddc_fifo_full_mask";
+            desc = "DDC FIFO full mask.";
+            sw = rw;
+            hw = r;
+        } ddc_fifo_full_mask[1:1];
+
+        field {
+            name = "ddc_fifo_empty_mask";
+            desc = "DDC FIFO empty mask.";
+            sw = rw;
+            hw = r;
+        } ddc_fifo_empty_mask[0:0];
+    } HDMI_INT3_MASK @ 0x1DC;
+
+    reg {
+        name = "Interrupt control";
+        desc = "Page 0 register 0x79 (host address base + 0x0 + 4 x 0x79). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "int_ksv_ready";
+            desc = "KSV ready interrupt (BIT_INT_KSV_READY).";
+            sw = rw;
+            hw = r;
+        } int_ksv_ready[7:7];
+
+        field {
+            name = "int_hot_plug";
+            desc = "Hot-plug interrupt (BIT_INT_HOT_PLUG).";
+            sw = rw;
+            hw = r;
+        } int_hot_plug[6:6];
+
+        field {
+            name = "drop_sample";
+            desc = "Drop sample (BIT_DROP_SAMPLE).";
+            sw = rw;
+            hw = r;
+        } drop_sample[4:4];
+
+        field {
+            name = "biphase_error";
+            desc = "Bi-phase error (BIT_BIPHASE_ERROR).";
+            sw = rw;
+            hw = r;
+        } biphase_error[3:3];
+
+        field {
+            name = "int_ri_check";
+            desc = "Ri check interrupt (BIT_INT_Ri_CHECK).";
+            sw = rw;
+            hw = r;
+        } int_ri_check[2:2];
+
+        field {
+            name = "int_fpixchange";
+            desc = "Pixel clock change (BIT_INT_FPIXCHANGE).";
+            sw = rw;
+            hw = r;
+        } int_fpixchange[1:1];
+
+        field {
+            name = "int_vsync";
+            desc = "VSYNC interrupt (BIT_INT_VSYNC).";
+            sw = rw;
+            hw = r;
+        } int_vsync[0:0];
+    } INT_CNTRL @ 0x1E4;
+
+    reg {
+        name = "TMDS clock control";
+        desc = "Page 0 register 0x80 (host address base + 0x0 + 4 x 0x80). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "data";
+            desc = "8-bit register value (bit layout not given in the vendor header).";
+            sw = rw;
+            hw = r;
+        } data[7:0];
+    } TMDS_CCTRL @ 0x200;
+
+    reg {
+        name = "TMDS control";
+        desc = "Page 0 register 0x82 (host address base + 0x0 + 4 x 0x82). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "data";
+            desc = "8-bit register value (bit layout not given in the vendor header).";
+            sw = rw;
+            hw = r;
+        } data[7:0];
+    } TMDS_CTRL @ 0x208;
+
+    reg {
+        name = "TMDS control 2";
+        desc = "Page 0 register 0x83 (host address base + 0x0 + 4 x 0x83). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "data";
+            desc = "8-bit register value (bit layout not given in the vendor header).";
+            sw = rw;
+            hw = r;
+        } data[7:0];
+    } TMDS_CTRL2 @ 0x20C;
+
+    reg {
+        name = "TMDS control 3";
+        desc = "Page 0 register 0x84 (host address base + 0x0 + 4 x 0x84). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "data";
+            desc = "8-bit register value (bit layout not given in the vendor header).";
+            sw = rw;
+            hw = r;
+        } data[7:0];
+    } TMDS_CTRL3 @ 0x210;
+
+    reg {
+        name = "TMDS control 4";
+        desc = "Page 0 register 0x85 (host address base + 0x0 + 4 x 0x85). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "data";
+            desc = "8-bit register value (bit layout not given in the vendor header).";
+            sw = rw;
+            hw = r;
+        } data[7:0];
+    } TMDS_CTRL4 @ 0x214;
+
+    reg {
+        name = "KSV SHA start address (2 bytes: [7:0], [9:8])";
+        desc = "Page 0 register 0xC8 (host address base + 0x0 + 4 x 0xC8). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "data";
+            desc = "8-bit register value (bit layout not given in the vendor header).";
+            sw = rw;
+            hw = r;
+        } data[7:0];
+    } KSV_SHA_START[2] @ 0x320 += 0x4;
+
+    reg {
+        name = "SHA length (2 bytes: [7:0], [9:8])";
+        desc = "Page 0 register 0xCA (host address base + 0x0 + 4 x 0xCA). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "data";
+            desc = "8-bit register value (bit layout not given in the vendor header).";
+            sw = rw;
+            hw = r;
+        } data[7:0];
+    } SHA_LENGTH[2] @ 0x328 += 0x4;
+
+    reg {
+        name = "SHA control";
+        desc = "Page 0 register 0xCC (host address base + 0x0 + 4 x 0xCC). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "m0_read_en";
+            desc = "M0 readable: 1 external, 0 internal (default).";
+            sw = rw;
+            hw = r;
+        } m0_read_en[3:3];
+
+        field {
+            name = "sha_done";
+            desc = "SHA generator picked up GO_START; write 1 to clear before a new start.";
+            sw = rw;
+            hw = r;
+        } sha_done[1:1];
+
+        field {
+            name = "sha_go_start";
+            desc = "Start the SHA generator.";
+            sw = rw;
+            hw = r;
+        } sha_go_start[0:0];
+    } SHA_CONTROL @ 0x330;
+
+    reg {
+        name = "KSV FIFO data";
+        desc = "Page 0 register 0xCD (host address base + 0x0 + 4 x 0xCD). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "data";
+            desc = "8-bit register value (bit layout not given in the vendor header).";
+            sw = rw;
+            hw = r;
+        } data[7:0];
+    } KSV_FIFO @ 0x334;
+
+    reg {
+        name = "Downstream BStatus 1";
+        desc = "Page 0 register 0xCE (host address base + 0x0 + 4 x 0xCE). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "dev_cnt_err";
+            desc = "Device count exceeded max.";
+            sw = r;
+            hw = w;
+        } dev_cnt_err[7:7];
+
+        field {
+            name = "dev_cnt";
+            desc = "Device count.";
+            sw = r;
+            hw = w;
+        } dev_cnt[6:0];
+    } DS_BSTATUS_L @ 0x338;
+
+    reg {
+        name = "Downstream BStatus 2";
+        desc = "Page 0 register 0xCF (host address base + 0x0 + 4 x 0xCF). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "hdmi_mode";
+            desc = "HDMI mode.";
+            sw = r;
+            hw = w;
+        } hdmi_mode[4:4];
+
+        field {
+            name = "depth_err";
+            desc = "Device depth exceeded max.";
+            sw = r;
+            hw = w;
+        } depth_err[3:3];
+
+        field {
+            name = "depth";
+            desc = "Device depth.";
+            sw = r;
+            hw = w;
+        } depth[2:0];
+    } DS_BSTATUS_H @ 0x33C;
+
+    reg {
+        name = "Downstream M0 (8 bytes, 0xD0..0xD7)";
+        desc = "Page 0 register 0xD0 (host address base + 0x0 + 4 x 0xD0). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "data";
+            desc = "8-bit register value (bit layout not given in the vendor header).";
+            sw = rw;
+            hw = r;
+        } data[7:0];
+    } DS_M0[8] @ 0x340 += 0x4;
+
+    reg {
+        name = "V value (20 bytes, 0xD8..0xEB)";
+        desc = "Page 0 register 0xD8 (host address base + 0x0 + 4 x 0xD8). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "data";
+            desc = "8-bit register value (bit layout not given in the vendor header).";
+            sw = rw;
+            hw = r;
+        } data[7:0];
+    } V[20] @ 0x360 += 0x4;
+
+    reg {
+        name = "Audio clock regeneration control";
+        desc = "Page 1 register 0x01 (host address base + 0x400 + 4 x 0x01). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "data";
+            desc = "8-bit register value (bit layout not given in the vendor header).";
+            sw = rw;
+            hw = r;
+        } data[7:0];
+    } ACR_CTRL @ 0x404;
+
+    reg {
+        name = "Sample frequency";
+        desc = "Page 1 register 0x02 (host address base + 0x400 + 4 x 0x02). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "data";
+            desc = "8-bit register value (bit layout not given in the vendor header).";
+            sw = rw;
+            hw = r;
+        } data[7:0];
+    } FREQ_SVAL @ 0x408;
+
+    reg {
+        name = "N value (3 bytes)";
+        desc = "Page 1 register 0x03 (host address base + 0x400 + 4 x 0x03). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "data";
+            desc = "8-bit register value (bit layout not given in the vendor header).";
+            sw = rw;
+            hw = r;
+        } data[7:0];
+    } N_SVAL[3] @ 0x40C += 0x4;
+
+    reg {
+        name = "Hardware CTS value (3 bytes; the driver reads 16 bits at 0x09 and the low nibble of 0x0B)";
+        desc = "Page 1 register 0x09 (host address base + 0x400 + 4 x 0x09). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "data";
+            desc = "8-bit register value (bit layout not given in the vendor header).";
+            sw = rw;
+            hw = r;
+        } data[7:0];
+    } HWCTS_VAL[3] @ 0x424 += 0x4;
+
+    reg {
+        name = "Audio mode";
+        desc = "Page 1 register 0x14 (host address base + 0x400 + 4 x 0x14). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "data";
+            desc = "8-bit register value (bit layout not given in the vendor header).";
+            sw = rw;
+            hw = r;
+        } data[7:0];
+    } AUD_MODE @ 0x450;
+
+    reg {
+        name = "S/PDIF control";
+        desc = "Page 1 register 0x15 (host address base + 0x400 + 4 x 0x15). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "data";
+            desc = "8-bit register value (bit layout not given in the vendor header).";
+            sw = rw;
+            hw = r;
+        } data[7:0];
+    } SPDIF_CTRL @ 0x454;
+
+    reg {
+        name = "S/PDIF samples per frame";
+        desc = "Page 1 register 0x16 (host address base + 0x400 + 4 x 0x16). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "data";
+            desc = "8-bit register value (bit layout not given in the vendor header).";
+            sw = rw;
+            hw = r;
+        } data[7:0];
+    } SPDIF_SSMPL @ 0x458;
+
+    reg {
+        name = "S/PDIF sample frequency";
+        desc = "Page 1 register 0x17 (host address base + 0x400 + 4 x 0x17). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "data";
+            desc = "8-bit register value (bit layout not given in the vendor header).";
+            sw = rw;
+            hw = r;
+        } data[7:0];
+    } SPDIF_FS @ 0x45C;
+
+    reg {
+        name = "S/PDIF hardware sample frequency";
+        desc = "Page 1 register 0x18 (host address base + 0x400 + 4 x 0x18). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "data";
+            desc = "8-bit register value (bit layout not given in the vendor header).";
+            sw = rw;
+            hw = r;
+        } data[7:0];
+    } SPDIF_HWFS @ 0x460;
+
+    reg {
+        name = "I2S input control";
+        desc = "Page 1 register 0x1D (host address base + 0x400 + 4 x 0x1D). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "data";
+            desc = "8-bit register value (bit layout not given in the vendor header).";
+            sw = rw;
+            hw = r;
+        } data[7:0];
+    } I2S_IN_CTRL @ 0x474;
+
+    reg {
+        name = "I2S channel status 0..2";
+        desc = "Page 1 register 0x1E (host address base + 0x400 + 4 x 0x1E). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "data";
+            desc = "8-bit register value (bit layout not given in the vendor header).";
+            sw = rw;
+            hw = r;
+        } data[7:0];
+    } I2S_CHST[3] @ 0x478 += 0x4;
+
+    reg {
+        name = "I2S channel status 4";
+        desc = "Page 1 register 0x21 (host address base + 0x400 + 4 x 0x21). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "data";
+            desc = "8-bit register value (bit layout not given in the vendor header).";
+            sw = rw;
+            hw = r;
+        } data[7:0];
+    } I2S_CHST4 @ 0x484;
+
+    reg {
+        name = "I2S channel status 5";
+        desc = "Page 1 register 0x22 (host address base + 0x400 + 4 x 0x22). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "data";
+            desc = "8-bit register value (bit layout not given in the vendor header).";
+            sw = rw;
+            hw = r;
+        } data[7:0];
+    } I2S_CHST5 @ 0x488;
+
+    reg {
+        name = "Sample rate conversion";
+        desc = "Page 1 register 0x23 (host address base + 0x400 + 4 x 0x23). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "data";
+            desc = "8-bit register value (bit layout not given in the vendor header).";
+            sw = rw;
+            hw = r;
+        } data[7:0];
+    } SAMPLE_RATE_CONVERSION @ 0x48C;
+
+    reg {
+        name = "I2S input word length";
+        desc = "Page 1 register 0x24 (host address base + 0x400 + 4 x 0x24). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "data";
+            desc = "8-bit register value (bit layout not given in the vendor header).";
+            sw = rw;
+            hw = r;
+        } data[7:0];
+    } I2S_IN_LEN @ 0x490;
+
+    reg {
+        name = "Audio packet header layout and HDMI mode";
+        desc = "Page 1 register 0x2F (host address base + 0x400 + 4 x 0x2F). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "deepcolor_en";
+            desc = "Deep colour enable (BIT_DEEPCOLOR_EN).";
+            sw = rw;
+            hw = r;
+        } deepcolor_en[6:6];
+
+        field {
+            name = "layout";
+            desc = "Audio packet layout (BIT_LAYOUT).";
+            sw = rw;
+            hw = r;
+        } layout[1:1];
+
+        field {
+            name = "txhdmi_mode";
+            desc = "HDMI mode (1) / DVI mode (0) (BIT_TXHDMI_MODE; vendor `hdmitx.c` sets it for HDMI). The same bit position is named BIT_EN_AUDIO in the header.";
+            sw = rw;
+            hw = r;
+        } txhdmi_mode[0:0];
+    } AUDP_TXCTRL @ 0x4BC;
+
+    reg {
+        name = "Test";
+        desc = "Page 1 register 0x3C (host address base + 0x400 + 4 x 0x3C). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "dvi_enc_bypass";
+            desc = "DVI encoder bypass (BIT_DVI_ENC_BYPASS).";
+            sw = rw;
+            hw = r;
+        } dvi_enc_bypass[3:3];
+    } TEST_TX @ 0x4F0;
+
+    reg {
+        name = "Diagnostic power-down";
+        desc = "Page 1 register 0x3D (host address base + 0x400 + 4 x 0x3D). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "data";
+            desc = "8-bit register value (bit layout not given in the vendor header).";
+            sw = rw;
+            hw = r;
+        } data[7:0];
+    } DIAG_PD @ 0x4F4;
+
+    reg {
+        name = "Info-frame control 1";
+        desc = "Page 1 register 0x3E (host address base + 0x400 + 4 x 0x3E). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "mpeg_enable";
+            desc = "MPEG info-frame enable.";
+            sw = rw;
+            hw = r;
+        } mpeg_enable[7:7];
+
+        field {
+            name = "mpeg_repeat";
+            desc = "MPEG info-frame repeat.";
+            sw = rw;
+            hw = r;
+        } mpeg_repeat[6:6];
+
+        field {
+            name = "aud_enable";
+            desc = "Audio info-frame enable.";
+            sw = rw;
+            hw = r;
+        } aud_enable[5:5];
+
+        field {
+            name = "aud_repeat";
+            desc = "Audio info-frame repeat.";
+            sw = rw;
+            hw = r;
+        } aud_repeat[4:4];
+
+        field {
+            name = "spd_enable";
+            desc = "SPD info-frame enable.";
+            sw = rw;
+            hw = r;
+        } spd_enable[3:3];
+
+        field {
+            name = "spd_repeat";
+            desc = "SPD info-frame repeat.";
+            sw = rw;
+            hw = r;
+        } spd_repeat[2:2];
+
+        field {
+            name = "avi_enable";
+            desc = "AVI info-frame enable.";
+            sw = rw;
+            hw = r;
+        } avi_enable[1:1];
+
+        field {
+            name = "avi_repeat";
+            desc = "AVI info-frame repeat.";
+            sw = rw;
+            hw = r;
+        } avi_repeat[0:0];
+    } INF_CTRL1 @ 0x4F8;
+
+    reg {
+        name = "Info-frame control 2";
+        desc = "Page 1 register 0x3F (host address base + 0x400 + 4 x 0x3F). 8-bit register at a 32-bit stride.
+
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+
+        field {
+            name = "cp_enable";
+            desc = "CP packet enable.";
+            sw = rw;
+            hw = r;
+        } cp_enable[3:3];
+
+        field {
+            name = "cp_repeat";
+            desc = "CP packet repeat.";
+            sw = rw;
+            hw = r;
+        } cp_repeat[2:2];
+
+        field {
+            name = "generic_enable";
+            desc = "Generic packet enable.";
+            sw = rw;
+            hw = r;
+        } generic_enable[1:1];
+
+        field {
+            name = "generic_repeat";
+            desc = "Generic packet repeat.";
+            sw = rw;
+            hw = r;
+        } generic_repeat[0:0];
+    } INF_CTRL2 @ 0x4FC;
+
+    reg {
+        name = "HDMI PHY register 0x1804";
+        desc = "Meaning unverified: PHY configuration register, name unknown. The vendor U-Boot writes 0x28 (the code reads it back and prints it as `TMDS_CTL2`) in `hdmiPhyInit()`; layout unknown.
+
+Vendor U-Boot `hdmitx.c` `hdmiPhyInit()` (the register names are not known; the values written are listed).";
+
+        field {
+            name = "value";
+            desc = "Register value (layout unknown).";
+            sw = rw;
+            hw = r;
+        } value[31:0];
+    } PHY_1804 @ 0x1804;
+
+    reg {
+        name = "HDMI PHY register 0x1808";
+        desc = "Meaning unverified: PHY configuration register, name unknown. The vendor U-Boot writes 0xA9 in `hdmiPhyInit()`; layout unknown.
+
+Vendor U-Boot `hdmitx.c` `hdmiPhyInit()` (the register names are not known; the values written are listed).";
+
+        field {
+            name = "value";
+            desc = "Register value (layout unknown).";
+            sw = rw;
+            hw = r;
+        } value[31:0];
+    } PHY_1808 @ 0x1808;
+
+    reg {
+        name = "HDMI PHY register 0x180C";
+        desc = "Meaning unverified: PHY configuration register, name unknown. The vendor U-Boot writes 0x40 in `hdmiPhyInit()`; layout unknown.
+
+Vendor U-Boot `hdmitx.c` `hdmiPhyInit()` (the register names are not known; the values written are listed).";
+
+        field {
+            name = "value";
+            desc = "Register value (layout unknown).";
+            sw = rw;
+            hw = r;
+        } value[31:0];
+    } PHY_180C @ 0x180C;
+
+    reg {
+        name = "HDMI PHY register 0x1818";
+        desc = "Meaning unverified: PHY configuration register, name unknown. The vendor U-Boot writes 0x10 (that write is commented out in the vendor code) in `hdmiPhyInit()`; layout unknown.
+
+Vendor U-Boot `hdmitx.c` `hdmiPhyInit()` (the register names are not known; the values written are listed).";
+
+        field {
+            name = "value";
+            desc = "Register value (layout unknown).";
+            sw = rw;
+            hw = r;
+        } value[31:0];
+    } PHY_1818 @ 0x1818;
+
+    reg {
+        name = "HDMI PHY register 0x1820";
+        desc = "Meaning unverified: PHY configuration register, name unknown. The vendor U-Boot writes 0x01 in `hdmiPhyInit()`; layout unknown.
+
+Vendor U-Boot `hdmitx.c` `hdmiPhyInit()` (the register names are not known; the values written are listed).";
+
+        field {
+            name = "value";
+            desc = "Register value (layout unknown).";
+            sw = rw;
+            hw = r;
+        } value[31:0];
+    } PHY_1820 @ 0x1820;
+};
+
+`endif

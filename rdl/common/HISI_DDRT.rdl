@@ -1,0 +1,282 @@
+`ifndef HISI_DDRT_RDL
+`define HISI_DDRT_RDL
+
+regfile eHISI_DDRT {
+    name = "HiSilicon DDR test module";
+    desc = "Partly described: the offsets (0x00-0x4C, DQ_ERR_CNT[8] at 0x60, DQ_ERR_OVFL at 0x80) and the few bit uses (OP, STATUS) come from the Hi3535 U-Boot DDR data-eye training code, which uses the same base address, clock/reset bits and SYS_CTRL enable bit; they are NOT verified on a Hi3520D (no Hi3520D DDRT code or data sheet text exists in the tree). No reset values are known, bits not used by that code are plain fields. All registers in this block have unverified meaning on this SoC. DDR test module (DDRT) at 0x206D0000 (data sheet Table 1-1 lists the window only; no register description). Used by the vendor DDR training: clock enable PERI_CRG 0x200300D8 bit 3, reset bit 2 and SYS_CTRL 0x2005003C bit 15 (U-Boot `DDRT_CLK`, `DDRT_RESET`, `DDRT_ENABLE_SYS`). The registers below are the Hi3535 U-Boot (`ddr_dataeye_training.h`) set, which uses the same base address; the Hi3520D U-Boot tree has no DDRT register definitions (its training code is not in the tree). Treat as sibling-chip information, not Hi3520D data. Note: the tree also has a Hi3520D V200 U-Boot DDR training (`sources/openipc-u-boot-hi3520dv200/product/hiddrtv200/ddrtv200.h`, same base 0x206D0000) whose register list agrees with the offsets below and additionally has ERR_NUM 0x50, INTS 0x54, INTEN 0x58, INTCLR 0x5C, BIT_ERR_CNT0/1 0x90/0x94, BIT_ERR_OVFL 0xA0 and SEED 0x38, WADDR_OFFSET1 0x28, REVERSED_BIT_HIGHER 0x34 (not yet modelled here; it is a V200 chip, so still not a V100 confirmation).";
+
+    reg {
+        name = "DDRT operation register";
+        desc = "Operation mode, data pattern and start (`DDRT_OP`): the training code writes `mode | pattern | 1`.
+
+Vendor U-Boot `arch/arm/cpu/hi3535/ddr_dataeye_training.[ch]` (Hi3535 DDR training, `SSN_DDRT`; the DDRT module is at the same address 0x206D0000 and uses the same CRG/SYS_CTRL bits as the Hi3520D, see `arch-hi3520d/platform.h` DDRT_*). Not in the Hi3520D data sheet; offsets and the few bit uses are from the Hi3535 code, not verified on a Hi3520D. No reset values known.";
+
+        field {
+            name = "pattern";
+            desc = "Data pattern: 0 PRBS9, 1 PRBS7, 2 PRBS11, 3 K28.5 (`DDRT_PATTERM_*`).";
+            sw = rw;
+            hw = r;
+        } pattern[13:12];
+
+        field {
+            name = "mode";
+            desc = "0 write+read+compare, 1 write only, 2 read only, 3 random read/write (`*_MODE`).";
+            sw = rw;
+            hw = r;
+        } mode[9:8];
+
+        field {
+            name = "start";
+            desc = "Write 1 to start the test.";
+            sw = rw;
+            hw = r;
+        } start[0:0];
+    } DDRT_OP @ 0x0;
+
+    reg {
+        name = "DDRT status register";
+        desc = "Polled by the training code until bit 0 is set, then bit 1 says pass (`DDRT_STATUS`).
+
+Vendor U-Boot `arch/arm/cpu/hi3535/ddr_dataeye_training.[ch]` (Hi3535 DDR training, `SSN_DDRT`; the DDRT module is at the same address 0x206D0000 and uses the same CRG/SYS_CTRL bits as the Hi3520D, see `arch-hi3520d/platform.h` DDRT_*). Not in the Hi3520D data sheet; offsets and the few bit uses are from the Hi3535 code, not verified on a Hi3520D. No reset values known.";
+
+        field {
+            name = "pass";
+            desc = "1 = test passed (training code: `(status & 2) ? OK : fail`).";
+            sw = r;
+            hw = w;
+        } pass[1:1];
+
+        field {
+            name = "done";
+            desc = "1 = test finished.";
+            sw = r;
+            hw = w;
+        } done[0:0];
+    } DDRT_STATUS @ 0x4;
+
+    reg {
+        name = "Ddrt Burst Transfer";
+        desc = "Burst transfer configuration (training writes 0x4F).
+
+Vendor U-Boot `arch/arm/cpu/hi3535/ddr_dataeye_training.[ch]` (Hi3535 DDR training, `SSN_DDRT`; the DDRT module is at the same address 0x206D0000 and uses the same CRG/SYS_CTRL bits as the Hi3520D, see `arch-hi3520d/platform.h` DDRT_*). Not in the Hi3520D data sheet; offsets and the few bit uses are from the Hi3535 code, not verified on a Hi3520D. No reset values known.";
+
+        field {
+            name = "value";
+            desc = "Register value (layout not documented).";
+            sw = rw;
+            hw = r;
+        } value[31:0];
+    } DDRT_BURST_TRANSFER @ 0x8;
+
+    reg {
+        name = "Ddrt Mem Config";
+        desc = "Memory configuration (training writes 0x01142).
+
+Vendor U-Boot `arch/arm/cpu/hi3535/ddr_dataeye_training.[ch]` (Hi3535 DDR training, `SSN_DDRT`; the DDRT module is at the same address 0x206D0000 and uses the same CRG/SYS_CTRL bits as the Hi3520D, see `arch-hi3520d/platform.h` DDRT_*). Not in the Hi3520D data sheet; offsets and the few bit uses are from the Hi3535 code, not verified on a Hi3520D. No reset values known.";
+
+        field {
+            name = "value";
+            desc = "Register value (layout not documented).";
+            sw = rw;
+            hw = r;
+        } value[31:0];
+    } DDRT_MEM_CONFIG @ 0xC;
+
+    reg {
+        name = "Ddrt Burst Num";
+        desc = "Number of bursts (training writes 0xFF).
+
+Vendor U-Boot `arch/arm/cpu/hi3535/ddr_dataeye_training.[ch]` (Hi3535 DDR training, `SSN_DDRT`; the DDRT module is at the same address 0x206D0000 and uses the same CRG/SYS_CTRL bits as the Hi3520D, see `arch-hi3520d/platform.h` DDRT_*). Not in the Hi3520D data sheet; offsets and the few bit uses are from the Hi3535 code, not verified on a Hi3520D. No reset values known.";
+
+        field {
+            name = "value";
+            desc = "Register value (layout not documented).";
+            sw = rw;
+            hw = r;
+        } value[31:0];
+    } DDRT_BURST_NUM @ 0x10;
+
+    reg {
+        name = "Ddrt Addr Num";
+        desc = "Address count (training writes 0xFFFFFFFF).
+
+Vendor U-Boot `arch/arm/cpu/hi3535/ddr_dataeye_training.[ch]` (Hi3535 DDR training, `SSN_DDRT`; the DDRT module is at the same address 0x206D0000 and uses the same CRG/SYS_CTRL bits as the Hi3520D, see `arch-hi3520d/platform.h` DDRT_*). Not in the Hi3520D data sheet; offsets and the few bit uses are from the Hi3535 code, not verified on a Hi3520D. No reset values known.";
+
+        field {
+            name = "value";
+            desc = "Register value (layout not documented).";
+            sw = rw;
+            hw = r;
+        } value[31:0];
+    } DDRT_ADDR_NUM @ 0x14;
+
+    reg {
+        name = "Ddrt Loop Num";
+        desc = "Loop count (training writes 0).
+
+Vendor U-Boot `arch/arm/cpu/hi3535/ddr_dataeye_training.[ch]` (Hi3535 DDR training, `SSN_DDRT`; the DDRT module is at the same address 0x206D0000 and uses the same CRG/SYS_CTRL bits as the Hi3520D, see `arch-hi3520d/platform.h` DDRT_*). Not in the Hi3520D data sheet; offsets and the few bit uses are from the Hi3535 code, not verified on a Hi3520D. No reset values known.";
+
+        field {
+            name = "value";
+            desc = "Register value (layout not documented).";
+            sw = rw;
+            hw = r;
+        } value[31:0];
+    } DDRT_LOOP_NUM @ 0x18;
+
+    reg {
+        name = "Ddrt Start Addr";
+        desc = "Start address (training writes 0x80000000).
+
+Vendor U-Boot `arch/arm/cpu/hi3535/ddr_dataeye_training.[ch]` (Hi3535 DDR training, `SSN_DDRT`; the DDRT module is at the same address 0x206D0000 and uses the same CRG/SYS_CTRL bits as the Hi3520D, see `arch-hi3520d/platform.h` DDRT_*). Not in the Hi3520D data sheet; offsets and the few bit uses are from the Hi3535 code, not verified on a Hi3520D. No reset values known.";
+
+        field {
+            name = "value";
+            desc = "Register value (layout not documented).";
+            sw = rw;
+            hw = r;
+        } value[31:0];
+    } DDRT_START_ADDR @ 0x1C;
+
+    reg {
+        name = "Ddrt Addr";
+        desc = "Test address (training writes 0x80000000).
+
+Vendor U-Boot `arch/arm/cpu/hi3535/ddr_dataeye_training.[ch]` (Hi3535 DDR training, `SSN_DDRT`; the DDRT module is at the same address 0x206D0000 and uses the same CRG/SYS_CTRL bits as the Hi3520D, see `arch-hi3520d/platform.h` DDRT_*). Not in the Hi3520D data sheet; offsets and the few bit uses are from the Hi3535 code, not verified on a Hi3520D. No reset values known.";
+
+        field {
+            name = "value";
+            desc = "Register value (layout not documented).";
+            sw = rw;
+            hw = r;
+        } value[31:0];
+    } DDRT_ADDR @ 0x20;
+
+    reg {
+        name = "Ddrt Addr Offset0";
+        desc = "Address offset 0 (defined, not used by the training code).
+
+Vendor U-Boot `arch/arm/cpu/hi3535/ddr_dataeye_training.[ch]` (Hi3535 DDR training, `SSN_DDRT`; the DDRT module is at the same address 0x206D0000 and uses the same CRG/SYS_CTRL bits as the Hi3520D, see `arch-hi3520d/platform.h` DDRT_*). Not in the Hi3520D data sheet; offsets and the few bit uses are from the Hi3535 code, not verified on a Hi3520D. No reset values known.";
+
+        field {
+            name = "value";
+            desc = "Register value (layout not documented).";
+            sw = rw;
+            hw = r;
+        } value[31:0];
+    } DDRT_ADDR_OFFSET0 @ 0x24;
+
+    reg {
+        name = "Ddrt Reversed Dq";
+        desc = "Per-bit data reversal mask (training writes 0 or 0xB49C863C).
+
+Vendor U-Boot `arch/arm/cpu/hi3535/ddr_dataeye_training.[ch]` (Hi3535 DDR training, `SSN_DDRT`; the DDRT module is at the same address 0x206D0000 and uses the same CRG/SYS_CTRL bits as the Hi3520D, see `arch-hi3520d/platform.h` DDRT_*). Not in the Hi3520D data sheet; offsets and the few bit uses are from the Hi3535 code, not verified on a Hi3520D. No reset values known.";
+
+        field {
+            name = "value";
+            desc = "Register value (layout not documented).";
+            sw = rw;
+            hw = r;
+        } value[31:0];
+    } DDRT_REVERSED_DQ @ 0x30;
+
+    reg {
+        name = "Ddrt Kdata";
+        desc = "K-code data (training writes 0xBC3EB053).
+
+Vendor U-Boot `arch/arm/cpu/hi3535/ddr_dataeye_training.[ch]` (Hi3535 DDR training, `SSN_DDRT`; the DDRT module is at the same address 0x206D0000 and uses the same CRG/SYS_CTRL bits as the Hi3520D, see `arch-hi3520d/platform.h` DDRT_*). Not in the Hi3520D data sheet; offsets and the few bit uses are from the Hi3535 code, not verified on a Hi3520D. No reset values known.";
+
+        field {
+            name = "value";
+            desc = "Register value (layout not documented).";
+            sw = rw;
+            hw = r;
+        } value[31:0];
+    } DDRT_KDATA @ 0x3C;
+
+    reg {
+        name = "Ddrt Data0";
+        desc = "Data word 0 (0x8A18207F).
+
+Vendor U-Boot `arch/arm/cpu/hi3535/ddr_dataeye_training.[ch]` (Hi3535 DDR training, `SSN_DDRT`; the DDRT module is at the same address 0x206D0000 and uses the same CRG/SYS_CTRL bits as the Hi3520D, see `arch-hi3520d/platform.h` DDRT_*). Not in the Hi3520D data sheet; offsets and the few bit uses are from the Hi3535 code, not verified on a Hi3520D. No reset values known.";
+
+        field {
+            name = "value";
+            desc = "Register value (layout not documented).";
+            sw = rw;
+            hw = r;
+        } value[31:0];
+    } DDRT_DATA0 @ 0x40;
+
+    reg {
+        name = "Ddrt Data1";
+        desc = "Data word 1 (0x5F2B9A27).
+
+Vendor U-Boot `arch/arm/cpu/hi3535/ddr_dataeye_training.[ch]` (Hi3535 DDR training, `SSN_DDRT`; the DDRT module is at the same address 0x206D0000 and uses the same CRG/SYS_CTRL bits as the Hi3520D, see `arch-hi3520d/platform.h` DDRT_*). Not in the Hi3520D data sheet; offsets and the few bit uses are from the Hi3535 code, not verified on a Hi3520D. No reset values known.";
+
+        field {
+            name = "value";
+            desc = "Register value (layout not documented).";
+            sw = rw;
+            hw = r;
+        } value[31:0];
+    } DDRT_DATA1 @ 0x44;
+
+    reg {
+        name = "Ddrt Data2";
+        desc = "Data word 2 (0xBDAD9238).
+
+Vendor U-Boot `arch/arm/cpu/hi3535/ddr_dataeye_training.[ch]` (Hi3535 DDR training, `SSN_DDRT`; the DDRT module is at the same address 0x206D0000 and uses the same CRG/SYS_CTRL bits as the Hi3520D, see `arch-hi3520d/platform.h` DDRT_*). Not in the Hi3520D data sheet; offsets and the few bit uses are from the Hi3535 code, not verified on a Hi3520D. No reset values known.";
+
+        field {
+            name = "value";
+            desc = "Register value (layout not documented).";
+            sw = rw;
+            hw = r;
+        } value[31:0];
+    } DDRT_DATA2 @ 0x48;
+
+    reg {
+        name = "Ddrt Data3";
+        desc = "Data word 3 (0xAA6774B1).
+
+Vendor U-Boot `arch/arm/cpu/hi3535/ddr_dataeye_training.[ch]` (Hi3535 DDR training, `SSN_DDRT`; the DDRT module is at the same address 0x206D0000 and uses the same CRG/SYS_CTRL bits as the Hi3520D, see `arch-hi3520d/platform.h` DDRT_*). Not in the Hi3520D data sheet; offsets and the few bit uses are from the Hi3535 code, not verified on a Hi3520D. No reset values known.";
+
+        field {
+            name = "value";
+            desc = "Register value (layout not documented).";
+            sw = rw;
+            hw = r;
+        } value[31:0];
+    } DDRT_DATA3 @ 0x4C;
+
+    reg {
+        name = "DQ error counter";
+        desc = "`DDRT_DQ_ERR_CNT(n)` = 0x60 + 4n, n = 0..7.
+
+Vendor U-Boot `arch/arm/cpu/hi3535/ddr_dataeye_training.[ch]` (Hi3535 DDR training, `SSN_DDRT`; the DDRT module is at the same address 0x206D0000 and uses the same CRG/SYS_CTRL bits as the Hi3520D, see `arch-hi3520d/platform.h` DDRT_*). Not in the Hi3520D data sheet; offsets and the few bit uses are from the Hi3535 code, not verified on a Hi3520D. No reset values known.";
+
+        field {
+            name = "count";
+            desc = "Error count of DQ group n.";
+            sw = r;
+            hw = w;
+        } count[31:0];
+    } DDRT_DQ_ERR_CNT[8] @ 0x60 += 0x4;
+
+    reg {
+        name = "DQ error overflow";
+        desc = "`DDRT_DQ_ERR_OVFL`.
+
+Vendor U-Boot `arch/arm/cpu/hi3535/ddr_dataeye_training.[ch]` (Hi3535 DDR training, `SSN_DDRT`; the DDRT module is at the same address 0x206D0000 and uses the same CRG/SYS_CTRL bits as the Hi3520D, see `arch-hi3520d/platform.h` DDRT_*). Not in the Hi3520D data sheet; offsets and the few bit uses are from the Hi3535 code, not verified on a Hi3520D. No reset values known.";
+
+        field {
+            name = "value";
+            desc = "Overflow flags (layout not documented).";
+            sw = r;
+            hw = w;
+        } value[31:0];
+    } DDRT_DQ_ERR_OVFL @ 0x80;
+};
+
+`endif

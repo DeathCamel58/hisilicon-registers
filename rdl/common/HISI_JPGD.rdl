@@ -1,0 +1,453 @@
+`ifndef HISI_JPGD_RDL
+`define HISI_JPGD_RDL
+
+regfile eHISI_JPGD {
+    name = "HiSilicon JPEG decoder";
+    desc = "Partly described: offsets of all 27 registers (incl. the 5 table memories) are exact (taken from the vendor U-Boot JPEG decoder headers and code); the bit meanings are known only where that code shows them (PICSIZE, SAMPLINGFACTOR, QUANT packing, START and INT bit 0, the values written to RESUME/SCALE/OUTTYPE/INTMASK). NOT known: bit layouts of RESUME, PICVLDNUM, PICTYPE, SCALE, OUTTYPE, DEBUG, the individual INT error bits, the INTMASK polarity, which STRIDE half is luma or chroma; and no register has a reset value (never read on hardware). Registers and fields whose meaning is guessed from names or comments say \"Meaning unverified\". Not in the data sheet.
+
+    HiSilicon JPEG decoder (JPGD) at 0x20670000, GIC interrupt ID 74; clock and reset in PERI_CRG25 (0x20030064: bit 1 clock enable, bit 0 soft reset; U-Boot `JPGD_CLOCK_ON 0x2`, `JPGD_RESET_REG_VALUE 0x1`). The Hi3520D data sheet only has the overview (chapter 7.2, no register description; Table 1-1 lists the 64 KB window), so this block is transcribed from the vendor U-Boot JPEG decoder (`product/hiosd/dec/`, a baseline-JPEG boot-logo decoder). The register offsets, the access sequence and the written values are exact; bit meanings are given where the code makes them evident, everything else is a plain 32-bit register. The same offsets are used by the Hi3535 build of that driver (same base 0x20670000); the Hi3531/Hi3520A family has the JPGD at 0x10170000. Software window per the vendor header: `JPGD_REG_LENGTH 0x6BF`. Reset values: unknown (not read on hardware).
+    ";
+
+    reg {
+        name = "Decode start / status";
+        desc = "Writing 1 starts a decode (hi_JpegDecode.c writes 0x01 last). U-Boot polls the register and waits until bit 1 reads 0 before configuring a new picture (`JPGD_REG_START`).
+
+Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+
+        field {
+            name = "busy";
+            desc = "Decoder busy (U-Boot waits for 0 before programming; interpretation of `result & 0x2`).";
+            sw = r;
+            hw = w;
+        } busy[1:1];
+
+        field {
+            name = "start";
+            desc = "Write 1 to start decoding.";
+            sw = rw;
+            hw = r;
+        } start[0:0];
+    } JPGD_START @ 0x0;
+
+    reg {
+        name = "Continue-stream register";
+        desc = "`JPGD_REG_RESUME`: U-Boot writes 0x02 before start (stream resume / buffer control); the bit meaning is not documented.
+
+Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+
+        field {
+            name = "value";
+            desc = "Register value (bit layout unknown; U-Boot writes 0x2).";
+            sw = rw;
+            hw = r;
+        } value[31:0];
+    } JPGD_RESUME @ 0x4;
+
+    reg {
+        name = "Pic_vld_num register";
+        desc = "`JPGD_REG_PICVLDNUM`: valid-picture count; not used by U-Boot, layout unknown.
+
+Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+
+        field {
+            name = "value";
+            desc = "Register value (layout unknown).";
+            sw = rw;
+            hw = r;
+        } value[31:0];
+    } JPGD_PICVLDNUM @ 0x8;
+
+    reg {
+        name = "Output stride register";
+        desc = "`JPGD_REG_STRIDE` (VHB stride): U-Boot writes `LineBytes << 16 | LineBytes` with LineBytes = image width aligned to 64, i.e. a luma stride and a chroma stride in the two halves; which half is which is not stated.
+
+Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+
+        field {
+            name = "stride_hi";
+            desc = "Meaning unverified: which half is luma and which chroma is not stated. Stride in bytes (upper half; U-Boot writes the 64-aligned line length).";
+            sw = rw;
+            hw = r;
+        } stride_hi[31:16];
+
+        field {
+            name = "stride_lo";
+            desc = "Meaning unverified: see stride_hi. Stride in bytes (lower half; same value written).";
+            sw = rw;
+            hw = r;
+        } stride_lo[15:0];
+    } JPGD_STRIDE @ 0xC;
+
+    reg {
+        name = "Picture size register";
+        desc = "`JPGD_REG_PICSIZE`: picture size in 16x16 MCUs, `((width + 15) >> 4) | ((height + 15) >> 4) << 16`.
+
+Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+
+        field {
+            name = "height_mcu";
+            desc = "Picture height in 16-line units, rounded up.";
+            sw = rw;
+            hw = r;
+        } height_mcu[31:16];
+
+        field {
+            name = "width_mcu";
+            desc = "Picture width in 16-pixel units, rounded up.";
+            sw = rw;
+            hw = r;
+        } width_mcu[15:0];
+    } JPGD_PICSIZE @ 0x10;
+
+    reg {
+        name = "Picture type register";
+        desc = "`JPGD_REG_PICTYPE`: written with `value_type` (the sampling format code computed from the JPEG header; the code table is in the closed-source library).
+
+Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+
+        field {
+            name = "value";
+            desc = "Picture (sampling) type code; encoding unknown.";
+            sw = rw;
+            hw = r;
+        } value[31:0];
+    } JPGD_PICTYPE @ 0x14;
+
+    reg {
+        name = "Decode time register";
+        desc = "`JPGD_REG_TIME`: picture decode time cost (read-only per the vendor comment).
+
+Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+
+        field {
+            name = "time";
+            desc = "Meaning unverified: decode time cost (read-only per the vendor comment only).";
+            sw = r;
+            hw = w;
+        } time[31:0];
+    } JPGD_TIME @ 0x18;
+
+    reg {
+        name = "Stream buffer start address (hardware window, 128-byte aligned)";
+        desc = "Stream buffer start address (hardware window, 128-byte aligned): `JPGD_REG_STADDR`.
+
+Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+
+        field {
+            name = "addr";
+            desc = "Physical address.";
+            sw = rw;
+            hw = r;
+        } addr[31:0];
+    } JPGD_STADDR @ 0x20;
+
+    reg {
+        name = "Stream buffer end address (hardware window)";
+        desc = "Stream buffer end address (hardware window): `JPGD_REG_ENDADDR`.
+
+Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+
+        field {
+            name = "addr";
+            desc = "Physical address.";
+            sw = rw;
+            hw = r;
+        } addr[31:0];
+    } JPGD_ENDADDR @ 0x24;
+
+    reg {
+        name = "Stream start address (must lie inside the STADDR..ENDADDR window)";
+        desc = "Stream start address (must lie inside the STADDR..ENDADDR window): `JPGD_REG_STADD`.
+
+Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+
+        field {
+            name = "addr";
+            desc = "Physical address.";
+            sw = rw;
+            hw = r;
+        } addr[31:0];
+    } JPGD_STADD @ 0x28;
+
+    reg {
+        name = "Stream end address (inside the window)";
+        desc = "Stream end address (inside the window): `JPGD_REG_ENDADD`.
+
+Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+
+        field {
+            name = "addr";
+            desc = "Physical address.";
+            sw = rw;
+            hw = r;
+        } addr[31:0];
+    } JPGD_ENDADD @ 0x2C;
+
+    reg {
+        name = "Luminance output address";
+        desc = "Luminance output address: `JPGD_REG_YSTADDR`.
+
+Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+
+        field {
+            name = "addr";
+            desc = "Physical address.";
+            sw = rw;
+            hw = r;
+        } addr[31:0];
+    } JPGD_YSTADDR @ 0x30;
+
+    reg {
+        name = "Chrominance output address (U-Boot";
+        desc = "Chrominance output address (U-Boot: Y + LineBytes x height aligned to 16): `JPGD_REG_UVSTADDR`.
+
+Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+
+        field {
+            name = "addr";
+            desc = "Physical address.";
+            sw = rw;
+            hw = r;
+        } addr[31:0];
+    } JPGD_UVSTADDR @ 0x34;
+
+    reg {
+        name = "Scale register";
+        desc = "`JPGD_REG_SCALE`: U-Boot writes 0x3C; layout unknown.
+
+Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+
+        field {
+            name = "value";
+            desc = "Register value (layout unknown).";
+            sw = rw;
+            hw = r;
+        } value[31:0];
+    } JPGD_SCALE @ 0x40;
+
+    reg {
+        name = "Output type register";
+        desc = "`JPGD_REG_OUTTYPE`: U-Boot writes 0x4; layout unknown.
+
+Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+
+        field {
+            name = "value";
+            desc = "Register value (layout unknown).";
+            sw = rw;
+            hw = r;
+        } value[31:0];
+    } JPGD_OUTTYPE @ 0x44;
+
+    reg {
+        name = "Interrupt status register";
+        desc = "`JPGD_REG_INT` (halt status). U-Boot polls `& 0x1f`; bit 0 means the decode finished successfully, any other set bit is an error / stop condition; the individual bits are not documented.
+
+Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+
+        field {
+            name = "err";
+            desc = "Meaning unverified: error / stop status bits (individual meaning unknown; inferred from U-Boot polling `& 0x1f`).";
+            sw = r;
+            hw = w;
+        } err[4:1];
+
+        field {
+            name = "done";
+            desc = "Decode completed.";
+            sw = r;
+            hw = w;
+        } done[0:0];
+    } JPGD_INT @ 0x100;
+
+    reg {
+        name = "Interrupt mask register";
+        desc = "`JPGD_REG_INTMASK` (halt shield): U-Boot writes 0x17.
+
+Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+
+        field {
+            name = "mask";
+            desc = "Meaning unverified: interrupt mask bits (polarity not documented; U-Boot writes 0x17 = bits 4,2,1,0).";
+            sw = rw;
+            hw = r;
+        } mask_f[4:0];
+    } JPGD_INTMASK @ 0x104;
+
+    reg {
+        name = "Debug register";
+        desc = "`JPGD_REG_DEBUG`.
+
+Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+
+        field {
+            name = "value";
+            desc = "Meaning unverified: debug status (only the vendor register name is known).";
+            sw = r;
+            hw = w;
+        } value[31:0];
+    } JPGD_DEBUG @ 0x108;
+
+    reg {
+        name = "Luminance pixel sum register 0";
+        desc = "`JPGD_REG_LPIXSUM0` (save lu pixel data).
+
+Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+
+        field {
+            name = "value";
+            desc = "Meaning unverified: luminance pixel sum, low part (assumed from the vendor comment 'save lu pixel data').";
+            sw = r;
+            hw = w;
+        } value[31:0];
+    } JPGD_LPIXSUM0 @ 0x114;
+
+    reg {
+        name = "Luminance pixel sum register 1";
+        desc = "`JPGD_REG_LPIXSUM1`: U-Boot writes 0x80000000 before decoding.
+
+Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+
+        field {
+            name = "value";
+            desc = "Meaning unverified: register value (U-Boot writes 0x80000000; purpose unknown).";
+            sw = rw;
+            hw = r;
+        } value[31:0];
+    } JPGD_LPIXSUM1 @ 0x118;
+
+    reg {
+        name = "Sampling factor register";
+        desc = "`JPGD_REG_SAMPLINGFACTOR`: `Y_H << 20 | Y_V << 16 | U_H << 12 | U_V << 8 | V_V << 4 | V_V` as written by U-Boot (the lowest nibble is written with the V vertical factor twice: probable vendor typo for V_H, kept as software behaviour).
+
+Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+
+        field {
+            name = "y_h";
+            desc = "Y horizontal sampling factor.";
+            sw = rw;
+            hw = r;
+        } y_h[23:20];
+
+        field {
+            name = "y_v";
+            desc = "Y vertical sampling factor.";
+            sw = rw;
+            hw = r;
+        } y_v[19:16];
+
+        field {
+            name = "u_h";
+            desc = "U horizontal sampling factor.";
+            sw = rw;
+            hw = r;
+        } u_h[15:12];
+
+        field {
+            name = "u_v";
+            desc = "U vertical sampling factor.";
+            sw = rw;
+            hw = r;
+        } u_v[11:8];
+
+        field {
+            name = "v_v";
+            desc = "V vertical sampling factor.";
+            sw = rw;
+            hw = r;
+        } v_v[7:4];
+
+        field {
+            name = "v_h";
+            desc = "Meaning unverified: V horizontal sampling factor (U-Boot writes V_V here, probably a vendor typo).";
+            sw = rw;
+            hw = r;
+        } v_h[3:0];
+    } JPGD_SAMPLINGFACTOR @ 0x124;
+
+    reg {
+        name = "Restart interval register";
+        desc = "`JPGD_REG_DRI`: JPEG restart interval (DRI marker value).
+
+Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+
+        field {
+            name = "restart";
+            desc = "Restart interval in MCUs.";
+            sw = rw;
+            hw = r;
+        } restart[31:0];
+    } JPGD_DRI @ 0x128;
+
+    reg {
+        name = "Quantization table memory";
+        desc = "`JPGD_REG_QUANT`: 64 words, one per coefficient: `Y + (U << 8) + (V << 16)` (U-Boot copies 256 bytes).
+
+Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+
+        field {
+            name = "q";
+            desc = "Quantization values for Y [7:0], U [15:8], V [23:16] of one coefficient.";
+            sw = rw;
+            hw = r;
+        } q[31:0];
+    } JPGD_QUANT[64] @ 0x200 += 0x4;
+
+    reg {
+        name = "Huffman DC table memory";
+        desc = "`JPGD_REG_HDCTABLE`: 48 bytes (12 words) of DC Huffman table data (format produced by `JPEG_HDEC_Uboot_SetDC`).
+
+Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+
+        field {
+            name = "data";
+            desc = "Table data.";
+            sw = rw;
+            hw = r;
+        } data[31:0];
+    } JPGD_HDCTABLE[12] @ 0x300 += 0x4;
+
+    reg {
+        name = "Huffman AC min-code table memory";
+        desc = "`JPGD_REG_HACMINTABLE`: 32 bytes (8 words).
+
+Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+
+        field {
+            name = "data";
+            desc = "Table data.";
+            sw = rw;
+            hw = r;
+        } data[31:0];
+    } JPGD_HACMINTABLE[8] @ 0x340 += 0x4;
+
+    reg {
+        name = "Huffman AC base table memory";
+        desc = "`JPGD_REG_HACBASETABLE`: 32 bytes (8 words).
+
+Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+
+        field {
+            name = "data";
+            desc = "Table data.";
+            sw = rw;
+            hw = r;
+        } data[31:0];
+    } JPGD_HACBASETABLE[8] @ 0x360 += 0x4;
+
+    reg {
+        name = "Huffman AC symbol table memory";
+        desc = "`JPGD_REG_HACSYMTABLE`: 0x2C0 bytes (176 words).
+
+Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+
+        field {
+            name = "data";
+            desc = "Table data.";
+            sw = rw;
+            hw = r;
+        } data[31:0];
+    } JPGD_HACSYMTABLE[176] @ 0x400 += 0x4;
+};
+
+`endif
