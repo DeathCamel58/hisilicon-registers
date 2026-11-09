@@ -1,0 +1,1285 @@
+`ifndef HISI_FMC_RDL
+`define HISI_FMC_RDL
+
+
+regfile eHISI_FMC {
+    name = "HiSilicon flash memory controller v100 (SPI NOR / SPI NAND)";
+    desc = "
+    HiSilicon flash memory controller (FMC) v100 at 0x10010000 (\"hifmc100\"; VERSION register 0x100): one controller for SPI NOR flash and SPI NAND flash on the two chip selects SFC_CS0N / SFC_CS1N (standard, dual, dual I/O, quad and quad I/O SPI, 3- or 4-byte NOR addresses, 2 KB / 4 KB NAND pages, 8-bit and 24-bit BCH ECC per 1 KB). It replaces the older HISFC350 (`eHISI_SFC_350`) of the Hi3520D/Hi3518 V100 generation: the register layout is different (FMC_CFG / FMC_OP / FMC_OP_CTRL), see `HISI_SFC_350.rdl` for that IP.
+    The controller powers up in boot mode (FMC_CFG.op_mode = 0): the first 1 MB of the flash is readable at the boot window (0x00000000 after reset, remapped; DS 4.2.3.3), the flash storage space is the 64 MB window at 0x58000000 (DS Table 1-4) used in normal mode. Register mode (FMC_CMD/ADDR/OP_CFG/OP + the 4 KB+256 B on-chip buffer) is used for IDs, status, erase and feature accesses; DMA mode (FMC_DMA_*, FMC_OP_CTRL) moves data directly to/from DDR. Interrupt: FMC_INT (VIC interrupt, see the interrupt table of the SoC file). Clock and reset: PERI_CRG48 (0x20030000 + 0xC0): srst bit 0, clock enable bit 1, clock select bits 3:2 (0 = 24 MHz, 1 = 148.5 MHz, 2 = 125 MHz, 3 = 198 MHz); PERI_CRG65 (0x104) holds the FMC mux-IO clock select. The vendor U-Boot (hifmc_hi3518ev200.c) boots the controller at 24 MHz and raises the clock once the flash is identified.
+    Registers, resets and bit descriptions are from the Hi3518E V20X/Hi3516C V200 data sheet issue 02 (2017-06-12), section 4.2.7 (`datasheet` text lines 43099-44288), cross-checked against the vendor U-Boot hifmc100 driver and 'include/hifmc_common.h` and the Linux `hisi-sfc.c` / `hifmc100` drivers (all offsets used by those drivers agree with the data sheet). Where the vendor header uses bits the data sheet calls reserved, they are modelled as fields and flagged \"not in the data sheet\". Boot-mode pin straps (DS 1.3): BOOTROM_SEL (MDCK pin) 0 and BOOT_SEL (EPHY_RST pin) 0 = boot from SPI flash; SFC_DEVICE_MODE (SHUTTER_TRIG pin) 0 = SPI NOR, 1 = SPI NAND; SFC_EMMC_BOOT_MODE (FLASH_TRIG pin) 0/1 = NOR 3-/4-byte address mode or NAND 1-/4-wire boot.
+";
+
+    reg {
+        name = "Component configuration register";
+        desc = "FMC_CFG is a component configuration register.
+
+Vendor driver values (hifmc_common.h): flash_sel 0 = SPI NOR, 1 = SPI NAND, 2 = parallel NAND (not wired on this SoC), 3 = default; ecc_type 0..6 (0/8/16/24/28/40/64 bit) exist in the shared vendor header, the data sheet only documents 000, 001 and 011 for this chip; block_size 1..3 (128/256/512 pages) likewise. The reset value of flash_sel follows the boot pins (SFC_DEVICE_MODE, DS 1.3.3); the data sheet's Total Reset Value 0x1820 assumes SPI NOR with ecc_type 1.
+
+Data sheet 4.2.7.2 FMC_CFG (offset 0x0, printed page 4-205, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 43179).";
+
+        field {
+            name = "spi_nand_sel";
+            desc = "Not in the data sheet (reserved there); taken from the vendor driver header 'include/hifmc_common.h` (sources/u-boot-vendor-2010.06) (`FMC_CFG_SPI_NAND_SEL`, `SPI_NAND_SEL_MASK` = 0x3 << 11; manufacturer class of the SPI NAND: 0 other, 1 Winbond, 2 ESMT, 3 Micron). The data sheet marks bits [31:11] reserved but its bit diagram and Total Reset Value (0x1820) have bits 12:11 set, so they are modelled here with reset 3.";
+            sw = rw;
+            hw = r;
+            reset = 0x3;
+        } spi_nand_sel[12:11];
+
+        field {
+            name = "spi_nor_addr_mode";
+            desc = "SPI address mode (valid only for the SPI NOR flash) 0 (default): 3-byte address mode 1: 4-byte address mode";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } spi_nor_addr_mode[10:10];
+
+        field {
+            name = "block_size";
+            desc = "Block size of the SPI NAND flash 00: 64 pages Other values: reserved";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } block_size[9:8];
+
+        enum FMC_CFG_ecc_type_enum {
+            NO_ECC = 0 { name = "No Ecc"; desc = "no ECC"; };
+            V_8_BIT_ECC = 1 { name = "V 8 Bit Ecc"; desc = "8-bit ECC"; };
+            V_24_BIT_ECC = 3 { name = "V 24 Bit Ecc"; desc = "24-bit ECC Other values: reserved"; };
+        };
+
+        field {
+            name = "ecc_type";
+            desc = "ECC type of the controller";
+            sw = rw;
+            hw = r;
+            encode = FMC_CFG_ecc_type_enum;
+            reset = 0x1;
+        } ecc_type[7:5];
+
+        enum FMC_CFG_page_size_enum {
+            V_2_KB_PAGE = 0 { name = "V 2 Kb Page"; desc = "2 KB page size"; };
+            V_4_KB_PAGE = 1 { name = "V 4 Kb Page"; desc = "4 KB page size Other values: reserved"; };
+        };
+
+        field {
+            name = "page_size";
+            desc = "Page size of the SPI NAND flash";
+            sw = rw;
+            hw = r;
+            encode = FMC_CFG_page_size_enum;
+            reset = 0x0;
+        } page_size[4:3];
+
+        enum FMC_CFG_flash_sel_enum {
+            SPI_NOR_FLASH = 0 { name = "Spi Nor Flash"; desc = "SPI NOR flash"; };
+            SPI_NAND_FLASH = 1 { name = "Spi Nand Flash"; desc = "SPI NAND flash Other values: reserved The reset value is determined by the pin."; };
+        };
+
+        field {
+            name = "flash_sel";
+            desc = "Flash type select";
+            sw = rw;
+            hw = r;
+            encode = FMC_CFG_flash_sel_enum;
+            reset = 0x0;
+        } flash_sel[2:1];
+
+        enum FMC_CFG_op_mode_enum {
+            BOOT_MODE = 0 { name = "Boot Mode"; desc = "boot mode"; };
+            NORMAL_MODE = 1 { name = "Normal Mode"; desc = "normal mode"; };
+        };
+
+        field {
+            name = "op_mode";
+            desc = "FMC operation mode";
+            sw = rw;
+            hw = r;
+            encode = FMC_CFG_op_mode_enum;
+            reset = 0x0;
+        } op_mode[0:0];
+    } FMC_CFG @ 0x0;
+
+    reg {
+        name = "Global configuration register";
+        desc = "GLOBAL_CFG is a global configuration register.
+
+wp_en drives the WP pin low while 1 (reset 1). The Linux `hisi-sfc` driver and the U-Boot hifmc100 driver both define `FMC_GLOBAL_CFG_WP_ENABLE` = bit 6.
+
+Data sheet 4.2.7.2 GLOBAL_CFG (offset 0x4, printed page 4-206, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 43241).";
+
+        enum GLOBAL_CFG_wp_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "wp_en";
+            desc = "Write protection enable for the WP pin. When this bit is enabled, the chip outputs 0 to the WP pin.";
+            sw = rw;
+            hw = r;
+            encode = GLOBAL_CFG_wp_en_enum;
+            reset = 0x1;
+        } wp_en[6:6];
+
+        field {
+            name = "randomizer_en";
+            desc = "Not in the data sheet (reserved there); taken from the vendor driver header 'include/hifmc_common.h` (sources/u-boot-vendor-2010.06) (`FMC_GLOBAL_CFG_RANDOMIZER_EN`, bit 2; used by the parallel-NAND flow of the shared hifmc code; the data sheet marks it reserved).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } randomizer_en[2:2];
+    } GLOBAL_CFG @ 0x4;
+
+    reg {
+        name = "SPI timing configuration register";
+        desc = "TIMING_SPI_CFG is an SPI timing configuration register.
+
+The vendor drivers program tcsh = 6, tcss = 6, tshsl = 0xF (`CS_HOLD_TIME`, `CS_SETUP_TIME`, `CS_DESELECT_TIME`), which equal the reset value 0x66F.
+
+Data sheet 4.2.7.2 TIMING_SPI_CFG (offset 0x8, printed page 4-206, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 43268).";
+
+        field {
+            name = "tcsh";
+            desc = "CS hold time 0x0-0x7: (n + 1) interface clock cycles (n = 0, 1, 2, …, 7)";
+            sw = rw;
+            hw = r;
+            reset = 0x6;
+        } tcsh[11:8];
+
+        field {
+            name = "tcss";
+            desc = "CS setup time 0x0-0x7: (n + 1) interface clock cycles (n = 0, 1, 2, …, 7)";
+            sw = rw;
+            hw = r;
+            reset = 0x6;
+        } tcss[7:4];
+
+        field {
+            name = "tshsl";
+            desc = "CS deselect time. It is equal to the interval between two flash operations. 0x0-0xF: (n + 1) interface clock cycles (n = 0, 1, 2, …, 15)";
+            sw = rw;
+            hw = r;
+            reset = 0xF;
+        } tshsl[3:0];
+    } TIMING_SPI_CFG @ 0x8;
+
+    reg {
+        name = "Interrupt status register";
+        desc = "FMC_INT is an interrupt status register.
+
+The status bits are read-only; clear them through FMC_INT_CLR. After a register-mode operation software polls FMC_OP[0] (reg_op_start) or waits for op_done_int.
+
+Data sheet 4.2.7.2 FMC_INT (offset 0x18, printed page 4-207, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 43306).";
+
+        enum FMC_INT_ahb_op_int_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "ahb_op_int";
+            desc = "CPU read/write internal buffer interrupt enable when the FMC is reading/writing data from/to the flash memory";
+            sw = r;
+            hw = w;
+            encode = FMC_INT_ahb_op_int_enum;
+            reset = 0x0;
+        } ahb_op_int[7:7];
+
+        field {
+            name = "wr_lock_int";
+            desc = "Not in the data sheet (reserved there); taken from the vendor driver header 'include/hifmc_common.h` (sources/u-boot-vendor-2010.06) (`FMC_INT_WR_LOCK`, bit 6; the data sheet marks it reserved). Write-lock violation interrupt.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } wr_lock_int[6:6];
+
+        enum FMC_INT_dma_err_int_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "dma_err_int";
+            desc = "DMA transfer bus error interrupt";
+            sw = r;
+            hw = w;
+            encode = FMC_INT_dma_err_int_enum;
+            reset = 0x0;
+        } dma_err_int[5:5];
+
+        enum FMC_INT_err_alarm_int_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "err_alarm_int";
+            desc = "ECC alarm interrupt. An interrupt is generated when the number of error bits reaches the preset threshold.";
+            sw = r;
+            hw = w;
+            encode = FMC_INT_err_alarm_int_enum;
+            reset = 0x0;
+        } err_alarm_int[4:4];
+
+        enum FMC_INT_err_inval_int_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "err_inval_int";
+            desc = "Uncorrectable ECC error interrupt In 8-bit ECC mode, if errors occur in eight or more bits of the checked 1024-byte data, an interrupt is generated. In 24-bit ECC mode, if errors occur in 24 or more bits of the checked 1024-byte data, an interrupt is generated.";
+            sw = r;
+            hw = w;
+            encode = FMC_INT_err_inval_int_enum;
+            reset = 0x0;
+        } err_inval_int[3:3];
+
+        enum FMC_INT_err_val_int_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "err_val_int";
+            desc = "Correctable ECC error interrupt In 8-bit ECC mode, if errors occur in one to eight bits of the checked 1024-byte data, an interrupt is generated. In 24-bit ECC mode, if errors occur in one to 24 bits of the checked 1024-byte data, an interrupt is generated.";
+            sw = r;
+            hw = w;
+            encode = FMC_INT_err_val_int_enum;
+            reset = 0x0;
+        } err_val_int[2:2];
+
+        enum FMC_INT_op_fail_int_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "op_fail_int";
+            desc = "Programming (timeout) failure interrupt in DMA mode";
+            sw = r;
+            hw = w;
+            encode = FMC_INT_op_fail_int_enum;
+            reset = 0x0;
+        } op_fail_int[1:1];
+
+        enum FMC_INT_op_done_int_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "op_done_int";
+            desc = "Current controller operation completion interrupt. This bit is automatically cleared when the operation register is written.";
+            sw = r;
+            hw = w;
+            encode = FMC_INT_op_done_int_enum;
+            reset = 0x0;
+        } op_done_int[0:0];
+    } FMC_INT @ 0x18;
+
+    reg {
+        name = "Interrupt enable register";
+        desc = "FMC_INT_EN is an interrupt enable register.
+
+Data sheet 4.2.7.2 FMC_INT_EN (offset 0x1C, printed page 4-208, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 43379).";
+
+        enum FMC_INT_EN_ahb_op_int_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "ahb_op_int_en";
+            desc = "CPU read/write internal buffer error interrupt enable when the FMC is reading/writing data from/to the flash memory";
+            sw = rw;
+            hw = r;
+            encode = FMC_INT_EN_ahb_op_int_en_enum;
+            reset = 0x0;
+        } ahb_op_int_en[7:7];
+
+        field {
+            name = "wr_lock_int_en";
+            desc = "Not in the data sheet (reserved there); taken from the vendor driver header 'include/hifmc_common.h` (sources/u-boot-vendor-2010.06) (`FMC_INT_EN_WR_LOCK`, bit 6; reserved RW in the data sheet).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } wr_lock_int_en[6:6];
+
+        enum FMC_INT_EN_dma_err_int_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "dma_err_int_en";
+            desc = "DMA transfer bus error interrupt enable";
+            sw = rw;
+            hw = r;
+            encode = FMC_INT_EN_dma_err_int_en_enum;
+            reset = 0x0;
+        } dma_err_int_en[5:5];
+
+        enum FMC_INT_EN_err_alarm_int_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "err_alarm_int_en";
+            desc = "ECC alarm interrupt enable. An interrupt is generated when the number of error bits reaches the threshold";
+            sw = rw;
+            hw = r;
+            encode = FMC_INT_EN_err_alarm_int_en_enum;
+            reset = 0x0;
+        } err_alarm_int_en[4:4];
+
+        enum FMC_INT_EN_err_inval_int_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "err_inval_int_en";
+            desc = "ECC uncorrectable error interrupt enable";
+            sw = rw;
+            hw = r;
+            encode = FMC_INT_EN_err_inval_int_en_enum;
+            reset = 0x0;
+        } err_inval_int_en[3:3];
+
+        enum FMC_INT_EN_err_val_int_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "err_val_int_en";
+            desc = "ECC correctable error interrupt enable";
+            sw = rw;
+            hw = r;
+            encode = FMC_INT_EN_err_val_int_en_enum;
+            reset = 0x0;
+        } err_val_int_en[2:2];
+
+        enum FMC_INT_EN_op_fail_int_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "op_fail_int_en";
+            desc = "Programming operation failure interrupt enable in DMA mode";
+            sw = rw;
+            hw = r;
+            encode = FMC_INT_EN_op_fail_int_en_enum;
+            reset = 0x0;
+        } op_fail_int_en[1:1];
+
+        enum FMC_INT_EN_op_done_int_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "op_done_int_en";
+            desc = "Current operation completion interrupt enable of the FMC";
+            sw = rw;
+            hw = r;
+            encode = FMC_INT_EN_op_done_int_en_enum;
+            reset = 0x0;
+        } op_done_int_en[0:0];
+    } FMC_INT_EN @ 0x1C;
+
+    reg {
+        name = "Interrupt clear register";
+        desc = "FMC_INT_CLR is an interrupt clear register.
+
+Data sheet 4.2.7.2 FMC_INT_CLR (offset 0x20, printed page 4-210, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 43452).";
+
+        field {
+            name = "ahb_op_int_clr";
+            desc = "ahb_op_err interrupt clear. Writing 1 clears the interrupt.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            reset = 0x0;
+        } ahb_op_int_clr[7:7];
+
+        field {
+            name = "wr_lock_int_clr";
+            desc = "Not in the data sheet (reserved there); taken from the vendor driver header 'include/hifmc_common.h` (sources/u-boot-vendor-2010.06) (`FMC_INT_CLR_WR_LOCK`, bit 6; reserved in the data sheet). Writing 1 clears the interrupt.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            reset = 0x0;
+        } wr_lock_int_clr[6:6];
+
+        field {
+            name = "dma_err_int_clr";
+            desc = "DMA transfer bus error interrupt clear. Writing 1 clears the interrupt.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            reset = 0x0;
+        } dma_err_int_clr[5:5];
+
+        field {
+            name = "err_alarm_int_clr";
+            desc = "err_alarm interrupt clear. Writing 1 clears the interrupt.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            reset = 0x0;
+        } err_alarm_int_clr[4:4];
+
+        field {
+            name = "err_inval_int_clr";
+            desc = "err_invalid interrupt clear. Writing 1 clears the interrupt.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            reset = 0x0;
+        } err_inval_int_clr[3:3];
+
+        field {
+            name = "err_val_int_clr";
+            desc = "err_valid interrupt clear. Writing 1 clears the interrupt.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            reset = 0x0;
+        } err_val_int_clr[2:2];
+
+        field {
+            name = "op_fail_int_clr";
+            desc = "op_fail interrupt clear. Writing 1 clears the interrupt.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            reset = 0x0;
+        } op_fail_int_clr[1:1];
+
+        field {
+            name = "op_done_int_clr";
+            desc = "op_done interrupt clear. Writing 1 clears the interrupt.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            reset = 0x0;
+        } op_done_int_clr[0:0];
+    } FMC_INT_CLR @ 0x20;
+
+    reg {
+        name = "Command word configuration register";
+        desc = "FMC_CMD is a command word configuration register.
+
+Data sheet 4.2.7.2 FMC_CMD (offset 0x24, printed page 4-210, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 43487).";
+
+        field {
+            name = "cmd2";
+            desc = "Not in the data sheet (reserved there); taken from the vendor driver header 'include/hifmc_common.h` (sources/u-boot-vendor-2010.06) (`FMC_CMD_CMD2`, bits 15:8, second command byte sent when FMC_OP.cmd2_en is 1, used by the SPI NAND/parallel NAND flow; reserved in the data sheet).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } cmd2[15:8];
+
+        field {
+            name = "cmd1";
+            desc = "Command sent to the SPI NOR/SPI NAND flash by the controller";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } cmd1[7:0];
+    } FMC_CMD @ 0x24;
+
+    reg {
+        name = "Upper-byte component address configuration register";
+        desc = "FMC_ADDRH is an upper-byte component address configuration register.
+
+Data sheet 4.2.7.2 FMC_ADDRH (offset 0x28, printed page 4-211, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 43512).";
+
+        field {
+            name = "addrh";
+            desc = "Upper-byte of the operation address for the SPI NAND flash";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } addrh[7:0];
+    } FMC_ADDRH @ 0x28;
+
+    reg {
+        name = "Lower-byte component address configuration register";
+        desc = "FMC_ADDRL is a lower-byte component address configuration register.
+
+Data sheet 4.2.7.2 FMC_ADDRL (offset 0x2C, printed page 4-211, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 43532).";
+
+        field {
+            name = "addrl";
+            desc = "Lower-byte of the operation address for the flash memory, and component address for the SPI NOR flash";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } addrl[31:0];
+    } FMC_ADDRL @ 0x2C;
+
+    reg {
+        name = "Operation configuration register";
+        desc = "FMC_OP_CFG is an operation configuration register.
+
+Vendor driver values (OP_CFG_*): mem_if_type 0 standard, 1 dual output, 2 dual I/O, 3 quad output, 4 quad I/O (the 0..4 values agree with the data sheet; `IF_TYPE_DTR` = 4 in the vendor header is a DTR alias, not a separate encoding). Typical addr_num: 1 for read-ID / features, 3 for standard NOR operations, 4 in 4-byte address mode.
+
+Data sheet 4.2.7.2 FMC_OP_CFG (offset 0x30, printed page 4-212, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 43563).";
+
+        enum FMC_OP_CFG_fm_cs_enum {
+            CS0 = 0 { name = "Cs0"; desc = "CS0"; };
+            CS1 = 1 { name = "Cs1"; desc = "CS1"; };
+        };
+
+        field {
+            name = "fm_cs";
+            desc = "CS corresponding to the flash to be operated used for register operation and invalid for DMA operations";
+            sw = rw;
+            hw = r;
+            encode = FMC_OP_CFG_fm_cs_enum;
+            reset = 0x0;
+        } fm_cs[11:11];
+
+        enum FMC_OP_CFG_force_cs_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "force_cs_en";
+            desc = "CS forcible pull-down enable";
+            sw = rw;
+            hw = r;
+            encode = FMC_OP_CFG_force_cs_en_enum;
+            reset = 0x0;
+        } force_cs_en[10:10];
+
+        enum FMC_OP_CFG_mem_if_type_enum {
+            STANDARD_SPI = 0 { name = "Standard Spi"; desc = "standard SPI"; };
+            DUAL_OUTPUT_DUAL = 1 { name = "Dual Output Dual"; desc = "dual-output/dual-input SPI"; };
+            DUAL_I_O = 2 { name = "Dual I O"; desc = "dual I/O SPI"; };
+            QUAD_OUTPUT_QUAD = 3 { name = "Quad Output Quad"; desc = "quad-output/quad-input SPI"; };
+            QUAD_I_O = 4 { name = "Quad I O"; desc = "quad I/O SPI 101-111: reserved"; };
+        };
+
+        field {
+            name = "mem_if_type";
+            desc = "SPI flash interface type select (read operation)";
+            sw = rw;
+            hw = r;
+            encode = FMC_OP_CFG_mem_if_type_enum;
+            reset = 0x0;
+        } mem_if_type[9:7];
+
+        field {
+            name = "addr_num";
+            desc = "Number of bytes of the address sent to the flash";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } addr_num[6:4];
+
+        field {
+            name = "dummy_num";
+            desc = "Number of bytes to be operated for dummy_en (one byte is equivalent to two clock cycles in 4-wire mode, four clock cycles in 2-wire mode, or eight clock cycles in 1-wire mode)";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } dummy_num[3:0];
+    } FMC_OP_CFG @ 0x30;
+
+    reg {
+        name = "Data length register";
+        desc = "FMC_DATA_NUM is a data length register.
+
+Data sheet 4.2.7.2 FMC_DATA_NUM (offset 0x38, printed page 4-213, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 43618).";
+
+        field {
+            name = "op_data_num";
+            desc = "Length of data to be processed during one operation. This register needs to be configured when there is data transfer and does not need to be configured for the DMA operations. This register is valid for the SPI NAND flash only in ECC0 mode.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } op_data_num[13:0];
+    } FMC_DATA_NUM @ 0x38;
+
+    reg {
+        name = "Operation register";
+        desc = "FMC_OP is an operation register.
+
+Register-mode operation trigger. Software sets the enable bits that describe the sequence (cmd1_en, addr_en, dummy_en, write_data_en / read_data_en, read_status_en) and sets reg_op_start (bit 0); the controller clears reg_op_start when the operation has finished. Data transfers go through the 4 KB+256 B internal buffer at the FMC memory window. Values used by the DS examples: 0x81 (cmd1 + start), 0x3 (read status + start), 0xC1 (cmd1 + addr + start).
+
+Data sheet 4.2.7.2 FMC_OP (offset 0x3C, printed page 4-213, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 43641).";
+
+        enum FMC_OP_dummy_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "dummy_en";
+            desc = "Dummy byte transfer enable after the address operation is enabled";
+            sw = rw;
+            hw = r;
+            encode = FMC_OP_dummy_en_enum;
+            reset = 0x0;
+        } dummy_en[8:8];
+
+        enum FMC_OP_cmd1_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "cmd1_en";
+            desc = "Enable for transmitting command 1 to the flash";
+            sw = rw;
+            hw = r;
+            encode = FMC_OP_cmd1_en_enum;
+            reset = 0x0;
+        } cmd1_en[7:7];
+
+        enum FMC_OP_addr_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "addr_en";
+            desc = "Enable for writing the operation address to the flash";
+            sw = rw;
+            hw = r;
+            encode = FMC_OP_addr_en_enum;
+            reset = 0x0;
+        } addr_en[6:6];
+
+        enum FMC_OP_write_data_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED_NOTE_READ = 1 { name = "Enabled Note Read"; desc = "enabled Note: read_data_en and write_data_en cannot be 1 at the same time."; };
+        };
+
+        field {
+            name = "write_data_en";
+            desc = "Enable for writing data to the flash";
+            sw = rw;
+            hw = r;
+            encode = FMC_OP_write_data_en_enum;
+            reset = 0x0;
+        } write_data_en[5:5];
+
+        field {
+            name = "cmd2_en";
+            desc = "Not in the data sheet (reserved there); taken from the vendor driver header 'include/hifmc_common.h` (sources/u-boot-vendor-2010.06) (`FMC_OP_CMD2_EN`, bit 4; reserved in the data sheet): enable for transmitting command 2 to the flash.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } cmd2_en[4:4];
+
+        field {
+            name = "wait_ready_en";
+            desc = "Not in the data sheet (reserved there); taken from the vendor driver header 'include/hifmc_common.h` (sources/u-boot-vendor-2010.06) (`FMC_OP_WAIT_READY_EN`, bit 3; reserved in the data sheet): wait for the flash to become ready before finishing the operation.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } wait_ready_en[3:3];
+
+        enum FMC_OP_read_data_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED_NOTE_READ = 1 { name = "Enabled Note Read"; desc = "enabled Note: read_data_en and write_data_en cannot be 1 at the same time."; };
+        };
+
+        field {
+            name = "read_data_en";
+            desc = "Enable for reading data from the flash";
+            sw = rw;
+            hw = r;
+            encode = FMC_OP_read_data_en_enum;
+            reset = 0x0;
+        } read_data_en[2:2];
+
+        enum FMC_OP_read_status_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED_WHEN_THIS = 1 { name = "Enabled When This"; desc = "enabled When this bit is 1, the value of the FMC read component status register is written in the FMC_STATUS[fm_status] instead of the internal butter."; };
+        };
+
+        field {
+            name = "read_status_en";
+            desc = "Read component status register enable";
+            sw = rw;
+            hw = r;
+            encode = FMC_OP_read_status_en_enum;
+            reset = 0x0;
+        } read_status_en[1:1];
+
+        enum FMC_OP_reg_op_start_enum {
+            CONTROLLER_READY_THIS = 0 { name = "Controller Ready This"; desc = "The controller is ready. This bit can be set only to 1 when software issues the command, indicating that the logic is enabled."; };
+            CONTROLLER_BUSY_THIS = 1 { name = "Controller Busy This"; desc = "The controller is busy. This bit is automatically set to 0 after the operation is complete, indicating that the logic is complete."; };
+        };
+
+        field {
+            name = "reg_op_start";
+            desc = "Controller status when commands are issued by configuring the FMC_OP register. 0: the controller is ready; this bit can only be set to 1 by software to start the operation. 1: the controller is busy; the bit is cleared automatically when the operation is complete.";
+            sw = rw;
+            hw = w;
+            encode = FMC_OP_reg_op_start_enum;
+            reset = 0x0;
+        } reg_op_start[0:0];
+    } FMC_OP @ 0x3C;
+
+    reg {
+        name = "DMA operation length register";
+        desc = "FMC_DMA_LEN is a DMA operation length register.
+
+In SPI NOR DMA mode this is the byte count of the DMA transfer. The U-Boot driver limits one DMA write to 4 KB (`HIFMC100_DMA_WR_MAX_SIZE`) and one DMA read to 2 MB (`HIFMC100_DMA_RD_MAX_SIZE`); the vendor header also keeps `FMC_DMA_LEN_SET(len)` = len & 0x0FFFFFFF.
+
+Data sheet 4.2.7.2 FMC_DMA_LEN (offset 0x40, printed page 4-214, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 43711).";
+
+        field {
+            name = "dma_len";
+            desc = "Data transfer length for DMA operations, in byte. This register is used to configure the spare area length of the SPI NAND flash in ECC0 mode and length of the data to be read from or written to the SPI NOR flash in DMC mode.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } dma_len[27:0];
+    } FMC_DMA_LEN @ 0x40;
+
+    reg {
+        name = "DMA AHB bus control register TRL";
+        desc = "FMC_DMA_AHB_CTRL is a DMA AHB bus control register.
+
+All three burst-length enables are on at reset (0x7). `FMC_DMA_ADDR_OFFSET` in the vendor header is 4096; DMA buffers must be 32-byte aligned (`FMC_DMA_ALIGN`).
+
+Data sheet 4.2.7.2 FMC_DMA_AHB_CTRL (offset 0x48, printed page 4-215, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 43741).";
+
+        enum FMC_DMA_AHB_CTRL_burst16_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "burst16_en";
+            desc = "Burst16 enable";
+            sw = rw;
+            hw = r;
+            encode = FMC_DMA_AHB_CTRL_burst16_en_enum;
+            reset = 0x1;
+        } burst16_en[2:2];
+
+        enum FMC_DMA_AHB_CTRL_burst8_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "burst8_en";
+            desc = "Burst8 enable";
+            sw = rw;
+            hw = r;
+            encode = FMC_DMA_AHB_CTRL_burst8_en_enum;
+            reset = 0x1;
+        } burst8_en[1:1];
+
+        enum FMC_DMA_AHB_CTRL_burst4_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "burst4_en";
+            desc = "Burst4 enable";
+            sw = rw;
+            hw = r;
+            encode = FMC_DMA_AHB_CTRL_burst4_en_enum;
+            reset = 0x1;
+        } burst4_en[0:0];
+    } FMC_DMA_AHB_CTRL @ 0x48;
+
+    reg {
+        name = "DDR start address register 0 for DMA _D0 operations";
+        desc = "FMC_DMA_SADDR_D0 is DDR start address register 0 for DMA operations.
+
+The vendor header also names FMC_DMA_SADDR_D1..D3 at 0x50, 0x54, 0x58 (not documented in this data sheet, see below).
+
+Data sheet 4.2.7.2 FMC_DMA_SADDR_D0 (offset 0x4C, printed page 4-215, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 43776).";
+
+        field {
+            name = "dma_mem_saddr_d";
+            desc = "For the SPI NOR flash, this register indicates the DDR start address register for DMA operations. For the SPI NAND flash, this register indicates the DDR operation data base address register for DMA operations.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } dma_mem_saddr_d[31:0];
+    } FMC_DMA_SADDR_D0 @ 0x4C;
+
+    reg {
+        name = "DDR OOB information storage start _OOB address register for DMA operations";
+        desc = "FMC_DMA_SADDR_OOB is a DDR OOB information storage start address register for DMA operations.
+
+Data sheet 4.2.7.2 FMC_DMA_SADDR_OOB (offset 0x5C, printed page 4-216, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 43806).";
+
+        field {
+            name = "dma_mem_saddr_oob";
+            desc = "DDR base address for the OOB area that stores the data to be read or written";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } dma_mem_saddr_oob[31:0];
+    } FMC_DMA_SADDR_OOB @ 0x5C;
+
+    reg {
+        name = "DMA operation control register";
+        desc = "FMC_OP_CTRL is an DMA operation control register.
+
+Used by the vendor/Linux drivers as `FMC_OP_DMA`: rd_opcode/wr_opcode hold the SPI read/page-program opcode used by the DMA engine, rw_op selects the direction, and software sets dma_op_ready (bit 0) to start the DMA; the controller clears it when done. The reset value 0x00030200 is rd_opcode 0x03 (READ) and wr_opcode 0x02 (page program).
+
+Data sheet 4.2.7.2 FMC_OP_CTRL (offset 0x68, printed page 4-216, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 43827).";
+
+        field {
+            name = "rd_opcode";
+            desc = "SPI NAND/SPI NOR flash, DMA read command, non-bus mode (FAST_READ/READ/DUAL_READ)";
+            sw = rw;
+            hw = r;
+            reset = 0x3;
+        } rd_opcode[23:16];
+
+        field {
+            name = "wr_opcode";
+            desc = "SPI NAND/SPI NOR flash, DMA write command";
+            sw = rw;
+            hw = r;
+            reset = 0x2;
+        } wr_opcode[15:8];
+
+        enum FMC_OP_CTRL_rd_op_sel_enum {
+            WHOLE_PAGE_READ = 0 { name = "Whole Page Read"; desc = "The whole page is read."; };
+            ONLY_OOB_READ = 1 { name = "Only Oob Read"; desc = "Only the OOB is read. 1x: reserved"; };
+        };
+
+        field {
+            name = "rd_op_sel";
+            desc = "Area of data to be read. 00: the whole page is read; 01: only the OOB is read; 10: block read (vendor `RD_OP_BLOCK_READ`, reserved in the data sheet, which lists 1x as reserved); 11: reserved.";
+            sw = rw;
+            hw = r;
+            encode = FMC_OP_CTRL_rd_op_sel_enum;
+            reset = 0x0;
+        } rd_op_sel[5:4];
+
+        field {
+            name = "dma_op";
+            desc = "Not in the data sheet (reserved there); taken from the vendor driver header 'include/hifmc_common.h` (sources/u-boot-vendor-2010.06) (`OP_CTRL_DMA_OP(_type)` << 2: OP_TYPE_DMA 0, OP_TYPE_REG 1; reserved in the data sheet).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } dma_op[3:2];
+
+        enum FMC_OP_CTRL_rw_op_enum {
+            DMA_READ_MODE = 0 { name = "Dma Read Mode"; desc = "DMA read mode"; };
+            DMA_WRITE_MODE = 1 { name = "Dma Write Mode"; desc = "DMA write mode"; };
+        };
+
+        field {
+            name = "rw_op";
+            desc = "DMA write/read mode select";
+            sw = rw;
+            hw = r;
+            encode = FMC_OP_CTRL_rw_op_enum;
+            reset = 0x0;
+        } rw_op[1:1];
+
+        enum FMC_OP_CTRL_dma_op_ready_enum {
+            CONTROLLER_READY_THIS = 0 { name = "Controller Ready This"; desc = "The controller is ready. This bit can be set only to 1 when software issues the command, indicating that the logic is enabled."; };
+            CONTROLLER_BUSY_THIS = 1 { name = "Controller Busy This"; desc = "The controller is busy. This bit is automatically set to 0 after the operation is complete, indicating that the logic is complete."; };
+        };
+
+        field {
+            name = "dma_op_ready";
+            desc = "Controller status when commands are issued by configuring the FMC_OP_CTRL register. 0: the controller is ready; software can only set the bit to 1, which starts the DMA operation. 1: the controller is busy; the bit is cleared automatically when the DMA operation is complete.";
+            sw = rw;
+            hw = w;
+            encode = FMC_OP_CTRL_dma_op_ready_enum;
+            reset = 0x0;
+        } dma_op_ready[0:0];
+    } FMC_OP_CTRL @ 0x68;
+
+    reg {
+        name = "Write operation timeout register R";
+        desc = "FMC_TIMEOUT_WR is a write operation timeout register.
+
+Data sheet 4.2.7.2 FMC_TIMEOUT_WR (offset 0x6C, printed page 4-217, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 43885).";
+
+        field {
+            name = "timeout_wr";
+            desc = "Program operation busy wait time, timeout period. The timeout period is in the unit of one interface clock cycle for the SPI NAND/SPI NOR flash.";
+            sw = rw;
+            hw = r;
+            reset = 0x00FFFFFF;
+        } timeout_wr[23:0];
+    } FMC_TIMEOUT_WR @ 0x6C;
+
+    reg {
+        name = "Data segment ID register for reading/writing to the SPI NAND flash in DMA mode";
+        desc = "FMC_OP_PARA is a data segment ID register for reading/writing to the SPI NAND flash in DMA mode.
+
+Data sheet 4.2.7.2 FMC_OP_PARA (offset 0x70, printed page 4-218, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 43918).";
+
+        field {
+            name = "rd_oob_only";
+            desc = "Only the sector that stores the OOB information is read when the flash read command is issued.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } rd_oob_only[1:1];
+    } FMC_OP_PARA @ 0x70;
+
+    reg {
+        name = "Boot setting register";
+        desc = "FMC_BOOT_SET is a boot setting register.
+
+The reset value of boot_quad_mode is pin-dependent (SFC_EMMC_BOOT_MODE, DS 1.3.3). The data sheet marks boot_page0_cfg reset 1 and bb_err reset 0.
+
+Data sheet 4.2.7.2 FMC_BOOT_SET (offset 0x74, printed page 4-218, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 43948).";
+
+        enum FMC_BOOT_SET_bb_err_enum {
+            BOOTABLE = 0 { name = "Bootable"; desc = "bootable"; };
+            BOOT_FAILURE = 1 { name = "Boot Failure"; desc = "boot failure"; };
+        };
+
+        field {
+            name = "bb_err";
+            desc = "Boot failure information";
+            sw = rw;
+            hw = r;
+            encode = FMC_BOOT_SET_bb_err_enum;
+            reset = 0x0;
+        } bb_err[4:4];
+
+        field {
+            name = "device_ecc_en";
+            desc = "Not in the data sheet (reserved there); taken from the vendor driver header 'include/hifmc_common.h` (sources/u-boot-vendor-2010.06) (`FMC_BOOT_SET_DEVICE_ECC_EN`, bit 3; the data sheet marks bits [3:2] reserved): the SPI NAND on-die ECC is enabled during boot.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } device_ecc_en[3:3];
+
+        enum FMC_BOOT_SET_boot_quad_mode_enum {
+            NO_1_WIRE = 0 { name = "No 1 Wire"; desc = "no. The 1-wire boot mode is used."; };
+            YES = 1 { name = "Yes"; desc = "yes"; };
+        };
+
+        field {
+            name = "boot_quad_mode";
+            desc = "Whether to use the 4-wire boot mode for the SPI NAND flash. The reset value is determined by the pin.";
+            sw = rw;
+            hw = r;
+            encode = FMC_BOOT_SET_boot_quad_mode_enum;
+            reset = 0x0;
+        } boot_quad_mode[1:1];
+
+        enum FMC_BOOT_SET_boot_page0_cfg_enum {
+            DEFAULT_BOOT_MODE = 0 { name = "Default Boot Mode"; desc = "default boot mode"; };
+            BOOT_MODE_WITHOUT = 1 { name = "Boot Mode Without"; desc = "boot mode without configuring pins"; };
+        };
+
+        field {
+            name = "boot_page0_cfg";
+            desc = "Boot mode select";
+            sw = rw;
+            hw = r;
+            encode = FMC_BOOT_SET_boot_page0_cfg_enum;
+            reset = 0x1;
+        } boot_page0_cfg[0:0];
+    } FMC_BOOT_SET @ 0x74;
+
+    reg {
+        name = "Low-power control register";
+        desc = "FMC_LP_CTRL is a low-power control register.
+
+Data sheet 4.2.7.2 FMC_LP_CTRL (offset 0x78, printed page 4-219, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 43997).";
+
+        enum FMC_LP_CTRL_clk_gate_en_enum {
+            ALL_CLOCKS_ENABLED = 0 { name = "All Clocks Enabled"; desc = "All clocks are enabled."; };
+            CLOCKS_DISABLED_ACCORDING = 1 { name = "Clocks Disabled According"; desc = "Clocks are disabled according to the low-power design."; };
+        };
+
+        field {
+            name = "clk_gate_en";
+            desc = "Clock gating select. If the clock gating is enabled, the low-power design is used and the module working clocks are disabled by logic.";
+            sw = rw;
+            hw = r;
+            encode = FMC_LP_CTRL_clk_gate_en_enum;
+            reset = 0x0;
+        } clk_gate_en[0:0];
+    } FMC_LP_CTRL @ 0x78;
+
+    reg {
+        name = "ECC alarm threshold register";
+        desc = "FMC_ERR_THD is an ECC alarm threshold register.
+
+Data sheet 4.2.7.2 FMC_ERR_THD (offset 0xA8, printed page 4-220, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 44037).";
+
+        field {
+            name = "fmc_err_thd";
+            desc = " If an uncorrectable ECC error occurs, an uncorrectable interrupt  When the register value is set to 0 or 1, an alarm interrupt is  When the configured value exceeds the number of correctable";
+            sw = rw;
+            hw = r;
+            reset = 0xFF;
+        } fmc_err_thd[7:0];
+    } FMC_ERR_THD @ 0xA8;
+
+    reg {
+        name = "Component operating status register";
+        desc = "FMC_STATUS is a component operating status register.
+
+The status byte read by FMC_OP[read_status_en]. Vendor layout (`STATUS_*_MASK`) for the SPI NAND feature register: bit 0 OIP (operation in progress), 1 WEL, 2 E_FAIL, 3 P_FAIL, 5:4 ECC status; for SPI NOR it is the flash status register (bit 0 WIP).
+
+Data sheet 4.2.7.2 FMC_STATUS (offset 0xAC, printed page 4-220, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 44067).";
+
+        field {
+            name = "fm_status";
+            desc = "Component operating status";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } fm_status[7:0];
+    } FMC_STATUS @ 0xAC;
+
+    reg {
+        name = "SRAM pin configuration register";
+        desc = "FMC_MEM_CTRL is an SRAM pin configuration register.
+
+Data sheet 4.2.7.2 FMC_MEM_CTRL (offset 0xB4, printed page 4-221, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 44096).";
+
+        field {
+            name = "tp_mem_ret1n";
+            desc = "RET1N pin configuration of the dual-port SRAM";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } tp_mem_ret1n[14:14];
+
+        field {
+            name = "tp_mem_emab";
+            desc = "EMAB pin configuration of the dual-port SRAM";
+            sw = rw;
+            hw = r;
+            reset = 0x2;
+        } tp_mem_emab[13:11];
+
+        field {
+            name = "tp_mem_emaa";
+            desc = "EMAA pin configuration of the dual-port SRAM";
+            sw = rw;
+            hw = r;
+            reset = 0x2;
+        } tp_mem_emaa[10:8];
+
+        field {
+            name = "sp_mem_ret1n";
+            desc = "RET1N pin configuration of the single-port SRAM";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } sp_mem_ret1n[5:5];
+
+        field {
+            name = "sp_mem_emaw";
+            desc = "EMAW pin configuration of the single-port SRAM";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } sp_mem_emaw[4:3];
+
+        field {
+            name = "sp_mem_ema";
+            desc = "EMA pin configuration of the single-port SRAM";
+            sw = rw;
+            hw = r;
+            reset = 0x2;
+        } sp_mem_ema[2:0];
+    } FMC_MEM_CTRL @ 0xB4;
+
+    reg {
+        name = "Version register";
+        desc = "VERSION is a version register.
+
+Reads 0x100 (FMC V100): vendor `HIFMC_VER_100`. The same IP (`hifmc100`) is used for SPI NOR and SPI NAND by the vendor U-Boot (drivers/mtd/spi/hifmc100, drivers/mtd/nand/hifmc100) and Linux (`hisi-sfc` for NOR, `hifmc100` for NAND).
+
+Data sheet 4.2.7.2 VERSION (offset 0xBC, printed page 4-221, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 44129).";
+
+        field {
+            name = "version";
+            desc = "FMC V100";
+            sw = r;
+            hw = w;
+            reset = 0x100;
+        } version[31:0];
+    } VERSION @ 0xBC;
+
+    reg {
+        name = "SPI NAND flash error correction BUF0 information 0 statistics register for the first buffer operation";
+        desc = "FMC_ERR_NUM0_BUF0 is an SPI NAND flash error correction information 0 statistics register for the first buffer operation.
+
+Data sheet 4.2.7.2 FMC_ERR_NUM0_BUF0 (offset 0xC0, printed page 4-222, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 44157).";
+
+        field {
+            name = "err_num0_buf0";
+            desc = "Number of error bits in the 4 KB data when the page size is 2 KB bit[31:24]: number of error bits in the fourth 1 KB data bit[23:16]: number of error bits in the third 1 KB data bit[15:8]: number of error bits in the second 1 KB data bit[7:0]: number of error bits in the first 1 KB data";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } err_num0_buf0[31:0];
+    } FMC_ERR_NUM0_BUF0 @ 0xC0;
+
+    reg {
+        name = "Upper-byte ECC alarm flash address _ADDRH register";
+        desc = "FMC_ERR_ALARM_ADDRH is an upper-byte ECC alarm flash address register.
+
+Data sheet 4.2.7.2 FMC_ERR_ALARM_ADDRH (offset 0xD0, printed page 4-222, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 44179).";
+
+        field {
+            name = "fmc_err_alarm_addrh";
+            desc = "Upper bytes of the operation address of the flash that triggers the last interrupt when an ECC alarm interrupt is generated";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } fmc_err_alarm_addrh[7:0];
+    } FMC_ERR_ALARM_ADDRH @ 0xD0;
+
+    reg {
+        name = "Lower-byte ECC alarm flash address _ADDRL register";
+        desc = "FMC_ERR_ALARM_ADDRL is a lower-byte ECC alarm flash address register.
+
+Data sheet 4.2.7.2 FMC_ERR_ALARM_ADDRL (offset 0xD4, printed page 4-223, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 44210).";
+
+        field {
+            name = "fmc_err_alarm_addrl";
+            desc = "Lower bytes of the operation address of the flash that triggers the last interrupt when an ECC alarm interrupt is generated";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } fmc_err_alarm_addrl[31:0];
+    } FMC_ERR_ALARM_ADDRL @ 0xD4;
+
+    reg {
+        name = "Upper-byte ECC uncorrectable address D_ADDRH register";
+        desc = "FMC_ECC_INVALID_ADDRH is an upper-byte ECC uncorrectable address register.
+
+Data sheet 4.2.7.2 FMC_ECC_INVALID_ADDRH (offset 0xD8, printed page 4-223, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 44230).";
+
+        field {
+            name = "fmc_ecc_invalid_addrh";
+            desc = "Upper bytes of the operation address of the flash that triggers the last interrupt when an uncorrectable ECC error occurs";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } fmc_ecc_invalid_addrh[7:0];
+    } FMC_ECC_INVALID_ADDRH @ 0xD8;
+
+    reg {
+        name = "Lower-byte ECC uncorrectable address D_ADDRL register";
+        desc = "FMC_ECC_INVALID_ADDRL is a lower-byte ECC uncorrectable address register.
+
+Data sheet 4.2.7.2 FMC_ECC_INVALID_ADDRL (offset 0xDC, printed page 4-223, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 44251).";
+
+        field {
+            name = "fmc_ecc_invalid_addrl";
+            desc = "Lower bytes of the operation address of the flash that triggers the last interrupt when an uncorrectable ECC error occurs";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } fmc_ecc_invalid_addrl[31:0];
+    } FMC_ECC_INVALID_ADDRL @ 0xDC;
+
+    reg {
+        name = "SPI operation address register (vendor)";
+        desc = "Vendor-header register at 0x34, between FMC_OP_CFG and FMC_DATA_NUM.
+
+NOT IN THE DATA SHEET: register defined only in the vendor driver header 'include/hifmc_common.h` (sources/u-boot-vendor-2010.06). Offset and bits from that header; no reset documented.";
+
+        field {
+            name = "spi_op_addr";
+            desc = "Address sent with the next SPI operation (vendor name `FMC_SPI_OP_ADDR`; not used by the vendor drivers in the tree).";
+            sw = rw;
+            hw = r;
+        } spi_op_addr[31:0];
+    } FMC_SPI_OP_ADDR @ 0x34;
+
+    reg {
+        name = "DDR start address register 1 for DMA operations (vendor)";
+        desc = "Continuation of FMC_DMA_SADDR_D0 for the multi-buffer SPI NAND page layout.
+
+NOT IN THE DATA SHEET: register defined only in the vendor driver header 'include/hifmc_common.h` (sources/u-boot-vendor-2010.06). Offset and bits from that header; no reset documented.";
+
+        field {
+            name = "dma_mem_saddr_d";
+            desc = "DDR address of the data buffer number 1 (second to fourth 1 KB error-correction unit buffer of a page; D0 is documented at 0x4C).";
+            sw = rw;
+            hw = r;
+        } dma_mem_saddr_d[31:0];
+    } FMC_DMA_SADDR_D1 @ 0x50;
+
+    reg {
+        name = "DDR start address register 2 for DMA operations (vendor)";
+        desc = "Continuation of FMC_DMA_SADDR_D0 for the multi-buffer SPI NAND page layout.
+
+NOT IN THE DATA SHEET: register defined only in the vendor driver header 'include/hifmc_common.h` (sources/u-boot-vendor-2010.06). Offset and bits from that header; no reset documented.";
+
+        field {
+            name = "dma_mem_saddr_d";
+            desc = "DDR address of the data buffer number 2 (second to fourth 1 KB error-correction unit buffer of a page; D0 is documented at 0x4C).";
+            sw = rw;
+            hw = r;
+        } dma_mem_saddr_d[31:0];
+    } FMC_DMA_SADDR_D2 @ 0x54;
+
+    reg {
+        name = "DDR start address register 3 for DMA operations (vendor)";
+        desc = "Continuation of FMC_DMA_SADDR_D0 for the multi-buffer SPI NAND page layout.
+
+NOT IN THE DATA SHEET: register defined only in the vendor driver header 'include/hifmc_common.h` (sources/u-boot-vendor-2010.06). Offset and bits from that header; no reset documented.";
+
+        field {
+            name = "dma_mem_saddr_d";
+            desc = "DDR address of the data buffer number 3 (second to fourth 1 KB error-correction unit buffer of a page; D0 is documented at 0x4C).";
+            sw = rw;
+            hw = r;
+        } dma_mem_saddr_d[31:0];
+    } FMC_DMA_SADDR_D3 @ 0x58;
+
+    reg {
+        name = "DMA block-read start address register (vendor)";
+        desc = "DMA block read.
+
+NOT IN THE DATA SHEET: register defined only in the vendor driver header 'include/hifmc_common.h` (sources/u-boot-vendor-2010.06). Offset and bits from that header; no reset documented.";
+
+        field {
+            name = "dma_blk_saddr";
+            desc = "Start address (flash) of a DMA block read (`FMC_DMA_BLK_SADDR_SET` = addr & 0xFFFFFF); used with FMC_OP_CTRL.rd_op_sel = 2.";
+            sw = rw;
+            hw = r;
+        } dma_blk_saddr[23:0];
+    } FMC_DMA_BLK_SADDR @ 0x60;
+
+    reg {
+        name = "DMA block-read length register (vendor)";
+        desc = "DMA block read.
+
+NOT IN THE DATA SHEET: register defined only in the vendor driver header 'include/hifmc_common.h` (sources/u-boot-vendor-2010.06). Offset and bits from that header; no reset documented.";
+
+        field {
+            name = "dma_blk_len";
+            desc = "Length of a DMA block read (`FMC_DMA_BLK_LEN_SET` = len & 0xFFFF).";
+            sw = rw;
+            hw = r;
+        } dma_blk_len[15:0];
+    } FMC_DMA_BLK_LEN @ 0x64;
+
+};
+
+`endif

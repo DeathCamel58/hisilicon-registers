@@ -1,0 +1,3025 @@
+`ifndef HISI_FEMAC_RDL
+`define HISI_FEMAC_RDL
+
+
+regfile eHISI_FEMAC {
+    name = "HiSilicon femac v2 Fast Ethernet MAC with MDIO";
+    desc = "
+    HiSilicon \"femac\" Fast Ethernet MAC, version 2 (Linux compatible `hisilicon,hisi-femac-v2` / `hisilicon,hi3518ev20x-femac`, driver `hisi_femac.c`; vendor U-Boot driver `hisfv300`, the same family as the \"hieth\" switch-fabric MAC of the Hi3520D, `eHISI_HIETH_SF`): one port with RMII (10/100 Mbit/s, full or half duplex), an MDIO master, eight DMAC address filter entries, 64-entry RX and TX frame queues managed through the registers below (the frame descriptors are written to / read from UD_GLB_* registers, no DMA descriptor rings in memory), traffic limiting and EEE. New compared to the Hi3520D variant: TSO/UFO/SG and TX/RX checksum offload (RX_COE_EN register, TX controlled through bits of the frame descriptor), a single port (no down port) and the 12-bit RX frame length. The register layout (port registers +0x0000..0x0FFF, MDIO +0x1100, global +0x1300) matches `HISI_HIETH_SF.rdl` (that file's up port) except for the additions above and the missing down port, so this is a separate regfile `eHISI_FEMAC` (names without the data sheet's `UD_` prefix).
+    The block sits at 0x10090000 (64 KB window; the Linux device tree maps the port registers at 0x10090000 and the MDIO and global registers as two separate windows at 0x10091100 and 0x10091300). Interrupt: VIC interrupt 12. Clock and reset: PERI_CRG59 (0x20030000 + 0xEC): the vendor U-Boot (`drivers/net/hisfv300/sys.c`) uses soft-reset bit 0 (`ETH_SOFT_RESET`, hrst_eth_s), clock enable bit 1 (`ETH_CLK_ENABLE`), external-PHY reset bit 3 (`ETH_EXTERNAL_PHY_RESET`), core clock select bit 7 (`ETH_CORE_CLK_SELECT_54M`, ethcore_cksel), the DS also lists ethphy_cksel bits 5:4 and eth_rmiick_sel bit 2; the Linux device tree runs the ETH clock at 54 MHz and resets the MAC through CRG 0xEC bit 0 and the PHY through bit 3. The default \"main clock\" for the traffic-limit timer is 100 MHz (DS 5.4.4); at 54 MHz flux_timer_inter must be 54000 for a 1 ms granularity.
+    Registers, resets and descriptions are from the Hi3518E V20X/Hi3516C V200 data sheet issue 02 (2017-06-12), chapter 5 (`datasheet` text lines 44289-48515). The data sheet repeats the register block under the name prefix `UD_` (\"up/down port\"; only the up port exists here). Link/speed/duplex are taken from the PHY via MDIO scanning (UD_MDIO_*) or from the CPU through UD_MAC_PORTSET when UD_MAC_PORTSEL[stat_ctrl] = 1. Cross-checked against the Linux `hisi_femac.c` offsets and bit masks (all agree except the RMII bit, see UD_MAC_PORTSEL) and the vendor U-Boot hisfv300 headers. Not hardware verified.
+";
+
+    reg {
+        name = "MDIO command word register";
+        desc = "MDIO_RWCTRL is an MDIO command word register. The register does not support soft reset.
+
+Linux/U-Boot MDIO access: write cpu_data_in, phy_exaddr, phy_inaddr, rw and frq_dv with finish cleared; poll finish (bit 15) until 1; read data from MDIO_RO_DATA.cpu_data_out. The vendor drivers wait for finish before every access.
+
+Data sheet 5.6 MDIO_RWCTRL (offset 0x1100, printed page 5-18, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 45224).";
+
+        field {
+            name = "cpu_data_in";
+            desc = "Data used by the MDIO module to perform write operation on the PHY chip During write operation, the CPU first writes the 16-bit data to be written to the MDIO to this register.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } cpu_data_in[31:16];
+
+        enum MDIO_RWCTRL_finish_enum {
+            NOT_COMPLETE = 0 { name = "Not Complete"; desc = "not complete"; };
+            COMPLETE_WHEN_READ = 1 { name = "Complete When Read"; desc = "complete When the read/write operation is required for the second time, the CPU must clear this bit first."; };
+        };
+
+        field {
+            name = "finish";
+            desc = "PHY read/write operation complete";
+            sw = rw;
+            hw = r;
+            encode = MDIO_RWCTRL_finish_enum;
+            reset = 0x1;
+        } finish[15:15];
+
+        enum MDIO_RWCTRL_rw_f_enum {
+            READ_OPERATION = 0 { name = "Read Operation"; desc = "read operation"; };
+            WRITE_OPERATION = 1 { name = "Write Operation"; desc = "write operation"; };
+        };
+
+        field {
+            name = "rw";
+            desc = "PHY read or write access control";
+            sw = rw;
+            hw = r;
+            encode = MDIO_RWCTRL_rw_f_enum;
+            reset = 0x0;
+        } rw_f[13:13];
+
+        field {
+            name = "phy_exaddr";
+            desc = "Physical address of the external PHY chip One MDIO can perform read/write operation on multiple external PHY chips. Each PHY chip has one corresponding address. When the MDIO connects to only one external PHY chip, this bit is equivalent to UD_MDIO_PHYADDR[phy0_addr] or UD_MDIO_PHYADDR[phy1_addr].";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } phy_exaddr[12:8];
+
+        enum MDIO_RWCTRL_frq_dv_enum {
+            FREQUENCY_WORKING_MAIN = 0 { name = "Frequency Working Main"; desc = "The frequency of the working main clock is divided by 50 and the obtained frequency is 2 MHz."; };
+            FREQUENCY_WORKING_MAIN_2 = 1 { name = "Frequency Working Main 2"; desc = "The frequency of the working main clock is divided by 100 and the obtained frequency is 1 MHz."; };
+            FREQUENCY_WORKING_MAIN_3 = 2 { name = "Frequency Working Main 3"; desc = "The frequency of the working main clock is divided by 200 and the obtained frequency is 500 kHz."; };
+            FREQUENCY_WORKING_MAIN_4 = 3 { name = "Frequency Working Main 4"; desc = "The frequency of the working main clock is divided by 400 and the obtained frequency is 250 kHz."; };
+            FREQUENCY_WORKING_MAIN_5 = 4 { name = "Frequency Working Main 5"; desc = "The frequency of the working main clock is divided by 800 and the obtained frequency is 125 kHz."; };
+            FREQUENCY_WORKING_MAIN_6 = 5 { name = "Frequency Working Main 6"; desc = "The frequency of the working main clock is divided by 1600 and the obtained frequency is 62.5 kHz."; };
+            FREQUENCY_WORKING_MAIN_7 = 6 { name = "Frequency Working Main 7"; desc = "The frequency of the working main clock is divided by 3200 and the obtained frequency is 31.25 kHz."; };
+            FREQUENCY_WORKING_MAIN_8 = 7 { name = "Frequency Working Main 8"; desc = "The frequency of the working main clock is divided by 6400 and the obtained frequency is 15.625 kHz."; };
+        };
+
+        field {
+            name = "frq_dv";
+            desc = "Frequency division factor for the MDC (the MDIO interface clock) when the MDIO performs the read/write operation on external PHY chips Take the frequency 100 MHz of the main clock as an example to describe the matching relations between frq_dv and MDC frequency.";
+            sw = rw;
+            hw = r;
+            encode = MDIO_RWCTRL_frq_dv_enum;
+            reset = 0x0;
+        } frq_dv[7:5];
+
+        field {
+            name = "phy_inaddr";
+            desc = "Internal register address of the external PHY chip. This address is presented by a 5-bit binary number.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } phy_inaddr[4:0];
+    } MDIO_RWCTRL @ 0x1100;
+
+    reg {
+        name = "MDIO read data register";
+        desc = "MDIO_RO_DATAMDIO is a read data register. The register does not support soft reset.
+
+Data sheet 5.6 MDIO_RO_DATA (offset 0x1104, printed page 5-20, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 45308).";
+
+        field {
+            name = "cpu_data_out";
+            desc = "Data register used by the MDIO module to perform read operation on the PHY chip. The MDIO module first writes the 16-bit data read from the PHY chip to this register.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } cpu_data_out[15:0];
+    } MDIO_RO_DATA @ 0x1104;
+
+    reg {
+        name = "PHY physical address register";
+        desc = "UD_MDIO_PHYADDR is a PHY physical address register. The register does not support soft reset.
+
+Data sheet 5.6 UD_MDIO_PHYADDR (offset 0x108, printed page 5-20, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 45330).";
+
+        field {
+            name = "phy_addr";
+            desc = "Physical address of the external PHY chip";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } phy_addr[4:0];
+    } MDIO_PHYADDR @ 0x108;
+
+    reg {
+        name = "PHY status register";
+        desc = "UD_MDIO_RO_STAT is a PHY status register. The register does not support soft reset.
+
+Data sheet 5.6 UD_MDIO_RO_STAT (offset 0x10C, printed page 5-20, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 45350).";
+
+        enum MDIO_RO_STAT_speed_mdio2mac_enum {
+            V_10_MBIT_S = 0 { name = "V 10 Mbit S"; desc = "10 Mbit/s mode"; };
+            V_100_MBIT_S = 1 { name = "V 100 Mbit S"; desc = "100 Mbit/s mode"; };
+        };
+
+        field {
+            name = "speed_mdio2mac";
+            desc = "Port speed working status obtained from the MDIO interface, which is in either 10 Mbit/s or 100 Mbit/s working mode";
+            sw = r;
+            hw = w;
+            encode = MDIO_RO_STAT_speed_mdio2mac_enum;
+            reset = 0x0;
+        } speed_mdio2mac[2:2];
+
+        enum MDIO_RO_STAT_link_mdio2mac_enum {
+            NO_LINK_EXISTS = 0 { name = "No Link Exists"; desc = "No link exists."; };
+            LINK_EXISTS = 1 { name = "Link Exists"; desc = "A link exists."; };
+        };
+
+        field {
+            name = "link_mdio2mac";
+            desc = "Port link status obtained from the MDIO interface";
+            sw = r;
+            hw = w;
+            encode = MDIO_RO_STAT_link_mdio2mac_enum;
+            reset = 0x0;
+        } link_mdio2mac[1:1];
+
+        enum MDIO_RO_STAT_duplex_mdio2mac_enum {
+            HALF_DUPLEX = 0 { name = "Half Duplex"; desc = "half-duplex"; };
+            FULL_DUPLEX = 1 { name = "Full Duplex"; desc = "full-duplex"; };
+        };
+
+        field {
+            name = "duplex_mdio2mac";
+            desc = "Port duplex working status obtained from the MDIO interface";
+            sw = r;
+            hw = w;
+            encode = MDIO_RO_STAT_duplex_mdio2mac_enum;
+            reset = 0x0;
+        } duplex_mdio2mac[0:0];
+    } MDIO_RO_STAT @ 0x10C;
+
+    reg {
+        name = "Offset address configuration register for the PHY status";
+        desc = "UD_MDIO_ANEG_CTRLPHY is an offset address configuration register for the PHY status. The register does not support soft reset. The PHY speed status is indicated by bit[14] of the register with the address of 17, internal_addr_speed is set to 0x11 and speed_index is set to 0xE. In this case, the ETH module reads the bit value as the current working speed mode of the PHY through the MDIO interface.
+
+Data sheet 5.6 UD_MDIO_ANEG_CTRL (offset 0x110, printed page 5-21, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 45399).";
+
+        field {
+            name = "internal_addr_speed";
+            desc = "Address of the register in the PHY chip that stores the status information (speed). The default value is set according to Intel 9785.";
+            sw = rw;
+            hw = r;
+            reset = 0x11;
+        } internal_addr_speed[26:22];
+
+        field {
+            name = "internal_addr_link";
+            desc = "Address of the register in the PHY chip that stores the status information (link). The default value is set according to Intel 9785.";
+            sw = rw;
+            hw = r;
+            reset = 0x11;
+        } internal_addr_link[21:17];
+
+        field {
+            name = "internal_addr_duplex";
+            desc = "Address of the register in the PHY chip that stores the status information (duplex). The default value is set according to Intel 9785.";
+            sw = rw;
+            hw = r;
+            reset = 0x11;
+        } internal_addr_duplex[16:12];
+
+        field {
+            name = "speed_index";
+            desc = "Offset address in the PHY status register that is used to store the speed information. The default value is set according to Intel 9785.";
+            sw = rw;
+            hw = r;
+            reset = 0xE;
+        } speed_index[11:8];
+
+        field {
+            name = "link_index";
+            desc = "Offset address in the PHY status register that is used to store the link information. The default value is set according to Intel 9785.";
+            sw = rw;
+            hw = r;
+            reset = 0xA;
+        } link_index[7:4];
+
+        field {
+            name = "duplex_index";
+            desc = "Offset address in the PHY status register that is used to store the duplex information. The default value is set according to Intel 9785.";
+            sw = rw;
+            hw = r;
+            reset = 0x9;
+        } duplex_index[3:0];
+    } MDIO_ANEG_CTRL @ 0x110;
+
+    reg {
+        name = "Scan mask register for MDIO status changes";
+        desc = "UD_MDIO_IRQENA is a scan mask register for MDIO status changes. The register does not support soft reset.     If the status information about the PHY chip connecting to the port cannot be scanned and obtained by configuring     UD_MDIO_ANEG_CTRL, you can scan the PHY status register by using MDIO_RWCTRL to check whether the port status changes and generate an interrupt to notify software of processing the interrupt.     link_partner status change refers to the change of any bit of link, speed, and duplex for the PHY status.
+
+Data sheet 5.6 UD_MDIO_IRQENA (offset 0x114, printed page 5-22, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 45467).";
+
+        enum MDIO_IRQENA_link_partner_ch_mask_enum {
+            MASK_F = 0 { name = "Mask F"; desc = "mask"; };
+            UNMASK = 1 { name = "Unmask"; desc = "unmask"; };
+        };
+
+        field {
+            name = "link_partner_ch_mask";
+            desc = "Port link partner status scan change interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = MDIO_IRQENA_link_partner_ch_mask_enum;
+            reset = 0x0;
+        } link_partner_ch_mask[3:3];
+
+        enum MDIO_IRQENA_speed_ch_mask_enum {
+            MASK_F = 0 { name = "Mask F"; desc = "mask"; };
+            UNMASK = 1 { name = "Unmask"; desc = "unmask"; };
+        };
+
+        field {
+            name = "speed_ch_mask";
+            desc = "Port speed mode scan change interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = MDIO_IRQENA_speed_ch_mask_enum;
+            reset = 0x0;
+        } speed_ch_mask[2:2];
+
+        enum MDIO_IRQENA_link_ch_mask_enum {
+            MASK_F = 0 { name = "Mask F"; desc = "mask"; };
+            UNMASK = 1 { name = "Unmask"; desc = "unmask"; };
+        };
+
+        field {
+            name = "link_ch_mask";
+            desc = "Port link mode scan change interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = MDIO_IRQENA_link_ch_mask_enum;
+            reset = 0x0;
+        } link_ch_mask[1:1];
+
+        enum MDIO_IRQENA_duplex_ch_mask_enum {
+            MASK_F = 0 { name = "Mask F"; desc = "mask"; };
+            UNMASK = 1 { name = "Unmask"; desc = "unmask"; };
+        };
+
+        field {
+            name = "duplex_ch_mask";
+            desc = "Port duplex mode scan change interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = MDIO_IRQENA_duplex_ch_mask_enum;
+            reset = 0x0;
+        } duplex_ch_mask[0:0];
+    } MDIO_IRQENA @ 0x114;
+
+    reg {
+        name = "Port working status control register";
+        desc = "UD_MAC_PORTSEL is a port working status control register. The register does not support soft reset.
+
+Linux `hisi_femac.c` sets stat_ctrl (`MAC_PORTSEL_STAT_CPU`, bit 0 = 1: link status/speed/duplex are programmed by the CPU from the PHY state through UD_MAC_PORTSET) and the RMII bit (bit 1).
+
+Data sheet 5.6 UD_MAC_PORTSEL (offset 0x200, printed page 5-23, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 45522).";
+
+        field {
+            name = "mii_rmii";
+            desc = "Port interface mode selection (0 = MII, 1 = RMII). NOT IN THIS DATA SHEET (bit [31:1] reserved here); the Hi3520D data sheet and the Linux driver `hisi_femac.c` (`MAC_PORTSEL_RMII` = BIT(1)) define it, and the RMII-only pins of this SoC require RMII mode to be selected.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } mii_rmii[1:1];
+
+        enum MAC_PORTSEL_stat_ctrl_enum {
+            USE_STATUS_INFORMATION = 0 { name = "Use Status Information"; desc = "Use the status information obtained from the MDIO interface."; };
+            USE_STATUS_INFORMATION_2 = 1 { name = "Use Status Information 2"; desc = "Use the status information set by the CPU."; };
+        };
+
+        field {
+            name = "stat_ctrl";
+            desc = "Port working status information select control register";
+            sw = rw;
+            hw = r;
+            encode = MAC_PORTSEL_stat_ctrl_enum;
+            reset = 0x1;
+        } stat_ctrl[0:0];
+    } MAC_PORTSEL @ 0x200;
+
+    reg {
+        name = "Port status register";
+        desc = "UD_MAC_RO_STAT is a port status register. The register does not support soft reset.
+
+Data sheet 5.6 UD_MAC_RO_STAT (offset 0x204, printed page 5-23, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 45546).";
+
+        enum MAC_RO_STAT_speed_stat_enum {
+            V_10_MBIT_S = 0 { name = "V 10 Mbit S"; desc = "10 Mbit/s mode"; };
+            V_100_MBIT_S = 1 { name = "V 100 Mbit S"; desc = "100 Mbit/s mode"; };
+        };
+
+        field {
+            name = "speed_stat";
+            desc = "Port current speed mode";
+            sw = r;
+            hw = w;
+            encode = MAC_RO_STAT_speed_stat_enum;
+            reset = 0x0;
+        } speed_stat[2:2];
+
+        enum MAC_RO_STAT_link_stat_enum {
+            NO_LINK_EXISTS = 0 { name = "No Link Exists"; desc = "No link exists."; };
+            LINK_EXISTS = 1 { name = "Link Exists"; desc = "A link exists."; };
+        };
+
+        field {
+            name = "link_stat";
+            desc = "Port current link status";
+            sw = r;
+            hw = w;
+            encode = MAC_RO_STAT_link_stat_enum;
+            reset = 0x0;
+        } link_stat[1:1];
+
+        enum MAC_RO_STAT_duplex_stat_enum {
+            HALF_DUPLEX = 0 { name = "Half Duplex"; desc = "half-duplex"; };
+            FULL_DUPLEX = 1 { name = "Full Duplex"; desc = "full-duplex"; };
+        };
+
+        field {
+            name = "duplex_stat";
+            desc = "Port current duplex status";
+            sw = r;
+            hw = w;
+            encode = MAC_RO_STAT_duplex_stat_enum;
+            reset = 0x0;
+        } duplex_stat[0:0];
+    } MAC_RO_STAT @ 0x204;
+
+    reg {
+        name = "Port working status configuration register";
+        desc = "UD_MAC_PORTSET is a port working status configuration register. The register does not support soft reset.
+
+Linux `hisi_femac.c`: `MAC_PORTSET_DUPLEX_FULL` bit 0, `MAC_PORTSET_LINKED` bit 1, `MAC_PORTSET_SPEED_100M` bit 2.
+
+Data sheet 5.6 UD_MAC_PORTSET (offset 0x208, printed page 5-24, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 45590).";
+
+        enum MAC_PORTSET_speed_stat_dio_enum {
+            V_10_MBIT_S = 0 { name = "V 10 Mbit S"; desc = "10 Mbit/s mode"; };
+            V_100_MBIT_S = 1 { name = "V 100 Mbit S"; desc = "100 Mbit/s mode"; };
+        };
+
+        field {
+            name = "speed_stat_dio";
+            desc = "Port speed mode set by the CPU";
+            sw = rw;
+            hw = r;
+            encode = MAC_PORTSET_speed_stat_dio_enum;
+            reset = 0x0;
+        } speed_stat_dio[2:2];
+
+        enum MAC_PORTSET_link_stat_dio_enum {
+            NO_LINK_EXISTS = 0 { name = "No Link Exists"; desc = "No link exists."; };
+            LINK_EXISTS = 1 { name = "Link Exists"; desc = "A link exists."; };
+        };
+
+        field {
+            name = "link_stat_dio";
+            desc = "Port link status set by the CPU";
+            sw = rw;
+            hw = r;
+            encode = MAC_PORTSET_link_stat_dio_enum;
+            reset = 0x0;
+        } link_stat_dio[1:1];
+
+        enum MAC_PORTSET_duplex_stat_dio_enum {
+            HALF_DUPLEX = 0 { name = "Half Duplex"; desc = "half-duplex"; };
+            FULL_DUPLEX = 1 { name = "Full Duplex"; desc = "full-duplex"; };
+        };
+
+        field {
+            name = "duplex_stat_dio";
+            desc = "Port duplex mode set by the CPU";
+            sw = rw;
+            hw = r;
+            encode = MAC_PORTSET_duplex_stat_dio_enum;
+            reset = 0x0;
+        } duplex_stat_dio[0:0];
+    } MAC_PORTSET @ 0x208;
+
+    reg {
+        name = "Port status change indicator register for the MAC";
+        desc = "UD_MAC_STAT_CHANGE is a port status change indicator register. The register does not support soft reset.
+
+Data sheet 5.6 UD_MAC_STAT_CHANGE (offset 0x20C, printed page 5-25, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 45636).";
+
+        enum MAC_STAT_CHANGE_speed_stat_ch_enum {
+            NO_CHANGE_OCCURS = 0 { name = "No Change Occurs"; desc = "No change occurs."; };
+            CHANGE_OCCURS_WRITING = 1 { name = "Change Occurs Writing"; desc = "A change occurs. Writing 1 clears this register."; };
+        };
+
+        field {
+            name = "speed_stat_ch";
+            desc = "Port speed mode change indicator";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = MAC_STAT_CHANGE_speed_stat_ch_enum;
+            reset = 0x0;
+        } speed_stat_ch[2:2];
+
+        enum MAC_STAT_CHANGE_link_stat_ch_enum {
+            NO_CHANGE_OCCURS = 0 { name = "No Change Occurs"; desc = "No change occurs."; };
+            CHANGE_OCCURS_WRITING = 1 { name = "Change Occurs Writing"; desc = "A change occurs. Writing 1 clears this register."; };
+        };
+
+        field {
+            name = "link_stat_ch";
+            desc = "Port link status change indicator";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = MAC_STAT_CHANGE_link_stat_ch_enum;
+            reset = 0x0;
+        } link_stat_ch[1:1];
+
+        enum MAC_STAT_CHANGE_duplex_stat_ch_enum {
+            NO_CHANGE_OCCURS = 0 { name = "No Change Occurs"; desc = "No change occurs."; };
+            CHANGE_OCCURS_WRITING = 1 { name = "Change Occurs Writing"; desc = "A change occurs. Writing 1 clears this register."; };
+        };
+
+        field {
+            name = "duplex_stat_ch";
+            desc = "Port duplex mode change indicator";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = MAC_STAT_CHANGE_duplex_stat_ch_enum;
+            reset = 0x0;
+        } duplex_stat_ch[0:0];
+    } MAC_STAT_CHANGE @ 0x20C;
+
+    reg {
+        name = "MAC function configuration register";
+        desc = "UD_MAC_SET is a MAC function configuration register. The register does not support soft reset.
+
+Linux `hisi_femac.c` uses `MAX_FRAME_SIZE_MASK` = bits 10:0 (len_max, driver programs 1600) and `BIT_PAUSE_EN` = bit 18. The DS Total Reset Value 0x202755EE = add_pad_en, colthreshold 1, pause_en, rx_shframe_en, rx_min_thr 42, len_max 1518.
+
+Data sheet 5.6 UD_MAC_SET (offset 0x210, printed page 5-26, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 45683).";
+
+        enum MAC_SET_add_pad_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "add_pad_en";
+            desc = "Port auto add PAD enable during transmission";
+            sw = rw;
+            hw = r;
+            encode = MAC_SET_add_pad_en_enum;
+            reset = 0x1;
+        } add_pad_en[29:29];
+
+        enum MAC_SET_crcgen_dis_enum {
+            CRC_RECALCULATED_OUTPUT = 0 { name = "Crc Recalculated Output"; desc = "CRC is recalculated for the output frame."; };
+            CRC_NOT_RECALCULATED = 1 { name = "Crc Not Recalculated"; desc = "CRC is not recalculated for the output frame."; };
+        };
+
+        field {
+            name = "crcgen_dis";
+            desc = "Port CRC generation disable control";
+            sw = rw;
+            hw = r;
+            encode = MAC_SET_crcgen_dis_enum;
+            reset = 0x0;
+        } crcgen_dis[28:28];
+
+        enum MAC_SET_cntr_rdclr_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "cntr_rdclr_en";
+            desc = "Port statistics counter read clear enable";
+            sw = rw;
+            hw = r;
+            encode = MAC_SET_cntr_rdclr_en_enum;
+            reset = 0x0;
+        } cntr_rdclr_en[27:27];
+
+        enum MAC_SET_cntr_clr_all_enum {
+            NOT_CLEAR = 0 { name = "Not Clear"; desc = "not clear"; };
+            CLEAR = 1 { name = "Clear"; desc = "clear"; };
+        };
+
+        field {
+            name = "cntr_clr_all";
+            desc = "Port statistics counter clear control";
+            sw = rw;
+            hw = r;
+            encode = MAC_SET_cntr_clr_all_enum;
+            reset = 0x0;
+        } cntr_clr_all[26:26];
+
+        enum MAC_SET_cntr_roll_dis_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "cntr_roll_dis";
+            desc = "Port statistics acyclic counter enable";
+            sw = rw;
+            hw = r;
+            encode = MAC_SET_cntr_roll_dis_enum;
+            reset = 0x0;
+        } cntr_roll_dis[25:25];
+
+        field {
+            name = "colthreshold";
+            desc = "Port collision count statistics threshold The default value is 0x1, which indicates the count of frames with one collision.";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } colthreshold[24:21];
+
+        enum MAC_SET_in_loop_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "in_loop_en";
+            desc = "Port loopback to internal enable";
+            sw = rw;
+            hw = r;
+            encode = MAC_SET_in_loop_en_enum;
+            reset = 0x0;
+        } in_loop_en[20:20];
+
+        enum MAC_SET_ex_loop_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED_NOTE_LOOPBACK = 1 { name = "Enabled Note Loopback"; desc = "enabled Note: Loopback to internal enable and loopback to external enable cannot be configured at the same time. When the network interface is in normal state, you need to perform soft reset on the module after loopback to internal enable is configured instead of loopback to external enable and vice versa."; };
+        };
+
+        field {
+            name = "ex_loop_en";
+            desc = "Port loopback to external enable";
+            sw = rw;
+            hw = r;
+            encode = MAC_SET_ex_loop_en_enum;
+            reset = 0x0;
+        } ex_loop_en[19:19];
+
+        enum MAC_SET_pause_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "pause_en";
+            desc = "Port pause frame TX enable";
+            sw = rw;
+            hw = r;
+            encode = MAC_SET_pause_en_enum;
+            reset = 0x1;
+        } pause_en[18:18];
+
+        enum MAC_SET_rx_shframe_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "rx_shframe_en";
+            desc = "Port short frame RX enable";
+            sw = rw;
+            hw = r;
+            encode = MAC_SET_rx_shframe_en_enum;
+            reset = 0x1;
+        } rx_shframe_en[17:17];
+
+        field {
+            name = "rx_min_thr";
+            desc = "Minimum RX frame length allowed by the port The value range is from 42 bytes to 63 bytes. The default value is 42 bytes.";
+            sw = rw;
+            hw = r;
+            reset = 0x2A;
+        } rx_min_thr[16:11];
+
+        field {
+            name = "len_max";
+            desc = "Maximum RX frame length allowed by the port. The default value is 1518 bytes. The value is in a range of 1518 bytes to 1535 bytes.";
+            sw = rw;
+            hw = r;
+            reset = 0x5EE;
+        } len_max[10:0];
+    } MAC_SET @ 0x210;
+
+    reg {
+        name = "EEE raw interrupt register";
+        desc = "UD_MAC_EEE_INT is an EEE raw interrupt register.
+
+Data sheet 5.6 UD_MAC_EEE_INT (offset 0x480, printed page 5-28, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 45795).";
+
+        field {
+            name = "tx_entry_start";
+            desc = "Raw interrupt that allows the PHY to enter the low-power idle (LPI) state in the ETH TX direction";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } tx_entry_start[4:4];
+
+        field {
+            name = "rx_leave_lpi";
+            desc = "Raw interrupt that allows the PHY to exit the LPI state in the RX direction";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } rx_leave_lpi[3:3];
+
+        field {
+            name = "rx_entry_lpi";
+            desc = "Raw interrupt that allows the PHY to enter the LPI state in the RX direction";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } rx_entry_lpi[2:2];
+
+        field {
+            name = "tx_leave_lpi";
+            desc = "Raw interrupt that allows the PHY to exit the LPI state in the TX direction";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } tx_leave_lpi[1:1];
+
+        field {
+            name = "tx_entry_lpi";
+            desc = "Raw interrupt that allows the PHY to enter the LPI state in the TX direction";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } tx_entry_lpi[0:0];
+    } MAC_EEE_INT @ 0x480;
+
+    reg {
+        name = "EEE interrupt enable register";
+        desc = "UD_MAC_EEE_INTEN is an EEE interrupt enable register.
+
+Data sheet 5.6 UD_MAC_EEE_INTEN (offset 0x484, printed page 5-29, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 45846).";
+
+        field {
+            name = "tx_entry_start_msk";
+            desc = "Mask of the raw interrupt that allows the PHY to enter the LPI state in the ETH TX direction";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } tx_entry_start_msk[9:9];
+
+        field {
+            name = "rx_leave_lpi_msk";
+            desc = "Mask of the raw interrupt that allows the PHY to exit the LPI state in the RX direction";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } rx_leave_lpi_msk[8:8];
+
+        field {
+            name = "rx_entry_lpi_msk";
+            desc = "Mask of the raw interrupt that allows the PHY to enter the LPI state in the RX direction";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } rx_entry_lpi_msk[7:7];
+
+        field {
+            name = "tx_leave_lpi_msk";
+            desc = "Mask of the raw interrupt that allows the PHY to exit the LPI state in the TX direction";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } tx_leave_lpi_msk[6:6];
+
+        field {
+            name = "tx_entry_lpi_msk";
+            desc = "Mask of the raw interrupt that allows the PHY to enter the LPI state in the TX direction";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } tx_entry_lpi_msk[5:5];
+
+        field {
+            name = "tx_entry_start_en";
+            desc = "Enable for the raw interrupt that allows the PHY to enter the LPI state in the ETH TX direction";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } tx_entry_start_en[4:4];
+
+        field {
+            name = "rx_leave_lpi_en";
+            desc = "Enable for the raw interrupt that allows the PHY to exit the LPI state in the RX direction";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } rx_leave_lpi_en[3:3];
+
+        field {
+            name = "rx_entry_lpi_en";
+            desc = "Enable for the raw interrupt that allows the PHY to enter the LPI state in the RX direction";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } rx_entry_lpi_en[2:2];
+
+        field {
+            name = "tx_leave_lpi_en";
+            desc = "Enable for the raw interrupt that allows the PHY to exit the LPI state in the TX direction";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } tx_leave_lpi_en[1:1];
+
+        field {
+            name = "tx_entry_lpi_en";
+            desc = "Enable for the raw interrupt that allows the PHY to enter the LPI state in the TX direction";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } tx_entry_lpi_en[0:0];
+    } MAC_EEE_INTEN @ 0x484;
+
+    reg {
+        name = "EEE enable register";
+        desc = "UD_MAC_EEE_ENA is an EEE enable register.
+
+Data sheet 5.6 UD_MAC_EEE_ENA (offset 0x488, printed page 5-30, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 45912).";
+
+        field {
+            name = "eee_ls_timer";
+            desc = "LS timer";
+            sw = rw;
+            hw = r;
+            reset = 0x000F4240;
+        } eee_ls_timer[31:4];
+
+        field {
+            name = "eee_assert";
+            desc = "EEE LPI state enable";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } eee_assert[1:1];
+
+        field {
+            name = "eee_enable";
+            desc = "EEE enable";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } eee_enable[0:0];
+    } MAC_EEE_ENA @ 0x488;
+
+    reg {
+        name = "Timer register required for the EEE function";
+        desc = "UD_MAC_EEE_TIMER is a timer register required for the EEE function.
+
+Data sheet 5.6 UD_MAC_EEE_TIMER (offset 0x48C, printed page 5-30, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 45941).";
+
+        field {
+            name = "tx_wk_timer";
+            desc = "TX_WK_TIMER";
+            sw = rw;
+            hw = r;
+            reset = 0x1E;
+        } tx_wk_timer[31:16];
+
+        field {
+            name = "lpi_cond_timer";
+            desc = "LPI_COND_TIMER";
+            sw = rw;
+            hw = r;
+            reset = 0x2710;
+        } lpi_cond_timer[15:0];
+    } MAC_EEE_TIMER @ 0x48C;
+
+    reg {
+        name = "UD_MAC_EEE_LINK_STATUS an ETH port link status register dedicated for the EEE function";
+        desc = "UD_MAC_EEE_LINK_STATUS an ETH port link status register dedicated for the EEE function.
+
+Data sheet 5.6 UD_MAC_EEE_LINK_STATUS (offset 0x490, printed page 5-31, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 45977).";
+
+        field {
+            name = "phy_link_status";
+            desc = "PHY link status";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } phy_link_status[0:0];
+    } MAC_EEE_LINK_STATUS @ 0x490;
+
+    reg {
+        name = "EEE clock unit counter register";
+        desc = "UD_MAC_EEE_CLK_CNT is an EEE clock unit counter register.
+
+Data sheet 5.6 UD_MAC_EEE_CLK_CNT (offset 0x494, printed page 5-31, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 46004).";
+
+        field {
+            name = "eee_clk_cnt";
+            desc = "EEE clock unit counter";
+            sw = rw;
+            hw = r;
+            reset = 0x63;
+        } eee_clk_cnt[31:0];
+    } MAC_EEE_CLK_CNT @ 0x494;
+
+    reg {
+        name = "Lower 32-bit register for the local MAC address";
+        desc = "GLB_HOSTMAC_L32 is a lower 32-bit register for the local MAC address. The register does not support soft reset.
+
+Linux `GLB_HOSTMAC_L32` (offset 0x1300 from the block base, 0x0000 in the driver's second `reg` window at 0x10091300).
+
+Data sheet 5.6 GLB_HOSTMAC_L32 (offset 0x1300, printed page 5-31, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 46025).";
+
+        field {
+            name = "local_mac";
+            desc = "Lower 32 bits of the local MAC address";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } local_mac[31:0];
+    } GLB_HOSTMAC_L32 @ 0x1300;
+
+    reg {
+        name = "Upper 16-bit register for the local MAC address";
+        desc = "GLB_HOSTMAC_H16 is an upper 16-bit register for the local MAC address. The register does not support soft reset.
+
+Data sheet 5.6 GLB_HOSTMAC_H16 (offset 0x1304, printed page 5-32, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 46053).";
+
+        field {
+            name = "local_mac";
+            desc = "Upper 16 bits of the local MAC address";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } local_mac[15:0];
+    } GLB_HOSTMAC_H16 @ 0x1304;
+
+    reg {
+        name = "Internal soft reset register";
+        desc = "GLB_SOFT_RESET is an internal soft reset register. The register does not support soft reset. The time for each soft reset must remain for more than 2 ms.
+
+Data sheet 5.6 GLB_SOFT_RESET (offset 0x1308, printed page 5-32, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 46076).";
+
+        enum GLB_SOFT_RESET_soft_reset_enum {
+            NOT_RESET = 0 { name = "Not Reset"; desc = "not reset"; };
+            RESET_SOFT_RESET = 1 { name = "Reset Soft Reset"; desc = "reset In soft reset state, this bit must be set to 0 to clear soft reset."; };
+        };
+
+        field {
+            name = "soft_reset";
+            desc = "Internal soft reset";
+            sw = rw;
+            hw = r;
+            encode = GLB_SOFT_RESET_soft_reset_enum;
+            reset = 0x0;
+        } soft_reset[0:0];
+    } GLB_SOFT_RESET @ 0x1308;
+
+    reg {
+        name = "Forward control register";
+        desc = "GLB_FWCTRL is a forward control register. The register does not support soft reset.
+
+Linux: `FWCTRL_FW2CPU_ENA` bit 5, `FWCTRL_FWALL2CPU` bit 7 (the driver also names `FWCTRL_VLAN_ENABLE` bit 0, not in this data sheet).
+
+Data sheet 5.6 GLB_FWCTRL (offset 0x1310, printed page 5-33, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 46117).";
+
+        enum GLB_FWCTRL_fwall2cpu_up_enum {
+            NO = 0 { name = "No"; desc = "no"; };
+            YES = 1 { name = "Yes"; desc = "yes"; };
+        };
+
+        field {
+            name = "fwall2cpu_up";
+            desc = "Whether to forcibly forward all valid input frames to the CPU port";
+            sw = rw;
+            hw = r;
+            encode = GLB_FWCTRL_fwall2cpu_up_enum;
+            reset = 0x0;
+        } fwall2cpu_up[7:7];
+
+        enum GLB_FWCTRL_fw2cpu_ena_up_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "fw2cpu_ena_up";
+            desc = "Function enable of forwarding the input frames to the CPU port";
+            sw = rw;
+            hw = r;
+            encode = GLB_FWCTRL_fw2cpu_ena_up_enum;
+            reset = 0x1;
+        } fw2cpu_ena_up[5:5];
+    } GLB_FWCTRL @ 0x1310;
+
+    reg {
+        name = "MAC filter table control register";
+        desc = "MAC filter table control register.
+
+Linux: `MACTCTRL_UNI2CPU` bit 1, `MULTI2CPU` bit 3, `BROAD2CPU` bit 5, `MACT_ENA` bit 7. The DS summary gives no description for this register.
+
+Data sheet 5.6 GLB_MACTCTRL (offset 0x1314, printed page 5-34, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 46166).";
+
+        enum GLB_MACTCTRL_mact_ena_up_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled (no MAC filter is used)"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled (MAC filters are used)"; };
+        };
+
+        field {
+            name = "mact_ena_up";
+            desc = "Enable bit of all MAC filters of the port";
+            sw = rw;
+            hw = r;
+            encode = GLB_MACTCTRL_mact_ena_up_enum;
+            reset = 0x0;
+        } mact_ena_up[7:7];
+
+        enum GLB_MACTCTRL_broad2cpu_up_enum {
+            NO = 0 { name = "No"; desc = "no"; };
+            YES = 1 { name = "Yes"; desc = "yes"; };
+        };
+
+        field {
+            name = "broad2cpu_up";
+            desc = "Whether to forward the input broadcast frames to the CPU port";
+            sw = rw;
+            hw = r;
+            encode = GLB_MACTCTRL_broad2cpu_up_enum;
+            reset = 0x1;
+        } broad2cpu_up[5:5];
+
+        enum GLB_MACTCTRL_multi2cpu_up_enum {
+            NO = 0 { name = "No"; desc = "no"; };
+            YES = 1 { name = "Yes"; desc = "yes"; };
+        };
+
+        field {
+            name = "multi2cpu_up";
+            desc = "Whether to forward the input multicast frames that are not listed in the filter table to the CPU port";
+            sw = rw;
+            hw = r;
+            encode = GLB_MACTCTRL_multi2cpu_up_enum;
+            reset = 0x0;
+        } multi2cpu_up[3:3];
+
+        enum GLB_MACTCTRL_uni2cpu_up_enum {
+            NO = 0 { name = "No"; desc = "no"; };
+            YES = 1 { name = "Yes"; desc = "yes"; };
+        };
+
+        field {
+            name = "uni2cpu_up";
+            desc = "Whether to forward the input unicast frames that are not listed in the filter table to the CPU port";
+            sw = rw;
+            hw = r;
+            encode = GLB_MACTCTRL_uni2cpu_up_enum;
+            reset = 0x0;
+        } uni2cpu_up[1:1];
+    } GLB_MACTCTRL @ 0x1314;
+
+    reg {
+        name = "Endian control register";
+        desc = "GLB_ENDIAN_MOD is an endian control register. The register does not support soft reset.
+
+Data sheet 5.6 GLB_ENDIAN_MOD (offset 0x1318, printed page 5-35, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 46221).";
+
+        enum GLB_ENDIAN_MOD_in_edian_enum {
+            BIG_ENDIAN_MODE = 0 { name = "Big Endian Mode"; desc = "big-endian mode"; };
+            LITTLE_ENDIAN_MODE = 1 { name = "Little Endian Mode"; desc = "little-endian mode Data consists of bytes"; };
+        };
+
+        field {
+            name = "in_edian";
+            desc = "RX packet write SDRAM endian configuration";
+            sw = rw;
+            hw = r;
+            encode = GLB_ENDIAN_MOD_in_edian_enum;
+            reset = 0x1;
+        } in_edian[1:1];
+
+        enum GLB_ENDIAN_MOD_out_edian_enum {
+            BIG_ENDIAN_MODE = 0 { name = "Big Endian Mode"; desc = "big-endian mode"; };
+            LITTLE_ENDIAN_MODE = 1 { name = "Little Endian Mode"; desc = "little-endian mode"; };
+        };
+
+        field {
+            name = "out_edian";
+            desc = "TX packet read SDRAM endian configuration";
+            sw = rw;
+            hw = r;
+            encode = GLB_ENDIAN_MOD_out_edian_enum;
+            reset = 0x1;
+        } out_edian[0:0];
+    } GLB_ENDIAN_MOD @ 0x1318;
+
+    reg {
+        name = "Interrupt status register";
+        desc = "GLB_IRQ_STAT is an interrupt status register. The register does not support soft reset.
+
+Data sheet 5.6 GLB_IRQ_STAT (offset 0x1330, printed page 5-35, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 46253).";
+
+        enum GLB_IRQ_STAT_int_mdio_finish_enum {
+            NOT_COMPLETED = 0 { name = "Not Completed"; desc = "not completed"; };
+            COMPLETED_INTERRUPT_GENERATED = 1 { name = "Completed Interrupt Generated"; desc = "Completed and an interrupt is generated."; };
+        };
+
+        field {
+            name = "int_mdio_finish";
+            desc = "Raw interrupt status indicating whether the MDIO interface completes the operation required by the CPU";
+            sw = r;
+            hw = w;
+            encode = GLB_IRQ_STAT_int_mdio_finish_enum;
+            reset = 0x0;
+        } int_mdio_finish[12:12];
+
+        enum GLB_IRQ_STAT_int_rxd_up_enum {
+            INTERRUPT_INVALID = 0 { name = "Interrupt Invalid"; desc = "The interrupt is invalid."; };
+            INTERRUPT_VALID_THERE = 1 { name = "Interrupt Valid There"; desc = "The interrupt is valid. There are frames to be received by the CPU in the RX queue. After this interrupt is generated, software determines whether there are frames to be received by querying GLB_IRQ_RAW[iraw_rxd_up]."; };
+        };
+
+        field {
+            name = "int_rxd_up";
+            desc = "Interrupt status (multi-packet interrupt) for frames on the port to be received by the CPU";
+            sw = r;
+            hw = w;
+            encode = GLB_IRQ_STAT_int_rxd_up_enum;
+            reset = 0x0;
+        } int_rxd_up[7:7];
+
+        enum GLB_IRQ_STAT_int_freeeq_up_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED_AFTER = 1 { name = "Interrupt Generated After"; desc = "An interrupt is generated. After this interrupt is generated, software determines whether the current TX queue is empty by querying UD_GLB_ADDRQ_STAT[eq_cnt]. If the current TX queue is not empty, it indicates that the interrupt is invalid."; };
+        };
+
+        field {
+            name = "int_freeeq_up";
+            desc = "Interrupt status indicates that the status of the port output queue is changed from nonempty to empty, that is, the status of the TX queue buffer is changed from nonempty to empty, that is, the status of the TX queue buffer is changed from nonempty to empty. In this case, the CPU can write a group of new frames to be transmitted.";
+            sw = r;
+            hw = w;
+            encode = GLB_IRQ_STAT_int_freeeq_up_enum;
+            reset = 0x0;
+        } int_freeeq_up[6:6];
+
+        enum GLB_IRQ_STAT_int_stat_up_enum {
+            INTERRUPT_INVALID = 0 { name = "Interrupt Invalid"; desc = "The interrupt is invalid."; };
+            INTERRUPT_VALID_PORT = 1 { name = "Interrupt Valid Port"; desc = "The interrupt is valid. The port status changes. After this interrupt is generated, software determines which status changes according to the configuration of UD_MDIO_IRQENA."; };
+        };
+
+        field {
+            name = "int_stat_up";
+            desc = "Interrupt status for port status changes, indicating that an interrupt is generated when the MDIO obtains the speed change, duplex mode change, and link status change of the PHY chip in auto-adaption mode.";
+            sw = r;
+            hw = w;
+            encode = GLB_IRQ_STAT_int_stat_up_enum;
+            reset = 0x0;
+        } int_stat_up[5:5];
+
+        enum GLB_IRQ_STAT_int_duplex_up_enum {
+            INTERRUPT_INVALID = 0 { name = "Interrupt Invalid"; desc = "The interrupt is invalid."; };
+            INTERRUPT_VALID_DUPLEX = 1 { name = "Interrupt Valid Duplex"; desc = "The interrupt is valid. The duplex mode changes. After this interrupt is generated, software determines whether the duplex mode changes by querying UD_MAC_STAT_CHANGE[duplex_stat_ch]."; };
+        };
+
+        field {
+            name = "int_duplex_up";
+            desc = "Interrupt status for port duplex mode changes";
+            sw = r;
+            hw = w;
+            encode = GLB_IRQ_STAT_int_duplex_up_enum;
+            reset = 0x0;
+        } int_duplex_up[4:4];
+
+        enum GLB_IRQ_STAT_int_speed_up_enum {
+            INTERRUPT_INVALID = 0 { name = "Interrupt Invalid"; desc = "The interrupt is invalid."; };
+            INTERRUPT_VALID_SPEED = 1 { name = "Interrupt Valid Speed"; desc = "The interrupt is valid. The speed mode changes. After this interrupt is generated, software determines whether the speed mode changes by querying UD_MAC_STAT_CHANGE[speed_stat_ch]."; };
+        };
+
+        field {
+            name = "int_speed_up";
+            desc = "Interrupt status for port speed mode changes";
+            sw = r;
+            hw = w;
+            encode = GLB_IRQ_STAT_int_speed_up_enum;
+            reset = 0x0;
+        } int_speed_up[3:3];
+
+        enum GLB_IRQ_STAT_int_link_up_enum {
+            INTERRUPT_INVALID = 0 { name = "Interrupt Invalid"; desc = "The interrupt is invalid."; };
+            INTERRUPT_VALID_LINK = 1 { name = "Interrupt Valid Link"; desc = "The interrupt is valid. The link status changes. After this interrupt is generated, software determines whether the link status changes by querying UD_MAC_STAT_CHANGE[link_stat_ch]."; };
+        };
+
+        field {
+            name = "int_link_up";
+            desc = "Interrupt status for port link status changes";
+            sw = r;
+            hw = w;
+            encode = GLB_IRQ_STAT_int_link_up_enum;
+            reset = 0x0;
+        } int_link_up[2:2];
+
+        enum GLB_IRQ_STAT_int_tx_up_enum {
+            NOT_COMPLETED = 0 { name = "Not Completed"; desc = "not completed"; };
+            COMPLETED_INTERRUPT_GENERATED = 1 { name = "Completed Interrupt Generated"; desc = "Completed and an interrupt is generated. After this interrupt is generated, software determines whether to release the buffer of the TX frames by querying the current TX queue address eq_out_index in UD_GLB_QSTAT."; };
+        };
+
+        field {
+            name = "int_tx_up";
+            desc = "Interrupt status for the completion of transmitting a frame from the CPU by the port";
+            sw = r;
+            hw = w;
+            encode = GLB_IRQ_STAT_int_tx_up_enum;
+            reset = 0x0;
+        } int_tx_up[1:1];
+
+        enum GLB_IRQ_STAT_int_rx_up_enum {
+            INTERRUPT_INVALID = 0 { name = "Interrupt Invalid"; desc = "The interrupt is invalid."; };
+            INTERRUPT_VALID_THERE = 1 { name = "Interrupt Valid There"; desc = "The interrupt is valid. There are frames to be received by the CPU in the RX queue. After this interrupt program is started, software determines whether frames are received by querying the GLB_IRQ_RAW[iraw_rxd_up] signal."; };
+        };
+
+        field {
+            name = "int_rx_up";
+            desc = "Interrupt status for frames on the port to be received by the CPU";
+            sw = r;
+            hw = w;
+            encode = GLB_IRQ_STAT_int_rx_up_enum;
+            reset = 0x0;
+        } int_rx_up[0:0];
+    } GLB_IRQ_STAT @ 0x1330;
+
+    reg {
+        name = "Interrupt enable register";
+        desc = "GLB_IRQ_ENA is an interrupt enable register. The register does not support soft reset.
+
+Linux: `IRQ_ENA_PORT0_MASK` = bits 7:0, `IRQ_ENA_PORT0` = bit 18 (ien_up), `IRQ_ENA_ALL` = bit 19 (ien_all). The driver's default mask enables int_multi_rxrdy (bit 7 = rxd_up), tx per-packet (bit 1) and free-EQ (bit 6) interrupts. The ETH interrupt is VIC interrupt 12.
+
+Data sheet 5.6 GLB_IRQ_ENA (offset 0x1334, printed page 5-37, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 46365).";
+
+        enum GLB_IRQ_ENA_ien_all_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled (none of the interrupt can be reported)"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled (all interrupts are reported according to the configuration)"; };
+        };
+
+        field {
+            name = "ien_all";
+            desc = "All interrupts enable";
+            sw = rw;
+            hw = r;
+            encode = GLB_IRQ_ENA_ien_all_enum;
+            reset = 0x0;
+        } ien_all[19:19];
+
+        enum GLB_IRQ_ENA_ien_up_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled (none of the uplink port interrupt can be reported)"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled (all uplink port interrupts are reported according to the configuration)"; };
+        };
+
+        field {
+            name = "ien_up";
+            desc = "All uplink port interrupts enable";
+            sw = rw;
+            hw = r;
+            encode = GLB_IRQ_ENA_ien_up_enum;
+            reset = 0x0;
+        } ien_up[18:18];
+
+        enum GLB_IRQ_ENA_ien_mdio_finish_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "ien_mdio_finish";
+            desc = "Indicator enable for the MDIO to complete the operation required by the CPU";
+            sw = rw;
+            hw = r;
+            encode = GLB_IRQ_ENA_ien_mdio_finish_enum;
+            reset = 0x0;
+        } ien_mdio_finish[12:12];
+
+        enum GLB_IRQ_ENA_ien_rxd_up_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "ien_rxd_up";
+            desc = "Interrupt enable (multi-packet interrupt) for a frame (frames) on the uplink port to be received by the CPU";
+            sw = rw;
+            hw = r;
+            encode = GLB_IRQ_ENA_ien_rxd_up_enum;
+            reset = 0x0;
+        } ien_rxd_up[7:7];
+
+        enum GLB_IRQ_ENA_ien_freeeq_up_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "ien_freeeq_up";
+            desc = "Interrupt signal enable for the TX queue of the uplink port to change from nonempty to empty";
+            sw = rw;
+            hw = r;
+            encode = GLB_IRQ_ENA_ien_freeeq_up_enum;
+            reset = 0x0;
+        } ien_freeeq_up[6:6];
+
+        enum GLB_IRQ_ENA_ien_stat_up_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "ien_stat_up";
+            desc = "Interrupt signal enable for uplink port status changes";
+            sw = rw;
+            hw = r;
+            encode = GLB_IRQ_ENA_ien_stat_up_enum;
+            reset = 0x0;
+        } ien_stat_up[5:5];
+
+        enum GLB_IRQ_ENA_ien_duplex_up_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "ien_duplex_up";
+            desc = "Interrupt enable for uplink port duplex mode changes";
+            sw = rw;
+            hw = r;
+            encode = GLB_IRQ_ENA_ien_duplex_up_enum;
+            reset = 0x0;
+        } ien_duplex_up[4:4];
+
+        enum GLB_IRQ_ENA_ien_speed_up_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "ien_speed_up";
+            desc = "Interrupt enable for uplink port speed mode changes";
+            sw = rw;
+            hw = r;
+            encode = GLB_IRQ_ENA_ien_speed_up_enum;
+            reset = 0x0;
+        } ien_speed_up[3:3];
+
+        enum GLB_IRQ_ENA_ien_link_up_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "ien_link_up";
+            desc = "Interrupt enable for uplink port link status changes";
+            sw = rw;
+            hw = r;
+            encode = GLB_IRQ_ENA_ien_link_up_enum;
+            reset = 0x0;
+        } ien_link_up[2:2];
+
+        enum GLB_IRQ_ENA_ien_tx_up_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "ien_tx_up";
+            desc = "Indicator enable for the completion of transmitting a frame from the CPU by the uplink port";
+            sw = rw;
+            hw = r;
+            encode = GLB_IRQ_ENA_ien_tx_up_enum;
+            reset = 0x0;
+        } ien_tx_up[1:1];
+
+        enum GLB_IRQ_ENA_ien_rx_up_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "ien_rx_up";
+            desc = "Interrupt enable for frames on the uplink port to be received by the CPU";
+            sw = rw;
+            hw = r;
+            encode = GLB_IRQ_ENA_ien_rx_up_enum;
+            reset = 0x0;
+        } ien_rx_up[0:0];
+    } GLB_IRQ_ENA @ 0x1334;
+
+    reg {
+        name = "Raw interrupt register";
+        desc = "GLB_IRQ_RAW is a raw interrupt register. The register does not support soft reset. Writing 1 clears this register.
+
+Linux: `IRQ_INT_RX_RDY` bit 0, `IRQ_INT_TX_PER_PACKET` bit 1, `IRQ_INT_TX_FIFO_EMPTY` bit 6, `IRQ_INT_MULTI_RXRDY` bit 7. Writing 1 clears the raw status.
+
+Data sheet 5.6 GLB_IRQ_RAW (offset 0x1338, printed page 5-39, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 46456).";
+
+        enum GLB_IRQ_RAW_iraw_mdio_finish_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "iraw_mdio_finish";
+            desc = "Raw interrupt status for the MDIO to complete the operation required by the CPU";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = GLB_IRQ_RAW_iraw_mdio_finish_enum;
+            reset = 0x0;
+        } iraw_mdio_finish[12:12];
+
+        enum GLB_IRQ_RAW_iraw_rxd_up_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "iraw_rxd_up";
+            desc = "Raw interrupt status (multi-packet interrupt) for a frame (frames) on the uplink port to be received by the CPU";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = GLB_IRQ_RAW_iraw_rxd_up_enum;
+            reset = 0x0;
+        } iraw_rxd_up[7:7];
+
+        enum GLB_IRQ_RAW_iraw_freeeq_up_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "iraw_freeeq_up";
+            desc = "Raw interrupt status for the TX queue of the uplink port to change from nonempty to empty, indicating that the TX queue buffer changes from nonempty to empty and the CPU can write a group of new frames to be transmitted.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = GLB_IRQ_RAW_iraw_freeeq_up_enum;
+            reset = 0x0;
+        } iraw_freeeq_up[6:6];
+
+        enum GLB_IRQ_RAW_iraw_stat_up_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "iraw_stat_up";
+            desc = "Raw interrupt status for uplink port status changes, indicating that an interrupt is generated when the MDIO obtains the speed change, duplex mode change, and link status change of the PHY chip in auto-adaption mode.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = GLB_IRQ_RAW_iraw_stat_up_enum;
+            reset = 0x0;
+        } iraw_stat_up[5:5];
+
+        enum GLB_IRQ_RAW_iraw_duplex_up_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "iraw_duplex_up";
+            desc = "Raw interrupt status for uplink port duplex mode changes";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = GLB_IRQ_RAW_iraw_duplex_up_enum;
+            reset = 0x0;
+        } iraw_duplex_up[4:4];
+
+        enum GLB_IRQ_RAW_iraw_speed_up_enum {
+            INTERRUPT_INVALID = 0 { name = "Interrupt Invalid"; desc = "The interrupt is invalid."; };
+            INTERRUPT_VALID_SPEED = 1 { name = "Interrupt Valid Speed"; desc = "The interrupt is valid. The speed mode changes. Writing 1 clears this register."; };
+        };
+
+        field {
+            name = "iraw_speed_up";
+            desc = "Raw interrupt status for uplink port speed mode changes";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = GLB_IRQ_RAW_iraw_speed_up_enum;
+            reset = 0x0;
+        } iraw_speed_up[3:3];
+
+        enum GLB_IRQ_RAW_iraw_link_up_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "iraw_link_up";
+            desc = "Raw interrupt status for uplink port link status changes";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = GLB_IRQ_RAW_iraw_link_up_enum;
+            reset = 0x0;
+        } iraw_link_up[2:2];
+
+        enum GLB_IRQ_RAW_iraw_tx_up_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "iraw_tx_up";
+            desc = "Raw interrupt status for the completion of transmitting a frame from the CPU by the uplink port";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = GLB_IRQ_RAW_iraw_tx_up_enum;
+            reset = 0x0;
+        } iraw_tx_up[1:1];
+
+        enum GLB_IRQ_RAW_iraw_rx_up_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "iraw_rx_up";
+            desc = "Raw interrupt status for frames on the uplink port to be received by the CPU";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = GLB_IRQ_RAW_iraw_rx_up_enum;
+            reset = 0x0;
+        } iraw_rx_up[0:0];
+    } GLB_IRQ_RAW @ 0x1338;
+
+    reg {
+        name = "MAC filter 0";
+        desc = "GLB_MAC0_L32 is a lower 32-bit register for the filter table MAC0.
+
+Data sheet 5.6 GLB_MAC0_L32 (offset 0x1400, printed page 5-40, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 46537).";
+
+        field {
+            name = "flt_mac0";
+            desc = "Lower 32 bits of the filter table MAC0";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } flt_mac0[31:0];
+    } GLB_MAC0_L32 @ 0x1400;
+
+    reg {
+        name = "MAC filter 0";
+        desc = "GLB_MAC0_H16 is an upper 16-bit register for the filter table MAC0.
+
+The filter table has eight entries (GLB_MAC0..7). Linux: `BIT_MACFLT_ENA` = bit 17 (mac_up), `BIT_MACFLT_FW2CPU` = bit 21 (fw2cpu_up); the low 16 bits are the upper half of the MAC address.
+
+Data sheet 5.6 GLB_MAC0_H16 (offset 0x1404, printed page 5-41, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 46565).";
+
+        enum GLB_MAC0_H16_fw2cpu_up_enum {
+            NO = 0 { name = "No"; desc = "no"; };
+            YES = 1 { name = "Yes"; desc = "yes"; };
+        };
+
+        field {
+            name = "fw2cpu_up";
+            desc = "Whether to forward the frames received by the uplink port that match this filter to the CPU port when the uplink port enables this filter";
+            sw = rw;
+            hw = r;
+            encode = GLB_MAC0_H16_fw2cpu_up_enum;
+            reset = 0x0;
+        } fw2cpu_up[21:21];
+
+        enum GLB_MAC0_H16_mac0_up_enum {
+            UPLINK_PORT_DOES = 0 { name = "Uplink Port Does"; desc = "The uplink port does not use this filter."; };
+            UPLINK_PORT_USES = 1 { name = "Uplink Port Uses"; desc = "The uplink port uses this filter."; };
+        };
+
+        field {
+            name = "mac0_up";
+            desc = "Control for setting this filter to be used by the uplink port";
+            sw = rw;
+            hw = r;
+            encode = GLB_MAC0_H16_mac0_up_enum;
+            reset = 0x0;
+        } mac0_up[17:17];
+
+        field {
+            name = "flt_mac0";
+            desc = "Upper 16 bits of the filter table MAC0";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } flt_mac0[15:0];
+    } GLB_MAC0_H16 @ 0x1404;
+
+    reg {
+        name = "MAC filter 1";
+        desc = "GLB_MAC1_L32 is a lower 32-bit register for the filter table MAC1.
+
+Data sheet 5.6 GLB_MAC1_L32 (offset 0x1408, printed page 5-41, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 46602).";
+
+        field {
+            name = "flt_mac1";
+            desc = "Lower 32 bits of the filter table MAC1";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } flt_mac1[31:0];
+    } GLB_MAC1_L32 @ 0x1408;
+
+    reg {
+        name = "MAC filter 1";
+        desc = "GLB_MAC1_H16 is an upper 16-bit register for the filter table MAC1.
+
+Data sheet 5.6 GLB_MAC1_H16 (offset 0x140C, printed page 5-42, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 46629).";
+
+        enum GLB_MAC1_H16_fw2cpu_up_enum {
+            NO = 0 { name = "No"; desc = "no"; };
+            YES = 1 { name = "Yes"; desc = "yes"; };
+        };
+
+        field {
+            name = "fw2cpu_up";
+            desc = "Whether to forward the frames received by the uplink port that match this filter to the CPU port when the uplink port enables this filter";
+            sw = rw;
+            hw = r;
+            encode = GLB_MAC1_H16_fw2cpu_up_enum;
+            reset = 0x0;
+        } fw2cpu_up[21:21];
+
+        enum GLB_MAC1_H16_mac1_up_enum {
+            UPLINK_PORT_DOES = 0 { name = "Uplink Port Does"; desc = "The uplink port does not use this filter."; };
+            UPLINK_PORT_USES = 1 { name = "Uplink Port Uses"; desc = "The uplink port uses this filter."; };
+        };
+
+        field {
+            name = "mac1_up";
+            desc = "Control for setting this filter to be used by the uplink port";
+            sw = rw;
+            hw = r;
+            encode = GLB_MAC1_H16_mac1_up_enum;
+            reset = 0x0;
+        } mac1_up[17:17];
+
+        field {
+            name = "flt_mac1";
+            desc = "Upper 16 bits of the filter table MAC1";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } flt_mac1[15:0];
+    } GLB_MAC1_H16 @ 0x140C;
+
+    reg {
+        name = "MAC filter 2";
+        desc = "GLB_MAC2_L32 is a lower 32-bit register for the filter table MAC2.
+
+Data sheet 5.6 GLB_MAC2_L32 (offset 0x1410, printed page 5-42, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 46666).";
+
+        field {
+            name = "flt_mac2";
+            desc = "Lower 32 bits of the filter table MAC2";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } flt_mac2[31:0];
+    } GLB_MAC2_L32 @ 0x1410;
+
+    reg {
+        name = "MAC filter 2";
+        desc = "GLB_MAC2_H16 is an upper 16-bit register for the filter table MAC2.
+
+Data sheet 5.6 GLB_MAC2_H16 (offset 0x1414, printed page 5-43, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 46692).";
+
+        enum GLB_MAC2_H16_fw2cpu_up_enum {
+            NO = 0 { name = "No"; desc = "no"; };
+            YES = 1 { name = "Yes"; desc = "yes"; };
+        };
+
+        field {
+            name = "fw2cpu_up";
+            desc = "Whether to forward the frames received by the uplink port that match this filter to the CPU port when the uplink port enables this filter";
+            sw = rw;
+            hw = r;
+            encode = GLB_MAC2_H16_fw2cpu_up_enum;
+            reset = 0x0;
+        } fw2cpu_up[21:21];
+
+        enum GLB_MAC2_H16_mac2_up_enum {
+            UPLINK_PORT_DOES = 0 { name = "Uplink Port Does"; desc = "The uplink port does not use this filter."; };
+            UPLINK_PORT_USES = 1 { name = "Uplink Port Uses"; desc = "The uplink port uses this filter."; };
+        };
+
+        field {
+            name = "mac2_up";
+            desc = "Control for setting this filter to be used by the uplink port";
+            sw = rw;
+            hw = r;
+            encode = GLB_MAC2_H16_mac2_up_enum;
+            reset = 0x0;
+        } mac2_up[17:17];
+
+        field {
+            name = "flt_mac2";
+            desc = "Upper 16 bits of the filter table MAC2";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } flt_mac2[15:0];
+    } GLB_MAC2_H16 @ 0x1414;
+
+    reg {
+        name = "MAC filter 3";
+        desc = "GLB_MAC3_L32 is a lower 32-bit register for the filter table MAC3.
+
+Data sheet 5.6 GLB_MAC3_L32 (offset 0x1418, printed page 5-43, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 46728).";
+
+        field {
+            name = "flt_mac3";
+            desc = "Lower 32 bits of the filter table MAC3";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } flt_mac3[31:0];
+    } GLB_MAC3_L32 @ 0x1418;
+
+    reg {
+        name = "MAC filter 3";
+        desc = "GLB_MAC3_H16 is an upper 16-bit register for the filter table MAC3.
+
+Data sheet 5.6 GLB_MAC3_H16 (offset 0x141C, printed page 5-44, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 46754).";
+
+        enum GLB_MAC3_H16_fw2cpu_up_enum {
+            NO = 0 { name = "No"; desc = "no"; };
+            YES = 1 { name = "Yes"; desc = "yes"; };
+        };
+
+        field {
+            name = "fw2cpu_up";
+            desc = "Whether to forward the frames received by the uplink port that match this filter to the CPU port when the uplink port enables this filter";
+            sw = rw;
+            hw = r;
+            encode = GLB_MAC3_H16_fw2cpu_up_enum;
+            reset = 0x0;
+        } fw2cpu_up[21:21];
+
+        enum GLB_MAC3_H16_mac3_up_enum {
+            DO_NOT_FORWARD = 0 { name = "Do Not Forward"; desc = "Do not forward the frames."; };
+            FORWARD_FRAMES = 1 { name = "Forward Frames"; desc = "Forward the frames."; };
+        };
+
+        field {
+            name = "mac3_up";
+            desc = "Whether to forward the frames received by the downlink port that match this filter to the CPU port when the downlink port enables this filter";
+            sw = rw;
+            hw = r;
+            encode = GLB_MAC3_H16_mac3_up_enum;
+            reset = 0x0;
+        } mac3_up[17:17];
+
+        field {
+            name = "flt_mac3";
+            desc = "Upper 16 bits of the filter table MAC3";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } flt_mac3[15:0];
+    } GLB_MAC3_H16 @ 0x141C;
+
+    reg {
+        name = "MAC filter 4";
+        desc = "GLB_MAC4_L32 is a lower 32-bit register for the filter table MAC4.
+
+Data sheet 5.6 GLB_MAC4_L32 (offset 0x1420, printed page 5-44, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 46791).";
+
+        field {
+            name = "flt_mac4";
+            desc = "Lower 32 bits of the filter table MAC4";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } flt_mac4[31:0];
+    } GLB_MAC4_L32 @ 0x1420;
+
+    reg {
+        name = "MAC filter 4";
+        desc = "GLB_MAC4_H16 is an upper 16-bit register for the filter table MAC4.
+
+Data sheet 5.6 GLB_MAC4_H16 (offset 0x1424, printed page 5-45, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 46816).";
+
+        enum GLB_MAC4_H16_fw2cpu_up_enum {
+            NO = 0 { name = "No"; desc = "no"; };
+            YES = 1 { name = "Yes"; desc = "yes"; };
+        };
+
+        field {
+            name = "fw2cpu_up";
+            desc = "Whether to forward the frames received by the uplink port that match this filter to the CPU port when the uplink port enables this filter";
+            sw = rw;
+            hw = r;
+            encode = GLB_MAC4_H16_fw2cpu_up_enum;
+            reset = 0x0;
+        } fw2cpu_up[21:21];
+
+        enum GLB_MAC4_H16_mac4_up_enum {
+            UPLINK_PORT_DOES = 0 { name = "Uplink Port Does"; desc = "The uplink port does not use this filter."; };
+            UPLINK_PORT_USES = 1 { name = "Uplink Port Uses"; desc = "The uplink port uses this filter."; };
+        };
+
+        field {
+            name = "mac4_up";
+            desc = "Control for setting this filter to be used by the uplink port";
+            sw = rw;
+            hw = r;
+            encode = GLB_MAC4_H16_mac4_up_enum;
+            reset = 0x0;
+        } mac4_up[17:17];
+
+        field {
+            name = "flt_mac4";
+            desc = "Upper 16 bits of the filter table MAC4";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } flt_mac4[15:0];
+    } GLB_MAC4_H16 @ 0x1424;
+
+    reg {
+        name = "MAC filter 5";
+        desc = "GLB_MAC5_L32 is a lower 32-bit register for the filter table MAC5.
+
+Data sheet 5.6 GLB_MAC5_L32 (offset 0x1428, printed page 5-45, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 46853).";
+
+        field {
+            name = "flt_mac5";
+            desc = "Lower 32 bits of the filter table MAC5";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } flt_mac5[31:0];
+    } GLB_MAC5_L32 @ 0x1428;
+
+    reg {
+        name = "MAC filter 5";
+        desc = "GLB_MAC5_H16 is an upper 16-bit register for the filter table MAC5.
+
+Data sheet 5.6 GLB_MAC5_H16 (offset 0x142C, printed page 5-46, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 46878).";
+
+        enum GLB_MAC5_H16_fw2cpu_up_enum {
+            NO = 0 { name = "No"; desc = "no"; };
+            YES = 1 { name = "Yes"; desc = "yes"; };
+        };
+
+        field {
+            name = "fw2cpu_up";
+            desc = "Whether to forward the frames received by the uplink port that match this filter to the CPU port when the uplink port enables this filter";
+            sw = rw;
+            hw = r;
+            encode = GLB_MAC5_H16_fw2cpu_up_enum;
+            reset = 0x0;
+        } fw2cpu_up[21:21];
+
+        enum GLB_MAC5_H16_mac5_up_enum {
+            UPLINK_PORT_DOES = 0 { name = "Uplink Port Does"; desc = "The uplink port does not use this filter."; };
+            UPLINK_PORT_USES = 1 { name = "Uplink Port Uses"; desc = "The uplink port uses this filter."; };
+        };
+
+        field {
+            name = "mac5_up";
+            desc = "Control for setting this filter to be used by the uplink port";
+            sw = rw;
+            hw = r;
+            encode = GLB_MAC5_H16_mac5_up_enum;
+            reset = 0x0;
+        } mac5_up[17:17];
+
+        field {
+            name = "flt_mac5";
+            desc = "Upper 16 bits of the filter table MAC5";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } flt_mac5[15:0];
+    } GLB_MAC5_H16 @ 0x142C;
+
+    reg {
+        name = "MAC filter 6";
+        desc = "GLB_MAC6_L32 is a lower 32-bit register for the filter table MAC6.
+
+Data sheet 5.6 GLB_MAC6_L32 (offset 0x1430, printed page 5-46, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 46914).";
+
+        field {
+            name = "flt_mac6";
+            desc = "Lower 32 bits of the filter table MAC6";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } flt_mac6[31:0];
+    } GLB_MAC6_L32 @ 0x1430;
+
+    reg {
+        name = "MAC filter 6";
+        desc = "GLB_MAC6_H16 is an upper 16-bit register for the filter table MAC6.
+
+Data sheet 5.6 GLB_MAC6_H16 (offset 0x1434, printed page 5-47, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 46939).";
+
+        enum GLB_MAC6_H16_fw2cpu_up_enum {
+            NO = 0 { name = "No"; desc = "no"; };
+            YES = 1 { name = "Yes"; desc = "yes"; };
+        };
+
+        field {
+            name = "fw2cpu_up";
+            desc = "Whether to forward the frames received by the uplink port that match this filter to the CPU port when the uplink port enables this filter";
+            sw = rw;
+            hw = r;
+            encode = GLB_MAC6_H16_fw2cpu_up_enum;
+            reset = 0x0;
+        } fw2cpu_up[21:21];
+
+        enum GLB_MAC6_H16_mac6_up_enum {
+            UPLINK_PORT_DOES = 0 { name = "Uplink Port Does"; desc = "The uplink port does not use this filter."; };
+            UPLINK_PORT_USES = 1 { name = "Uplink Port Uses"; desc = "The uplink port uses this filter."; };
+        };
+
+        field {
+            name = "mac6_up";
+            desc = "Control for setting this filter to be used by the uplink port";
+            sw = rw;
+            hw = r;
+            encode = GLB_MAC6_H16_mac6_up_enum;
+            reset = 0x0;
+        } mac6_up[17:17];
+
+        field {
+            name = "flt_mac6";
+            desc = "Upper 16 bits of the filter table MAC6";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } flt_mac6[15:0];
+    } GLB_MAC6_H16 @ 0x1434;
+
+    reg {
+        name = "MAC filter 7";
+        desc = "GLB_MAC7_L32 is a lower 32-bit register for the filter table MAC7.
+
+Data sheet 5.6 GLB_MAC7_L32 (offset 0x1438, printed page 5-47, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 46976).";
+
+        field {
+            name = "flt_mac7";
+            desc = "Lower 32 bits of the filter table MAC7";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } flt_mac7[31:0];
+    } GLB_MAC7_L32 @ 0x1438;
+
+    reg {
+        name = "MAC filter 7";
+        desc = "GLB_MAC7_H16 is an upper 16-bit register for the filter table MAC7.
+
+Data sheet 5.6 GLB_MAC7_H16 (offset 0x143C, printed page 5-48, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 47001).";
+
+        enum GLB_MAC7_H16_fw2cpu_up_enum {
+            NO = 0 { name = "No"; desc = "no"; };
+            YES = 1 { name = "Yes"; desc = "yes"; };
+        };
+
+        field {
+            name = "fw2cpu_up";
+            desc = "Whether to forward the frames received by the uplink port that match this filter to the CPU port when the uplink port enables this filter";
+            sw = rw;
+            hw = r;
+            encode = GLB_MAC7_H16_fw2cpu_up_enum;
+            reset = 0x0;
+        } fw2cpu_up[21:21];
+
+        enum GLB_MAC7_H16_mac7_up_enum {
+            UPLINK_PORT_DOES = 0 { name = "Uplink Port Does"; desc = "The uplink port does not use this filter."; };
+            UPLINK_PORT_USES = 1 { name = "Uplink Port Uses"; desc = "The uplink port uses this filter."; };
+        };
+
+        field {
+            name = "mac7_up";
+            desc = "Control for setting this filter to be used by the uplink port";
+            sw = rw;
+            hw = r;
+            encode = GLB_MAC7_H16_mac7_up_enum;
+            reset = 0x0;
+        } mac7_up[17:17];
+
+        field {
+            name = "flt_mac7";
+            desc = "Upper 16 bits of the filter table MAC7";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } flt_mac7[15:0];
+    } GLB_MAC7_H16 @ 0x143C;
+
+    reg {
+        name = "Multi-packet interrupt configuration register";
+        desc = "UD_GLB_IRQN_SET is a multi-packet interrupt configuration register. The register does not support soft reset.
+
+Linux `RX_COALESCE_SET` (0x340): the driver programs int_frm_cnt = 8 (`RX_COALESCED_FRAMES`) and age_timer = 0x74 (`RX_COALESCED_TIMER`). DS Total Reset Value 0x0800003A.
+
+Data sheet 5.6 UD_GLB_IRQN_SET (offset 0x340, printed page 5-48, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 47039).";
+
+        field {
+            name = "int_frm_cnt";
+            desc = "These bits are used to set the multi-packet interrupt function. That is, how many packets must be received before a multi-packet interrupt can be reported.";
+            sw = rw;
+            hw = r;
+            reset = 0x8;
+        } int_frm_cnt[28:24];
+
+        field {
+            name = "age_timer";
+            desc = "After the multi-packet interrupt function is enabled, if the number of received packets cannot reach the specified number of packets required for reporting the multi-packet interrupt after a period, this period is defined as the aging time for generating the multi-packet interrupt.";
+            sw = rw;
+            hw = r;
+            reset = 0x3A;
+        } age_timer[15:0];
+    } GLB_IRQN_SET @ 0x340;
+
+    reg {
+        name = "Queue length configuration register";
+        desc = "UD_GLB_QLEN_SET is a queue length configuration register. The register does not support soft reset.
+
+Linux `QLEN_SET` (0x344): iq_len at bit 8 (`RX_DEPTH_OFFSET`), eq_len at bit 0; the driver uses a hardware FIFO depth of at most 64 entries (`MAX_HW_FIFO_DEPTH`), 12 for TX and 52 for RX.
+
+Data sheet 5.6 UD_GLB_QLEN_SET (offset 0x344, printed page 5-49, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 47084).";
+
+        field {
+            name = "iq_len";
+            desc = "RX (packet RX) queue length configuration";
+            sw = rw;
+            hw = r;
+            reset = 0x20;
+        } iq_len[13:8];
+
+        field {
+            name = "eq_len";
+            desc = "TX (packet TX) queue length configuration";
+            sw = rw;
+            hw = r;
+            reset = 0x20;
+        } eq_len[5:0];
+    } GLB_QLEN_SET @ 0x344;
+
+    reg {
+        name = "Traffic control register";
+        desc = "UD_GLB_FC_LEVEL is a traffic control register. The register does not support soft reset.
+
+The DS Total Reset Value 0x30180508 has non-zero bits 29:28 and 20:19 inside the reserved fields (not modelled), same as the Hi3520D data sheet. DS typo: the qlimit_down text says \"equal to or greater than the upper limit\" and should say lower limit.
+
+Data sheet 5.6 UD_GLB_FC_LEVEL (offset 0x348, printed page 5-50, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 47122).";
+
+        enum GLB_FC_LEVEL_qlimit_ena_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "Disabled (do not transmit the traffic control message according to the status of RX queue)."; };
+            ENABLED = 1 { name = "Enabled"; desc = "Enabled (transmit the traffic control message according to the status of RX queue)."; };
+        };
+
+        field {
+            name = "qlimit_ena";
+            desc = "Traffic control enable for RX queue";
+            sw = rw;
+            hw = r;
+            encode = GLB_FC_LEVEL_qlimit_ena_enum;
+            reset = 0x0;
+        } qlimit_ena[14:14];
+
+        field {
+            name = "qlimit_up";
+            desc = "Upper limit of traffic control for RX queue. When the free space of the RX queue is less than the upper limit, if traffic control for RX queue is enabled, the traffic control message is transmitted to the peer end.";
+            sw = rw;
+            hw = r;
+            reset = 0x5;
+        } qlimit_up[13:8];
+
+        field {
+            name = "qlimit_down";
+            desc = "Lower limit of traffic control for RX queue. When the free space of the RX queue is equal to or greater than the upper limit, if the RX queue is in traffic control state, the current traffic control is stopped.";
+            sw = rw;
+            hw = r;
+            reset = 0x8;
+        } qlimit_down[5:0];
+    } GLB_FC_LEVEL @ 0x348;
+
+    reg {
+        name = "Cause register for the CPU to which the packet is transmitted";
+        desc = "UD_GLB_CAUSE is a cause register for the CPU to which the packet is transmitted. The register does not support soft reset.
+
+Data sheet 5.6 UD_GLB_CAUSE (offset 0x34C, printed page 5-51, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 47178).";
+
+        enum GLB_CAUSE_mact_cause_enum {
+            FORCED_FORWARDING = 0 { name = "Forced Forwarding"; desc = "forced forwarding"; };
+            PACKET_WHOSE_DESTINATION = 1 { name = "Packet Whose Destination"; desc = "Packet whose destination MAC address is the local MAC address."; };
+            BROADCAST_PACKET = 2 { name = "Broadcast Packet"; desc = "broadcast packet"; };
+            PACKET_MATCHING_MAC = 3 { name = "Packet Matching Mac"; desc = "packet matching the MAC table"; };
+            MULTICAST_PACKET_NOT = 4 { name = "Multicast Packet Not"; desc = "multicast packet not matching the MAC table"; };
+            UNICAST_PACKET_NOT = 5 { name = "Unicast Packet Not"; desc = "unicast packet not matching the MAC table Others: reserved"; };
+        };
+
+        field {
+            name = "mact_cause";
+            desc = "Packet matching result types by querying the MAC table";
+            sw = r;
+            hw = w;
+            encode = GLB_CAUSE_mact_cause_enum;
+            reset = 0x0;
+        } mact_cause[2:0];
+    } GLB_CAUSE @ 0x34C;
+
+    reg {
+        name = "RX frame start address register";
+        desc = "UD_GLB_RXFRM_SADDR is an RX frame start address register. The register does not support soft reset.
+
+Data sheet 5.6 UD_GLB_RXFRM_SADDR (offset 0x350, printed page 5-51, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 47209).";
+
+        field {
+            name = "rxfrm_saddr";
+            desc = "Start address of the RX frame";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } rxfrm_saddr[31:0];
+    } GLB_RXFRM_SADDR @ 0x350;
+
+    reg {
+        name = "RX frame descriptor register";
+        desc = "UD_GLB_IQFRM_DES is an RX frame descriptor register. The register does not support soft reset.
+
+Linux `hisi_femac.c` reads the received frame length with `RX_FRAME_LEN_MASK` = GENMASK(11, 0) (matches this data sheet; the Hi3520D data sheet/vendor driver used 11 bits).
+
+Data sheet 5.6 UD_GLB_IQFRM_DES (offset 0x354, printed page 5-52, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 47238).";
+
+        field {
+            name = "fd_in_addr";
+            desc = "Relative address of the first frame to be received in the input queue (IQ). It serves as the index (0 to iq_len-1) of the absolute address for storing the frames.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } fd_in_addr[17:12];
+
+        field {
+            name = "fd_in_len";
+            desc = "Length of the frame to be received in the RX queue";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } fd_in_len[11:0];
+    } GLB_IQFRM_DES @ 0x354;
+
+    reg {
+        name = "RX frame header address register";
+        desc = "UD_GLB_IQ_ADDR is an RX frame header address register. The register does not support soft reset. If the address assigned by software is not word aligned, the logic writes data according to the word aligned address. In this case, the previously written data is invalid. For example, if the configured header address of a frame is 0xF000_8002 (non-word-aligned address), the logic writes 0x00 or other data to both the 0xF000_8000 and 0xF000_8001 addresses. Then, the logic writes the first byte (valid data) of the RX frame to the 0xF000_8002 address, writes the second byte (valid data) of the RX frame to the 0xF000_8003 address. Subsequent data is written to the buffer in sequence. If the configured header address of the RX frame is other non-word-aligned address, the logic writes data in a similar way.
+
+Data sheet 5.6 UD_GLB_IQ_ADDR (offset 0x358, printed page 5-52, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 47273).";
+
+        field {
+            name = "startaddr_iq";
+            desc = "Header address (configured by the CPU) of the storage space corresponding to the RX frame. The RX frame requests the bus according to this address.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } startaddr_iq[31:0];
+    } GLB_IQ_ADDR @ 0x358;
+
+    reg {
+        name = "Counter for traffic control status of forward buffer and aging time of multi-packet interrupt";
+        desc = "UD_GLB_BFC_STAT is a counter for traffic control status of forward buffer and aging time of multi-packet interrupt. The register does not support soft reset.
+
+Data sheet 5.6 UD_GLB_BFC_STAT (offset 0x35C, printed page 5-53, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 47304).";
+
+        field {
+            name = "timerover_cnt";
+            desc = "Register for the count of multi-packet interrupt aging time counter overflow events (the count reaches the configured value)";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } timerover_cnt[31:16];
+
+        field {
+            name = "flowctrl_cnt";
+            desc = "Register for the count of the forward buffer of the uplink or downlink port entering the traffic control status";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } flowctrl_cnt[15:0];
+    } GLB_BFC_STAT @ 0x35C;
+
+    reg {
+        name = "TX queue header address register";
+        desc = "UD_GLB_EQ_ADDR is a TX queue header address register. The register does not support soft reset. If the header address of the TX frame is not word aligned, the logic reads data according to the word aligned address. In this case, the previously read data is invalid and discarded. For example, if the configured header address of the TX frame is 0xF000_8102 (non-word-aligned address), the logic directly discards the byte data read from the 0xF000_8100 and 0xF000_8101 addresses. Then, the logic considers the data read from the 0xF000_8102 address as the first byte (valid data) of the TX frame and considers the data read from the 0xF000_8103 address as the second byte (valid data) of the TX frame. All subsequent data is valid (until the data of the specified frame length is read). If the configured header address of the TX frame is other non-word-aligned address, the logic reads data in a similar way.
+
+Data sheet 5.6 UD_GLB_EQ_ADDR (offset 0x360, printed page 5-53, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 47348).";
+
+        field {
+            name = "add_fd_addr_out";
+            desc = "Header address of the TX frame added by the CPU to the TX queue.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } add_fd_addr_out[31:0];
+    } GLB_EQ_ADDR @ 0x360;
+
+    reg {
+        name = "TX queue frame length configuration register";
+        desc = "UD_GLB_EQFRM_LEN is a TX queue frame length configuration register. The register does not support soft reset.
+
+Data sheet 5.6 UD_GLB_EQFRM_LEN (offset 0x364, printed page 5-54, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 47380).";
+
+        field {
+            name = "add_fd_len_out";
+            desc = "Length of the TX frame added by the CPU to the TX queue Configure this register to trigger hardware so that software can write the header address and length of the TX frame to the TX queue for transmission. When transmitting a frame, software must write the header address of the frame before the length of the frame. Note: The frames whose add_fd_len_out is less than 20 bytes or greater than 1600 bytes are discarded. In other words, the allowed range is from 20 bytes to 1600 bytes.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } add_fd_len_out[10:0];
+    } GLB_EQFRM_LEN @ 0x364;
+
+    reg {
+        name = "Queue status register";
+        desc = "UD_GLB_QSTAT is a queue status register. The register does not support soft reset.
+
+Data sheet 5.6 UD_GLB_QSTAT (offset 0x368, printed page 5-54, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 47408).";
+
+        field {
+            name = "iq_in_index";
+            desc = "RX index of the RX (packet RX) queue";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } iq_in_index[29:24];
+
+        field {
+            name = "cpuw_index";
+            desc = "RX index of frame header address of the RX (packet RX) queue";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } cpuw_index[21:16];
+
+        field {
+            name = "eq_in_index";
+            desc = "RX index of frame descriptor of the TX (packet TX) queue";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } eq_in_index[13:8];
+
+        field {
+            name = "eq_out_index";
+            desc = "TX index of frame descriptor of the TX (packet TX) queue";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } eq_out_index[5:0];
+    } GLB_QSTAT @ 0x368;
+
+    reg {
+        name = "Address queue status register";
+        desc = "UD_GLB_ADDRQ_STAT is an address queue status register. The register does not support soft reset.
+
+Linux: `TX_CNT_INUSE_MASK` = bits 5:0 (eq_cnt), `BIT_TX_READY` = bit 24 (eq_in_rdy), `BIT_RX_READY` = bit 25 (cpuaddr_in_rdy). The vendor U-Boot driver calls this register `RO_QUEUE_STAT`.
+
+Data sheet 5.6 UD_GLB_ADDRQ_STAT (offset 0x36C, printed page 5-55, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 47446).";
+
+        enum GLB_ADDRQ_STAT_cpuaddr_in_rdy_enum {
+            CPU_CANNOT_CONFIGURE = 0 { name = "Cpu Cannot Configure"; desc = "The CPU cannot configure the frame header address of the RX queue."; };
+            CPU_CAN_CONFIGURE = 1 { name = "Cpu Can Configure"; desc = "The CPU can configure the frame header address of the RX queue."; };
+        };
+
+        field {
+            name = "cpuaddr_in_rdy";
+            desc = "Whether the CPU can configure the frame header address of the RX queue";
+            sw = r;
+            hw = w;
+            encode = GLB_ADDRQ_STAT_cpuaddr_in_rdy_enum;
+            reset = 0x1;
+        } cpuaddr_in_rdy[25:25];
+
+        enum GLB_ADDRQ_STAT_eq_in_rdy_enum {
+            CPU_CANNOT_CONFIGURE = 0 { name = "Cpu Cannot Configure"; desc = "The CPU cannot configure the frame descriptor (header address and length) of the TX queue."; };
+            CPU_CAN_CONFIGURE = 1 { name = "Cpu Can Configure"; desc = "The CPU can configure the frame descriptor (header address and length) of the TX queue."; };
+        };
+
+        field {
+            name = "eq_in_rdy";
+            desc = "Whether the CPU can configure the frame descriptor (header address and length) of the TX queue";
+            sw = r;
+            hw = w;
+            encode = GLB_ADDRQ_STAT_eq_in_rdy_enum;
+            reset = 0x1;
+        } eq_in_rdy[24:24];
+
+        field {
+            name = "cpu_cnt";
+            desc = "Header address count for available frames assigned by the CPU to the RX queue";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } cpu_cnt[21:16];
+
+        field {
+            name = "iq_cnt";
+            desc = "Used length of the RX queue (0 to iq_len)";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } iq_cnt[13:8];
+
+        field {
+            name = "eq_cnt";
+            desc = "Used length of the TX queue (0 to eq_len)";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } eq_cnt[5:0];
+    } GLB_ADDRQ_STAT @ 0x36C;
+
+    reg {
+        name = "Traffic control time configuration register";
+        desc = "UD_GLB_FC_TIMECTRL is a traffic control time configuration register. The register does not support soft reset.
+
+Data sheet 5.6 UD_GLB_FC_TIMECTRL (offset 0x370, printed page 5-56, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 47510).";
+
+        field {
+            name = "flux_timer_cfg";
+            desc = "Traffic limit time interval counter, which is used to count the frequency division clock generated by flux_timer_inter. If this counter is set to 0, traffic limit is not performed.";
+            sw = rw;
+            hw = r;
+            reset = 0x3FF;
+        } flux_timer_cfg[26:17];
+
+        field {
+            name = "flux_timer_inter";
+            desc = "Traffic limit time granularity counter, which is used to count the ETH working clock (for details, see the PERI_CRG59 register). The default field value is 100000. For example, if the default ETH working clock is 54 MHz and the time granularity is 1 ms, this field is set to 54000, which is calculated as follows: 1 ms/(1/54 MHz) = [1 x 10 (-3)]/[(1/54) x 10 (-6)]=54 x 10^3=54000";
+            sw = rw;
+            hw = r;
+            reset = 0x000186A0;
+        } flux_timer_inter[16:0];
+    } GLB_FC_TIMECTRL @ 0x370;
+
+    reg {
+        name = "Traffic control limit configuration register";
+        desc = "UD_GLB_FC_RXLIMIT is a traffic control limit configuration register. The register does not support soft reset.
+
+Data sheet 5.6 UD_GLB_FC_RXLIMIT (offset 0x374, printed page 5-57, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 47547).";
+
+        field {
+            name = "flux_cfg";
+            desc = "Traffic limit upper threshold register. This group of bits is used to limit the number of frames received by software in the traffic limit time interval. The frames received after the configured upper threshold is exceeded are selectively discarded or received according to the configuration. When this group of bits is all set to 0, it indicates that traffic limit is not performed.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } flux_cfg[19:0];
+    } GLB_FC_RXLIMIT @ 0x374;
+
+    reg {
+        name = "Packet drop control register for traffic control";
+        desc = "UD_GLB_FC_DROPCTRL is a packet drop control register for traffic limit. The register does not support soft reset.
+
+Data sheet 5.6 UD_GLB_FC_DROPCTRL (offset 0x378, printed page 5-57, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 47573).";
+
+        enum GLB_FC_DROPCTRL_flux_uni_enum {
+            DO_NOT_DISCARD = 0 { name = "Do Not Discard"; desc = "Do not discard unicast packets."; };
+            DISCARD_UNICAST_PACKETS = 1 { name = "Discard Unicast Packets"; desc = "Discard unicast packets."; };
+        };
+
+        field {
+            name = "flux_uni";
+            desc = "Whether unicast packets are discarded when the upper threshold of traffic limit is exceeded";
+            sw = rw;
+            hw = r;
+            encode = GLB_FC_DROPCTRL_flux_uni_enum;
+            reset = 0x0;
+        } flux_uni[2:2];
+
+        enum GLB_FC_DROPCTRL_flux_multi_enum {
+            DO_NOT_DISCARD = 0 { name = "Do Not Discard"; desc = "Do not discard multicast packets."; };
+            DISCARD_MULTICAST_PACKETS = 1 { name = "Discard Multicast Packets"; desc = "Discard multicast packets."; };
+        };
+
+        field {
+            name = "flux_multi";
+            desc = "Whether multicast packets are discarded when the upper threshold of traffic limit is exceeded";
+            sw = rw;
+            hw = r;
+            encode = GLB_FC_DROPCTRL_flux_multi_enum;
+            reset = 0x0;
+        } flux_multi[1:1];
+
+        enum GLB_FC_DROPCTRL_flux_broad_enum {
+            DO_NOT_DISCARD = 0 { name = "Do Not Discard"; desc = "Do not discard broadcast packets."; };
+            DISCARD_BROADCAST_PACKETS = 1 { name = "Discard Broadcast Packets"; desc = "Discard broadcast packets."; };
+        };
+
+        field {
+            name = "flux_broad";
+            desc = "Whether broadcast packets are discarded when the upper threshold of traffic limit is exceeded";
+            sw = rw;
+            hw = r;
+            encode = GLB_FC_DROPCTRL_flux_broad_enum;
+            reset = 0x0;
+        } flux_broad[0:0];
+    } GLB_FC_DROPCTRL @ 0x378;
+
+    reg {
+        name = "RX COE enable register";
+        desc = "UD_GLB_RX_COE_EN is an RX COE enable register. The register does not support soft reset.
+
+New in this ETH version (hisi-femac v2): RX checksum offload. The DS Total Reset Value 0x8000E000 = rx_coe_en 1 and the three drop enables 1. TX offload (TSO, UFO, SG, TX COE) is controlled through bits of the frame descriptor written to UD_GLB_EQ_ADDR / UD_GLB_EQFRM_LEN (DS Table 5-4), not through registers.
+
+Data sheet 5.6 UD_GLB_RX_COE_EN (offset 0x380, printed page 5-58, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 47621).";
+
+        field {
+            name = "rx_coe_en";
+            desc = "COE enable in the RX direction";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } rx_coe_en[31:31];
+
+        enum GLB_RX_COE_EN_iphdr_drop_enum {
+            PACKET_TRANSPARENTLY_TRANSMITT = 0 { name = "Packet Transparently Transmitt"; desc = "The packet is transparently transmitted."; };
+            PACKET_DISCARDED = 1 { name = "Packet Discarded"; desc = "The packet is discarded."; };
+        };
+
+        field {
+            name = "iphdr_drop";
+            desc = "Packet discarding enable when a checksum error occurs in the IPv4 IP header";
+            sw = rw;
+            hw = r;
+            encode = GLB_RX_COE_EN_iphdr_drop_enum;
+            reset = 0x1;
+        } iphdr_drop[15:15];
+
+        enum GLB_RX_COE_EN_pro_drop_enum {
+            PACKET_TRANSPARENTLY_TRANSMITT = 0 { name = "Packet Transparently Transmitt"; desc = "The packet is transparently transmitted."; };
+            PACKET_DISCARDED = 1 { name = "Packet Discarded"; desc = "The packet is discarded."; };
+        };
+
+        field {
+            name = "pro_drop";
+            desc = "TCP/UDP packet discarding enable when a checksum error occurs";
+            sw = rw;
+            hw = r;
+            encode = GLB_RX_COE_EN_pro_drop_enum;
+            reset = 0x1;
+        } pro_drop[14:14];
+
+        enum GLB_RX_COE_EN_i6udp_drop_enum {
+            PACKET_TRANSPARENTLY_TRANSMITT = 0 { name = "Packet Transparently Transmitt"; desc = "The packet is transparently transmitted."; };
+            PACKET_DISCARDED = 1 { name = "Packet Discarded"; desc = "The packet is discarded."; };
+        };
+
+        field {
+            name = "i6udp_drop";
+            desc = "Discarding enable for the invalid IPv6 UDP packet when the checksum domain is 0";
+            sw = rw;
+            hw = r;
+            encode = GLB_RX_COE_EN_i6udp_drop_enum;
+            reset = 0x1;
+        } i6udp_drop[13:13];
+    } GLB_RX_COE_EN @ 0x380;
+
+    reg {
+        name = "Port status counter";
+        desc = "UD_STS_PORTCNT is a port status counter. The register does not support soft reset.
+
+Data sheet 5.6 UD_STS_PORTCNT (offset 0x584, printed page 5-59, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 47669).";
+
+        field {
+            name = "rxsof_cnt";
+            desc = "Count of the frame headers received by the port";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } rxsof_cnt[31:28];
+
+        field {
+            name = "rxeof_cnt";
+            desc = "Count of the frame trailers received by the port";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } rxeof_cnt[27:24];
+
+        field {
+            name = "rxcrcok_cnt";
+            desc = "Count of the frames without CRC errors received by the port";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } rxcrcok_cnt[23:20];
+
+        field {
+            name = "rxcrcbad_cnt";
+            desc = "Count of the frames with CRC errors received by the port";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } rxcrcbad_cnt[19:16];
+
+        field {
+            name = "txsof_cnt";
+            desc = "Count of the frame headers transmitted by the port";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } txsof_cnt[15:12];
+
+        field {
+            name = "txeof_cnt";
+            desc = "Count of the frame trailers transmitted by the port";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } txeof_cnt[11:8];
+
+        field {
+            name = "txcrcok_cnt";
+            desc = "Count of the frames without CRC errors transmitted by the port";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } txcrcok_cnt[7:4];
+
+        field {
+            name = "txcrcbad_cnt";
+            desc = "Count of the frames with CRC errors transmitted by the port";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } txcrcbad_cnt[3:0];
+    } STS_PORTCNT @ 0x584;
+
+    reg {
+        name = "Register for the total number of packets received by the CPU from the uplink or downlink port";
+        desc = "UD_PORT2CPU_PKTS is a register for the total number of packets received by the CPU from the uplink or downlink port. The register does not support soft reset.
+
+Data sheet 5.6 UD_PORT2CPU_PKTS (offset 0x5A0, printed page 5-59, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 47696).";
+
+        field {
+            name = "pkts_cpu";
+            desc = "Total number of the packets received by the CPU port from the uplink or downlink port. Writing 0 clears this register. Writing 1 has no effect.";
+            sw = rw;
+            hw = w;
+            reset = 0x0;
+        } pkts_cpu[15:0];
+    } PORT2CPU_PKTS @ 0x5A0;
+
+    reg {
+        name = "Register for the count of configuring packet receiving address queue by the CPU";
+        desc = "UD_CPU2IQ_ADDRCNT is a register for the count of configuring packet receiving address queue by the CPU. The register does not support soft reset.
+
+Data sheet 5.6 UD_CPU2IQ_ADDRCNT (offset 0x5A4, printed page 5-60, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 47725).";
+
+        field {
+            name = "addr_cpu";
+            desc = "Count of configuring packet receiving address queue by the CPU successfully. Writing 0 clears this register. Writing 1 has no effect.";
+            sw = rw;
+            hw = w;
+            reset = 0x0;
+        } addr_cpu[15:0];
+    } CPU2IQ_ADDRCNT @ 0x5A4;
+
+    reg {
+        name = "Register for the count of reporting single-packet interrupt by the uplink or downlink port";
+        desc = "UD_RX_IRQCNT is a register for the count of reporting single-packet interrupt by the uplink or downlink port. The register does not support soft reset.
+
+Data sheet 5.6 UD_RX_IRQCNT (offset 0x5A8, printed page 5-60, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 47748).";
+
+        field {
+            name = "pkts_port";
+            desc = "Count of the frame RX interrupts reported by the uplink or downlink port. Writing 0 clears this register. Writing 1 has no effect.";
+            sw = rw;
+            hw = w;
+            reset = 0x0;
+        } pkts_port[15:0];
+    } RX_IRQCNT @ 0x5A8;
+
+    reg {
+        name = "Register for the total number of packets transmitted by the CPU to the uplink or downlink port";
+        desc = "Register for the total number of packets transmitted by the CPU to the uplink or downlink port.
+
+Data sheet 5.6 UD_CPU2EQ_PKTS (offset 0x5AC, printed page 5-61, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 47782).";
+
+        field {
+            name = "pkts_cpu2tx";
+            desc = "Total number of packets transmitted by the CPU to the uplink or downlink port. Writing 0 clears this register. Writing 1 has no effect.";
+            sw = rw;
+            hw = w;
+            reset = 0x0;
+        } pkts_cpu2tx[15:0];
+    } CPU2EQ_PKTS @ 0x5AC;
+
+    reg {
+        name = "RXDV rising edge count register";
+        desc = "RXDV rising edge count register.
+
+Data sheet 5.6 UD_rx_DVCNT (offset 0x600, printed page 5-61, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 47809).";
+
+        field {
+            name = "rxdvrise";
+            desc = "Count of all RXDV rising edges";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } rxdvrise[31:0];
+    } RX_DVCNT @ 0x600;
+
+    reg {
+        name = "Register for the total number of received bytes";
+        desc = "UD_RX_OCTS is a register for the total number of bytes received. The register does not support soft reset.
+
+Data sheet 5.6 UD_RX_OCTS (offset 0x604, printed page 5-61, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 47828).";
+
+        field {
+            name = "ifinoctets";
+            desc = "Count of all received bytes, including the bytes in correct frames, error frames, and preambles. The frames without valid start of frame delimiters (SFDs) are not counted.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } ifinoctets[31:0];
+    } RX_OCTS @ 0x604;
+
+    reg {
+        name = "Register for the total number of bytes of received correct packets";
+        desc = "UD_RX_RIGHTOCTS is a register for the total number of bytes of received correct packets. The register does not support soft reset.
+
+Data sheet 5.6 UD_RX_RIGHTOCTS (offset 0x608, printed page 5-62, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 47859).";
+
+        field {
+            name = "octets_rx";
+            desc = "Count of the received bytes, including the bytes in correct frames and error frames but excluding the bytes in preambles. The frames without valid SFDs are not counted.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } octets_rx[31:0];
+    } RX_RIGHTOCTS @ 0x608;
+
+    reg {
+        name = "Register for the number of packets matching the local MAC address";
+        desc = "UD_HOSTMAC_PKTS is a register for the number of packets matching the local MAC address. The register does not support soft reset.
+
+Data sheet 5.6 UD_HOSTMAC_PKTS (offset 0x60C, printed page 5-62, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 47881).";
+
+        field {
+            name = "local_mac_match";
+            desc = "Count of correct RX frames whose destination MAC address is the same as the local MAC address, excluding short frames, long frames, frames with CRC errors, pause frames, and error TX frames.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } local_mac_match[31:0];
+    } HOSTMAC_PKTS @ 0x60C;
+
+    reg {
+        name = "Register for the total number of packets received by the port";
+        desc = "UD_RX_RIGHTPKTS is a register for the total number of packets received by the port. The register does not support soft reset.
+
+Data sheet 5.6 UD_RX_RIGHTPKTS (offset 0x610, printed page 5-63, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 47912).";
+
+        field {
+            name = "pkts";
+            desc = "Count of all frames";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } pkts[31:0];
+    } RX_RIGHTPKTS @ 0x610;
+
+    reg {
+        name = "Register for the number of correct broadcast packets";
+        desc = "Register for the number of correct broadcast packets.
+
+Data sheet 5.6 UD_RX_broadpkts (offset 0x614, printed page 5-63, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 47931).";
+
+        field {
+            name = "broadcastpkts";
+            desc = "Count of broadcast frames with valid length and without CRC errors, excluding pause frames and error TX frames";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } broadcastpkts[31:0];
+    } RX_BROADPKTS @ 0x614;
+
+    reg {
+        name = "Register for the number of correct multicast packets";
+        desc = "Register for the number of correct multicast packets.
+
+Data sheet 5.6 UD_RX_multpkts (offset 0x618, printed page 5-63, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 47952).";
+
+        field {
+            name = "multicastpkts";
+            desc = "Count of multicast frames with valid length and without CRC errors, excluding pause frames and error TX frames";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } multicastpkts[31:0];
+    } RX_MULTPKTS @ 0x618;
+
+    reg {
+        name = "Register for the number of correct unicast packets";
+        desc = "Register for the number of correct unicast packets.
+
+Data sheet 5.6 UD_RX_UNIpkts (offset 0x61C, printed page 5-64, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 47983).";
+
+        field {
+            name = "ifinucastpkts";
+            desc = "Count of unicast frames with valid length and without CRC errors, excluding pause frames and error TX frames";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } ifinucastpkts[31:0];
+    } RX_UNIPKTS @ 0x61C;
+
+    reg {
+        name = "Register for the total number of incorrect packets";
+        desc = "UD_RX_ERRPKTS is a register for the total number of incorrect packets. The register does not support soft reset.
+
+Data sheet 5.6 UD_RX_ERRPKTS (offset 0x620, printed page 5-64, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 48004).";
+
+        field {
+            name = "ifinerrors";
+            desc = "Count of all error frames, including frames with CRC errors, short frames, long frames, and error TX frames";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } ifinerrors[31:0];
+    } RX_ERRPKTS @ 0x620;
+
+    reg {
+        name = "Register for the count of CRC errors";
+        desc = "Register for the count of CRC errors.
+
+Data sheet 5.6 UD_RX_crcerr_PKTS (offset 0x624, printed page 5-65, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 48034).";
+
+        field {
+            name = "crcerr";
+            desc = "Count of RX frames with valid length (non short and long frames) but with CRC or alignment errors";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } crcerr[31:0];
+    } RX_CRCERR_PKTS @ 0x624;
+
+    reg {
+        name = "Register for the number of packets with invalid length";
+        desc = "Register for the number of packets with invalid length.
+
+Data sheet 5.6 UD_RX_LENERR_pkts (offset 0x628, printed page 5-65, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 48055).";
+
+        field {
+            name = "abnormalsizepkts";
+            desc = "Count of frames (short frames and long frames) with invalid length (less than the set minimum valid length or greater than the set maximum valid length)";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } abnormalsizepkts[31:0];
+    } RX_LENERR_PKTS @ 0x628;
+
+    reg {
+        name = "Register for the number of packets with odd nibbles and CRC errors";
+        desc = "UD_RX_OCRCERR_PKTS is a register for the number of packets with odd nibbles and CRC errors. The register does not support soft reset.
+
+Data sheet 5.6 UD_RX_OCRCERR_PKTS (offset 0x62C, printed page 5-65, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 48078).";
+
+        field {
+            name = "dot3alignmenterr";
+            desc = "Received frames with odd nibbles and CRC errors";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } dot3alignmenterr[31:0];
+    } RX_OCRCERR_PKTS @ 0x62C;
+
+    reg {
+        name = "Register for the number of received pause packets";
+        desc = "UD_RX_PAUSE_PKTS is a register for the number of received pause packets. The register does not support soft reset.
+
+Data sheet 5.6 UD_RX_PAUSE_PKTS (offset 0x630, printed page 5-66, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 48106).";
+
+        field {
+            name = "dot3pause";
+            desc = "Count of received pause frames";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } dot3pause[31:0];
+    } RX_PAUSE_PKTS @ 0x630;
+
+    reg {
+        name = "Register for the count of RXFIFO overflow events";
+        desc = "UD_RF_OVERCNT is a register for the count of RXFIFO overflow events. The register does not support soft reset.
+
+Data sheet 5.6 UD_RF_OVERCNT (offset 0x634, printed page 5-66, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 48125).";
+
+        field {
+            name = "dropevents";
+            desc = "Accumulative count of RXFIFO overflow events during the reception of frames";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } dropevents[31:0];
+    } RF_OVERCNT @ 0x634;
+
+    reg {
+        name = "Register for the total number of received packets allowed by the traffic limit";
+        desc = "Register for the total number of received packets allowed by the traffic limit.
+
+Data sheet 5.6 UD_flux_TOL_IPKTS (offset 0x638, printed page 5-66, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 48147).";
+
+        field {
+            name = "flux_frame_cnt";
+            desc = "Total count of correct RX frames allowed by the traffic limit, excluding short frames, long frames, frames with CRC errors, pause frames, and error TX frames";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } flux_frame_cnt[31:0];
+    } FLUX_TOL_IPKTS @ 0x638;
+
+    reg {
+        name = "Register for the total number of packets discarded due to traffic limit";
+        desc = "Register for the total number of packets discarded due to traffic limit.
+
+Data sheet 5.6 UD_flux_TOL_DPKTS (offset 0x63C, printed page 5-67, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 48177).";
+
+        field {
+            name = "flux_drop_cnt";
+            desc = "Count of correct frames discarded due to traffic limit, excluding short frames, long frames, frames with CRC errors, pause frames, and error TX frames";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } flux_drop_cnt[31:0];
+    } FLUX_TOL_DPKTS @ 0x63C;
+
+    reg {
+        name = "Register for the number of packets not forwarded to the CPU port due to MAC limit";
+        desc = "UD_MN2CPU_PKTS is a register for the number of packets not forwarded to the CPU port due to MAC limit. The register does not support soft reset.
+
+Data sheet 5.6 UD_MN2CPU_PKTS (offset 0x64C, printed page 5-67, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 48198).";
+
+        field {
+            name = "mac_not2cpu_pkts";
+            desc = "Number of packets not forwarded to the CPU port due to MAC limit";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } mac_not2cpu_pkts[31:0];
+    } MN2CPU_PKTS @ 0x64C;
+
+    reg {
+        name = "Register for the total number of packets transmitted successfully";
+        desc = "UD_TX_PKTS is a register for the total number of packets transmitted successfully. The register does not support soft reset.
+
+Data sheet 5.6 UD_TX_PKTS (offset 0x780, printed page 5-68, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 48227).";
+
+        field {
+            name = "pkts_tx";
+            desc = "Count of all configured TX frames, excluding the frames discarded due to timeout and the TX frames whose length of UD_GLB_EQFRM_LEN is not within valid range";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } pkts_tx[31:0];
+    } TX_PKTS @ 0x780;
+
+    reg {
+        name = "Register for the number of broadcast packets transmitted successfully";
+        desc = "UD_TX_BROADPKTS is a register for the number of broadcast packets transmitted successfully. The register does not support soft reset.
+
+Data sheet 5.6 UD_TX_BROADPKTS (offset 0x784, printed page 5-68, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 48248).";
+
+        field {
+            name = "broadcastpkts_tx";
+            desc = "Count of broadcast frames transmitted successfully (excluding retransmission)";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } broadcastpkts_tx[31:0];
+    } TX_BROADPKTS @ 0x784;
+
+    reg {
+        name = "Register for the number of multicast packets transmitted successfully";
+        desc = "UD_TX_MULTPKTS is a register for the number of multicast packets transmitted successfully. The register does not support soft reset.
+
+Data sheet 5.6 UD_TX_MULTPKTS (offset 0x788, printed page 5-68, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 48270).";
+
+        field {
+            name = "multicastpkts_tx";
+            desc = "Count of multicast frames transmitted successfully (excluding retransmission)";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } multicastpkts_tx[31:0];
+    } TX_MULTPKTS @ 0x788;
+
+    reg {
+        name = "Register for the number of unicast packets transmitted successfully";
+        desc = "UD_TX_UNIPKTS is a register for the number of unicast packets transmitted successfully. The register does not support soft reset.
+
+Data sheet 5.6 UD_TX_UNIPKTS (offset 0x78C, printed page 5-69, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 48298).";
+
+        field {
+            name = "ifoutucastpkts_tx";
+            desc = "Count of unicast frames transmitted successfully (excluding retransmission)";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } ifoutucastpkts_tx[31:0];
+    } TX_UNIPKTS @ 0x78C;
+
+    reg {
+        name = "Register for the total number of transmitted bytes";
+        desc = "UD_TX_OCTS is a register for the total number of transmitted bytes. The register does not support soft reset.
+
+Data sheet 5.6 UD_TX_OCTS (offset 0x790, printed page 5-69, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 48320).";
+
+        field {
+            name = "octets_tx";
+            desc = "Total count of transmitted bytes, including the bytes of retransmit frames, correct frames, and error frames, but excluding the preamble bytes";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } octets_tx[31:0];
+    } TX_OCTS @ 0x790;
+
+    reg {
+        name = "Register for the number of transmitted pause frames";
+        desc = "UD_TX_PAUSE_PKTS is a register for the number of transmitted pause frames. The register does not support soft reset.
+
+Data sheet 5.6 UD_TX_PAUSE_PKTS (offset 0x794, printed page 5-69, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 48341).";
+
+        field {
+            name = "dot3outpause";
+            desc = "Count of transmitted pause frames";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } dot3outpause[31:0];
+    } TX_PAUSE_PKTS @ 0x794;
+
+    reg {
+        name = "Register for the total count of retransmission";
+        desc = "UD_TX_RETRYCNT is a register for the total count of retransmission. The register does not support soft reset.
+
+Data sheet 5.6 UD_TX_RETRYCNT (offset 0x798, printed page 5-70, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 48370).";
+
+        field {
+            name = "retry_times_tx";
+            desc = "Total count of retransmissions of TX frames";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } retry_times_tx[31:0];
+    } TX_RETRYCNT @ 0x798;
+
+    reg {
+        name = "Register for the total count of collisions";
+        desc = "UD_TX_COLCNT is a register for the total count of collisions. The register does not support soft reset.
+
+Data sheet 5.6 UD_TX_COLCNT (offset 0x79C, printed page 5-70, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 48389).";
+
+        field {
+            name = "collisions";
+            desc = "Count of collisions";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } collisions[31:0];
+    } TX_COLCNT @ 0x79C;
+
+    reg {
+        name = "Register for the number of packets with late collision";
+        desc = "UD_TX_LC_PKTS is a register for the number of packets with late collision. The register does not support soft reset.
+
+Data sheet 5.6 UD_TX_LC_PKTS (offset 0x7A0, printed page 5-70, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 48409).";
+
+        field {
+            name = "dot3latecol";
+            desc = "Count of packets with late collision";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } dot3latecol[31:0];
+    } TX_LC_PKTS @ 0x7A0;
+
+    reg {
+        name = "Register for the number of packets transmitted successfully with collisions";
+        desc = "UD_TX_COLOK_PKTS is a register for the number of packets transmitted successfully with collisions. The register does not support soft reset.
+
+Data sheet 5.6 UD_TX_COLOK_PKTS (offset 0x7A4, printed page 5-71, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 48437).";
+
+        field {
+            name = "dot3col_ok";
+            desc = "Count of packets transmitted successfully with collisions";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } dot3col_ok[31:0];
+    } TX_COLOK_PKTS @ 0x7A4;
+
+    reg {
+        name = "Register for the number of packets discarded due to more than 15 times of retransmission";
+        desc = "UD_TX_RETRY15_PKTS is a register for the number of packets discarded due to more than 15 times of retransmission. The register does not support soft reset.
+
+Data sheet 5.6 UD_TX_RETRY15_PKTS (offset 0x7A8, printed page 5-71, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 48457).";
+
+        field {
+            name = "dot3excessivecol";
+            desc = "Count of the packets discarded due to more than 15 times of retransmission";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } dot3excessivecol[31:0];
+    } TX_RETRY15_PKTS @ 0x7A8;
+
+    reg {
+        name = "Register for the number of packets with the count of collisions being equal to the threshold";
+        desc = "UD_TX_RETRYN_PKTS is a register for the number of packets with the count of collisions being equal to the threshold. The register does not support soft reset.
+
+Data sheet 5.6 UD_TX_RETRYN_PKTS (offset 0x7AC, printed page 5-71, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 48479).";
+
+        field {
+            name = "dot3colcnt";
+            desc = "Count of packets with the count of collisions being equal to the threshold. This register is set by UD_MAC_SET[colthreshold]";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } dot3colcnt[31:0];
+    } TX_RETRYN_PKTS @ 0x7AC;
+
+    reg {
+        name = "RX inter-packet-gap control register (vendor only)";
+        desc = "Vendor name U_MAC_RX_IPGCTRL at 0x0214.
+
+NOT IN THE DATA SHEET: taken from the vendor U-Boot driver (sources/u-boot-vendor-2010.06 drivers/net/hisfv300/mac.h); the data sheet does not list this register and gives no reset value.";
+
+        field {
+            name = "ipgctrl";
+            desc = "RX IPG control. Bit layout unknown: the vendor sources only define the offset.";
+            sw = rw;
+            hw = r;
+        } ipgctrl[31:0];
+    } MAC_RX_IPGCTRL @ 0x214;
+
+    reg {
+        name = "TX inter-packet-gap control register (vendor only)";
+        desc = "Vendor name U_MAC_TX_IPGCTRL at 0x0218.
+
+NOT IN THE DATA SHEET: taken from the vendor U-Boot driver (drivers/net/hisfv300/mac.h, mac.c); the data sheet does not list this register and gives no reset value.";
+
+        field {
+            name = "pre_cnt_limit";
+            desc = "Lead-code (preamble) count limit (vendor `BITS_PRE_CNT_LIMIT`, bits 25:23; the vendor driver clears it during init).";
+            sw = rw;
+            hw = r;
+        } pre_cnt_limit[25:23];
+
+        field {
+            name = "ipg";
+            desc = "Transmit inter-packet gap in bits (vendor `BITS_IPG`, bits 22:16).";
+            sw = rw;
+            hw = r;
+        } ipg[22:16];
+
+        field {
+            name = "fc_inter";
+            desc = "Flow-control (pause frame) interval (vendor `BITS_FC_INTER`, bits 15:0).";
+            sw = rw;
+            hw = r;
+        } fc_inter[15:0];
+    } MAC_TX_IPGCTRL @ 0x218;
+
+};
+
+`endif
