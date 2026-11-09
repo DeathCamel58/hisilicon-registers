@@ -1,0 +1,1121 @@
+`ifndef ARM_A9_MPCORE_RDL
+`define ARM_A9_MPCORE_RDL
+
+regfile eARM_A9_MPCORE {
+    name = "Cortex-A9 MPCore private memory region";
+    desc = "
+    The 64 KB window at 0x20300000 'Internal registers of ARM watchdog (WDG), timer or global interrupt controller (GIC)' (DS Table 1-1) is the Cortex-A9 MPCore private memory region: Snoop Control
+    Unit at +0x000, GIC CPU interface at +0x100, global timer at +0x200, private timer at +0x600, private watchdog at +0x620 and the GIC distributor at +0x1000 (vendor `platform.h`:
+    `REG_A9_PERI_SCU`, `A9_GIC_OFFSET` = 0x100, `A9_GIC_DIST` = 0x1000, `REG_A9_PERI_GLOBAL_TIMER` = 0x200, `REG_A9_PERI_PRI_TIMER_WDT` = 0x600). One A9 core, 96 interrupt sources of which 64 are
+    external (DS 3.10.1 and Table 3-16: 0-31 for A9 internal use, 32-95 peripherals).
+
+    **The data sheet does not document these registers.** Hardware facts (docs/TODO.md): the distributor is at 0x20301000, it is a GIC-390 (PL390 register layout, ICD* names) with 96 interrupts
+    (`ICDICTR.itlinesnumber` = 2) and the CPU interface is at 0x20300100 (a device tree with 0x10301000 data-aborts). The SCU, timer, watchdog and GIC register layouts below are from the ARM
+    Cortex-A9 MPCore and GIC (PL390) technical reference manuals; reset values are the architectural ones. The Hi3520D uses the SP804 timers (not the A9 private timers) as system timers; the private
+    timer / watchdog and global timer are not used by the vendor kernel. Not hardware verified beyond the GIC base addresses and interrupt count.
+    ";
+
+    regfile {
+        name = "Snoop Control Unit";
+        desc = "SCU registers at +0x000 of the private region.";
+
+    reg {
+        name = "SCU control register";
+        desc = "SCU control.
+
+Cortex-A9 MPCore TRM (ARM DDI 0407) section 2.4.1";
+
+        field {
+            name = "ic_standby_en";
+            desc = "IC standby enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ic_standby_en[6:6];
+
+        field {
+            name = "scu_standby_en";
+            desc = "SCU standby enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } scu_standby_en[5:5];
+
+        field {
+            name = "all_dev_to_port0";
+            desc = "Force all device to port 0.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } all_dev_to_port0[4:4];
+
+        field {
+            name = "spec_linefill_en";
+            desc = "SCU speculative linefills enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } spec_linefill_en[3:3];
+
+        field {
+            name = "ram_parity_en";
+            desc = "SCU RAMs parity enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ram_parity_en[2:2];
+
+        field {
+            name = "addr_filter_en";
+            desc = "Address filtering enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } addr_filter_en[1:1];
+
+        field {
+            name = "enable";
+            desc = "SCU enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } enable_f[0:0];
+    } SCU_CTRL @ 0x0;
+
+    reg {
+        name = "SCU configuration register";
+        desc = "Number of cores and SMP state.
+
+Cortex-A9 MPCore TRM (ARM DDI 0407) section 2.4.2";
+
+        field {
+            name = "tag_ram_size";
+            desc = "Tag RAM sizes (per CPU).";
+            sw = r;
+            hw = w;
+        } tag_ram_size[11:8];
+
+        field {
+            name = "cpu_smp";
+            desc = "CPUs in SMP mode (one bit per CPU).";
+            sw = r;
+            hw = w;
+        } cpu_smp[7:4];
+
+        field {
+            name = "cpu_number";
+            desc = "Number of CPUs minus 1 (0 for the single Hi3520D core).";
+            sw = r;
+            hw = w;
+        } cpu_number[1:0];
+    } SCU_CONFIG @ 0x4;
+
+    reg {
+        name = "SCU CPU power status register";
+        desc = "Power status of each CPU.
+
+Cortex-A9 MPCore TRM (ARM DDI 0407) section 2.4.3";
+
+        field {
+            name = "cpu3";
+            desc = "CPU3 status.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } cpu3[25:24];
+
+        field {
+            name = "cpu2";
+            desc = "CPU2 status.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } cpu2[17:16];
+
+        field {
+            name = "cpu1";
+            desc = "CPU1 status.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } cpu1[9:8];
+
+        field {
+            name = "cpu0";
+            desc = "CPU0 status (0 = normal).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } cpu0[1:0];
+    } SCU_CPU_PWR_STATUS @ 0x8;
+
+    reg {
+        name = "SCU invalidate all registers in secure state";
+        desc = "Invalidate the SCU tag RAM ways.
+
+Cortex-A9 MPCore TRM (ARM DDI 0407) section 2.4.4";
+
+        field {
+            name = "ways";
+            desc = "Ways to invalidate, 4 bits per CPU.";
+            sw = w;
+            hw = r;
+        } ways[15:0];
+    } SCU_INVALIDATE_ALL @ 0xC;
+
+    reg {
+        name = "Filtering start address register";
+        desc = "Start of the address filtering range.
+
+Cortex-A9 MPCore TRM (ARM DDI 0407) section 2.4.5";
+
+        field {
+            name = "start";
+            desc = "Start address bits 31:20 (1 MB granularity).";
+            sw = rw;
+            hw = r;
+        } start[31:20];
+    } SCU_FILTER_START @ 0x40;
+
+    reg {
+        name = "Filtering end address register";
+        desc = "End of the address filtering range.
+
+Cortex-A9 MPCore TRM (ARM DDI 0407) section 2.4.6";
+
+        field {
+            name = "end";
+            desc = "End address bits 31:20.";
+            sw = rw;
+            hw = r;
+        } end[31:20];
+    } SCU_FILTER_END @ 0x44;
+
+    reg {
+        name = "SCU access control register";
+        desc = "Per-CPU access to the SCU registers.
+
+Cortex-A9 MPCore TRM (ARM DDI 0407) section 2.4.7";
+
+        field {
+            name = "access";
+            desc = "Per-CPU access control.";
+            sw = rw;
+            hw = r;
+        } access[3:0];
+    } SCU_SAC @ 0x50;
+
+    reg {
+        name = "SCU non-secure access control register";
+        desc = "Non-secure access to the SCU and timers.
+
+Cortex-A9 MPCore TRM (ARM DDI 0407) section 2.4.8";
+
+        field {
+            name = "private_timer_ns";
+            desc = "Non-secure access to the private timers.";
+            sw = rw;
+            hw = r;
+        } private_timer_ns[11:8];
+
+        field {
+            name = "global_timer_ns";
+            desc = "Non-secure access to the global timer.";
+            sw = rw;
+            hw = r;
+        } global_timer_ns[7:4];
+
+        field {
+            name = "scu_ns";
+            desc = "Non-secure access to the SCU registers.";
+            sw = rw;
+            hw = r;
+        } scu_ns[3:0];
+    } SCU_SNSAC @ 0x54;
+
+    } SCU @ 0x0;
+
+    regfile {
+        name = "GIC CPU interface";
+        desc = "GIC-390 CPU interface at +0x100 (0x20300100, hardware verified).";
+
+    reg {
+        name = "CPU interface control register";
+        desc = "Enable signalling of interrupts to the CPU.
+
+ARM Generic Interrupt Controller (PL390 / GIC-390) TRM (ICCICR)";
+
+        field {
+            name = "enable";
+            desc = "Enable the CPU interface (signalling of interrupts).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } enable_f[0:0];
+    } ICCICR @ 0x0;
+
+    reg {
+        name = "Interrupt priority mask register";
+        desc = "Priority filter.
+
+ARM Generic Interrupt Controller (PL390 / GIC-390) TRM (ICCPMR)";
+
+        field {
+            name = "priority";
+            desc = "Priority mask: only interrupts with a priority value lower than this are signalled.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } priority[7:0];
+    } ICCPMR @ 0x4;
+
+    reg {
+        name = "Binary point register";
+        desc = "Priority group / sub-priority split.
+
+ARM Generic Interrupt Controller (PL390 / GIC-390) TRM (ICCBPR)";
+
+        field {
+            name = "binary_point";
+            desc = "Binary point (reset value 2 for the secure-less implementation).";
+            sw = rw;
+            hw = r;
+            reset = 0x2;
+        } binary_point[2:0];
+    } ICCBPR @ 0x8;
+
+    reg {
+        name = "Interrupt acknowledge register";
+        desc = "Read to acknowledge the highest priority pending interrupt.
+
+ARM Generic Interrupt Controller (PL390 / GIC-390) TRM (ICCIAR)";
+
+        field {
+            name = "cpuid";
+            desc = "CPU ID of the source (SGI).";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } cpuid[12:10];
+
+        field {
+            name = "ackintid";
+            desc = "Interrupt ID (0x3FF = spurious).";
+            sw = r;
+            hw = w;
+            reset = 0x3FF;
+        } ackintid[9:0];
+    } ICCIAR @ 0xC;
+
+    reg {
+        name = "End of interrupt register";
+        desc = "Write the interrupt ID read from ICCIAR.
+
+ARM Generic Interrupt Controller (PL390 / GIC-390) TRM (ICCEOIR)";
+
+        field {
+            name = "cpuid";
+            desc = "CPU ID of the SGI source.";
+            sw = w;
+            hw = r;
+        } cpuid[12:10];
+
+        field {
+            name = "eoiintid";
+            desc = "Interrupt ID.";
+            sw = w;
+            hw = r;
+        } eoiintid[9:0];
+    } ICCEOIR @ 0x10;
+
+    reg {
+        name = "Running priority register";
+        desc = "Priority of the highest priority active interrupt.
+
+ARM Generic Interrupt Controller (PL390 / GIC-390) TRM (ICCRPR)";
+
+        field {
+            name = "priority";
+            desc = "Running priority.";
+            sw = r;
+            hw = w;
+            reset = 0xFF;
+        } priority[7:0];
+    } ICCRPR @ 0x14;
+
+    reg {
+        name = "Highest pending interrupt register";
+        desc = "ID of the highest priority pending interrupt.
+
+ARM Generic Interrupt Controller (PL390 / GIC-390) TRM (ICCHPIR)";
+
+        field {
+            name = "cpuid";
+            desc = "CPU ID.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } cpuid[12:10];
+
+        field {
+            name = "pendintid";
+            desc = "Interrupt ID.";
+            sw = r;
+            hw = w;
+            reset = 0x3FF;
+        } pendintid[9:0];
+    } ICCHPIR @ 0x18;
+
+    reg {
+        name = "Aliased binary point register";
+        desc = "Non-secure alias of ICCBPR.
+
+ARM Generic Interrupt Controller (PL390 / GIC-390) TRM (ICCABPR)";
+
+        field {
+            name = "binary_point";
+            desc = "Binary point.";
+            sw = rw;
+            hw = r;
+            reset = 0x3;
+        } binary_point[2:0];
+    } ICCABPR @ 0x1C;
+
+    reg {
+        name = "CPU interface identification register";
+        desc = "Implementer / revision.
+
+ARM Generic Interrupt Controller (PL390 / GIC-390) TRM (ICCIIDR)";
+
+        field {
+            name = "id";
+            desc = "Identification (implementation dependent, not read on hardware).";
+            sw = r;
+            hw = w;
+        } id[31:0];
+    } ICCIIDR @ 0xFC;
+
+    } GICC @ 0x100;
+
+    regfile {
+        name = "Global timer";
+        desc = "Cortex-A9 global timer at +0x200.";
+
+    reg {
+        name = "Global timer counter register, low word";
+        desc = "64-bit global counter, low 32 bits.
+
+Cortex-A9 MPCore TRM (ARM DDI 0407) section 4.2";
+
+        field {
+            name = "count";
+            desc = "Counter value bits 31:0.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } count[31:0];
+    } GT_COUNTER_LO @ 0x0;
+
+    reg {
+        name = "Global timer counter register, high word";
+        desc = "64-bit global counter, high 32 bits.
+
+Cortex-A9 MPCore TRM (ARM DDI 0407) section 4.2";
+
+        field {
+            name = "count";
+            desc = "Counter value bits 63:32.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } count[31:0];
+    } GT_COUNTER_HI @ 0x4;
+
+    reg {
+        name = "Global timer control register";
+        desc = "Timer enable, comparator and prescaler.
+
+Cortex-A9 MPCore TRM (ARM DDI 0407) section 4.2";
+
+        field {
+            name = "prescaler";
+            desc = "Prescaler.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } prescaler[15:8];
+
+        field {
+            name = "auto_inc";
+            desc = "Auto-increment.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } auto_inc[3:3];
+
+        field {
+            name = "irq_en";
+            desc = "IRQ enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } irq_en[2:2];
+
+        field {
+            name = "comp_en";
+            desc = "Comparator enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } comp_en[1:1];
+
+        field {
+            name = "timer_en";
+            desc = "Timer enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } timer_en[0:0];
+    } GT_CTRL @ 0x8;
+
+    reg {
+        name = "Global timer interrupt status register";
+        desc = "Event flag (write 1 to clear).
+
+Cortex-A9 MPCore TRM (ARM DDI 0407) section 4.2";
+
+        field {
+            name = "event";
+            desc = "Event flag.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } event[0:0];
+    } GT_STATUS @ 0xC;
+
+    reg {
+        name = "Comparator value register, low word";
+        desc = "Comparator bits 31:0.
+
+Cortex-A9 MPCore TRM (ARM DDI 0407) section 4.2";
+
+        field {
+            name = "comp";
+            desc = "Comparator value bits 31:0.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } comp[31:0];
+    } GT_COMP_LO @ 0x10;
+
+    reg {
+        name = "Comparator value register, high word";
+        desc = "Comparator bits 63:32.
+
+Cortex-A9 MPCore TRM (ARM DDI 0407) section 4.2";
+
+        field {
+            name = "comp";
+            desc = "Comparator value bits 63:32.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } comp[31:0];
+    } GT_COMP_HI @ 0x14;
+
+    reg {
+        name = "Auto-increment register";
+        desc = "Value added to the comparator after each match.
+
+Cortex-A9 MPCore TRM (ARM DDI 0407) section 4.2";
+
+        field {
+            name = "inc";
+            desc = "Auto-increment value.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } inc[31:0];
+    } GT_AUTO_INC @ 0x18;
+
+    } GTIMER @ 0x200;
+
+    regfile {
+        name = "Private timer";
+        desc = "Private timer at +0x600.";
+
+    reg {
+        name = "Private timer load register";
+        desc = "Reload value.
+
+Cortex-A9 MPCore TRM (ARM DDI 0407) section 4.3";
+
+        field {
+            name = "load";
+            desc = "Load value.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } load[31:0];
+    } LOAD @ 0x0;
+
+    reg {
+        name = "Private timer counter register";
+        desc = "Down counter.
+
+Cortex-A9 MPCore TRM (ARM DDI 0407) section 4.3";
+
+        field {
+            name = "count";
+            desc = "Counter value.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } count[31:0];
+    } COUNTER @ 0x4;
+
+    reg {
+        name = "Private timer control register";
+        desc = "Control.
+
+Cortex-A9 MPCore TRM (ARM DDI 0407) section 4.3";
+
+        field {
+            name = "prescaler";
+            desc = "Prescaler.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } prescaler[15:8];
+
+        field {
+            name = "irq_en";
+            desc = "Interrupt enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } irq_en[2:2];
+
+        field {
+            name = "auto_reload";
+            desc = "Auto reload.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } auto_reload[1:1];
+
+        field {
+            name = "enable";
+            desc = "Timer enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } enable_f[0:0];
+    } CTRL @ 0x8;
+
+    reg {
+        name = "Private timer interrupt status register";
+        desc = "Event flag (write 1 to clear).
+
+Cortex-A9 MPCore TRM (ARM DDI 0407) section 4.3";
+
+        field {
+            name = "event";
+            desc = "Event flag.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } event[0:0];
+    } INT_STATUS @ 0xC;
+
+    } PTIMER @ 0x600;
+
+    regfile {
+        name = "Private watchdog";
+        desc = "Private watchdog at +0x620.";
+
+    reg {
+        name = "Private watchdog load register";
+        desc = "Reload value.
+
+Cortex-A9 MPCore TRM (ARM DDI 0407) section 4.3";
+
+        field {
+            name = "load";
+            desc = "Load value.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } load[31:0];
+    } LOAD @ 0x0;
+
+    reg {
+        name = "Private watchdog counter register";
+        desc = "Down counter.
+
+Cortex-A9 MPCore TRM (ARM DDI 0407) section 4.3";
+
+        field {
+            name = "count";
+            desc = "Counter value.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } count[31:0];
+    } COUNTER @ 0x4;
+
+    reg {
+        name = "Private watchdog control register";
+        desc = "Control.
+
+Cortex-A9 MPCore TRM (ARM DDI 0407) section 4.3";
+
+        field {
+            name = "prescaler";
+            desc = "Prescaler.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } prescaler[15:8];
+
+        field {
+            name = "wdog_mode";
+            desc = "1 = watchdog mode (resets on expiry), 0 = timer mode.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } wdog_mode[3:3];
+
+        field {
+            name = "it_en";
+            desc = "Interrupt enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } it_en[2:2];
+
+        field {
+            name = "auto_reload";
+            desc = "Auto reload.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } auto_reload[1:1];
+
+        field {
+            name = "enable";
+            desc = "Timer enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } enable_f[0:0];
+    } CTRL @ 0x8;
+
+    reg {
+        name = "Private watchdog interrupt status register";
+        desc = "Event flag (write 1 to clear).
+
+Cortex-A9 MPCore TRM (ARM DDI 0407) section 4.3";
+
+        field {
+            name = "event";
+            desc = "Event flag.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } event[0:0];
+    } INT_STATUS @ 0xC;
+
+    reg {
+        name = "Watchdog reset status register";
+        desc = "Set when a watchdog reset occurred (write 1 to clear).
+
+Cortex-A9 MPCore TRM (ARM DDI 0407) section 4.3";
+
+        field {
+            name = "reset_flag";
+            desc = "Reset flag.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } reset_flag[0:0];
+    } RESET_STATUS @ 0x10;
+
+    reg {
+        name = "Watchdog disable register";
+        desc = "Write 0x12345678 then 0x87654321 to leave watchdog mode.
+
+Cortex-A9 MPCore TRM (ARM DDI 0407) section 4.3";
+
+        field {
+            name = "key";
+            desc = "Disable key sequence.";
+            sw = w;
+            hw = r;
+        } key[31:0];
+    } DISABLE @ 0x14;
+
+    } PWDG @ 0x620;
+
+    regfile {
+        name = "GIC distributor";
+        desc = "GIC-390 distributor at +0x1000 (0x20301000, hardware verified), 96 interrupts.";
+
+    reg {
+        name = "Distributor control register";
+        desc = "Enable forwarding of pending interrupts to the CPU interface.
+
+ARM Generic Interrupt Controller (PL390 / GIC-390) TRM (ICDDCR)";
+
+        field {
+            name = "enable";
+            desc = "Enable the distributor.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } enable_f[0:0];
+    } ICDDCR @ 0x0;
+
+    reg {
+        name = "Interrupt controller type register";
+        desc = "Interrupt line count and CPU count.
+
+ARM Generic Interrupt Controller (PL390 / GIC-390) TRM (ICDICTR)";
+
+        field {
+            name = "lspi";
+            desc = "Lockable shared peripheral interrupts.";
+            sw = r;
+            hw = w;
+        } lspi[15:11];
+
+        field {
+            name = "securityextn";
+            desc = "Security extensions implemented.";
+            sw = r;
+            hw = w;
+        } securityextn[10:10];
+
+        field {
+            name = "cpunumber";
+            desc = "Number of CPU interfaces minus 1 (one core).";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } cpunumber[7:5];
+
+        field {
+            name = "itlinesnumber";
+            desc = "32 x (N + 1) interrupt lines: 2 = 96 interrupts (hardware verified, DS 3.10.1).";
+            sw = r;
+            hw = w;
+            reset = 0x2;
+        } itlinesnumber[4:0];
+    } ICDICTR @ 0x4;
+
+    reg {
+        name = "Distributor implementer identification register";
+        desc = "Implementer and revision.
+
+ARM Generic Interrupt Controller (PL390 / GIC-390) TRM (ICDIIDR)";
+
+        field {
+            name = "id";
+            desc = "Identification (not read on hardware).";
+            sw = r;
+            hw = w;
+        } id[31:0];
+    } ICDIIDR @ 0x8;
+
+    reg {
+        name = "Interrupt security registers";
+        desc = "One bit per interrupt (3 registers for 96 interrupts): 0 = secure, 1 = non-secure.
+
+ARM Generic Interrupt Controller (PL390 / GIC-390) TRM (ICDISRn)";
+
+        field {
+            name = "ns";
+            desc = "Non-secure bit per interrupt.";
+            sw = rw;
+            hw = r;
+        } ns[31:0];
+    } ICDISR[3] @ 0x80 += 0x4;
+
+    reg {
+        name = "Interrupt set-enable registers";
+        desc = "Write 1 to enable the interrupt (bit n of register i = interrupt 32i + n). Reads the enable state.
+
+ARM Generic Interrupt Controller (PL390 / GIC-390) TRM (ICDISERn)";
+
+        field {
+            name = "set_enable";
+            desc = "Set-enable bit per interrupt.";
+            sw = rw;
+            hw = r;
+        } set_enable[31:0];
+    } ICDISER[3] @ 0x100 += 0x4;
+
+    reg {
+        name = "Interrupt clear-enable registers";
+        desc = "Write 1 to disable the interrupt.
+
+ARM Generic Interrupt Controller (PL390 / GIC-390) TRM (ICDICERn)";
+
+        field {
+            name = "clear_enable";
+            desc = "Clear-enable bit per interrupt.";
+            sw = rw;
+            hw = r;
+        } clear_enable[31:0];
+    } ICDICER[3] @ 0x180 += 0x4;
+
+    reg {
+        name = "Interrupt set-pending registers";
+        desc = "Write 1 to set the interrupt pending.
+
+ARM Generic Interrupt Controller (PL390 / GIC-390) TRM (ICDISPRn)";
+
+        field {
+            name = "set_pending";
+            desc = "Set-pending bit per interrupt.";
+            sw = rw;
+            hw = r;
+        } set_pending[31:0];
+    } ICDISPR[3] @ 0x200 += 0x4;
+
+    reg {
+        name = "Interrupt clear-pending registers";
+        desc = "Write 1 to clear the pending state.
+
+ARM Generic Interrupt Controller (PL390 / GIC-390) TRM (ICDICPRn)";
+
+        field {
+            name = "clear_pending";
+            desc = "Clear-pending bit per interrupt.";
+            sw = rw;
+            hw = r;
+        } clear_pending[31:0];
+    } ICDICPR[3] @ 0x280 += 0x4;
+
+    reg {
+        name = "Active bit registers";
+        desc = "Active state of each interrupt.
+
+ARM Generic Interrupt Controller (PL390 / GIC-390) TRM (ICDABRn)";
+
+        field {
+            name = "active";
+            desc = "Active bit per interrupt.";
+            sw = r;
+            hw = w;
+        } active[31:0];
+    } ICDABR[3] @ 0x300 += 0x4;
+
+    reg {
+        name = "Interrupt priority registers";
+        desc = "Four 8-bit priorities per register (interrupt 4i + b in byte b); 24 registers for 96 interrupts.
+
+ARM Generic Interrupt Controller (PL390 / GIC-390) TRM (ICDIPRn)";
+
+        field {
+            name = "priority3";
+            desc = "Priority of interrupt 4i + 3.";
+            sw = rw;
+            hw = r;
+        } priority3[31:24];
+
+        field {
+            name = "priority2";
+            desc = "Priority of interrupt 4i + 2.";
+            sw = rw;
+            hw = r;
+        } priority2[23:16];
+
+        field {
+            name = "priority1";
+            desc = "Priority of interrupt 4i + 1.";
+            sw = rw;
+            hw = r;
+        } priority1[15:8];
+
+        field {
+            name = "priority0";
+            desc = "Priority of interrupt 4i.";
+            sw = rw;
+            hw = r;
+        } priority0[7:0];
+    } ICDIPR[24] @ 0x400 += 0x4;
+
+    reg {
+        name = "Interrupt processor targets registers";
+        desc = "Four 8-bit CPU target masks per register (bit 0 = CPU0); the first eight registers (interrupts 0-31) are read-only.
+
+ARM Generic Interrupt Controller (PL390 / GIC-390) TRM (ICDIPTRn)";
+
+        field {
+            name = "targets3";
+            desc = "CPU targets of interrupt 4i + 3.";
+            sw = rw;
+            hw = r;
+        } targets3[31:24];
+
+        field {
+            name = "targets2";
+            desc = "CPU targets of interrupt 4i + 2.";
+            sw = rw;
+            hw = r;
+        } targets2[23:16];
+
+        field {
+            name = "targets1";
+            desc = "CPU targets of interrupt 4i + 1.";
+            sw = rw;
+            hw = r;
+        } targets1[15:8];
+
+        field {
+            name = "targets0";
+            desc = "CPU targets of interrupt 4i.";
+            sw = rw;
+            hw = r;
+        } targets0[7:0];
+    } ICDIPTR[24] @ 0x800 += 0x4;
+
+    reg {
+        name = "Interrupt configuration registers";
+        desc = "Two bits per interrupt: bit 1 = 1 edge-triggered, 0 level-sensitive; 6 registers for 96 interrupts.
+
+ARM Generic Interrupt Controller (PL390 / GIC-390) TRM (ICDICFRn)";
+
+        field {
+            name = "config";
+            desc = "Configuration, 2 bits per interrupt.";
+            sw = rw;
+            hw = r;
+        } config[31:0];
+    } ICDICFR[6] @ 0xC00 += 0x4;
+
+    reg {
+        name = "PPI status register";
+        desc = "Status of the private peripheral interrupts 16-31.
+
+ARM Generic Interrupt Controller (PL390 / GIC-390) TRM (ICDPPISR)";
+
+        field {
+            name = "ppi_status";
+            desc = "Interrupt 16-31 status.";
+            sw = r;
+            hw = w;
+        } ppi_status[31:16];
+    } ICDPPISR @ 0xD00;
+
+    reg {
+        name = "SPI status registers";
+        desc = "Status of the shared peripheral interrupts 32-95 (2 registers).
+
+ARM Generic Interrupt Controller (PL390 / GIC-390) TRM (ICDSPISRn)";
+
+        field {
+            name = "spi_status";
+            desc = "Interrupt status.";
+            sw = r;
+            hw = w;
+        } spi_status[31:0];
+    } ICDSPISR[2] @ 0xD04 += 0x4;
+
+    reg {
+        name = "Software generated interrupt register";
+        desc = "Write to raise a software generated interrupt.
+
+ARM Generic Interrupt Controller (PL390 / GIC-390) TRM (ICDSGIR)";
+
+        field {
+            name = "targetlistfilter";
+            desc = "0 = CPU target list, 1 = all other CPUs, 2 = requesting CPU only.";
+            sw = w;
+            hw = r;
+        } targetlistfilter[25:24];
+
+        field {
+            name = "cputargetlist";
+            desc = "CPU target list.";
+            sw = w;
+            hw = r;
+        } cputargetlist[23:16];
+
+        field {
+            name = "satt";
+            desc = "Secure/non-secure attribute.";
+            sw = w;
+            hw = r;
+        } satt[15:15];
+
+        field {
+            name = "sgiintid";
+            desc = "SGI interrupt ID 0-15.";
+            sw = w;
+            hw = r;
+        } sgiintid[3:0];
+    } ICDSGIR @ 0xF00;
+
+    reg {
+        name = "SGI clear-pending registers";
+        desc = "Clear pending SGIs (one byte per SGI, per source CPU).
+
+ARM Generic Interrupt Controller (PL390 / GIC-390) TRM (ICDCPENDSGIRn)";
+
+        field {
+            name = "clear_pending";
+            desc = "Clear-pending bits.";
+            sw = rw;
+            hw = r;
+        } clear_pending[31:0];
+    } ICDCPENDSGIR[4] @ 0xF10 += 0x4;
+
+    reg {
+        name = "SGI set-pending registers";
+        desc = "Set pending SGIs.
+
+ARM Generic Interrupt Controller (PL390 / GIC-390) TRM (ICDSPENDSGIRn)";
+
+        field {
+            name = "set_pending";
+            desc = "Set-pending bits.";
+            sw = rw;
+            hw = r;
+        } set_pending[31:0];
+    } ICDSPENDSGIR[4] @ 0xF20 += 0x4;
+
+    reg {
+        name = "Peripheral identification registers 0-3";
+        desc = "Peripheral ID bytes (PL390 part number 0x390); not read on hardware.
+
+ARM Generic Interrupt Controller (PL390 / GIC-390) TRM";
+
+        field {
+            name = "id";
+            desc = "ID byte.";
+            sw = r;
+            hw = w;
+        } id[7:0];
+    } ICPIDR[4] @ 0xFE0 += 0x4;
+
+    reg {
+        name = "PrimeCell identification registers 0-3";
+        desc = "PrimeCell ID (0x0D, 0xF0, 0x05, 0xB1).
+
+ARM Generic Interrupt Controller (PL390 / GIC-390) TRM";
+
+        field {
+            name = "id";
+            desc = "ID byte.";
+            sw = r;
+            hw = w;
+        } id[7:0];
+    } ICCIDR[4] @ 0xFF0 += 0x4;
+
+    } GICD @ 0x1000;
+
+};
+
+`endif

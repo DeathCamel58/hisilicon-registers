@@ -1,0 +1,1259 @@
+`ifndef ARM_PL011_RDL
+`define ARM_PL011_RDL
+
+regfile eARM_PL011 {
+    name = "UART (ARM PrimeCell PL011)";
+    desc = "
+    The Hi3520D UARTs are ARM PrimeCell PL011 UARTs (the vendor kernel registers them as AMBA devices, `core.c` `HIL_AMBA_DEVICE(uart0 ..)`, and mainline binds `arm,pl011`): 16 x 8-bit transmit FIFO,
+    16 x 12-bit receive FIFO, 5-8 data bits, 1-2 stop bits, parity, hardware flow control (UART1 has four wires, UART0/2/3 two), receive timeout and error interrupts. Four instances: UART0
+    0x20080000 (debug console, GIC ID 40), UART1 0x20090000 (PTZ, 4-wire, ID 41), UART2 0x200A0000 (ID 42), UART3 0x200B0000 (ID 43). The UART reference clock is selected by PERI_CRG57
+    (`uart_cksel`: hardware polarity 0 = APB 82.5 MHz, 1 = 2 MHz, which contradicts the data sheet; the reset value 1 means the UART runs from 2 MHz at reset, see CRG.rdl PERI_CRG57) and gated per UART in PERI_CRG57.
+
+    Registers UART_DR .. UART_ICR with their reset values are from data sheet 14.3.6 (printed pages 14-31 .. 14-50, `datasheet.txt` lines 53660-54554). The data sheet shows 16-bit (UART_RSR, UART_FBRD 8-bit)
+    register widths; all registers are modelled as 32-bit APB registers with the upper bits unused (as in the PL011). The data sheet omits UART_ILPR, UART_DMACR, the modem status bits
+    and the PrimeCell ID registers; they are added from the ARM PL011 TRM (fields marked so) and are not hardware verified, except that the PrimeCell identification is what the AMBA bus reads at probe.
+    The data sheet total reset values of UART_FR (0x0012) and UART_RIS (0x0002) include a set bit 1 (DSR / CTS modem status) that the data sheet lists as reserved; it is modelled in those added fields.
+    ";
+
+    reg {
+        name = "Data register";
+        desc = "UART_DR is a UART data register that stores the received data and the data to be transmitted. The receive status can be queried by reading this register.
+
+Data sheet 14.3.6 UART_DR (offset 0x0, printed page 14-36, `datasheet.txt` line 53895).";
+
+        enum UART_DR_oe_enum {
+            NO_OVERFLOW_ERROR = 0 { name = "No Overflow Error"; desc = "No overflow error occurs."; };
+            OVERFLOW_ERROR_OCCURS = 1 { name = "Overflow Error Occurs"; desc = "An overflow error occurs. That is, a data segment is received when the receive FIFO is full."; };
+        };
+
+        field {
+            name = "oe";
+            desc = "Overflow error.";
+            sw = r;
+            hw = w;
+            encode = UART_DR_oe_enum;
+            reset = 0x0;
+        } oe[11:11];
+
+        enum UART_DR_be_enum {
+            NO_BREAK_ERROR = 0 { name = "No Break Error"; desc = "No break error occurs."; };
+            BREAK_ERROR_OCCURS = 1 { name = "Break Error Occurs"; desc = "A break error occurs. That is, the time of receive data input signal keeping low is longer than a full word transfer. A full word consists of a start bit, a data bit, a parity bit, and a stop bit."; };
+        };
+
+        field {
+            name = "be";
+            desc = "Break error.";
+            sw = r;
+            hw = w;
+            encode = UART_DR_be_enum;
+            reset = 0x0;
+        } be[10:10];
+
+        enum UART_DR_pe_enum {
+            NO_PARITY_ERROR = 0 { name = "No Parity Error"; desc = "No parity error occurs."; };
+            PARITY_ERROR_OCCURS = 1 { name = "Parity Error Occurs"; desc = "A parity error occurs."; };
+        };
+
+        field {
+            name = "pe";
+            desc = "Parity error.";
+            sw = r;
+            hw = w;
+            encode = UART_DR_pe_enum;
+            reset = 0x0;
+        } pe[9:9];
+
+        enum UART_DR_fe_enum {
+            NO_FRAME_ERROR = 0 { name = "No Frame Error"; desc = "No frame error occurs."; };
+            FRAME_ERROR_OCCURS = 1 { name = "Frame Error Occurs"; desc = "A frame error (namely, stop bit error) occurs."; };
+        };
+
+        field {
+            name = "fe";
+            desc = "Frame error.";
+            sw = r;
+            hw = w;
+            encode = UART_DR_fe_enum;
+            reset = 0x0;
+        } fe[8:8];
+
+        field {
+            name = "data";
+            desc = "Data received and to be transmitted.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } data[7:0];
+    } UART_DR @ 0x0;
+
+    reg {
+        name = "Receive status register / error clear register";
+        desc = "UART_RSR is the receive status register (read) or the error clear register (any write clears all four error bits).
+
+Data sheet 14.3.6 UART_RSR (offset 0x4, printed page 14-37, `datasheet.txt` line 53948).";
+
+        enum UART_RSR_oe_enum {
+            NO_OVERFLOW_ERROR = 0 { name = "No Overflow Error"; desc = "No overflow error occurs."; };
+            OVERFLOW_ERROR_OCCURS = 1 { name = "Overflow Error Occurs"; desc = "An overflow error occurs. When the FIFO is full, the next data segment cannot be written to the FIFO and an overflow occurs in the shift register. Therefore, the contents in the FIFO are valid. In this case, the CPU must read the data immediately to spare the FIFO."; };
+        };
+
+        field {
+            name = "oe";
+            desc = "Overflow error.";
+            sw = rw;
+            hw = r;
+            encode = UART_RSR_oe_enum;
+            reset = 0x0;
+        } oe[3:3];
+
+        enum UART_RSR_be_enum {
+            NO_BREAK_ERROR = 0 { name = "No Break Error"; desc = "No break error occurs."; };
+            BREAK_ERROR_OCCURS = 1 { name = "Break Error Occurs"; desc = "A break error occurs. A break error occurs when the time of the receive data signal keeping low is longer than a full word transfer. A full word consists of a start bit, a data bit, a parity bit, and a stop bit."; };
+        };
+
+        field {
+            name = "be";
+            desc = "Break error.";
+            sw = rw;
+            hw = r;
+            encode = UART_RSR_be_enum;
+            reset = 0x0;
+        } be[2:2];
+
+        enum UART_RSR_pe_enum {
+            NO_PARITY_ERROR = 0 { name = "No Parity Error"; desc = "No parity error occurs."; };
+            PARITY_ERROR_OCCURS = 1 { name = "Parity Error Occurs"; desc = "A parity error occurs when the received data is checked. In FIFO mode, the error is associated with the data at the top of the FIFO."; };
+        };
+
+        field {
+            name = "pe";
+            desc = "Parity error.";
+            sw = rw;
+            hw = r;
+            encode = UART_RSR_pe_enum;
+            reset = 0x0;
+        } pe[1:1];
+
+        enum UART_RSR_fe_enum {
+            NO_FRAME_ERROR = 0 { name = "No Frame Error"; desc = "No frame error occurs."; };
+            STOP_BIT_RECEIVED = 1 { name = "Stop Bit Received"; desc = "The stop bit of the received data is incorrect. The valid stop bit is 1."; };
+        };
+
+        field {
+            name = "fe";
+            desc = "Frame error.";
+            sw = rw;
+            hw = r;
+            encode = UART_RSR_fe_enum;
+            reset = 0x0;
+        } fe[0:0];
+    } UART_RSR @ 0x4;
+
+    reg {
+        name = "Flag register";
+        desc = "UART_FR is a UART flag register.
+
+Data sheet 14.3.6 UART_FR (offset 0x18, printed page 14-38, `datasheet.txt` line 54004).";
+
+        field {
+            name = "ri";
+            desc = "Ring indicator. (ARM PrimeCell UART (PL011) TRM; not in the Hi3520D data sheet.)";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } ri[8:8];
+
+        field {
+            name = "txfe";
+            desc = "The definition of the bit is determined by the status of UART_LCR_H [fen]. If UART_LCR_H [fen] is 0, this bit is set to 1 when the transmit holding register is empty. If UART_LCR_H [fen] is 1, the bit is set to 1 when the transmit FIFO is empty.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } txfe[7:7];
+
+        field {
+            name = "rxff";
+            desc = "The definition of the bit is determined by the status of UART_LCR_H [fen]. If UART_LCR_H [fen] is 0, this bit is set to 1 when the receive holding register is full. If UART_LCR_H [fen] is 1, this bit is set to 1 when the receive FIFO is full.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } rxff[6:6];
+
+        field {
+            name = "txff";
+            desc = "The definition of the bit is determined by the status of UART_LCR_H [fen]. If UART_LCR_H [fen] is 0, this bit is set to 1 when the transmit holding register is full. If UART_LCR_H [fen] is 1, the bit is set to 1 when the transmit FIFO is full.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } txff[5:5];
+
+        field {
+            name = "rxfe";
+            desc = "The definition of the bit is determined by the status of UART_LCR_H [fen]. If UART_LCR_H [fen] is 0, this bit is set to 1 when the receive holding register is empty. If UART_LCR_H [fen] is 1, this bit is set to 1 when the receive FIFO is empty.";
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } rxfe[4:4];
+
+        enum UART_FR_busy_enum {
+            UART_IDLE_DATA = 0 { name = "Uart Idle Data"; desc = "The UART is idle or data transmission is complete."; };
+            UART_BUSY_TRANSMITTING = 1 { name = "Uart Busy Transmitting"; desc = "The UART is busy in transmitting data. If the bit is set to 1, the status is kept until the entire byte (including all stop bits) is transmitted from the shift register. Regardless of whether the UART is enabled, this bit is set to 1 when the transmit FIFO is not empty."; };
+        };
+
+        field {
+            name = "busy";
+            desc = "UART busy/idle status.";
+            sw = r;
+            hw = w;
+            encode = UART_FR_busy_enum;
+            reset = 0x0;
+        } busy[3:3];
+
+        field {
+            name = "dcd";
+            desc = "Data carrier detect. (ARM PrimeCell UART (PL011) TRM; not in the Hi3520D data sheet.)";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } dcd[2:2];
+
+        field {
+            name = "dsr";
+            desc = "Data set ready (the data sheet total reset 0x0012 has this bit set, in a field it lists as reserved). (ARM PrimeCell UART (PL011) TRM; not in the Hi3520D data sheet.)";
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } dsr[1:1];
+
+        field {
+            name = "cts";
+            desc = "Clear to send. (ARM PrimeCell UART (PL011) TRM; not in the Hi3520D data sheet.)";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } cts[0:0];
+    } UART_FR @ 0x18;
+
+    reg {
+        name = "Integer baud rate register";
+        desc = "UART_IBRD is an integral baud rate register.
+
+Data sheet 14.3.6 UART_IBRD (offset 0x24, printed page 14-39, `datasheet.txt` line 54067).";
+
+        field {
+            name = "baud";
+            desc = "Clock frequency divider corresponding to the integral part of the baud rate. All bits are cleared after reset.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } baud[15:0];
+    } UART_IBRD @ 0x24;
+
+    reg {
+        name = "Fractional baud rate register";
+        desc = "UART_FBRD is the fractional baud rate register (the data sheet names the field `band`, a typo for the baud-rate fraction; it is 6 bits wide: DIVFRAC).
+
+Data sheet 14.3.6 UART_FBRD (offset 0x28, printed page 14-39, `datasheet.txt` line 54102).";
+
+        field {
+            name = "band";
+            desc = "Clock frequency divider corresponding to the fractional part of the baud rate. All bits are cleared after reset.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } band[5:0];
+    } UART_FBRD @ 0x28;
+
+    reg {
+        name = "Line control register (transfer mode control)";
+        desc = "UART_LCR_H is a transfer mode control register. The registers UART_LCR_H, UART_IBRD, and UART_FBRD are combined to form a 30-bit register. If UART_IBRD and UART_FBRD are updated, UART_LCR_H must be updated at the same time.
+
+Data sheet 14.3.6 UART_LCR_H (offset 0x2C, printed page 14-40, `datasheet.txt` line 54136).";
+
+        field {
+            name = "sps";
+            desc = "Parity select. When bit 1, bit 2, and bit 7 of this register are set to 1, the parity bit is 0 during transmission and detection. When bit 1 and bit 7 of this register are set to 1 and bit 2 is set to 0, the parity bit is 1 during transmission and detection. When bit 1, bit 2, and bit 7 are cleared, the stick parity bit is disabled.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } sps[7:7];
+
+        enum UART_LCR_H_wlen_enum {
+            V_5_BITS = 0 { name = "V 5 Bits"; desc = "5 bits"; };
+            V_6_BITS = 1 { name = "V 6 Bits"; desc = "6 bits"; };
+            V_7_BITS = 2 { name = "V 7 Bits"; desc = "7 bits"; };
+            V_8_BITS = 3 { name = "V 8 Bits"; desc = "8 bits"; };
+        };
+
+        field {
+            name = "wlen";
+            desc = "Count of bits in a transmitted or received frame.";
+            sw = rw;
+            hw = r;
+            encode = UART_LCR_H_wlen_enum;
+            reset = 0x0;
+        } wlen[6:5];
+
+        enum UART_LCR_H_fen_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "fen";
+            desc = "Transmit/receive FIFO enable.";
+            sw = rw;
+            hw = r;
+            encode = UART_LCR_H_fen_enum;
+            reset = 0x0;
+        } fen[4:4];
+
+        enum UART_LCR_H_stp2_enum {
+            THERE_NO_2 = 0 { name = "There No 2"; desc = "There is no 2-bit stop bit at the end of the transmitted frame."; };
+            THERE_2_BIT = 1 { name = "There 2 Bit"; desc = "There is a 2-bit stop bit at the end of the transmitted frame. The receive logic does not check for the 2-bit stop bit during data reception."; };
+        };
+
+        field {
+            name = "stp2";
+            desc = "2-bit stop bit at the end of a transmitted frame.";
+            sw = rw;
+            hw = r;
+            encode = UART_LCR_H_stp2_enum;
+            reset = 0x0;
+        } stp2[3:3];
+
+        enum UART_LCR_H_eps_enum {
+            ODD_PARITY_GENERATED = 0 { name = "Odd Parity Generated"; desc = "The odd parity is generated or checked during data transmission and reception."; };
+            EVEN_PARITY_GENERATED = 1 { name = "Even Parity Generated"; desc = "The even parity is generated or checked during data transmission and reception. When UART_LCR_H [fen] is 0, this bit becomes invalid."; };
+        };
+
+        field {
+            name = "eps";
+            desc = "Parity select during data transmission and reception.";
+            sw = rw;
+            hw = r;
+            encode = UART_LCR_H_eps_enum;
+            reset = 0x0;
+        } eps[2:2];
+
+        enum UART_LCR_H_pen_enum {
+            PARITY_DISABLED = 0 { name = "Parity Disabled"; desc = "The parity is disabled."; };
+            PARITY_GENERATED_TRANSMIT = 1 { name = "Parity Generated Transmit"; desc = "The parity is generated on the transmit side and checked on the receive side."; };
+        };
+
+        field {
+            name = "pen";
+            desc = "Parity enable.";
+            sw = rw;
+            hw = r;
+            encode = UART_LCR_H_pen_enum;
+            reset = 0x0;
+        } pen[1:1];
+
+        enum UART_LCR_H_brk_enum {
+            INVALID = 0 { name = "Invalid"; desc = "invalid"; };
+            AFTER_CURRENT_DATA = 1 { name = "After Current Data"; desc = "After the current data transmission is complete, UTXD outputs low level continuously. Note: This bit must retain 1 during the period of at least two full frames to ensure the break command is executed properly. In general, the bit must be set to 0."; };
+        };
+
+        field {
+            name = "brk";
+            desc = "Break transmit.";
+            sw = rw;
+            hw = r;
+            encode = UART_LCR_H_brk_enum;
+            reset = 0x0;
+        } brk[0:0];
+    } UART_LCR_H @ 0x2C;
+
+    reg {
+        name = "Control register";
+        desc = "UART_CR is a UART control register. To configure UART_CR: write 0 to uarten, wait for the current transfer to complete, clear UART_LCR_H.fen, configure UART_CR, write 1 to uarten (DS 14.3.4).
+
+Data sheet 14.3.6 UART_CR (offset 0x30, printed page 14-42, `datasheet.txt` line 54226).";
+
+        enum UART_CR_ctsen_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED_DATA_TRANSMITTED = 1 { name = "Enabled Data Transmitted"; desc = "enabled. Data is transmitted only when the nUARTCTS signal is valid."; };
+        };
+
+        field {
+            name = "ctsen";
+            desc = "CTS hardware flow control enable.";
+            sw = rw;
+            hw = r;
+            encode = UART_CR_ctsen_enum;
+            reset = 0x0;
+        } ctsen[15:15];
+
+        enum UART_CR_rtsen_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED_DATA_RECEPTION = 1 { name = "Enabled Data Reception"; desc = "enabled. The data reception request is raised only when the receive FIFO has available space."; };
+        };
+
+        field {
+            name = "rtsen";
+            desc = "RTS hardware flow control enable.";
+            sw = rw;
+            hw = r;
+            encode = UART_CR_rtsen_enum;
+            reset = 0x0;
+        } rtsen[14:14];
+
+        field {
+            name = "out";
+            desc = "Out2 (bit 13) and Out1 (bit 12) modem outputs. (ARM PrimeCell UART (PL011) TRM; not in the Hi3520D data sheet.)";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } out[13:12];
+
+        enum UART_CR_rts_enum {
+            OUTPUT_SIGNAL_RETAINS = 0 { name = "Output Signal Retains"; desc = "The output signal retains."; };
+            WHEN_THIS_BIT = 1 { name = "When This Bit"; desc = "When this bit is set to 1, the output signal is 0."; };
+        };
+
+        field {
+            name = "rts";
+            desc = "Request transmit. This bit is the inversion of the status output signal nUARTRTS of the UART modem.";
+            sw = rw;
+            hw = r;
+            encode = UART_CR_rts_enum;
+            reset = 0x0;
+        } rts[11:11];
+
+        enum UART_CR_dtr_enum {
+            OUTPUT_SIGNAL_RETAINS = 0 { name = "Output Signal Retains"; desc = "The output signal retains."; };
+            WHEN_THIS_BIT = 1 { name = "When This Bit"; desc = "When this bit is set to 1, the output signal is 0."; };
+        };
+
+        field {
+            name = "dtr";
+            desc = "Data transmit ready. This bit is the inversion of the status output signal nUARTDTR of the UART modem.";
+            sw = rw;
+            hw = r;
+            encode = UART_CR_dtr_enum;
+            reset = 0x0;
+        } dtr[10:10];
+
+        enum UART_CR_rxe_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED_IF_UART = 1 { name = "Enabled If Uart"; desc = "enabled If the UART is disabled during data reception, the current data reception is stopped abnormally."; };
+        };
+
+        field {
+            name = "rxe";
+            desc = "UART receive enable.";
+            sw = rw;
+            hw = r;
+            encode = UART_CR_rxe_enum;
+            reset = 0x1;
+        } rxe[9:9];
+
+        enum UART_CR_txe_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED_IF_UART = 1 { name = "Enabled If Uart"; desc = "enabled If the UART is disabled during data transmission, the current data transmission is stopped abnormally."; };
+        };
+
+        field {
+            name = "txe";
+            desc = "UART transmit enable.";
+            sw = rw;
+            hw = r;
+            encode = UART_CR_txe_enum;
+            reset = 0x1;
+        } txe[8:8];
+
+        enum UART_CR_lbe_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            UARTTXD_LOOPED_BACK = 1 { name = "Uarttxd Looped Back"; desc = "UARTTXD is looped back to UARTRXD."; };
+        };
+
+        field {
+            name = "lbe";
+            desc = "Loopback enable.";
+            sw = rw;
+            hw = r;
+            encode = UART_CR_lbe_enum;
+            reset = 0x0;
+        } lbe[7:7];
+
+        field {
+            name = "sir";
+            desc = "SIREN (bit 1) and SIRLP (bit 2) IrDA SIR control; the data sheet lists them reserved. (ARM PrimeCell UART (PL011) TRM; not in the Hi3520D data sheet.)";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } sir[2:1];
+
+        enum UART_CR_uarten_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED_IF_UART = 1 { name = "Enabled If Uart"; desc = "enabled If the UART is disabled during data reception and transmission, the data transfer is stopped abnormally."; };
+        };
+
+        field {
+            name = "uarten";
+            desc = "UART enable.";
+            sw = rw;
+            hw = r;
+            encode = UART_CR_uarten_enum;
+            reset = 0x0;
+        } uarten[0:0];
+    } UART_CR @ 0x30;
+
+    reg {
+        name = "Interrupt FIFO level select register";
+        desc = "UART_IFLS is an interrupt FIFO threshold select register. It is used to set a threshold for triggering a FIFO interrupt (UART_TXINTR or UART_RXINTR).
+
+Data sheet 14.3.6 UART_IFLS (offset 0x34, printed page 14-43, `datasheet.txt` line 54301).";
+
+        enum UART_IFLS_rxiflsel_enum {
+            RECEIVE_FIFO_1 = 0 { name = "Receive Fifo 1"; desc = "receive FIFO >= 1/8 full"; };
+            RECEIVE_FIFO_1_2 = 1 { name = "Receive Fifo 1 2"; desc = "receive FIFO >= 1/4 full"; };
+            RECEIVE_FIFO_1_3 = 2 { name = "Receive Fifo 1 3"; desc = "receive FIFO >= 1/2 full"; };
+            RECEIVE_FIFO_3 = 3 { name = "Receive Fifo 3"; desc = "receive FIFO >= 3/4 full"; };
+            RECEIVE_FIFO_7 = 4 { name = "Receive Fifo 7"; desc = "receive FIFO >= 7/8 full 101-111: reserved"; };
+        };
+
+        field {
+            name = "rxiflsel";
+            desc = "Receive interrupt FIFO threshold select. A receive interrupt is triggered when any of the following conditions is met:";
+            sw = rw;
+            hw = r;
+            encode = UART_IFLS_rxiflsel_enum;
+            reset = 0x2;
+        } rxiflsel[5:3];
+
+        enum UART_IFLS_txiflsel_enum {
+            TRANSMIT_FIFO_1 = 0 { name = "Transmit Fifo 1"; desc = "transmit FIFO <= 1/8 full"; };
+            TRANSMIT_FIFO_1_2 = 1 { name = "Transmit Fifo 1 2"; desc = "transmit FIFO <= 1/4 full"; };
+            TRANSMIT_FIFO_3 = 3 { name = "Transmit Fifo 3"; desc = "transmit FIFO <= 3/4 full"; };
+            TRANSMIT_FIFO_1_3 = 2 { name = "Transmit Fifo 1 3"; desc = "transmit FIFO <= 1/2 full"; };
+            TRANSMIT_FIFO_7 = 4 { name = "Transmit Fifo 7"; desc = "transmit FIFO <= 7/8 full 101-111: reserved"; };
+        };
+
+        field {
+            name = "txiflsel";
+            desc = "Transmit interrupt FIFO threshold select. A transmit interrupt is triggered when any of the following conditions is met:";
+            sw = rw;
+            hw = r;
+            encode = UART_IFLS_txiflsel_enum;
+            reset = 0x2;
+        } txiflsel[2:0];
+    } UART_IFLS @ 0x34;
+
+    reg {
+        name = "Interrupt mask set/clear register";
+        desc = "UART_IMSC is an interrupt mask register. It is used to mask interrupts.
+
+Data sheet 14.3.6 UART_IMSC (offset 0x38, printed page 14-44, `datasheet.txt` line 54348).";
+
+        enum UART_IMSC_oeim_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+        };
+
+        field {
+            name = "oeim";
+            desc = "Mask status of the overflow error interrupt.";
+            sw = rw;
+            hw = r;
+            encode = UART_IMSC_oeim_enum;
+            reset = 0x0;
+        } oeim[10:10];
+
+        enum UART_IMSC_beim_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+        };
+
+        field {
+            name = "beim";
+            desc = "Mask status of the break error interrupt.";
+            sw = rw;
+            hw = r;
+            encode = UART_IMSC_beim_enum;
+            reset = 0x0;
+        } beim[9:9];
+
+        enum UART_IMSC_peim_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+        };
+
+        field {
+            name = "peim";
+            desc = "Mask status of the parity interrupt.";
+            sw = rw;
+            hw = r;
+            encode = UART_IMSC_peim_enum;
+            reset = 0x0;
+        } peim[8:8];
+
+        enum UART_IMSC_feim_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+        };
+
+        field {
+            name = "feim";
+            desc = "Mask status of the frame error interrupt.";
+            sw = rw;
+            hw = r;
+            encode = UART_IMSC_feim_enum;
+            reset = 0x0;
+        } feim[7:7];
+
+        enum UART_IMSC_rtim_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+        };
+
+        field {
+            name = "rtim";
+            desc = "Mask status of the receive timeout interrupt.";
+            sw = rw;
+            hw = r;
+            encode = UART_IMSC_rtim_enum;
+            reset = 0x0;
+        } rtim[6:6];
+
+        enum UART_IMSC_txim_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+        };
+
+        field {
+            name = "txim";
+            desc = "Mask status of the transmit interrupt.";
+            sw = rw;
+            hw = r;
+            encode = UART_IMSC_txim_enum;
+            reset = 0x0;
+        } txim[5:5];
+
+        enum UART_IMSC_rxim_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+        };
+
+        field {
+            name = "rxim";
+            desc = "Mask status of the receive interrupt.";
+            sw = rw;
+            hw = r;
+            encode = UART_IMSC_rxim_enum;
+            reset = 0x0;
+        } rxim[4:4];
+
+        field {
+            name = "dsrim";
+            desc = "DSR modem interrupt mask. (ARM PrimeCell UART (PL011) TRM; not in the Hi3520D data sheet.)";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } dsrim[3:3];
+
+        field {
+            name = "dcdim";
+            desc = "DCD modem interrupt mask. (ARM PrimeCell UART (PL011) TRM; not in the Hi3520D data sheet.)";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } dcdim[2:2];
+
+        field {
+            name = "ctsim";
+            desc = "CTS modem interrupt mask. (ARM PrimeCell UART (PL011) TRM; not in the Hi3520D data sheet.)";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ctsim[1:1];
+
+        field {
+            name = "riim";
+            desc = "RI modem interrupt mask. (ARM PrimeCell UART (PL011) TRM; not in the Hi3520D data sheet.)";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } riim[0:0];
+    } UART_IMSC @ 0x38;
+
+    reg {
+        name = "Raw interrupt status register";
+        desc = "UART_RIS is a raw interrupt status register. The contents of this register are not affected by the UART_IMSC register.
+
+Data sheet 14.3.6 UART_RIS (offset 0x3C, printed page 14-45, `datasheet.txt` line 54400).";
+
+        enum UART_RIS_oeris_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "oeris";
+            desc = "Status of the raw overflow error interrupt.";
+            sw = r;
+            hw = w;
+            encode = UART_RIS_oeris_enum;
+            reset = 0x0;
+        } oeris[10:10];
+
+        enum UART_RIS_beris_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "beris";
+            desc = "Status of the raw break error interrupt.";
+            sw = r;
+            hw = w;
+            encode = UART_RIS_beris_enum;
+            reset = 0x0;
+        } beris[9:9];
+
+        enum UART_RIS_peris_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "peris";
+            desc = "Status of the raw parity interrupt.";
+            sw = r;
+            hw = w;
+            encode = UART_RIS_peris_enum;
+            reset = 0x0;
+        } peris[8:8];
+
+        enum UART_RIS_feris_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "feris";
+            desc = "Status of the raw error interrupt.";
+            sw = r;
+            hw = w;
+            encode = UART_RIS_feris_enum;
+            reset = 0x0;
+        } feris[7:7];
+
+        enum UART_RIS_rtris_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "rtris";
+            desc = "Status of the raw receive timeout interrupt.";
+            sw = r;
+            hw = w;
+            encode = UART_RIS_rtris_enum;
+            reset = 0x0;
+        } rtris[6:6];
+
+        enum UART_RIS_txris_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "txris";
+            desc = "Status of the raw transmit interrupt.";
+            sw = r;
+            hw = w;
+            encode = UART_RIS_txris_enum;
+            reset = 0x0;
+        } txris[5:5];
+
+        enum UART_RIS_rxris_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "rxris";
+            desc = "Status of the raw receive interrupt.";
+            sw = r;
+            hw = w;
+            encode = UART_RIS_rxris_enum;
+            reset = 0x0;
+        } rxris[4:4];
+
+        field {
+            name = "dsrris";
+            desc = "DSR modem raw interrupt status (reset 0x0002 per the data sheet total reset: the CTS modem interrupt bit is set). (ARM PrimeCell UART (PL011) TRM; not in the Hi3520D data sheet.)";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } dsrris[3:3];
+
+        field {
+            name = "dcdris";
+            desc = "DCD modem raw interrupt status (reset 0x0002 per the data sheet total reset: the CTS modem interrupt bit is set). (ARM PrimeCell UART (PL011) TRM; not in the Hi3520D data sheet.)";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } dcdris[2:2];
+
+        field {
+            name = "ctsris";
+            desc = "CTS modem raw interrupt status (reset 0x0002 per the data sheet total reset: the CTS modem interrupt bit is set). (ARM PrimeCell UART (PL011) TRM; not in the Hi3520D data sheet.)";
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } ctsris[1:1];
+
+        field {
+            name = "riris";
+            desc = "RI modem raw interrupt status (reset 0x0002 per the data sheet total reset: the CTS modem interrupt bit is set). (ARM PrimeCell UART (PL011) TRM; not in the Hi3520D data sheet.)";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } riris[0:0];
+    } UART_RIS @ 0x3C;
+
+    reg {
+        name = "Masked interrupt status register";
+        desc = "UART_MIS is a masked interrupt status register. The contents of this register are the results obtained after the raw interrupt status is ANDed with the interrupt mask status.
+
+Data sheet 14.3.6 UART_MIS (offset 0x40, printed page 14-46, `datasheet.txt` line 54453).";
+
+        enum UART_MIS_oemis_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "oemis";
+            desc = "Status of the masked overflow error interrupt.";
+            sw = r;
+            hw = w;
+            encode = UART_MIS_oemis_enum;
+            reset = 0x0;
+        } oemis[10:10];
+
+        enum UART_MIS_bemis_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "bemis";
+            desc = "Status of the masked break error interrupt.";
+            sw = r;
+            hw = w;
+            encode = UART_MIS_bemis_enum;
+            reset = 0x0;
+        } bemis[9:9];
+
+        enum UART_MIS_pemis_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "pemis";
+            desc = "Status of the masked parity interrupt.";
+            sw = r;
+            hw = w;
+            encode = UART_MIS_pemis_enum;
+            reset = 0x0;
+        } pemis[8:8];
+
+        enum UART_MIS_femis_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "femis";
+            desc = "Status of the masked error interrupt.";
+            sw = r;
+            hw = w;
+            encode = UART_MIS_femis_enum;
+            reset = 0x0;
+        } femis[7:7];
+
+        enum UART_MIS_rtmis_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "rtmis";
+            desc = "Status of the masked receive timeout interrupt.";
+            sw = r;
+            hw = w;
+            encode = UART_MIS_rtmis_enum;
+            reset = 0x0;
+        } rtmis[6:6];
+
+        enum UART_MIS_txmis_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "txmis";
+            desc = "Status of the masked transmit interrupt.";
+            sw = r;
+            hw = w;
+            encode = UART_MIS_txmis_enum;
+            reset = 0x0;
+        } txmis[5:5];
+
+        enum UART_MIS_rxmis_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "rxmis";
+            desc = "Status of the masked receive interrupt.";
+            sw = r;
+            hw = w;
+            encode = UART_MIS_rxmis_enum;
+            reset = 0x0;
+        } rxmis[4:4];
+
+        field {
+            name = "dsrmis";
+            desc = "DSR modem masked interrupt status. (ARM PrimeCell UART (PL011) TRM; not in the Hi3520D data sheet.)";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } dsrmis[3:3];
+
+        field {
+            name = "dcdmis";
+            desc = "DCD modem masked interrupt status. (ARM PrimeCell UART (PL011) TRM; not in the Hi3520D data sheet.)";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } dcdmis[2:2];
+
+        field {
+            name = "ctsmis";
+            desc = "CTS modem masked interrupt status. (ARM PrimeCell UART (PL011) TRM; not in the Hi3520D data sheet.)";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } ctsmis[1:1];
+
+        field {
+            name = "rimis";
+            desc = "RI modem masked interrupt status. (ARM PrimeCell UART (PL011) TRM; not in the Hi3520D data sheet.)";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } rimis[0:0];
+    } UART_MIS @ 0x40;
+
+    reg {
+        name = "Interrupt clear register";
+        desc = "UART_ICR is an interrupt clear register. When 1 is written to it, the corresponding interrupt is cleared. Writing 0 has no effect.
+
+Data sheet 14.3.6 UART_ICR (offset 0x44, printed page 14-47, `datasheet.txt` line 54506).";
+
+        enum UART_ICR_oeic_enum {
+            INVALID = 0 { name = "Invalid"; desc = "invalid"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "oeic";
+            desc = "Overflow error interrupt clear.";
+            sw = w;
+            hw = r;
+            encode = UART_ICR_oeic_enum;
+            reset = 0x0;
+        } oeic[10:10];
+
+        enum UART_ICR_beic_enum {
+            INVALID = 0 { name = "Invalid"; desc = "invalid"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "beic";
+            desc = "Break error interrupt clear.";
+            sw = w;
+            hw = r;
+            encode = UART_ICR_beic_enum;
+            reset = 0x0;
+        } beic[9:9];
+
+        enum UART_ICR_peic_enum {
+            INVALID = 0 { name = "Invalid"; desc = "invalid"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "peic";
+            desc = "Parity interrupt clear.";
+            sw = w;
+            hw = r;
+            encode = UART_ICR_peic_enum;
+            reset = 0x0;
+        } peic[8:8];
+
+        enum UART_ICR_feic_enum {
+            INVALID = 0 { name = "Invalid"; desc = "invalid"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "feic";
+            desc = "Error interrupt clear.";
+            sw = w;
+            hw = r;
+            encode = UART_ICR_feic_enum;
+            reset = 0x0;
+        } feic[7:7];
+
+        enum UART_ICR_rtic_enum {
+            INVALID = 0 { name = "Invalid"; desc = "invalid"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "rtic";
+            desc = "Receive timeout interrupt clear.";
+            sw = w;
+            hw = r;
+            encode = UART_ICR_rtic_enum;
+            reset = 0x0;
+        } rtic[6:6];
+
+        enum UART_ICR_txic_enum {
+            INVALID = 0 { name = "Invalid"; desc = "invalid"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "txic";
+            desc = "Transmit interrupt clear.";
+            sw = w;
+            hw = r;
+            encode = UART_ICR_txic_enum;
+            reset = 0x0;
+        } txic[5:5];
+
+        enum UART_ICR_rxic_enum {
+            INVALID = 0 { name = "Invalid"; desc = "invalid"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "rxic";
+            desc = "Receive interrupt clear.";
+            sw = w;
+            hw = r;
+            encode = UART_ICR_rxic_enum;
+            reset = 0x0;
+        } rxic[4:4];
+
+        field {
+            name = "dsric";
+            desc = "DSR modem interrupt clear. (ARM PrimeCell UART (PL011) TRM; not in the Hi3520D data sheet.)";
+            sw = w;
+            hw = r;
+            reset = 0x0;
+        } dsric[3:3];
+
+        field {
+            name = "dcdic";
+            desc = "DCD modem interrupt clear. (ARM PrimeCell UART (PL011) TRM; not in the Hi3520D data sheet.)";
+            sw = w;
+            hw = r;
+            reset = 0x0;
+        } dcdic[2:2];
+
+        field {
+            name = "ctsic";
+            desc = "CTS modem interrupt clear. (ARM PrimeCell UART (PL011) TRM; not in the Hi3520D data sheet.)";
+            sw = w;
+            hw = r;
+            reset = 0x0;
+        } ctsic[1:1];
+
+        field {
+            name = "riic";
+            desc = "RI modem interrupt clear. (ARM PrimeCell UART (PL011) TRM; not in the Hi3520D data sheet.)";
+            sw = w;
+            hw = r;
+            reset = 0x0;
+        } riic[0:0];
+    } UART_ICR @ 0x44;
+
+    reg {
+        name = "IrDA low-power counter register";
+        desc = "8-bit IrDA low-power divisor; not in the data sheet (PL011 TRM).
+
+ARM PrimeCell UART (PL011) TRM; not in the Hi3520D data sheet.";
+
+        field {
+            name = "ilpdvsr";
+            desc = "IrDA low-power divisor.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ilpdvsr[7:0];
+    } UART_ILPR @ 0x20;
+
+    reg {
+        name = "DMA control register";
+        desc = "DMA enable bits; not in the data sheet (PL011 TRM). The Hi3520D UARTs have no DMA request lines documented.
+
+ARM PrimeCell UART (PL011) TRM; not in the Hi3520D data sheet.";
+
+        field {
+            name = "dmaonerr";
+            desc = "DMA on error.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } dmaonerr[2:2];
+
+        field {
+            name = "txdmae";
+            desc = "Transmit DMA enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } txdmae[1:1];
+
+        field {
+            name = "rxdmae";
+            desc = "Receive DMA enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } rxdmae[0:0];
+    } UART_DMACR @ 0x48;
+
+    reg {
+        name = "Peripheral ID register 0";
+        desc = "PrimeCell part number [7:0] of the PL011 (0x11). Read-only; not in the data sheet.
+
+ARM PrimeCell UART (PL011) TRM; not in the Hi3520D data sheet.";
+
+        field {
+            name = "id";
+            desc = "Identification byte 0.";
+            sw = r;
+            hw = w;
+            reset = 0x11;
+        } id[7:0];
+    } UART_PERIPHID0 @ 0xFE0;
+
+    reg {
+        name = "Peripheral ID register 1";
+        desc = "PrimeCell designer [3:0] = 0x1 (ARM), part number [11:8] = 0x0. Read-only; not in the data sheet.
+
+ARM PrimeCell UART (PL011) TRM; not in the Hi3520D data sheet.";
+
+        field {
+            name = "id";
+            desc = "Identification byte 1.";
+            sw = r;
+            hw = w;
+            reset = 0x10;
+        } id[7:0];
+    } UART_PERIPHID1 @ 0xFE4;
+
+    reg {
+        name = "Peripheral ID register 2";
+        desc = "PrimeCell revision [7:4] (implementation dependent: r1p5 = 0x3) and designer [7:4] = 0x4 (ARM). Read-only; not in the data sheet.
+
+ARM PrimeCell UART (PL011) TRM; not in the Hi3520D data sheet. Revision-dependent byte: no reset value given.";
+
+        field {
+            name = "id";
+            desc = "Identification byte 2.";
+            sw = r;
+            hw = w;
+        } id[7:0];
+    } UART_PERIPHID2 @ 0xFE8;
+
+    reg {
+        name = "Peripheral ID register 3";
+        desc = "PrimeCell configuration (0x00). Read-only; not in the data sheet.
+
+ARM PrimeCell UART (PL011) TRM; not in the Hi3520D data sheet.";
+
+        field {
+            name = "id";
+            desc = "Identification byte 3.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } id[7:0];
+    } UART_PERIPHID3 @ 0xFEC;
+
+    reg {
+        name = "PrimeCell ID register 0";
+        desc = "PrimeCell identification (0x0D, 0xF0, 0x05, 0xB1). Read-only; not in the data sheet.
+
+ARM PrimeCell UART (PL011) TRM; not in the Hi3520D data sheet.";
+
+        field {
+            name = "id";
+            desc = "Identification byte 0.";
+            sw = r;
+            hw = w;
+            reset = 0xD;
+        } id[7:0];
+    } UART_PCELLID0 @ 0xFF0;
+
+    reg {
+        name = "PrimeCell ID register 1";
+        desc = "PrimeCell identification (0x0D, 0xF0, 0x05, 0xB1). Read-only; not in the data sheet.
+
+ARM PrimeCell UART (PL011) TRM; not in the Hi3520D data sheet.";
+
+        field {
+            name = "id";
+            desc = "Identification byte 1.";
+            sw = r;
+            hw = w;
+            reset = 0xF0;
+        } id[7:0];
+    } UART_PCELLID1 @ 0xFF4;
+
+    reg {
+        name = "PrimeCell ID register 2";
+        desc = "PrimeCell identification (0x0D, 0xF0, 0x05, 0xB1). Read-only; not in the data sheet.
+
+ARM PrimeCell UART (PL011) TRM; not in the Hi3520D data sheet.";
+
+        field {
+            name = "id";
+            desc = "Identification byte 2.";
+            sw = r;
+            hw = w;
+            reset = 0x5;
+        } id[7:0];
+    } UART_PCELLID2 @ 0xFF8;
+
+    reg {
+        name = "PrimeCell ID register 3";
+        desc = "PrimeCell identification (0x0D, 0xF0, 0x05, 0xB1). Read-only; not in the data sheet.
+
+ARM PrimeCell UART (PL011) TRM; not in the Hi3520D data sheet.";
+
+        field {
+            name = "id";
+            desc = "Identification byte 3.";
+            sw = r;
+            hw = w;
+            reset = 0xB1;
+        } id[7:0];
+    } UART_PCELLID3 @ 0xFFC;
+
+};
+
+`endif
