@@ -1,0 +1,979 @@
+`ifndef HISI_FEPHY_RDL
+`define HISI_FEPHY_RDL
+
+// Embedded 10/100 Mbit/s Ethernet PHY of the Hi3520D / Hi3515A / Hi3515C (Hi3520D data sheet section 5.2, "FE PHY").
+// The registers of this block are IEEE 802.3 clause 22 MII management registers (plus two clause 45 MMD devices
+// reached through MACR/MADDR). They are NOT memory mapped: the CPU reaches them only through the MDIO registers
+// of the ETH MAC (`MDIO_RWCTRL`, `MDIO_RO_DATA`, `MDIO_PHYADDR`).
+//
+// Every register is 16 bits wide. The RDL register address is TWICE the MII register number (halfword stride), because
+// SystemRDL does not allow 16-bit registers at consecutive byte addresses. Register names are taken from the
+// untranslated data sheet (the machine translation turns ANLPAR into "APPROACHES", ANER into "OTHER", INTR into "IN"
+// and EEEWER into "EVER").
+enum FEPHY_enable_enum {
+    DISABLED = 0x0 { desc = "Disabled"; };
+    ENABLED  = 0x1 { desc = "Enabled"; };
+};
+
+enum FEPHY_supported_enum {
+    NOT_SUPPORTED = 0x0 { desc = "Not supported"; };
+    SUPPORTED     = 0x1 { desc = "Supported"; };
+};
+
+regfile eHISI_FEPHY {
+    name = "FE PHY MII management registers";
+    desc = "
+    Embedded 10/100 Mbit/s Ethernet physical layer transceiver (PCS, PMA, TP-PMD, 10Base-T / 100Base-TX codecs, TPMAU): IEEE 802.3u 100Base-TX and 802.3 10Base-T, full and half duplex, auto-negotiation with parallel detection, automatic MDI/MDIX cross-over, automatic polarity correction, adaptive equalisation, baseline wander compensation, power-down and line-down power saving, Energy Efficient Ethernet (IEEE 802.3az-2010), wake on LAN, three programmable LED outputs, 25 MHz reference clock. The PHY interrupt is GIC interrupt ID 57 (`FE PHY`, DS Table 3-16).
+
+    **These registers are not memory mapped.** They are IEEE 802.3 clause 22 MII management registers accessed through the MDIO bus by the ETH MAC (`ETH.MDIO_RWCTRL`, `ETH.MDIO_RO_DATA`, `ETH.MDIO_PHYADDR`); the MDIO address of the internal PHY is configured in `MDIO_PHYADDR`. The two MMD devices (3 and 7, EEE registers) are reached through `MACR` / `MADDR` (clause 22 indirect access to clause 45 registers, see `eHISI_FEPHY_MMD3` and `eHISI_FEPHY_MMD7`).
+
+    **Address convention:** the data sheet gives the MII register number (0x0 .. 0x1F). Because every register is 16 bits wide, the address in this description is the MII register number x 2 (BMCR 0x00, BMSR 0x02, PHYID1 0x04, ... PGSEL 0x3E). Register page selection with `PGSEL` is described by the data sheet only as an 8-bit page address; the data sheet does not say which registers are paged.
+
+    Source: Hi3520D/Hi3515A/Hi3515C data sheet (document version 02, 2013-06-21), section 5.2 FE PHY (Table 5-11 register overview, 5.2.5 register description). Names of the registers follow the untranslated data sheet. Data sheet only, not hardware verified.
+
+    !!! NOTE
+        The data sheet lists BMSR[5] (auto-negotiation complete) as RW and gives ANLPAR (link partner ability) the same RW access types and the same reset value 0x01E1 as ANAR (local ability); both look copied from ANAR. A status register that reports the link partner cannot sensibly reset to the local abilities. This description keeps the data sheet reset values but models the status bits as read-only.
+    ";
+
+    default regwidth = 16;
+
+    reg {
+        name = "Basic Mode Control Register";
+        desc = "BMCR is the basic mode control register (MII register 0). Data sheet 5.2.5 BMCR, reset 0x3100 (100 Mbit/s, auto-negotiation enabled). Registers 0 and 1 are restored to their default values by a software reset (bit 15).";
+
+        field {
+            name = "reset";
+            desc = "Soft reset. Sets the status and control registers of the PHY to their default state. Self-clearing. 0: normal operation. 1: soft reset. The reset may change the state of the internal PHY and of the physical link attached to it.";
+            sw = rw;
+            hw = rw;
+            singlepulse;
+            reset = 0x0;
+        } reset[15:15];
+
+        field {
+            name = "loopback";
+            desc = "Loopback. Loops the four transmit data bits (txd0-txd3) back to the receive data path. 0: normal operation. 1: enable loopback.";
+            encode = FEPHY_enable_enum;
+            reset = 0x0;
+        } loopback[14:14];
+
+        enum speedselection_enum {
+            MBIT_10  = 0x0 { desc = "10 Mbit/s (10Base-T)"; };
+            MBIT_100 = 0x1 { desc = "100 Mbit/s (100Base-TX)"; };
+        };
+
+        field {
+            name = "speedselection";
+            desc = "Network speed. Used when auto-negotiation is disabled; after auto-negotiation completes this bit reflects the negotiated speed.";
+            encode = speedselection_enum;
+            reset = 0x1;
+        } speedselection[13:13];
+
+        field {
+            name = "autonegotiationenable";
+            desc = "Auto-negotiation enable. 0: disable auto-negotiation, `speedselection` (bit 13) and `duplexmode` (bit 8) select the link speed and duplex mode. 1: enable auto-negotiation, bits 13 and 8 are ignored. After disabling auto-negotiation and setting bits 13 and 8, set `reset` (bit 15) to 1 to apply the change.";
+            encode = FEPHY_enable_enum;
+            reset = 0x1;
+        } autonegotiationenable[12:12];
+
+        enum powerdown_enum {
+            NORMAL     = 0x0 { desc = "Normal operation"; };
+            POWER_DOWN = 0x1 { desc = "Power down"; };
+        };
+
+        field {
+            name = "powerdown";
+            desc = "Power down the PHY. MDC and MDIO stay powered and remain usable for register access.";
+            encode = powerdown_enum;
+            reset = 0x0;
+        } powerdown[11:11];
+
+        enum isolate_enum {
+            NORMAL   = 0x0 { desc = "Normal operation (the MII transmits and receives data with a one-cycle glitch when this field is enabled or disabled)"; };
+            ISOLATED = 0x1 { desc = "Electrically isolate the PHY from the MII. The PHY still responds to MDC / MDIO."; };
+        };
+
+        field {
+            name = "isolate";
+            desc = "MII isolation.";
+            encode = isolate_enum;
+            reset = 0x0;
+        } isolate[10:10];
+
+        field {
+            name = "restartautonegotiation";
+            desc = "Restart auto-negotiation. 0: normal operation. 1: restart auto-negotiation. Self-clearing.";
+            sw = rw;
+            hw = rw;
+            singlepulse;
+            reset = 0x0;
+        } restartautonegotiation[9:9];
+
+        enum duplexmode_enum {
+            HALF = 0x0 { desc = "Half duplex"; };
+            FULL = 0x1 { desc = "Full duplex"; };
+        };
+
+        field {
+            name = "duplexmode";
+            desc = "Duplex mode. Used when auto-negotiation is disabled (bit 12 = 0); after auto-negotiation completes this bit reflects the negotiated duplex mode.";
+            encode = duplexmode_enum;
+            reset = 0x1;
+        } duplexmode[8:8];
+
+        field {
+            name = "collisiontest";
+            desc = "Collision test. 0: normal operation. 1: enable the collision test. The COL signal is then asserted within 512 bit times in response to TXEN and released within 4 bit times when TXEN is released.";
+            encode = FEPHY_enable_enum;
+            reset = 0x0;
+        } collisiontest[7:7];
+
+        field {
+            name = "reserved";
+            desc = "Reserved.";
+            reset = 0x0;
+        } reserved[6:0];
+
+    } BMCR @ 0x00;
+
+    reg {
+        name = "Basic Mode Status Register";
+        desc = "BMSR is the basic mode status register (MII register 1). Data sheet 5.2.5 BMSR, reset 0x7849. Registers 0 and 1 are restored to their default values by a software reset.";
+
+        field {
+            name = "_00base_t4";
+            desc = "100Base-T4 capability. 0: not capable. 1: capable.";
+            encode = FEPHY_supported_enum;
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } _00base_t4[15:15];
+
+        field {
+            name = "_00base_tx_fd";
+            desc = "100Base-TX full duplex capability.";
+            encode = FEPHY_supported_enum;
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } _00base_tx_fd[14:14];
+
+        field {
+            name = "_00base_tx_hd";
+            desc = "100Base-TX half duplex capability.";
+            encode = FEPHY_supported_enum;
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } _00base_tx_hd[13:13];
+
+        field {
+            name = "_0base_t_fd";
+            desc = "10Base-T full duplex capability.";
+            encode = FEPHY_supported_enum;
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } _0base_t_fd[12:12];
+
+        field {
+            name = "_0base_t_hd";
+            desc = "10Base-T half duplex capability.";
+            encode = FEPHY_supported_enum;
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } _0base_t_hd[11:11];
+
+        field {
+            name = "reserved";
+            desc = "Reserved.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } reserved[10:7];
+
+        field {
+            name = "mfpreamblesuppression";
+            desc = "Management frame preamble suppression: the PHY accepts MDIO frames without a preamble. After reset the first MDIO operation needs at least 32 preamble bits; IEEE 802.3u requires one idle bit time between two MDIO operations.";
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } mfpreamblesuppression[6:6];
+
+        enum autonegotiationcomplete_enum {
+            NOT_COMPLETE = 0x0 { desc = "Auto-negotiation not complete"; };
+            COMPLETE     = 0x1 { desc = "Auto-negotiation complete"; };
+        };
+
+        field {
+            name = "AutoNegotiationComplete";
+            desc = "Auto-negotiation complete. (The data sheet lists this bit as RW, which looks like an error; modelled as read-only.)";
+            encode = autonegotiationcomplete_enum;
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } AutoNegotiationComplete[5:5];
+
+        field {
+            name = "remotefault";
+            desc = "Remote fault. 0: no remote fault detected. 1: remote fault detected. Cleared by reading the register (data sheet access type RC).";
+            sw = r;
+            hw = w;
+            rclr;
+            reset = 0x0;
+        } remotefault[4:4];
+
+        field {
+            name = "auto_negotiationability";
+            desc = "Auto-negotiation ability. 0: the PHY cannot perform auto-negotiation. 1: the PHY can perform auto-negotiation.";
+            encode = FEPHY_supported_enum;
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } auto_negotiationability[3:3];
+
+        field {
+            name = "linkstatus";
+            desc = "Link status. 0: no valid link established. 1: valid link established. The bit indicates whether the link has been lost since the last read; read the register twice to get the current link status. (The translated data sheet names this field `inclined`; the untranslated data sheet names it `linkstatus`.)";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } linkstatus[2:2];
+
+        field {
+            name = "jabberdetect";
+            desc = "Jabber detect. 0: no jabber (excessively long transmission) detected. 1: jabber detected.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } jabberdetect[1:1];
+
+        field {
+            name = "extendedcapability";
+            desc = "Extended register capability. 0: no extended register set. 1: extended register capability (permanently 1).";
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } extendedcapability[0:0];
+
+    } BMSR @ 0x02;
+
+    reg {
+        name = "PHY Identification Register 1";
+        desc = "PHYID1 is PHY identification register 1 (MII register 2). Data sheet 5.2.5 PHYID1, reset 0x001C.";
+
+        field {
+            name = "oui";
+            desc = "Bits 6 to 21 of the organizationally unique identifier (OUI).";
+            sw = r;
+            hw = na;
+            reset = 0x001C;
+        } oui[15:0];
+
+    } PHYID1 @ 0x04;
+
+    reg {
+        name = "PHY Identification Register 2";
+        desc = "PHYID2 is PHY identification register 2 (MII register 3). Data sheet 5.2.5 PHYID2, reset 0xC816.";
+
+        field {
+            name = "oui_lsb";
+            desc = "Bits 0 to 5 of the OUI.";
+            sw = r;
+            hw = na;
+            reset = 0x32;
+        } oui_lsb[15:10];
+
+        field {
+            name = "modelnumber";
+            desc = "Model number.";
+            sw = r;
+            hw = na;
+            reset = 0x01;
+        } modelnumber[9:4];
+
+        field {
+            name = "revisionnumber";
+            desc = "Revision number.";
+            sw = r;
+            hw = na;
+            reset = 0x6;
+        } revisionnumber[3:0];
+
+    } PHYID2 @ 0x06;
+
+    reg {
+        name = "Auto-Negotiation Advertisement Register";
+        desc = "ANAR is the auto-negotiation advertisement register (MII register 4): the abilities this PHY advertises to its link partner. Data sheet 5.2.5 ANAR, reset 0x01E1.";
+
+        field {
+            name = "nextpage";
+            desc = "Next page. 0: transmit the primary capability data page. 1: transmit protocol specific data pages.";
+            reset = 0x0;
+        } nextpage[15:15];
+
+        field {
+            name = "acknowledge";
+            desc = "Acknowledge: 1 acknowledges that the capability data of the link partner was received.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } acknowledge[14:14];
+
+        field {
+            name = "remotefault";
+            desc = "Advertise the remote fault detection capability.";
+            reset = 0x0;
+        } remotefault[13:13];
+
+        field {
+            name = "reserved";
+            desc = "Reserved.";
+            sw = r;
+            hw = na;
+            reset = 0x0;
+        } reserved[12:12];
+
+        field {
+            name = "asymmetricpause";
+            desc = "Advertise support of asymmetric pause frames.";
+            reset = 0x0;
+        } asymmetricpause[11:11];
+
+        field {
+            name = "pause";
+            desc = "Advertise that the layer 2 MAC has flow control capability.";
+            reset = 0x0;
+        } pause[10:10];
+
+        field {
+            name = "_00base_t4";
+            desc = "100Base-T4 support (read-only, 0: not supported).";
+            sw = r;
+            hw = na;
+            reset = 0x0;
+        } _00base_t4[9:9];
+
+        field {
+            name = "_00base_tx_fd";
+            desc = "Advertise 100Base-TX full duplex.";
+            reset = 0x1;
+        } _00base_tx_fd[8:8];
+
+        field {
+            name = "_00base_tx";
+            desc = "Advertise 100Base-TX.";
+            reset = 0x1;
+        } _00base_tx[7:7];
+
+        field {
+            name = "_0base_t_fd";
+            desc = "Advertise 10Base-T full duplex.";
+            reset = 0x1;
+        } _0base_t_fd[6:6];
+
+        field {
+            name = "_0base_t";
+            desc = "Advertise 10Base-T.";
+            reset = 0x1;
+        } _0base_t[5:5];
+
+        field {
+            name = "selectorfield";
+            desc = "Selector field: binary encoding of the protocol supported by this node. Only CSMA/CD (00001) is specified; other protocols are not supported.";
+            sw = r;
+            hw = na;
+            reset = 0x01;
+        } selectorfield[4:0];
+
+    } ANAR @ 0x08;
+
+    reg {
+        name = "Auto-Negotiation Link Partner Ability Register";
+        desc = "ANLPAR is the auto-negotiation link partner ability register (MII register 5). Data sheet 5.2.5 ANLPAR, reset 0x01E1. The data sheet gives the same access types and the same reset value as ANAR (see the note of the block); the fields hold the abilities received from the link partner and are modelled read-only here.";
+
+        field {
+            name = "nextpage";
+            desc = "Next page bit of the link partner. 0: primary capability data page. 1: protocol specific data pages.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } nextpage[15:15];
+
+        field {
+            name = "acknowledge";
+            desc = "Link partner acknowledge.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } acknowledge[14:14];
+
+        field {
+            name = "remotefault";
+            desc = "The link partner advertises the remote fault detection capability.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } remotefault[13:13];
+
+        field {
+            name = "reserved";
+            desc = "Reserved.";
+            sw = r;
+            hw = na;
+            reset = 0x0;
+        } reserved[12:12];
+
+        field {
+            name = "asymmetricpause";
+            desc = "The link partner supports asymmetric pause frames.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } asymmetricpause[11:11];
+
+        field {
+            name = "pause";
+            desc = "The link partner has layer 2 MAC flow control capability.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } pause[10:10];
+
+        field {
+            name = "_00base_t4";
+            desc = "The link partner supports 100Base-T4.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } _00base_t4[9:9];
+
+        field {
+            name = "_00base_tx_fd";
+            desc = "The link partner supports 100Base-TX full duplex.";
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } _00base_tx_fd[8:8];
+
+        field {
+            name = "_00base_tx";
+            desc = "The link partner supports 100Base-TX.";
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } _00base_tx[7:7];
+
+        field {
+            name = "_0base_t_fd";
+            desc = "The link partner supports 10Base-T full duplex.";
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } _0base_t_fd[6:6];
+
+        field {
+            name = "_0base_t";
+            desc = "The link partner supports 10Base-T.";
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } _0base_t[5:5];
+
+        field {
+            name = "selectorfield";
+            desc = "Selector field of the link partner. Only CSMA/CD (00001) is specified; other protocols are not supported.";
+            sw = r;
+            hw = w;
+            reset = 0x01;
+        } selectorfield[4:0];
+
+    } ANLPAR @ 0x0A;
+
+    reg {
+        name = "Auto-Negotiation Expansion Register";
+        desc = "ANER is the auto-negotiation expansion register (MII register 6). Data sheet 5.2.5 ANER, reset 0x0000.";
+
+        field {
+            name = "reserved";
+            desc = "Reserved.";
+            sw = r;
+            hw = na;
+            reset = 0x0;
+        } reserved[15:5];
+
+        field {
+            name = "paralleldetectionfault";
+            desc = "Parallel detection fault. 0: no fault detected by the parallel detection function. 1: a fault was detected. Cleared by reading the register (data sheet access type RC).";
+            sw = r;
+            hw = w;
+            rclr;
+            reset = 0x0;
+        } paralleldetectionfault[4:4];
+
+        field {
+            name = "linkpartnernextpageability";
+            desc = "Link partner next page ability. 0: the link partner has no next page ability. 1: the link partner has next page ability. (Data sheet access type RW.)";
+            reset = 0x0;
+        } linkpartnernextpageability[3:3];
+
+        field {
+            name = "localnextpageability";
+            desc = "Local next page ability. 0: the local node has no next page ability. 1: the local node has next page ability. (Data sheet access type RW.)";
+            reset = 0x0;
+        } localnextpageability[2:2];
+
+        field {
+            name = "pagereceived";
+            desc = "Page received. 0: no new page received. 1: a new page was received. Cleared by reading the register (data sheet access type RC).";
+            sw = r;
+            hw = w;
+            rclr;
+            reset = 0x0;
+        } pagereceived[1:1];
+
+        field {
+            name = "linkpartnerauto_negotiationability";
+            desc = "Link partner auto-negotiation ability, valid when auto-negotiation is enabled. 0: the link partner cannot auto-negotiate. 1: the link partner can auto-negotiate. (Data sheet access type RW.)";
+            reset = 0x0;
+        } linkpartnerauto_negotiationability[0:0];
+
+    } ANER @ 0x0C;
+
+    reg {
+        name = "MMD Access Control Register";
+        desc = "MACR is the MMD access control register (MII register 0xD): together with MADDR it implements the clause 22 indirect access to the clause 45 MMD registers. Write `devad` and `function` = 00 here, write the MMD register address to MADDR, then write `devad` and a data `function` here and read or write the data through MADDR. Data sheet 5.2.5 MACR, reset 0x0000.";
+
+        enum macr_function_enum {
+            ADDRESS                   = 0x0 { desc = "Address"; };
+            DATA_NO_POST_INCREMENT    = 0x1 { desc = "Data, no post increment"; };
+            DATA_POST_INCREMENT_RW    = 0x2 { desc = "Data, post increment on reads and writes"; };
+            DATA_POST_INCREMENT_WRITE = 0x3 { desc = "Data, post increment on writes only"; };
+        };
+
+        field {
+            name = "function";
+            desc = "Access function.";
+            encode = macr_function_enum;
+            sw = w;
+            hw = r;
+            reset = 0x0;
+        } function[15:14];
+
+        field {
+            name = "reserved";
+            desc = "Reserved.";
+            sw = r;
+            hw = na;
+            reset = 0x0;
+        } reserved[13:5];
+
+        field {
+            name = "devad";
+            desc = "MMD device address (3: PCS, 7: auto-negotiation; see eHISI_FEPHY_MMD3 and eHISI_FEPHY_MMD7).";
+            sw = w;
+            hw = r;
+            reset = 0x0;
+        } devad[4:0];
+
+    } MACR @ 0x1A;
+
+    reg {
+        name = "MMD Access Address Data Register";
+        desc = "MADDR is the MMD access address/data register (MII register 0xE). Data sheet 5.2.5 MADDR, reset 0x0000.";
+
+        field {
+            name = "addressdata";
+            desc = "When MACR.function = 00 this field holds the MMD register address (bits 13:0). For the data functions (01, 10, 11) it holds the data of the MMD register addressed by the address previously written (bits 13:0).";
+            reset = 0x0;
+        } addressdata[15:0];
+
+    } MADDR @ 0x1C;
+
+    reg {
+        name = "Power Saving Mode Register";
+        desc = "PSMR is the power saving mode register (MII register 0x18). Data sheet 5.2.5 PSMR, reset 0x8000 (line-down power saving enabled).";
+
+        field {
+            name = "enpwrsave";
+            desc = "Enable the line-down power saving mode (LDPS). In this mode the PHY detects the link state and, while the link is down, does not transmit fast link pulses, 100 Mbit/s idle or 10 Mbit/s normal link pulses (only a normal link pulse), saving 60 % to 80 % of the power. Transmission resumes as soon as a signal is detected.";
+            encode = FEPHY_enable_enum;
+            reset = 0x1;
+        } enpwrsave[15:15];
+
+        field {
+            name = "reserved";
+            desc = "Reserved.";
+            sw = r;
+            hw = na;
+            reset = 0x0;
+        } reserved[14:0];
+
+    } PSMR @ 0x30;
+
+    reg {
+        name = "Loopback Register";
+        desc = "LPM is called the loopback register by the data sheet (MII register 0x1C) but holds the MDI/MDIX cross-over control. Data sheet 5.2.5 LPM, reset 0x0006.";
+
+        field {
+            name = "reserved";
+            desc = "Reserved.";
+            sw = r;
+            hw = na;
+            reset = 0x0;
+        } reserved_15_3[15:3];
+
+        field {
+            name = "en_automdix";
+            desc = "Enable the automatic MDI/MDIX cross-over function.";
+            encode = FEPHY_enable_enum;
+            reset = 0x1;
+        } en_automdix[2:2];
+
+        enum force_mdi_enum {
+            MDIX = 0x0 { desc = "Force MDIX mode"; };
+            MDI  = 0x1 { desc = "Force MDI mode"; };
+        };
+
+        field {
+            name = "force_mdi";
+            desc = "Force the MDI/MDIX mode. Valid when automatic MDIX is enabled.";
+            encode = force_mdi_enum;
+            reset = 0x1;
+        } force_mdi[1:1];
+
+        field {
+            name = "reserved";
+            desc = "Reserved.";
+            sw = r;
+            hw = na;
+            reset = 0x0;
+        } reserved_0[0:0];
+
+    } LPM @ 0x38;
+
+    reg {
+        name = "Interrupt Indication and SNR Display Register";
+        desc = "INTR is the interrupt indication and signal-to-noise ratio display register (MII register 0x1E). Data sheet 5.2.5 INTR (the translated data sheet calls it `IN`), reset 0x0000. The interrupt flags are cleared by reading the register (data sheet access type RC).";
+
+        field {
+            name = "anerr";
+            desc = "Auto-negotiation error interrupt.";
+            sw = r;
+            hw = w;
+            rclr;
+            reset = 0x0;
+        } anerr[15:15];
+
+        field {
+            name = "spdchg";
+            desc = "Speed mode change interrupt.";
+            sw = r;
+            hw = w;
+            rclr;
+            reset = 0x0;
+        } spdchg[14:14];
+
+        field {
+            name = "duplexchg";
+            desc = "Duplex mode change interrupt.";
+            sw = r;
+            hw = w;
+            rclr;
+            reset = 0x0;
+        } duplexchg[13:13];
+
+        field {
+            name = "reserved";
+            desc = "Reserved.";
+            sw = r;
+            hw = na;
+            reset = 0x0;
+        } reserved_12[12:12];
+
+        field {
+            name = "linkstatuschg";
+            desc = "Link status change interrupt.";
+            sw = r;
+            hw = w;
+            rclr;
+            reset = 0x0;
+        } linkstatuschg[11:11];
+
+        field {
+            name = "reserved";
+            desc = "Reserved.";
+            sw = r;
+            hw = na;
+            reset = 0x0;
+        } reserved_10_4[10:4];
+
+        field {
+            name = "snr_o";
+            desc = "Signal-to-noise ratio value.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } snr_o[3:0];
+
+    } INTR @ 0x3C;
+
+    reg {
+        name = "Page Select Register";
+        desc = "PGSEL is the page select register (MII register 0x1F). Data sheet 5.2.5 PGSEL, reset 0x0000. The data sheet does not say which registers are paged.";
+
+        field {
+            name = "reserved";
+            desc = "Reserved.";
+            sw = r;
+            hw = na;
+            reset = 0x0;
+        } reserved[15:8];
+
+        field {
+            name = "pagesel";
+            desc = "Selected page address, 0x00 to 0xFF.";
+            reset = 0x0;
+        } pagesel[7:0];
+
+    } PGSEL @ 0x3E;
+};
+
+// MMD device 3 (PCS), reached through MACR / MADDR with MACR.devad = 3. Address = MMD register address x 2.
+regfile eHISI_FEPHY_MMD3 {
+    name = "FE PHY MMD device 3 (PCS) registers";
+    desc = "
+    EEE (IEEE 802.3az) registers of the PCS MMD device (device address 3) of the FE PHY, reached with the clause 22 indirect access registers MACR / MADDR of `eHISI_FEPHY`. Not memory mapped. The address in this description is the MMD register address x 2 (halfword stride). Data sheet 5.2.5 (Table 5-11, registers EEEPC1R, EEEPS1R, EEECR, EEEWER).
+    ";
+
+    default regwidth = 16;
+
+    reg {
+        name = "PCS Control Register 1";
+        desc = "EEEPC1R is the PCS control register (MMD device 3, address 0x00). Data sheet reset 0x0000.";
+
+        field {
+            name = "reserved";
+            desc = "Reserved.";
+            reset = 0x0;
+        } reserved_15_11[15:11];
+
+        enum clockstopenable_enum {
+            NOT_STOPPED = 0x0 { desc = "The PHY does not stop RXC during LPI (default)"; };
+            STOPPED     = 0x1 { desc = "The PHY stops RXC during LPI"; };
+        };
+
+        field {
+            name = "clockstopenable";
+            desc = "Clock stop enable.";
+            encode = clockstopenable_enum;
+            reset = 0x0;
+        } clockstopenable[10:10];
+
+        field {
+            name = "reserved";
+            desc = "Reserved.";
+            reset = 0x0;
+        } reserved_9_0[9:0];
+
+    } EEEPC1R @ 0x00;
+
+    reg {
+        name = "PCS Status Register 1";
+        desc = "EEEPS1R is the PCS status register (MMD device 3, address 0x01). Data sheet reset 0x0000.";
+
+        field {
+            name = "reserved";
+            desc = "Reserved.";
+            sw = r;
+            hw = na;
+            reset = 0x0;
+        } reserved_15_12[15:12];
+
+        field {
+            name = "txlpireceived";
+            desc = "0: the transmit PCS has not received LPI. 1: the transmit PCS has received LPI.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } txlpireceived[11:11];
+
+        field {
+            name = "rxlpireceived";
+            desc = "0: the receive PCS has not received LPI. 1: the receive PCS has received LPI.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } rxlpireceived[10:10];
+
+        field {
+            name = "txlpiindication";
+            desc = "0: the transmit PCS is not receiving LPI. 1: the transmit PCS is receiving LPI.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } txlpiindication[9:9];
+
+        field {
+            name = "rxlpiindication";
+            desc = "0: the receive PCS is not receiving LPI. 1: the receive PCS is receiving LPI.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } rxlpiindication[8:8];
+
+        field {
+            name = "reserved";
+            desc = "Reserved.";
+            sw = r;
+            hw = na;
+            reset = 0x0;
+        } reserved_7[7:7];
+
+        field {
+            name = "clockstopcapable";
+            desc = "Clock stop capability. 0: TXC cannot be stopped. 1: TXC can be stopped during LPI. (The untranslated data sheet attributes the 0 case to the RL6307 device.)";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } clockstopcapable[6:6];
+
+        field {
+            name = "reserved";
+            desc = "Reserved.";
+            sw = r;
+            hw = na;
+            reset = 0x0;
+        } reserved_5_0[5:0];
+
+    } EEEPS1R @ 0x02;
+
+    reg {
+        name = "EEE Capability Register";
+        desc = "EEECR is the EEE capability register (MMD device 3, address 0x14). Data sheet reset 0x0003: the reset bit table sets bit 0, which the data sheet lists as reserved.";
+
+        field {
+            name = "reserved";
+            desc = "Reserved.";
+            sw = r;
+            hw = na;
+            reset = 0x0;
+        } reserved_15_2[15:2];
+
+        field {
+            name = "_00base_txeee";
+            desc = "100Base-TX EEE capability. 0: not supported. 1: supported.";
+            encode = FEPHY_supported_enum;
+            sw = r;
+            hw = na;
+            reset = 0x1;
+        } _00base_txeee[1:1];
+
+        field {
+            name = "reserved";
+            desc = "Reserved (the data sheet reset bit table shows 1).";
+            sw = r;
+            hw = na;
+            reset = 0x1;
+        } reserved_0[0:0];
+
+    } EEECR @ 0x28;
+
+    reg {
+        name = "EEE Wake Error Register";
+        desc = "EEEWER is the EEE wake error register (MMD device 3, address 0x16; the translated data sheet calls it `EVER`). Data sheet reset 0x0000.";
+
+        field {
+            name = "eeewakeerrorcounter";
+            desc = "Counts wake time faults of a PHY that supports EEE: errors that occur when the PHY cannot complete its normal timing within the time required by the PHY type. Cleared on read (data sheet access type RC).";
+            sw = r;
+            hw = w;
+            rclr;
+            reset = 0x0;
+        } eeewakeerrorcounter[15:0];
+
+    } EEEWER @ 0x2C;
+};
+
+// MMD device 7 (auto-negotiation), reached through MACR / MADDR with MACR.devad = 7. Address = MMD register address x 2.
+regfile eHISI_FEPHY_MMD7 {
+    name = "FE PHY MMD device 7 (auto-negotiation) registers";
+    desc = "
+    EEE (IEEE 802.3az) advertisement registers of the auto-negotiation MMD device (device address 7) of the FE PHY, reached with the clause 22 indirect access registers MACR / MADDR of `eHISI_FEPHY`. Not memory mapped. The address in this description is the MMD register address x 2 (halfword stride). Data sheet 5.2.5 (Table 5-11, registers EEEAR, EEELPAR).
+    ";
+
+    default regwidth = 16;
+
+    reg {
+        name = "EEE Advertisement Register";
+        desc = "EEEAR is the EEE advertisement register (MMD device 7, address 0x3C). Data sheet reset 0x0002: the reset bit table has bit 1 set (100Base-TX EEE advertised).";
+
+        field {
+            name = "reserved";
+            desc = "Reserved.";
+            reset = 0x0;
+        } reserved_15_2[15:2];
+
+        enum eeear_advertise_enum {
+            NOT_ADVERTISED = 0x0 { desc = "Do not advertise"; };
+            ADVERTISED     = 0x1 { desc = "Advertise"; };
+        };
+
+        field {
+            name = "_00base_txeee";
+            desc = "100Base-TX EEE capability advertisement.";
+            encode = eeear_advertise_enum;
+            reset = 0x1;
+        } _00base_txeee[1:1];
+
+        field {
+            name = "reserved";
+            desc = "Reserved.";
+            reset = 0x0;
+        } reserved_0[0:0];
+
+    } EEEAR @ 0x78;
+
+    reg {
+        name = "EEE Link Partner Ability Register";
+        desc = "EEELPAR is the EEE link partner ability register (MMD device 7, address 0x3D). Data sheet reset 0x0000.";
+
+        field {
+            name = "reserved";
+            desc = "Reserved.";
+            sw = r;
+            hw = na;
+            reset = 0x0;
+        } reserved_15_2[15:2];
+
+        field {
+            name = "lp100base_txeee";
+            desc = "0: the link partner does not support 100Base-TX EEE. 1: the link partner supports 100Base-TX EEE.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } lp100base_txeee[1:1];
+
+        field {
+            name = "reserved";
+            desc = "Reserved.";
+            sw = r;
+            hw = na;
+            reset = 0x0;
+        } reserved_0[0:0];
+
+    } EEELPAR @ 0x7A;
+};
+
+// Top-level wrapper so that the MII register space can be elaborated and exported on its own. It is NOT instantiated in any SoC:
+// the registers have no CPU address (they are reached through the MDIO registers of the ETH MAC).
+addrmap aHISI_FEPHY {
+    name = "FE PHY MII management register space";
+    desc = "Register space of the embedded FE PHY, reached only over MDIO (see eHISI_FEPHY). The three groups are separate address spaces on the PHY (clause 22 registers, MMD device 3, MMD device 7); they are placed at 0x000, 0x100 and 0x200 here only so that they can be shown together. Offsets inside a group are the register number x 2.";
+    eHISI_FEPHY      MII  @ 0x000;
+    eHISI_FEPHY_MMD3 MMD3 @ 0x100;
+    eHISI_FEPHY_MMD7 MMD7 @ 0x200;
+};
+
+`endif

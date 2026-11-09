@@ -57,6 +57,11 @@ regfile eDDRC {
 
     reg {
         name = "DDRC_STATUS";
+`ifdef DDRC_HI3520D_NOTES
+        desc = "
+            Data sheet (Hi3520D/Hi3515A/Hi3515C, 4.1.6): total reset 0x0000_0005 (busy = 1, in_sr = 1). Used by the standby sequence (DS 4.1.4.1 'Clock gating'): after setting DDRC_SREFCTRL[sr_req] = 1 poll `in_sr` until it reads 1, and after clearing `sr_req` poll it until it reads 0 (the DS also says to wait at most 1 us for `in_sr` = 0 in the DDR2/DDR3 bring-up sequences). During the initialization sequence poll `in_init` until it reads 0 after writing DDRC_INITCTRL[init_req].
+        ";
+`endif
 
 `ifdef DDRC_TEST_PASS_FIELD
         enum DDRC_STATUS_test_pass_enum {
@@ -148,6 +153,13 @@ regfile eDDRC {
 
     reg {
         name = "DDRC self-refresh control register";
+`ifdef DDRC_HI3520D_NOTES
+        desc = "
+            Data sheet 4.1.6: only `sr_req` (bit 0, reset 1, so the controller comes out of reset in self-refresh) exists in this register; bits [31:1] are reserved. The DS text of 3.9 (Power management) and 4.1.4.5 (Low power configuration) speaks of a field `DDRC_SREFCTRL[sr_seq]`, which does not appear in the register description (probably a leftover from a sibling DDRC with more fields); treat it as nonexistent.
+
+            Standby sequence from the DS 4.1.4.1 (run from on-chip RAM or flash, not from DDR): (1) set `sr_req` = 1; (2) poll DDRC_STATUS[in_sr] until 1; (3) clear DDRC_PHY_REG4[phy_ck_en] as the DS says (note the polarity conflict described there); (4) gate the DDRC clock. Exit: (1) enable the DDRC clock; (2) write DDRC_CONFIG1 = 0x0040_0785 and set DDRC_PHY_REG4[phy_ck_en] = 1; (3) write DDRC_PHYCTRL (0x408) = 0 to start the DDRPHY initialization; (4) wait about 500 ns and poll DDRC_PHYSTATUS[phy_init_done] (0x404) until 1; (5) clear `sr_req`; (6) poll DDRC_STATUS[in_sr] until 0.
+        ";
+`endif
 
 `ifdef DDRC_SREF_TEST_REQ_FIELD
         enum DDRC_SREFCTRL_sref_test_req_enum {
@@ -2445,6 +2457,14 @@ regfile eDDRC {
             desc = "ITM reset signal of the PHY.";
             encode = DDRC_DTRCTRL_itm_rst_enum;
         } itm_rst[0:0];
+`endif
+
+`ifdef DDRC_DTRCTRL_BIT0_RESERVED_NZ
+        field {
+            name = "reserved_nz";
+            desc = "Reserved in the data sheet (the bit table lists bit 0 as reserved, RO), but the data sheet total reset is 0x0000_0401, so the bit reads 1 after reset. Keep the reset value when writing the register.";
+            reset = 0x1;
+        } reserved_nz[0:0];
 `endif
 
     } DDRC_DTRCTRL @ 0x00AC;
@@ -4756,7 +4776,14 @@ regfile eDDRC {
 
         field {
             name = "phy_ck_en";
-            desc = "CK/CKB I/O Enable.";
+            desc = "
+                CK/CKB I/O Enable.
+`ifdef DDRC_HI3520D_NOTES
+
+                !!! NOTE
+                    Data sheet conflict: the bit table (4.1.6) says 0 = enable, 1 = disable (matching the encoding and the reset value 0 = clock enabled), but the DS standby sequence (4.1.4.1) says to write `phy_ck_en` = 0 to turn the DDR clock off on entry and 1 to turn it on again on exit. One of the two is inverted; the bit table agrees with the reset state (clock running), the sequence is probably the error. Verify on hardware before relying on either.
+`endif
+            ";
             encode = DDRC_zero_enable_enum;
             reset = 0x0;
         } phy_ck_en[6:6];
@@ -6044,6 +6071,11 @@ regfile eDDRC {
 `ifdef DDRC_PHY_REG61_REG
     reg {
         name = "DDRPHY Register 61";
+`ifdef DDRC_HI3520D_NOTES
+        desc = "
+            The data sheet DDR2/DDR3 bring-up sequences (4.1.4) say to poll `DDRC_PHYREG62[phy_cal_done_h]` and `[phy_cal_done_l]` 'at address 0xB48' after starting the automatic read DQS training with DDRC_PHY_REG2 = 1. The register tables put `phy_cal_done_h/l` in this register (DDRC_PHY_REG61, 0xBE8), while DDRC_PHY_REG62 (0xBC4) holds phy_idqe_h/phy_idqs_l and 0xB48 is DDRC_PHY_RXDQSKEW[7]. The sequence text names the wrong register and address.
+        ";
+`endif
 
         field {
             name = "phy_cal_done_h";
