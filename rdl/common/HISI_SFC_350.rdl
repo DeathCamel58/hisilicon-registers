@@ -60,8 +60,8 @@ regfile eHISI_SFC_350 {
     };
 
     enum SFC_one_enable_enum {
-        ENABLE  = 0x0 { desc = "Enable"; };
-        DISABLE = 0x1 { desc = "Disable"; };
+        DISABLE = 0x0 { desc = "Disable"; };
+        ENABLE  = 0x1 { desc = "Enable"; };
     };
 
     /* Fields */
@@ -78,12 +78,14 @@ regfile eHISI_SFC_350 {
             name = "mode";
             desc = "SPI mode configuration";
             encode = mode_enum;
+            reset = 0x0;
         } mode[0:0];
 
         field {
             name = "wp_en";
             desc = "Enable hardware write protection. The WP pin is forcibly pulled down when enabled.";
             encode = SFC_one_enable_enum;
+            reset = 0x0;
         } wp_en[1:1];
 
         enum flash_addr_mode_enum {
@@ -95,12 +97,19 @@ regfile eHISI_SFC_350 {
             name = "flash_addr_mode";
             desc = "SPI address mode. The write operation is invalid when CMD.start is 1.";
             encode = flash_addr_mode_enum;
+            reset = 0x0;
         } flash_addr_mode[2:2];
+
+        field {
+            name = "read_delay";
+            desc = "Read data sampling delay. The data sheet calls bits [4:3] reserved (must be 0), but the vendor driver (hisfc350.h, HISFC350_GLOBAL_CONFIG_READ_DELAY(n) = (n & 3) << 3) programs them to delay the sampling of read data at high SPI clock rates.";
+            reset = 0x0;
+        } read_delay[4:3];
 
     } GLOBAL_CONFIG @ 0x0100;
 
     reg {
-        name = "Global Configuration Register";
+        name = "Timing Configuration Register";
 
         enum timing_zero_seven_enum {
             CYCLE_1 = 0x0 { desc = "1 Cycle"; };
@@ -113,41 +122,44 @@ regfile eHISI_SFC_350 {
             CYCLES_8 = 0x7 { desc = "8 Cycles"; };
         };
 
-        enum timing_zero_fifteen_enum {
-            CYCLE_1 = 0x0 { desc = "1 Cycle"; };
-            CYCLES_2 = 0x1 { desc = "2 Cycles"; };
-            CYCLES_3 = 0x2 { desc = "3 Cycles"; };
-            CYCLES_4 = 0x3 { desc = "4 Cycles"; };
-            CYCLES_5 = 0x4 { desc = "5 Cycles"; };
-            CYCLES_6 = 0x5 { desc = "6 Cycles"; };
-            CYCLES_7 = 0x6 { desc = "7 Cycles"; };
-            CYCLES_8 = 0x7 { desc = "8 Cycles"; };
-            CYCLES_9 = 0x8 { desc = "9 Cycles"; };
-            CYCLES_10 = 0x9 { desc = "10 Cycles"; };
-            CYCLES_11 = 0xA { desc = "11 Cycles"; };
-            CYCLES_12 = 0xB { desc = "12 Cycles"; };
-            CYCLES_13 = 0xC { desc = "13 Cycles"; };
-            CYCLES_14 = 0xD { desc = "14 Cycles"; };
-            CYCLES_15 = 0xE { desc = "15 Cycles"; };
-            CYCLES_16 = 0xF { desc = "16 Cycles"; };
+        enum tshsl_enum {
+            CYCLES_2 = 0x0 { desc = "2 Cycles"; };
+            CYCLES_3 = 0x1 { desc = "3 Cycles"; };
+            CYCLES_4 = 0x2 { desc = "4 Cycles"; };
+            CYCLES_5 = 0x3 { desc = "5 Cycles"; };
+            CYCLES_6 = 0x4 { desc = "6 Cycles"; };
+            CYCLES_7 = 0x5 { desc = "7 Cycles"; };
+            CYCLES_8 = 0x6 { desc = "8 Cycles"; };
+            CYCLES_9 = 0x7 { desc = "9 Cycles"; };
+            CYCLES_10 = 0x8 { desc = "10 Cycles"; };
+            CYCLES_11 = 0x9 { desc = "11 Cycles"; };
+            CYCLES_12 = 0xA { desc = "12 Cycles"; };
+            CYCLES_13 = 0xB { desc = "13 Cycles"; };
+            CYCLES_14 = 0xC { desc = "14 Cycles"; };
+            CYCLES_15 = 0xD { desc = "15 Cycles"; };
+            CYCLES_16 = 0xE { desc = "16 Cycles"; };
+            CYCLES_17 = 0xF { desc = "17 Cycles"; };
         };
 
         field {
             name = "tshsl";
             desc = "Indicates the deselect time of the CS. It is equal to the interval between two flash operations.";
-            encode = timing_zero_fifteen_enum;
+            encode = tshsl_enum;
+            reset = 0xF;
         } tshsl[0:3];
 
         field {
             name = "tcss";
             desc = "Set the setup time of the CS.";
             encode = timing_zero_seven_enum;
+            reset = 0x6;
         } tcss[8:10];
 
         field {
             name = "tcsh";
             desc = "Set the CS hold time.";
             encode = timing_zero_seven_enum;
+            reset = 0x6;
         } tcsh[12:14];
 
     } TIMING @ 0x0110;
@@ -164,18 +176,24 @@ regfile eHISI_SFC_350 {
             name = "cmd_op_end_raw_status";
             desc = "Raw interrupt status of instruction operation end (not masked)";
             encode = complete_1_enum;
+            sw = r;
+            hw = w;
+            reset = 0x0;
         } cmd_op_end_raw_status[0:0];
 
         field {
             name = "dma_done_int_raw_status";
             desc = "Raw status of DMA operation done interrupt (not masked)";
             encode = complete_1_enum;
+            sw = r;
+            hw = w;
+            reset = 0x0;
         } dma_done_int_raw_status[1:1];
 
     } INT_RAW_STATUS @ 0x0120;
 
     reg {
-        name = "Interrupt Raw Status Register";
+        name = "Interrupt Status Register";
 
         enum complete_1_enum {
             INCOMPLETE = 0x0 { desc = "The operation is not complete"; };
@@ -186,12 +204,18 @@ regfile eHISI_SFC_350 {
             name = "cmd_op_end_status";
             desc = "Interrupt status of instruction operation end (masked)";
             encode = complete_1_enum;
+            sw = r;
+            hw = w;
+            reset = 0x0;
         } cmd_op_end_status[0:0];
 
         field {
             name = "dma_done_int_status";
-            desc = "Raw status of DMA operation done interrupt (masked)";
+            desc = "Status of DMA operation done interrupt (masked)";
             encode = complete_1_enum;
+            sw = r;
+            hw = w;
+            reset = 0x0;
         } dma_done_int_status[1:1];
 
     } INT_STATUS @ 0x0124;
@@ -208,12 +232,14 @@ regfile eHISI_SFC_350 {
             name = "cmd_op_end_int_mask";
             desc = "Instruction operation end interrupt mask bit";
             encode = masked_0_enum;
+            reset = 0x0;
         } cmd_op_end_int_mask[0:0];
 
         field {
             name = "dma_done_int_mask";
             desc = "DMA operation done interrupt mask bit";
             encode = masked_0_enum;
+            reset = 0x0;
         } dma_done_int_mask[1:1];
 
     } INT_MASK @ 0x0128;
@@ -222,8 +248,8 @@ regfile eHISI_SFC_350 {
         name = "Interrupt Clear Register";
 
         enum cleared_1_enum {
-            MASKED     = 0x0 { desc = "Masked"; };
-            NOT_MASKED = 0x1 { desc = "Not Masked"; };
+            NOT_CLEARED = 0x0 { desc = "Not cleared"; };
+            CLEARED     = 0x1 { desc = "Clear the interrupt"; };
         };
 
         field {
@@ -235,10 +261,12 @@ regfile eHISI_SFC_350 {
                 After a clear operation is complete, this bit returns 0 automatically.
             ";
             encode = cleared_1_enum;
+            sw = w;
+            reset = 0x0;
         } cmd_op_end_int_clr[0:0];
 
         field {
-            name = "dma_done_int_mask";
+            name = "dma_done_int_clr";
             desc = "
             DMA done interrupt clear bit. Writing 1 to this bit clears `dma_done_status` and `dma_done_raw_status`.
 
@@ -246,7 +274,9 @@ regfile eHISI_SFC_350 {
                 After a clear operation is complete, this bit returns 0 automatically.
             ";
             encode = cleared_1_enum;
-        } dma_done_int_mask[1:1];
+            sw = w;
+            reset = 0x0;
+        } dma_done_int_clr[1:1];
 
     } INT_CLEAR @ 0x012C;
 
@@ -267,6 +297,9 @@ regfile eHISI_SFC_350 {
                 I've only observed `0x350` in the wild.
             ";
             encode = version_enum;
+            sw = r;
+            hw = na;
+            reset = 0x350;
         } VERSION[0:31];
 
     } VERSION @ 0x01F8;
@@ -283,6 +316,9 @@ regfile eHISI_SFC_350 {
             name = "VERSION_SEL";
             desc = "SFC Register Compatibility";
             encode = version_sel_enum;
+            sw = r;
+            hw = na;
+            reset = 0x1;
         } VERSION_SEL[0:0];
 
     } VERSION_SEL @ 0x01FC;
@@ -301,8 +337,8 @@ regfile eHISI_SFC_350 {
         };
 
         enum dummy_bytes_enum {
-            DUMMY_0 = 0x0 { desc = "1 Byte"; };
-            DUMMY_1 = 0x1 { desc = "1 Bytes"; };
+            DUMMY_0 = 0x0 { desc = "No dummy byte"; };
+            DUMMY_1 = 0x1 { desc = "1 Byte"; };
             DUMMY_2 = 0x2 { desc = "2 Bytes"; };
             DUMMY_3 = 0x3 { desc = "3 Bytes"; };
             DUMMY_4 = 0x4 { desc = "4 Bytes"; };
@@ -315,12 +351,14 @@ regfile eHISI_SFC_350 {
             name = "rd_mem_if_type";
             desc = "Bus read operation specifies the type of the connected SPI flash interface.";
             encode = mem_if_type_enum;
+            reset = 0x0;
         } rd_mem_if_type[0:2];
 
         field {
             name = "rd_dummy_bytes";
             desc = "Dummy byte of the bus read operation.";
             encode = dummy_bytes_enum;
+            reset = 0x0;
         } rd_dummy_bytes[3:5];
 
         enum rd_prefetch_cnt_enum {
@@ -334,40 +372,47 @@ regfile eHISI_SFC_350 {
             name = "rd_prefetch_cnt";
             desc = "Clock cycle for prefetching data when the flash memory is accessed at a variable data length through the bus.";
             encode = rd_prefetch_cnt_enum;
+            reset = 0x0;
         } rd_prefetch_cnt[6:7];
 
         field {
             name = "rd_ins";
             desc = "Read Instruction";
+            reset = 0x3;
         } rd_ins[8:15];
 
         field {
             name = "wr_mem_if_type";
             desc = "Bus write operation specifies the type of the connected SPI flash interface.";
             encode = mem_if_type_enum;
+            reset = 0x0;
         } wr_mem_if_type[16:18];
 
         field {
             name = "wr_dummy_bytes";
             desc = "Dummy byte of the bus write operation .";
             encode = dummy_bytes_enum;
+            reset = 0x0;
         } wr_dummy_bytes[19:21];
 
         field {
             name = "wr_ins";
             desc = "Write Instruction";
+            reset = 0x2;
         } wr_ins[22:29];
 
         field {
             name = "wr_enable";
-            desc = "Bus write control. Ignore the bus write operation. ";
+            desc = "Bus write control. When disabled, bus write operations are ignored.";
             encode = SFC_one_enable_enum;
+            reset = 0x0;
         } wr_enable[30:30];
 
         field {
             name = "rd_enable";
-            desc = "Bus read control. Ignore the bus read operation.";
+            desc = "Bus read control. When disabled, the value 0 is returned for bus read operations.";
             encode = SFC_one_enable_enum;
+            reset = 0x1;
         } rd_enable[31:31];
 
     } BUS_CONFIG1 @ 0x0200;
@@ -377,12 +422,341 @@ regfile eHISI_SFC_350 {
 
         field {
             name = "reserved";
-            desc = "Reserved. The value 0 must be written to this bit.";
-        } reserved[0:2];
+            desc = "
+                Reserved, RW in the data sheet: the value 0 must be written (the data sheet gives no other meaning).
+
+                !!! NOTE
+                    The vendor driver header (hisfc350.h) names these bits `WIP_LOCATE`; that is not documented in the data sheet.
+            ";
+            reset = 0x0;
+        } reserved[2:0];
 
     } BUS_CONFIG2 @ 0x0204;
 
-    // TODO: Document remaining registers
+    enum flash_size_enum {
+        NONE     = 0x0 { desc = "No SPI flash connected"; };
+        KBIT_512 = 0x1 { desc = "512 kbits"; };
+        MBIT_1   = 0x2 { desc = "1 Mbit"; };
+        MBIT_2   = 0x3 { desc = "2 Mbits"; };
+        MBIT_4   = 0x4 { desc = "4 Mbits"; };
+        MBIT_8   = 0x5 { desc = "8 Mbits"; };
+        MBIT_16  = 0x6 { desc = "16 Mbits"; };
+        MBIT_32  = 0x7 { desc = "32 Mbits"; };
+        MBIT_64  = 0x8 { desc = "64 Mbits"; };
+        MBIT_128 = 0x9 { desc = "128 Mbits (default)"; };
+        MBIT_256 = 0xA { desc = "256 Mbits"; };
+        MBIT_512 = 0xB { desc = "512 Mbits"; };
+        GBIT_1   = 0xC { desc = "1 Gbit"; };
+        GBIT_2   = 0xD { desc = "2 Gbits"; };
+        GBIT_4   = 0xE { desc = "4 Gbits"; };
+        GBIT_8   = 0xF { desc = "8 Gbits"; };
+    };
+
+    reg {
+        name = "Bus Mapping Size Register";
+        desc = "
+            Capacity of the SPI flash on each chip select, which sets the size of the bus mapping window.
+            Hi3516C/Hi3518 have a single chip select (CS1 in the data sheet) and no CS0 field.
+            Hardware (Hi3520D V100, U-Boot driver hisfc350_spi.c): the flash is on CS1.
+        ";
+
+`ifndef SFC_SINGLE_CS
+        field {
+            name = "flash_size_cs0";
+            desc = "Capacity of the SPI flash connected to CS0 (same encoding as flash_size_cs1). The Hi3520D data sheet calls bits [7:0] reserved, but the reset value 0x909 and the Hi3516A data sheet show this field; reset 9 = 128 Mbits.";
+            encode = flash_size_enum;
+            reset = 0x9;
+        } flash_size_cs0[3:0];
+`endif
+
+        field {
+            name = "flash_size_cs1";
+            desc = "Capacity of the SPI flash connected to CS1.";
+            encode = flash_size_enum;
+            reset = 0x9;
+        } flash_size_cs1[11:8];
+
+    } BUS_FLASH_SIZE @ 0x0210;
+
+`ifndef SFC_SINGLE_CS
+    reg {
+        name = "CS0 Bus Mapping Base Address Register";
+
+        field {
+            name = "cs0_bus_base_addr_high";
+            desc = "Upper 16 bits of the system address to which the CS0 flash is mapped. Reset 0x5A00_0000.";
+            reset = 0x5A00;
+        } cs0_bus_base_addr_high[31:16];
+
+    } CS0_BUS_BASE_ADDR @ 0x0214;
+`endif
+
+    reg {
+`ifdef SFC_SINGLE_CS
+        name = "Bus Mapping Base Address Register";
+`else
+        name = "CS1 Bus Mapping Base Address Register";
+`endif
+
+        field {
+`ifdef SFC_SINGLE_CS
+            name = "bus_base_addr_high";
+            desc = "Upper 16 bits of the system address to which the flash is mapped. Reset 0x5800_0000.";
+            reset = 0x5800;
+        } bus_base_addr_high[31:16];
+
+    } BUS_BASE_ADDR @ 0x0218;
+`else
+            name = "cs1_bus_base_addr_high";
+            desc = "Upper 16 bits of the system address to which the CS1 flash is mapped. Reset 0x5800_0000.";
+            reset = 0x5800;
+        } cs1_bus_base_addr_high[31:16];
+
+    } CS1_BUS_BASE_ADDR @ 0x0218;
+`endif
+
+    reg {
+        name = "Bus Alias Base Address Register";
+
+        field {
+            name = "flash_alias_addr";
+            desc = "Upper 16 bits of the second system base address to which the flash is mapped (address aliasing, used to boot from the flash at address 0).";
+            reset = 0x0;
+        } flash_alias_addr[31:16];
+
+    } BUS_ALIAS_ADDR @ 0x021C;
+
+    reg {
+        name = "DMA Control Register";
+
+`ifndef SFC_SINGLE_CS
+        enum dma_cs_enum {
+            CS0 = 0x0 { desc = "CS 0"; };
+            CS1 = 0x1 { desc = "CS 1"; };
+        };
+
+        field {
+            name = "dma_cs";
+            desc = "Chip select used by the DMA operation (the Hi3520D data sheet leaves this field unnamed, `reserved`).";
+            encode = dma_cs_enum;
+            reset = 0x0;
+        } dma_cs[4:4];
+
+`endif
+        enum dma_rw_enum {
+            WRITE = 0x0 { desc = "Write operation (write data to the flash memory)"; };
+            READ  = 0x1 { desc = "Read operation (read data from the flash memory)"; };
+        };
+
+        field {
+            name = "rw";
+            desc = "DMA read/write indication.";
+            encode = dma_rw_enum;
+            reset = 0x0;
+        } dma_rw[1:1];
+
+        field {
+            name = "start";
+            desc = "DMA transfer enable. Write 1 to start; reads 1 while the DMA is running, returns to 0 automatically when it is complete.";
+            reset = 0x0;
+        } start[0:0];
+
+    } BUS_DMA_CTRL @ 0x0240;
+
+    reg {
+        name = "DMA DDR Start Address Register";
+
+        field {
+            name = "dma_mem_saddr";
+            desc = "DMA DDR start address; must be 4-byte aligned.";
+            reset = 0x0;
+        } dma_mem_saddr[31:0];
+
+    } BUS_DMA_MEM_SADDR @ 0x0244;
+
+    reg {
+        name = "DMA Flash Start Address Register";
+
+        field {
+            name = "dma_flash_saddr";
+            desc = "DMA flash start address.";
+            reset = 0x0;
+        } dma_flash_saddr[31:0];
+
+    } BUS_DMA_FLASH_SADDR @ 0x0248;
+
+    reg {
+        name = "DMA Transfer Length Register";
+
+        field {
+            name = "dma_len";
+            desc = "DMA data transfer length in bytes. The maximum value is 256 MB.";
+            reset = 0x0;
+        } dma_len[29:0];
+
+        field {
+            name = "reserved";
+            desc = "Reserved. The data sheet lists these bits as RW but gives no function; keep them 0.";
+            reset = 0x0;
+        } reserved[31:30];
+
+    } BUS_DMA_LEN @ 0x024C;
+
+    reg {
+        name = "DMA AHB Burst Control Register";
+
+        field {
+            name = "incr16_en";
+            desc = "INCR16 burst type enable.";
+            encode = SFC_one_enable_enum;
+            reset = 0x1;
+        } incr16_en[2:2];
+
+        field {
+            name = "incr8_en";
+            desc = "INCR8 burst type enable.";
+            encode = SFC_one_enable_enum;
+            reset = 0x1;
+        } incr8_en[1:1];
+
+        field {
+            name = "incr4_en";
+            desc = "INCR4 burst type enable.";
+            encode = SFC_one_enable_enum;
+            reset = 0x1;
+        } incr4_en[0:0];
+
+    } BUS_DMA_AHB_CTRL @ 0x0250;
+
+    reg {
+        name = "Command Configuration Register";
+        desc = "
+            Register command mode: set CMD_INS / CMD_ADDR / CMD_DATABUFn, then write this register with START = 1 and
+            wait for START to read back 0.
+
+            Hardware verified (Hi3520D V100, U-Boot driver hisfc350_spi.c): START [0], SEL_CS [1], ADDR_EN [3],
+            DUMMY_CNT [6:4], DATA_EN [7], RW (1 = read) [8], DATA_CNT [14:9] = bytes - 1, MEM_IF_TYPE [19:17].
+        ";
+
+        enum cmd_mem_if_type_enum {
+            STANDARD = 0x0 { desc = "Standard SPI Interface"; };
+            DI_DO    = 0x1 { desc = "Dual-Input/Dual-Output SPI"; };
+            DIO      = 0x2 { desc = "Dual-IO SPI"; };
+            FDIO     = 0x3 { desc = "Full DIO SPI"; };
+            QI_DO    = 0x5 { desc = "Quad-Input/Dual-Output SPI"; };
+            QIO      = 0x6 { desc = "Quad-IO SPI"; };
+            FQIO     = 0x7 { desc = "Full QIO SPI"; };
+        };
+
+        field {
+            name = "mem_if_type";
+            desc = "Type of the SPI flash interface in register command mode.";
+            encode = cmd_mem_if_type_enum;
+            reset = 0x0;
+        } mem_if_type[19:17];
+
+        field {
+            name = "data_cnt";
+            desc = "The length of the read or written data is N+1 bytes (maximum 64). Valid when data_en is 1.";
+            reset = 0x3F;
+        } data_cnt[14:9];
+
+        enum cmd_rw_enum {
+            WRITE = 0x0 { desc = "Write: data is written to the flash memory"; };
+            READ  = 0x1 { desc = "Read: data is read from the flash memory"; };
+        };
+
+        field {
+            name = "rw";
+            desc = "Direction of the data phase.";
+            encode = cmd_rw_enum;
+            reset = 0x0;
+        } cmd_rw[8:8];
+
+        enum cmd_data_en_enum {
+            NO_DATA  = 0x0 { desc = "No data"; };
+            HAS_DATA = 0x1 { desc = "There is data"; };
+        };
+
+        field {
+            name = "data_en";
+            desc = "Whether this operation has a data phase.";
+            encode = cmd_data_en_enum;
+            reset = 0x0;
+        } data_en[7:7];
+
+        field {
+            name = "dummy_byte_cnt";
+            desc = "Number of dummy bytes in register command mode (0 = none, 1..7 = n bytes).";
+            reset = 0x0;
+        } dummy_byte_cnt[6:4];
+
+        enum cmd_addr_en_enum {
+            NO_ADDR  = 0x0 { desc = "There is no address"; };
+            HAS_ADDR = 0x1 { desc = "There is an address"; };
+        };
+
+        field {
+            name = "addr_en";
+            desc = "Whether this operation has an address phase.";
+            encode = cmd_addr_en_enum;
+            reset = 0x0;
+        } addr_en[3:3];
+
+`ifndef SFC_SINGLE_CS
+        enum cmd_cs_enum {
+            CS0 = 0x0 { desc = "CS 0"; };
+            CS1 = 0x1 { desc = "CS 1"; };
+        };
+
+        field {
+            name = "cs_sel";
+            desc = "Chip select (the Hi3520D data sheet leaves this field unnamed, `reserved`). The flash is on CS1 on this board.";
+            encode = cmd_cs_enum;
+            reset = 0x0;
+        } cs_sel[1:1];
+
+`endif
+        field {
+            name = "start";
+            desc = "Instruction operation start. Write 1 to start; returns to 0 automatically when the operation is complete.";
+            reset = 0x0;
+        } start[0:0];
+
+    } CMD_CONFIG @ 0x0300;
+
+    reg {
+        name = "Command Instruction Register";
+
+        field {
+            name = "reg_ins";
+            desc = "Instruction code in register command mode.";
+            reset = 0x0;
+        } reg_ins[7:0];
+
+    } CMD_INS @ 0x0308;
+
+    reg {
+        name = "Command Address Register";
+
+        field {
+            name = "cmd_addr";
+            desc = "Operation address in register command mode.";
+            reset = 0x0;
+        } cmd_addr[29:0];
+
+    } CMD_ADDR @ 0x030C;
+
+    reg {
+        name = "Command Data Buffer Register";
+        desc = "Data buffer N in register command mode, N = 0..15 (up to 64 bytes per command).";
+
+        field {
+            name = "cmd_databuf_n";
+            reset = 0x0;
+        } cmd_databuf_n[31:0];
+
+    } CMD_DATABUF[16] @ 0x0400 += 0x4;
 
 };
 `endif
