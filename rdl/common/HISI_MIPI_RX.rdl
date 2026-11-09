@@ -1,0 +1,3277 @@
+`ifndef HISI_MIPI_RX_RDL
+`define HISI_MIPI_RX_RDL
+
+// MIPI RX (MIPI D-PHY / LVDS / HiSPI / CMOS sensor receiver) of the Hi3518EV200 / Hi3516CV200 (data sheet 9.3).
+regfile eHISI_MIPI_RX {
+    name = "MIPI RX (sensor serial interface receiver)";
+    desc = "
+    MIPI RX of the Hi3518E V20X / Hi3516C V200 at 0x20680000 (data sheet 9.3), VIC interrupt 28: combo PHY and controller receiving 1/2/3/4-lane MIPI D-PHY (CSI-2, up to 1 Gbit/s per lane,
+    RAW8/10/12/14 and user-defined data types, virtual channels), 1/2/4-lane LVDS / sub-LVDS / HiSPI (SOF/EOF/SOL/EOL or SAV/EAV sync codes, big/little endian) or a CMOS parallel 1.8 V / 3.3 V
+    sensor, and feeding the VICAP as DC timing. Registers: 0x0000-0x0024 common controller (MIPI_START, memory controls, image size, LVDS mode, user data types, crop); 0x1000-0x1068 link 0
+    (interrupts, lane enable/order, PHY enables and configuration, MIPI data IDs, MIPI packet error interrupts MIPI_INTR1/2, FSM timeout and parameters); 0x1080-0x10F8 per-lane LVDS sync-code
+    registers (SOF/EOF/SOL/EOL, two 16-bit codes each) for lanes 0-3 of link 0. The MIPI/LVDS/CMOS input mode itself is selected in the system controller / IO configuration (data sheet 9.3.3),
+    not in this block.
+
+    Register table: data sheet 9.3.5 / 9.3.6 (`hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` lines 57289-59726), 42 registers transcribed with fields, access types (RC = cleared on read) and reset values; vendor driver `hi_mipi` of the
+    Hi3518EV200 SDK is not in the local trees; no hardware verification.
+    ";
+
+    reg {
+        name = "MIPI configuration enable register";
+        desc = "MIPI_START is an MIPI configuration enable register.
+
+Data sheet 9.3.6 MIPI_START (offset 0x0, printed page 9-139, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 57403).";
+
+        enum MIPI_START_mipi_start_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLE_APB_CLOCK = 1 { name = "Enable Apb Clock"; desc = "Enable the APB clock domain configuration signal and convert it into the MIPI working clock domain output."; };
+        };
+
+        field {
+            name = "mipi_start";
+            desc = "Configuration enable";
+            sw = rw;
+            hw = r;
+            encode = MIPI_START_mipi_start_enum;
+            reset = 0x0;
+        } mipi_start[0:0];
+    } MIPI_START @ 0x0;
+
+    reg {
+        name = "MIPI controller configuration register";
+        desc = "MIPI_CTRL_MODE is an MIPI controller configuration register.
+
+Total reset value 0x222: emab = emaa = 2, ret1n = 1 (memory macro controls).
+
+Data sheet 9.3.6 MIPI_CTRL_MODE (offset 0x4, printed page 9-139, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 57434).";
+
+        field {
+            name = "emab";
+            desc = "memory emab";
+            sw = rw;
+            hw = r;
+            reset = 0x2;
+        } emab[10:8];
+
+        field {
+            name = "emaa";
+            desc = "memory emaa";
+            sw = rw;
+            hw = r;
+            reset = 0x2;
+        } emaa[6:4];
+
+        field {
+            name = "ret1n";
+            desc = "memory ret1n";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } ret1n[1:1];
+
+        enum MIPI_CTRL_MODE_mipi_mem_ck_gt_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "mipi_mem_ck_gt";
+            desc = "MIPI memory clock gating enable";
+            sw = rw;
+            hw = r;
+            encode = MIPI_CTRL_MODE_mipi_mem_ck_gt_enum;
+            reset = 0x0;
+        } mipi_mem_ck_gt[0:0];
+    } MIPI_CTRL_MODE @ 0x4;
+
+    reg {
+        name = "MIPI image size register";
+        desc = "LVDS_IMGSIZE is an MIPI image size register.
+
+Data sheet 9.3.6 LVDS_IMGSIZE (offset 0xC, printed page 9-140, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 57478).";
+
+        field {
+            name = "lvds_imgheight";
+            desc = "Image height. The value is the actual image height minus 1, and the value range is [0, 8191].";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } lvds_imgheight[28:16];
+
+        field {
+            name = "lvds_imgwidth";
+            desc = "Image width. The value is the actual image width minus 1, and the value range is [0, 8191].";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } lvds_imgwidth[12:0];
+    } LVDS_IMGSIZE @ 0xC;
+
+    reg {
+        name = "LVDS operating mode configuration E register";
+        desc = "LVDS_CTRL_MODE is an LVDS operating mode configuration register.
+
+Data sheet 9.3.6 LVDS_CTRL_MODE (offset 0x14, printed page 9-141, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 57518).";
+
+        enum LVDS_CTRL_MODE_lvds_link_seq_enum {
+            SYNCHRONOUS_TRANSMISSION_MODE = 0 { name = "Synchronous Transmission Mode"; desc = "synchronous transmission mode for two links of the normal sensor"; };
+            ASYNCHRONOUS_TRANSMISSION_MODE = 1 { name = "Asynchronous Transmission Mode"; desc = "asynchronous transmission mode for two links of the Panasonic sensor"; };
+        };
+
+        field {
+            name = "lvds_link_seq";
+            desc = "Sequence of two links in LVDS mode";
+            sw = rw;
+            hw = r;
+            encode = LVDS_CTRL_MODE_lvds_link_seq_enum;
+            reset = 0x0;
+        } lvds_link_seq[12:12];
+
+        enum LVDS_CTRL_MODE_lvds_code_big_endian_enum {
+            LSB_LEAST_SIGNIFICANT = 0 { name = "Lsb Least Significant"; desc = "LSB. Least significant bits are transmitted first. The serial data sequence of the synchronization code (sync_code) received is bit 0, bit 1, …, bit 11."; };
+            MSB_MOST_SIGNIFICANT = 1 { name = "Msb Most Significant"; desc = "MSB. Most significant bits are transmitted first. The serial data sequence of the synchronization code (sync_code) received is bit 11, bit 10, …, bit 0."; };
+        };
+
+        field {
+            name = "lvds_code_big_endian";
+            desc = "Serial bit transmission sequence for the synchronization code (sync_code) of raw data to be transmitted in LVDS or HiSPI mode";
+            sw = rw;
+            hw = r;
+            encode = LVDS_CTRL_MODE_lvds_code_big_endian_enum;
+            reset = 0x1;
+        } lvds_code_big_endian[9:9];
+
+        enum LVDS_CTRL_MODE_lvds_pix_big_endian_enum {
+            LSB_LEAST_SIGNIFICANT = 0 { name = "Lsb Least Significant"; desc = "LSB. Least significant bits are transmitted first. The serial data sequence of the valid pixels received is bit 0, bit 1, …, bit 11."; };
+            MSB_MOST_SIGNIFICANT = 1 { name = "Msb Most Significant"; desc = "MSB. Most significant bits are transmitted first. The serial data sequence of the valid pixels received is bit 11, bit 10, …, bit 0."; };
+        };
+
+        field {
+            name = "lvds_pix_big_endian";
+            desc = "Serial bit transmission sequence for the valid pixels of raw data to be transmitted in LVDS or HiSPI mode";
+            sw = rw;
+            hw = r;
+            encode = LVDS_CTRL_MODE_lvds_pix_big_endian_enum;
+            reset = 0x1;
+        } lvds_pix_big_endian[8:8];
+
+        enum LVDS_CTRL_MODE_lvds_raw_type_enum {
+            V_8_BIT_RAW = 1 { name = "V 8 Bit Raw"; desc = "8-bit RAW data"; };
+            V_10_BIT_RAW = 2 { name = "V 10 Bit Raw"; desc = "10-bit RAW data"; };
+            V_12_BIT_RAW = 3 { name = "V 12 Bit Raw"; desc = "12-bit RAW data"; };
+            V_14_BIT_RAW = 4 { name = "V 14 Bit Raw"; desc = "14-bit RAW data Other values: reserved"; };
+        };
+
+        field {
+            name = "lvds_raw_type";
+            desc = "Type of the RAW data to be transmitted in LVDS or HiSPI mode";
+            sw = rw;
+            hw = r;
+            encode = LVDS_CTRL_MODE_lvds_raw_type_enum;
+            reset = 0x1;
+        } lvds_raw_type[6:4];
+
+        field {
+            name = "li_en";
+            desc = "Sony line information detection enable 1'b0: disabled 1'b1: enabled";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } li_en[1:1];
+
+        enum LVDS_CTRL_MODE_lvds_sync_mode_enum {
+            SOF_EOF_SOL = 0 { name = "Sof Eof Sol"; desc = "SOF, EOF, SOL, or EOL mode"; };
+            SAV_EAV_MODE = 1 { name = "Sav Eav Mode"; desc = "SAV-EAV mode SAV-EAV mode is widely applied in SONY sensor. In this mode, set InValid SAV/EAV in LINKm_LANEn_SOF_xx or LINKm_LANEn_EOF_xx, and set Valid SAV/EAV in LINKm_LANEn_SOL_xx or LINKm_LANEn_SOL_xx. Here, m is 0 or 1, and n is 0, 1, 2, or 3. In HiSPI mode, this field must be set to 0."; };
+        };
+
+        field {
+            name = "lvds_sync_mode";
+            desc = "Frame or line synchronization mode in LVDS mode";
+            sw = rw;
+            hw = r;
+            encode = LVDS_CTRL_MODE_lvds_sync_mode_enum;
+            reset = 0x0;
+        } lvds_sync_mode[0:0];
+    } LVDS_CTRL_MODE @ 0x14;
+
+    reg {
+        name = "Pixel bit width configuration register for the user-defined data type in MIPI mode";
+        desc = "MIPI_USERDEF_DT is a pixel bit width configuration register for the user-defined data type in MIPI mode.
+
+Data sheet 9.3.6 MIPI_USERDEF_DT (offset 0x18, printed page 9-142, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 57597).";
+
+        enum MIPI_USERDEF_DT_user_def3_dt_enum {
+            V_8_BITS = 0 { name = "V 8 Bits"; desc = "8 bits"; };
+            V_10_BITS = 1 { name = "V 10 Bits"; desc = "10 bits"; };
+            V_12_BITS = 2 { name = "V 12 Bits"; desc = "12 bits"; };
+            V_14_BITS_OTHER = 3 { name = "V 14 Bits Other"; desc = "14 bits Other values: reserved"; };
+        };
+
+        field {
+            name = "user_def3_dt";
+            desc = "Bit width of the transferred pixel when the data type is user_def3";
+            sw = rw;
+            hw = r;
+            encode = MIPI_USERDEF_DT_user_def3_dt_enum;
+            reset = 0x0;
+        } user_def3_dt[14:12];
+
+        enum MIPI_USERDEF_DT_user_def2_dt_enum {
+            V_8_BITS = 0 { name = "V 8 Bits"; desc = "8 bits"; };
+            V_10_BITS = 1 { name = "V 10 Bits"; desc = "10 bits"; };
+            V_12_BITS = 2 { name = "V 12 Bits"; desc = "12 bits"; };
+            V_14_BITS_OTHER = 3 { name = "V 14 Bits Other"; desc = "14 bits Other values: reserved"; };
+        };
+
+        field {
+            name = "user_def2_dt";
+            desc = "Bit width of the transferred pixel when the data type is user_def2";
+            sw = rw;
+            hw = r;
+            encode = MIPI_USERDEF_DT_user_def2_dt_enum;
+            reset = 0x0;
+        } user_def2_dt[10:8];
+
+        enum MIPI_USERDEF_DT_user_def1_dt_enum {
+            V_8_BITS = 0 { name = "V 8 Bits"; desc = "8 bits"; };
+            V_10_BITS = 1 { name = "V 10 Bits"; desc = "10 bits"; };
+            V_12_BITS = 2 { name = "V 12 Bits"; desc = "12 bits"; };
+            V_14_BITS_OTHER = 3 { name = "V 14 Bits Other"; desc = "14 bits Other values: reserved"; };
+        };
+
+        field {
+            name = "user_def1_dt";
+            desc = "Bit width of the transferred pixel when the data type is user_def1";
+            sw = rw;
+            hw = r;
+            encode = MIPI_USERDEF_DT_user_def1_dt_enum;
+            reset = 0x0;
+        } user_def1_dt[6:4];
+
+        enum MIPI_USERDEF_DT_user_def0_dt_enum {
+            V_8_BITS = 0 { name = "V 8 Bits"; desc = "8 bits"; };
+            V_10_BITS = 1 { name = "V 10 Bits"; desc = "10 bits"; };
+            V_12_BITS = 2 { name = "V 12 Bits"; desc = "12 bits"; };
+            V_14_BITS_OTHER = 3 { name = "V 14 Bits Other"; desc = "14 bits Other values: reserved"; };
+        };
+
+        field {
+            name = "user_def0_dt";
+            desc = "Bit width of the transferred pixel when the data type is user_def0";
+            sw = rw;
+            hw = r;
+            encode = MIPI_USERDEF_DT_user_def0_dt_enum;
+            reset = 0x0;
+        } user_def0_dt[2:0];
+    } MIPI_USERDEF_DT @ 0x18;
+
+    reg {
+        name = "User-defined data type enable register in MIPI mode";
+        desc = "USER_DEF is a user-defined data type enable register in MIPI mode.
+
+Data sheet 9.3.6 USER_DEF (offset 0x1C, printed page 9-143, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 57665).";
+
+        field {
+            name = "user_def3";
+            desc = "User-defined data type 3";
+            sw = rw;
+            hw = r;
+            reset = 0x10;
+        } user_def3[29:24];
+
+        field {
+            name = "user_def2";
+            desc = "User-defined data type 2";
+            sw = rw;
+            hw = r;
+            reset = 0x36;
+        } user_def2[21:16];
+
+        field {
+            name = "user_def1";
+            desc = "User-defined data type 1";
+            sw = rw;
+            hw = r;
+            reset = 0x35;
+        } user_def1[13:8];
+
+        field {
+            name = "user_def0";
+            desc = "User-defined data type 0";
+            sw = rw;
+            hw = r;
+            reset = 0x34;
+        } user_def0[5:0];
+    } USER_DEF @ 0x1C;
+
+    reg {
+        name = "CROPSTART";
+        desc = "CROPSTART is the crop start position register (printed 'CROP START' in the data sheet); the crop window is enabled by CTRL_MODE.crop_en and its size is LVDS_IMGSIZE.
+
+Data sheet 9.3.6 CROPSTART (offset 0x20, printed page 9-144, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 57704).";
+
+        field {
+            name = "start_y";
+            desc = "Vertical start position (line) of the crop window.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } start_y[28:16];
+
+        field {
+            name = "start_x";
+            desc = "Horizontal start position (pixel) of the crop window.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } start_x[12:0];
+    } CROPSTART @ 0x20;
+
+    reg {
+        name = "Operating mode enable register";
+        desc = "CTRL_MODE is an operating mode enable register.
+
+Data sheet 9.3.6 CTRL_MODE (offset 0x24, printed page 9-145, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 57743).";
+
+        enum CTRL_MODE_crop_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "crop_en";
+            desc = "Crop enable";
+            sw = rw;
+            hw = r;
+            encode = CTRL_MODE_crop_en_enum;
+            reset = 0x0;
+        } crop_en[3:3];
+
+        enum CTRL_MODE_user_def_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "user_def_en";
+            desc = "User-defined mode enable";
+            sw = rw;
+            hw = r;
+            encode = CTRL_MODE_user_def_en_enum;
+            reset = 0x0;
+        } user_def_en[2:2];
+    } CTRL_MODE @ 0x24;
+
+    reg {
+        name = "Link 0 interrupt status register";
+        desc = "INT_STAT_LINK0 is a link 0 interrupt status register.
+
+Data sheet 9.3.6 INT_STAT_LINK0 (offset 0x1000, printed page 9-145, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 57777).";
+
+        enum INT_STAT_LINK0_vsync_err_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "vsync_err_stat";
+            desc = "SOF or EOF signal async interrupt status for each lane on link 0";
+            sw = r;
+            hw = w;
+            encode = INT_STAT_LINK0_vsync_err_stat_enum;
+            reset = 0x0;
+        } vsync_err_stat[21:21];
+
+        enum INT_STAT_LINK0_hsync_err_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "hsync_err_stat";
+            desc = "SOL or EOL signal async interrupt status for each lane on link 0";
+            sw = r;
+            hw = w;
+            encode = INT_STAT_LINK0_hsync_err_stat_enum;
+            reset = 0x0;
+        } hsync_err_stat[20:20];
+
+        enum INT_STAT_LINK0_lane3_sync_err_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "lane3_sync_err_stat";
+            desc = "EOL or EOF signal detection failure interrupt status for lane 3 on link 0 in LVDS mode";
+            sw = r;
+            hw = w;
+            encode = INT_STAT_LINK0_lane3_sync_err_stat_enum;
+            reset = 0x0;
+        } lane3_sync_err_stat[19:19];
+
+        enum INT_STAT_LINK0_lane2_sync_err_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "lane2_sync_err_stat";
+            desc = "EOL or EOF signal detection failure interrupt status for lane 2 on link 0 in LVDS mode";
+            sw = r;
+            hw = w;
+            encode = INT_STAT_LINK0_lane2_sync_err_stat_enum;
+            reset = 0x0;
+        } lane2_sync_err_stat[18:18];
+
+        enum INT_STAT_LINK0_lane1_sync_err_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "lane1_sync_err_stat";
+            desc = "EOL or EOF signal detection failure interrupt status for lane 1 on link 0 in LVDS mode";
+            sw = r;
+            hw = w;
+            encode = INT_STAT_LINK0_lane1_sync_err_stat_enum;
+            reset = 0x0;
+        } lane1_sync_err_stat[17:17];
+
+        enum INT_STAT_LINK0_lane0_sync_err_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "lane0_sync_err_stat";
+            desc = "EOL or EOF signal detection failure interrupt status for lane 0 on link 0 in LVDS mode";
+            sw = r;
+            hw = w;
+            encode = INT_STAT_LINK0_lane0_sync_err_stat_enum;
+            reset = 0x0;
+        } lane0_sync_err_stat[16:16];
+
+        enum INT_STAT_LINK0_timeout_d3_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "timeout_d3_stat";
+            desc = "FSM timeout interrupt status for data lane 3 on link 0 in MIPI mode";
+            sw = r;
+            hw = w;
+            encode = INT_STAT_LINK0_timeout_d3_stat_enum;
+            reset = 0x0;
+        } timeout_d3_stat[12:12];
+
+        enum INT_STAT_LINK0_timeout_d2_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "timeout_d2_stat";
+            desc = "FSM timeout interrupt status for data lane 2 on link 0 in MIPI mode";
+            sw = r;
+            hw = w;
+            encode = INT_STAT_LINK0_timeout_d2_stat_enum;
+            reset = 0x0;
+        } timeout_d2_stat[11:11];
+
+        enum INT_STAT_LINK0_timeout_d1_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "timeout_d1_stat";
+            desc = "FSM timeout interrupt status for data lane 1 on link 0 in MIPI mode";
+            sw = r;
+            hw = w;
+            encode = INT_STAT_LINK0_timeout_d1_stat_enum;
+            reset = 0x0;
+        } timeout_d1_stat[10:10];
+
+        enum INT_STAT_LINK0_timeout_d0_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "timeout_d0_stat";
+            desc = "FSM timeout interrupt status for data lane 0 on link 0 in MIPI mode";
+            sw = r;
+            hw = w;
+            encode = INT_STAT_LINK0_timeout_d0_stat_enum;
+            reset = 0x0;
+        } timeout_d0_stat[9:9];
+
+        enum INT_STAT_LINK0_timeout_ck_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "timeout_ck_stat";
+            desc = "FSM timeout interrupt status for the clock lane on link 0 in MIPI mode";
+            sw = r;
+            hw = w;
+            encode = INT_STAT_LINK0_timeout_ck_stat_enum;
+            reset = 0x0;
+        } timeout_ck_stat[8:8];
+
+        enum INT_STAT_LINK0_escape_d3_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "escape_d3_stat";
+            desc = "Escape sequence interrupt status for data lane 3 on link 0 in MIPI mode";
+            sw = r;
+            hw = w;
+            encode = INT_STAT_LINK0_escape_d3_stat_enum;
+            reset = 0x0;
+        } escape_d3_stat[4:4];
+
+        enum INT_STAT_LINK0_escape_d2_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "escape_d2_stat";
+            desc = "Escape sequence interrupt status for data lane 2 on link 0 in MIPI mode";
+            sw = r;
+            hw = w;
+            encode = INT_STAT_LINK0_escape_d2_stat_enum;
+            reset = 0x0;
+        } escape_d2_stat[3:3];
+
+        enum INT_STAT_LINK0_escape_d1_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "escape_d1_stat";
+            desc = "Escape sequence interrupt status for data lane 1 on link 0 in MIPI mode";
+            sw = r;
+            hw = w;
+            encode = INT_STAT_LINK0_escape_d1_stat_enum;
+            reset = 0x0;
+        } escape_d1_stat[2:2];
+
+        enum INT_STAT_LINK0_escape_d0_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "escape_d0_stat";
+            desc = "Escape sequence interrupt status for data lane 0 on link 0 in MIPI mode";
+            sw = r;
+            hw = w;
+            encode = INT_STAT_LINK0_escape_d0_stat_enum;
+            reset = 0x0;
+        } escape_d0_stat[1:1];
+
+        enum INT_STAT_LINK0_escape_ck_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "escape_ck_stat";
+            desc = "Escape sequence interrupt status for the clock lane on link 0 in MIPI mode";
+            sw = r;
+            hw = w;
+            encode = INT_STAT_LINK0_escape_ck_stat_enum;
+            reset = 0x0;
+        } escape_ck_stat[0:0];
+    } INT_STAT_LINK0 @ 0x1000;
+
+    reg {
+        name = "Link 0 interrupt mask register";
+        desc = "INT_MASK_LINK0 is a link 0 interrupt mask register.
+
+Data sheet 9.3.6 INT_MASK_LINK0 (offset 0x1004, printed page 9-148, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 57913).";
+
+        enum INT_MASK_LINK0_vsync_err_mask_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "vsync_err_mask";
+            desc = "SOF or EOF signal async raw interrupt mask for each lane on link 0";
+            sw = rw;
+            hw = r;
+            encode = INT_MASK_LINK0_vsync_err_mask_enum;
+            reset = 0x0;
+        } vsync_err_mask[21:21];
+
+        enum INT_MASK_LINK0_hsync_err_mask_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "hsync_err_mask";
+            desc = "SOL or EOL signal async raw interrupt mask for each lane on link 0";
+            sw = rw;
+            hw = r;
+            encode = INT_MASK_LINK0_hsync_err_mask_enum;
+            reset = 0x0;
+        } hsync_err_mask[20:20];
+
+        enum INT_MASK_LINK0_lane3_sync_err_mask_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "lane3_sync_err_mask";
+            desc = "EOL or EOF signal detection failure raw interrupt mask for lane 3 on link 0";
+            sw = rw;
+            hw = r;
+            encode = INT_MASK_LINK0_lane3_sync_err_mask_enum;
+            reset = 0x0;
+        } lane3_sync_err_mask[19:19];
+
+        enum INT_MASK_LINK0_lane2_sync_err_mask_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "lane2_sync_err_mask";
+            desc = "EOL or EOF signal detection failure raw interrupt mask for lane 2 on link 0";
+            sw = rw;
+            hw = r;
+            encode = INT_MASK_LINK0_lane2_sync_err_mask_enum;
+            reset = 0x0;
+        } lane2_sync_err_mask[18:18];
+
+        enum INT_MASK_LINK0_lane1_sync_err_mask_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "lane1_sync_err_mask";
+            desc = "EOL or EOF signal detection failure raw interrupt mask for lane 1 on link 0";
+            sw = rw;
+            hw = r;
+            encode = INT_MASK_LINK0_lane1_sync_err_mask_enum;
+            reset = 0x0;
+        } lane1_sync_err_mask[17:17];
+
+        enum INT_MASK_LINK0_lane0_sync_err_mask_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "lane0_sync_err_mask";
+            desc = "EOL or EOF signal detection failure raw interrupt mask for lane 0 on link 0";
+            sw = rw;
+            hw = r;
+            encode = INT_MASK_LINK0_lane0_sync_err_mask_enum;
+            reset = 0x0;
+        } lane0_sync_err_mask[16:16];
+
+        enum INT_MASK_LINK0_timeout_d3_mask_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "timeout_d3_mask";
+            desc = "FSM timeout interrupt mask for data lane 3 on link 0";
+            sw = rw;
+            hw = r;
+            encode = INT_MASK_LINK0_timeout_d3_mask_enum;
+            reset = 0x0;
+        } timeout_d3_mask[12:12];
+
+        enum INT_MASK_LINK0_timeout_d2_mask_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "timeout_d2_mask";
+            desc = "FSM timeout interrupt mask for data lane 2 on link 0";
+            sw = rw;
+            hw = r;
+            encode = INT_MASK_LINK0_timeout_d2_mask_enum;
+            reset = 0x0;
+        } timeout_d2_mask[11:11];
+
+        enum INT_MASK_LINK0_timeout_d1_mask_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "timeout_d1_mask";
+            desc = "FSM timeout interrupt mask for data lane 1 on link 0";
+            sw = rw;
+            hw = r;
+            encode = INT_MASK_LINK0_timeout_d1_mask_enum;
+            reset = 0x0;
+        } timeout_d1_mask[10:10];
+
+        enum INT_MASK_LINK0_timeout_d0_mask_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "timeout_d0_mask";
+            desc = "FSM timeout interrupt mask for data lane 0 on link 0";
+            sw = rw;
+            hw = r;
+            encode = INT_MASK_LINK0_timeout_d0_mask_enum;
+            reset = 0x0;
+        } timeout_d0_mask[9:9];
+
+        enum INT_MASK_LINK0_timeout_ck_mask_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "timeout_ck_mask";
+            desc = "FSM timeout interrupt mask for the clock lane on link 0";
+            sw = rw;
+            hw = r;
+            encode = INT_MASK_LINK0_timeout_ck_mask_enum;
+            reset = 0x0;
+        } timeout_ck_mask[8:8];
+
+        enum INT_MASK_LINK0_escape_d3_mask_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "escape_d3_mask";
+            desc = "Escape interrupt mask for data lane 3 on link 0";
+            sw = rw;
+            hw = r;
+            encode = INT_MASK_LINK0_escape_d3_mask_enum;
+            reset = 0x0;
+        } escape_d3_mask[4:4];
+
+        enum INT_MASK_LINK0_escape_d2_mask_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "escape_d2_mask";
+            desc = "Escape interrupt mask for data lane 2 on link 0";
+            sw = rw;
+            hw = r;
+            encode = INT_MASK_LINK0_escape_d2_mask_enum;
+            reset = 0x0;
+        } escape_d2_mask[3:3];
+
+        enum INT_MASK_LINK0_escape_d1_mask_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "escape_d1_mask";
+            desc = "Escape interrupt mask for data lane 1 on link 0";
+            sw = rw;
+            hw = r;
+            encode = INT_MASK_LINK0_escape_d1_mask_enum;
+            reset = 0x0;
+        } escape_d1_mask[2:2];
+
+        enum INT_MASK_LINK0_escape_d0_mask_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "escape_d0_mask";
+            desc = "Escape interrupt mask for data lane 0 on link 0";
+            sw = rw;
+            hw = r;
+            encode = INT_MASK_LINK0_escape_d0_mask_enum;
+            reset = 0x0;
+        } escape_d0_mask[1:1];
+
+        enum INT_MASK_LINK0_escape_ck_mask_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "escape_ck_mask";
+            desc = "Escape interrupt mask for the clock lane on link 0";
+            sw = rw;
+            hw = r;
+            encode = INT_MASK_LINK0_escape_ck_mask_enum;
+            reset = 0x0;
+        } escape_ck_mask[0:0];
+    } INT_MASK_LINK0 @ 0x1004;
+
+    reg {
+        name = "Link 0 raw interrupt status register";
+        desc = "INT_RAW_LINK0 is a link 0 raw interrupt status register.
+
+Data sheet 9.3.6 INT_RAW_LINK0 (offset 0x1008, printed page 9-150, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 58022).";
+
+        enum INT_RAW_LINK0_vsync_err_raw_enum {
+            NO_RAW_INTERRUPT = 0 { name = "No Raw Interrupt"; desc = "No raw interrupt is generated."; };
+            RAW_INTERRUPT_GENERATED = 1 { name = "Raw Interrupt Generated"; desc = "A raw interrupt is generated."; };
+        };
+
+        field {
+            name = "vsync_err_raw";
+            desc = "Raw SOF or EOF signal async interrupt status for each lane on link 0";
+            sw = r;
+            hw = w;
+            encode = INT_RAW_LINK0_vsync_err_raw_enum;
+            reset = 0x0;
+        } vsync_err_raw[21:21];
+
+        enum INT_RAW_LINK0_hsync_err_raw_enum {
+            NO_RAW_INTERRUPT = 0 { name = "No Raw Interrupt"; desc = "No raw interrupt is generated."; };
+            RAW_INTERRUPT_GENERATED = 1 { name = "Raw Interrupt Generated"; desc = "A raw interrupt is generated."; };
+        };
+
+        field {
+            name = "hsync_err_raw";
+            desc = "Raw SOL or EOL signal async interrupt status for each lane on link 0";
+            sw = r;
+            hw = w;
+            encode = INT_RAW_LINK0_hsync_err_raw_enum;
+            reset = 0x0;
+        } hsync_err_raw[20:20];
+
+        enum INT_RAW_LINK0_lane3_sync_err_raw_enum {
+            NO_RAW_INTERRUPT = 0 { name = "No Raw Interrupt"; desc = "No raw interrupt is generated."; };
+            RAW_INTERRUPT_GENERATED = 1 { name = "Raw Interrupt Generated"; desc = "A raw interrupt is generated."; };
+        };
+
+        field {
+            name = "lane3_sync_err_raw";
+            desc = "Raw EOL or EOF signal detection failure interrupt status for lane 3 on link 0";
+            sw = r;
+            hw = w;
+            encode = INT_RAW_LINK0_lane3_sync_err_raw_enum;
+            reset = 0x0;
+        } lane3_sync_err_raw[19:19];
+
+        enum INT_RAW_LINK0_lane2_sync_err_raw_enum {
+            NO_RAW_INTERRUPT = 0 { name = "No Raw Interrupt"; desc = "No raw interrupt is generated."; };
+            RAW_INTERRUPT_GENERATED = 1 { name = "Raw Interrupt Generated"; desc = "A raw interrupt is generated."; };
+        };
+
+        field {
+            name = "lane2_sync_err_raw";
+            desc = "Raw EOL or EOF signal detection failure interrupt status for lane 2 on link 0";
+            sw = r;
+            hw = w;
+            encode = INT_RAW_LINK0_lane2_sync_err_raw_enum;
+            reset = 0x0;
+        } lane2_sync_err_raw[18:18];
+
+        enum INT_RAW_LINK0_lane1_sync_err_raw_enum {
+            NO_RAW_INTERRUPT = 0 { name = "No Raw Interrupt"; desc = "No raw interrupt is generated."; };
+            RAW_INTERRUPT_GENERATED = 1 { name = "Raw Interrupt Generated"; desc = "A raw interrupt is generated."; };
+        };
+
+        field {
+            name = "lane1_sync_err_raw";
+            desc = "Raw EOL or EOF signal detection failure interrupt status for lane 1 on link 0";
+            sw = r;
+            hw = w;
+            encode = INT_RAW_LINK0_lane1_sync_err_raw_enum;
+            reset = 0x0;
+        } lane1_sync_err_raw[17:17];
+
+        enum INT_RAW_LINK0_lane0_sync_err_raw_enum {
+            NO_RAW_INTERRUPT = 0 { name = "No Raw Interrupt"; desc = "No raw interrupt is generated."; };
+            RAW_INTERRUPT_GENERATED = 1 { name = "Raw Interrupt Generated"; desc = "A raw interrupt is generated."; };
+        };
+
+        field {
+            name = "lane0_sync_err_raw";
+            desc = "Raw EOL or EOF signal detection failure interrupt status for lane 0 on link 0";
+            sw = r;
+            hw = w;
+            encode = INT_RAW_LINK0_lane0_sync_err_raw_enum;
+            reset = 0x0;
+        } lane0_sync_err_raw[16:16];
+
+        enum INT_RAW_LINK0_timeout_d3_raw_enum {
+            NO_RAW_INTERRUPT = 0 { name = "No Raw Interrupt"; desc = "No raw interrupt is generated."; };
+            RAW_INTERRUPT_GENERATED = 1 { name = "Raw Interrupt Generated"; desc = "A raw interrupt is generated."; };
+        };
+
+        field {
+            name = "timeout_d3_raw";
+            desc = "Raw FSM timeout interrupt status for data lane 3 on link 0";
+            sw = r;
+            hw = w;
+            encode = INT_RAW_LINK0_timeout_d3_raw_enum;
+            reset = 0x0;
+        } timeout_d3_raw[12:12];
+
+        enum INT_RAW_LINK0_timeout_d2_raw_enum {
+            NO_RAW_INTERRUPT = 0 { name = "No Raw Interrupt"; desc = "No raw interrupt is generated."; };
+            RAW_INTERRUPT_GENERATED = 1 { name = "Raw Interrupt Generated"; desc = "A raw interrupt is generated."; };
+        };
+
+        field {
+            name = "timeout_d2_raw";
+            desc = "Raw FSM timeout interrupt status for data lane 2 on link 0";
+            sw = r;
+            hw = w;
+            encode = INT_RAW_LINK0_timeout_d2_raw_enum;
+            reset = 0x0;
+        } timeout_d2_raw[11:11];
+
+        enum INT_RAW_LINK0_timeout_d1_raw_enum {
+            NO_RAW_INTERRUPT = 0 { name = "No Raw Interrupt"; desc = "No raw interrupt is generated."; };
+            RAW_INTERRUPT_GENERATED = 1 { name = "Raw Interrupt Generated"; desc = "A raw interrupt is generated."; };
+        };
+
+        field {
+            name = "timeout_d1_raw";
+            desc = "Raw FSM timeout interrupt status for data lane 1 on link 0";
+            sw = r;
+            hw = w;
+            encode = INT_RAW_LINK0_timeout_d1_raw_enum;
+            reset = 0x0;
+        } timeout_d1_raw[10:10];
+
+        enum INT_RAW_LINK0_timeout_d0_raw_enum {
+            NO_RAW_INTERRUPT = 0 { name = "No Raw Interrupt"; desc = "No raw interrupt is generated."; };
+            RAW_INTERRUPT_GENERATED = 1 { name = "Raw Interrupt Generated"; desc = "A raw interrupt is generated."; };
+        };
+
+        field {
+            name = "timeout_d0_raw";
+            desc = "Raw FSM timeout interrupt status for data lane 0 on link 0";
+            sw = r;
+            hw = w;
+            encode = INT_RAW_LINK0_timeout_d0_raw_enum;
+            reset = 0x0;
+        } timeout_d0_raw[9:9];
+
+        enum INT_RAW_LINK0_timeout_ck_raw_enum {
+            NO_RAW_INTERRUPT = 0 { name = "No Raw Interrupt"; desc = "No raw interrupt is generated."; };
+            RAW_INTERRUPT_GENERATED = 1 { name = "Raw Interrupt Generated"; desc = "A raw interrupt is generated."; };
+        };
+
+        field {
+            name = "timeout_ck_raw";
+            desc = "Raw FSM timeout interrupt status for the clock lane on link 0";
+            sw = r;
+            hw = w;
+            encode = INT_RAW_LINK0_timeout_ck_raw_enum;
+            reset = 0x0;
+        } timeout_ck_raw[8:8];
+
+        enum INT_RAW_LINK0_escape_d3_raw_enum {
+            NO_RAW_INTERRUPT = 0 { name = "No Raw Interrupt"; desc = "No raw interrupt is generated."; };
+            RAW_INTERRUPT_GENERATED = 1 { name = "Raw Interrupt Generated"; desc = "A raw interrupt is generated."; };
+        };
+
+        field {
+            name = "escape_d3_raw";
+            desc = "Raw escape sequence interrupt status for data lane 3 on link 0";
+            sw = r;
+            hw = w;
+            encode = INT_RAW_LINK0_escape_d3_raw_enum;
+            reset = 0x0;
+        } escape_d3_raw[4:4];
+
+        enum INT_RAW_LINK0_escape_d2_raw_enum {
+            NO_RAW_INTERRUPT = 0 { name = "No Raw Interrupt"; desc = "No raw interrupt is generated."; };
+            RAW_INTERRUPT_GENERATED = 1 { name = "Raw Interrupt Generated"; desc = "A raw interrupt is generated."; };
+        };
+
+        field {
+            name = "escape_d2_raw";
+            desc = "Raw escape sequence interrupt status for data lane 2 on link 0";
+            sw = r;
+            hw = w;
+            encode = INT_RAW_LINK0_escape_d2_raw_enum;
+            reset = 0x0;
+        } escape_d2_raw[3:3];
+
+        enum INT_RAW_LINK0_escape_d1_raw_enum {
+            NO_RAW_INTERRUPT = 0 { name = "No Raw Interrupt"; desc = "No raw interrupt is generated."; };
+            RAW_INTERRUPT_GENERATED = 1 { name = "Raw Interrupt Generated"; desc = "A raw interrupt is generated."; };
+        };
+
+        field {
+            name = "escape_d1_raw";
+            desc = "Raw escape sequence interrupt status for data lane 1 on link 0";
+            sw = r;
+            hw = w;
+            encode = INT_RAW_LINK0_escape_d1_raw_enum;
+            reset = 0x0;
+        } escape_d1_raw[2:2];
+
+        enum INT_RAW_LINK0_escape_d0_raw_enum {
+            NO_RAW_INTERRUPT = 0 { name = "No Raw Interrupt"; desc = "No raw interrupt is generated."; };
+            RAW_INTERRUPT_GENERATED = 1 { name = "Raw Interrupt Generated"; desc = "A raw interrupt is generated."; };
+        };
+
+        field {
+            name = "escape_d0_raw";
+            desc = "Raw escape sequence interrupt status for data lane 0 on link 0";
+            sw = r;
+            hw = w;
+            encode = INT_RAW_LINK0_escape_d0_raw_enum;
+            reset = 0x0;
+        } escape_d0_raw[1:1];
+
+        enum INT_RAW_LINK0_escape_ck_raw_enum {
+            NO_RAW_INTERRUPT = 0 { name = "No Raw Interrupt"; desc = "No raw interrupt is generated."; };
+            RAW_INTERRUPT_GENERATED = 1 { name = "Raw Interrupt Generated"; desc = "A raw interrupt is generated."; };
+        };
+
+        field {
+            name = "escape_ck_raw";
+            desc = "Raw escape sequence interrupt status for the clock lane on link 0";
+            sw = r;
+            hw = w;
+            encode = INT_RAW_LINK0_escape_ck_raw_enum;
+            reset = 0x0;
+        } escape_ck_raw[0:0];
+    } INT_RAW_LINK0 @ 0x1008;
+
+    reg {
+        name = "Link 0 interrupt clear register";
+        desc = "INT_CLR_LINK0 is a link 0 interrupt clear register.
+
+Data sheet 9.3.6 INT_CLR_LINK0 (offset 0x100C, printed page 9-152, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 58132).";
+
+        field {
+            name = "vsync_err_clr";
+            desc = "SOF or EOF signal async interrupt clear for each lane on link 0 Writing 1 clears this interrupt.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } vsync_err_clr[21:21];
+
+        field {
+            name = "hsync_err_clr";
+            desc = "SOL or EOL signal async interrupt clear for each lane on link 0 Writing 1 clears this interrupt.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } hsync_err_clr[20:20];
+
+        field {
+            name = "lane3_sync_err_clr";
+            desc = "EOL or EOF signal detection failure interrupt clear for lane 3 on link 0 Writing 1 clears this interrupt.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } lane3_sync_err_clr[19:19];
+
+        field {
+            name = "lane2_sync_err_clr";
+            desc = "EOL or EOF signal detection failure interrupt clear for lane 2 on link 0 Writing 1 clears this interrupt.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } lane2_sync_err_clr[18:18];
+
+        field {
+            name = "lane1_sync_err_clr";
+            desc = "EOL or EOF signal detection failure interrupt clear for lane 1 on link 0 Writing 1 clears this interrupt.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } lane1_sync_err_clr[17:17];
+
+        field {
+            name = "lane0_sync_err_clr";
+            desc = "EOL or EOF signal detection failure interrupt clear for lane 0 on link 0 Writing 1 clears this interrupt.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } lane0_sync_err_clr[16:16];
+
+        field {
+            name = "timeout_d3_clr";
+            desc = "FSM timeout interrupt clear for data lane 3 on link 0 Writing 1 clears this interrupt.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } timeout_d3_clr[12:12];
+
+        field {
+            name = "timeout_d2_clr";
+            desc = "FSM timeout interrupt clear for data lane 2 on link 0 Writing 1 clears this interrupt.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } timeout_d2_clr[11:11];
+
+        field {
+            name = "timeout_d1_clr";
+            desc = "FSM timeout interrupt clear for data lane 1 on link 0 Writing 1 clears this interrupt.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } timeout_d1_clr[10:10];
+
+        field {
+            name = "timeout_d0_clr";
+            desc = "FSM timeout interrupt clear for data lane 0 on link 0 Writing 1 clears this interrupt.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } timeout_d0_clr[9:9];
+
+        field {
+            name = "timeout_ck_clr";
+            desc = "FSM timeout interrupt clear for the clock lane on link 0 Writing 1 clears this interrupt.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } timeout_ck_clr[8:8];
+
+        field {
+            name = "escape_d3_clr";
+            desc = "Escape interrupt clear for data lane 3 on link 0 Writing 1 clears this interrupt.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } escape_d3_clr[4:4];
+
+        field {
+            name = "escape_d2_clr";
+            desc = "Escape interrupt clear for data lane 2 on link 0 Writing 1 clears this interrupt.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } escape_d2_clr[3:3];
+
+        field {
+            name = "escape_d1_clr";
+            desc = "Escape interrupt clear for data lane 1 on link 0 Writing 1 clears this interrupt.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } escape_d1_clr[2:2];
+
+        field {
+            name = "escape_d0_clr";
+            desc = "Escape interrupt clear for data lane 0 on link 0 Writing 1 clears this interrupt.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } escape_d0_clr[1:1];
+
+        field {
+            name = "escape_ck_clr";
+            desc = "Escape interrupt clear for the clock lane on link 0 Writing 1 clears this interrupt.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } escape_ck_clr[0:0];
+    } INT_CLR_LINK0 @ 0x100C;
+
+    reg {
+        name = "Link 0 lane enable configuration register";
+        desc = "LANE_EN_LINK0 is a link 0 lane enable configuration register.
+
+Data sheet 9.3.6 LANE_EN_LINK0 (offset 0x1010, printed page 9-153, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 58220).";
+
+        enum LANE_EN_LINK0_lane3_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "lane3_en";
+            desc = "Lane 3 enable for link 0";
+            sw = rw;
+            hw = r;
+            encode = LANE_EN_LINK0_lane3_en_enum;
+            reset = 0x0;
+        } lane3_en[12:12];
+
+        enum LANE_EN_LINK0_lane2_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "lane2_en";
+            desc = "Lane 2 enable for link 0";
+            sw = rw;
+            hw = r;
+            encode = LANE_EN_LINK0_lane2_en_enum;
+            reset = 0x0;
+        } lane2_en[8:8];
+
+        enum LANE_EN_LINK0_lane1_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "lane1_en";
+            desc = "Lane 1 enable for link 0";
+            sw = rw;
+            hw = r;
+            encode = LANE_EN_LINK0_lane1_en_enum;
+            reset = 0x0;
+        } lane1_en[4:4];
+
+        enum LANE_EN_LINK0_lane0_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "lane0_en";
+            desc = "Lane 0 enable for link 0";
+            sw = rw;
+            hw = r;
+            encode = LANE_EN_LINK0_lane0_en_enum;
+            reset = 0x0;
+        } lane0_en[0:0];
+    } LANE_EN_LINK0 @ 0x1010;
+
+    reg {
+        name = "Link 0 lane priority configuration register";
+        desc = "LANE_ID_LINK0 is a link 0 lane priority configuration register.
+
+Data sheet 9.3.6 LANE_ID_LINK0 (offset 0x1014, printed page 9-154, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 58268).";
+
+        field {
+            name = "lane3_id";
+            desc = "Lane 3 priority for link 0. The value ranges from 0 to 3.";
+            sw = rw;
+            hw = r;
+            reset = 0x3;
+        } lane3_id[13:12];
+
+        field {
+            name = "lane2_id";
+            desc = "Lane 2 priority for link 0. The value ranges from 0 to 3.";
+            sw = rw;
+            hw = r;
+            reset = 0x2;
+        } lane2_id[9:8];
+
+        field {
+            name = "lane1_id";
+            desc = "Lane 1 priority for link 0. The value ranges from 0 to 3.";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } lane1_id[5:4];
+
+        field {
+            name = "lane0_id";
+            desc = "Lane 0 priority for link 0. The value ranges from 0 to 3.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } lane0_id[1:0];
+    } LANE_ID_LINK0 @ 0x1014;
+
+    reg {
+        name = "Link 0 PHY channel enable register";
+        desc = "PHY_EN_LINK0 is a link 0 PHY channel enable register.
+
+Data sheet 9.3.6 PHY_EN_LINK0 (offset 0x1024, printed page 9-155, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 58307).";
+
+        enum PHY_EN_LINK0_phy_te_d3en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "phy_te_d3en";
+            desc = "Termination enable for data lane 3 on link 0";
+            sw = rw;
+            hw = r;
+            encode = PHY_EN_LINK0_phy_te_d3en_enum;
+            reset = 0x0;
+        } phy_te_d3en[23:23];
+
+        enum PHY_EN_LINK0_phy_te_d2en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "phy_te_d2en";
+            desc = "Termination enable for data lane 2 on link 0";
+            sw = rw;
+            hw = r;
+            encode = PHY_EN_LINK0_phy_te_d2en_enum;
+            reset = 0x0;
+        } phy_te_d2en[22:22];
+
+        enum PHY_EN_LINK0_phy_te_d1en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "phy_te_d1en";
+            desc = "Termination enable for data lane 1 on link 0";
+            sw = rw;
+            hw = r;
+            encode = PHY_EN_LINK0_phy_te_d1en_enum;
+            reset = 0x0;
+        } phy_te_d1en[21:21];
+
+        enum PHY_EN_LINK0_phy_te_d0en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "phy_te_d0en";
+            desc = "Termination enable for data lane 0 on link 0";
+            sw = rw;
+            hw = r;
+            encode = PHY_EN_LINK0_phy_te_d0en_enum;
+            reset = 0x0;
+        } phy_te_d0en[20:20];
+
+        enum PHY_EN_LINK0_phy_te_cken_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "phy_te_cken";
+            desc = "Termination enable for the clock lane on link 0";
+            sw = rw;
+            hw = r;
+            encode = PHY_EN_LINK0_phy_te_cken_enum;
+            reset = 0x0;
+        } phy_te_cken[16:16];
+
+        enum PHY_EN_LINK0_phy_hs_d3en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "phy_hs_d3en";
+            desc = "High-speed mode enable for data lane 3 on link 0";
+            sw = rw;
+            hw = r;
+            encode = PHY_EN_LINK0_phy_hs_d3en_enum;
+            reset = 0x0;
+        } phy_hs_d3en[15:15];
+
+        enum PHY_EN_LINK0_phy_hs_d2en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "phy_hs_d2en";
+            desc = "High-speed mode enable for data lane 2 on link 0";
+            sw = rw;
+            hw = r;
+            encode = PHY_EN_LINK0_phy_hs_d2en_enum;
+            reset = 0x0;
+        } phy_hs_d2en[14:14];
+
+        enum PHY_EN_LINK0_phy_hs_d1en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "phy_hs_d1en";
+            desc = "High-speed mode enable for data lane 1 on link 0";
+            sw = rw;
+            hw = r;
+            encode = PHY_EN_LINK0_phy_hs_d1en_enum;
+            reset = 0x0;
+        } phy_hs_d1en[13:13];
+
+        enum PHY_EN_LINK0_phy_hs_d0en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "phy_hs_d0en";
+            desc = "High-speed mode enable for data lane 0 on link 0";
+            sw = rw;
+            hw = r;
+            encode = PHY_EN_LINK0_phy_hs_d0en_enum;
+            reset = 0x0;
+        } phy_hs_d0en[12:12];
+    } PHY_EN_LINK0 @ 0x1024;
+
+    reg {
+        name = "Link 0 PHY mode configuration register";
+        desc = "PHY_CFG_LINK0 is a link 0 PHY mode configuration register.
+
+Total reset value 0x6A1F_0000: phy_rg_sa_en 1, phy_rg_it_dt/ck/lp = 2, phy_da_ulpb_ck 1, phy_da_ulpb 0xF (all ultra-low-power disables inactive).
+
+Data sheet 9.3.6 PHY_CFG_LINK0 (offset 0x1028, printed page 9-156, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 58373).";
+
+        field {
+            name = "phy_rg_sa_en";
+            desc = "SA enable (function tuning)";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } phy_rg_sa_en[30:30];
+
+        field {
+            name = "phy_rg_it_dt";
+            desc = "High-speed mode current adjustment for data channels";
+            sw = rw;
+            hw = r;
+            reset = 0x2;
+        } phy_rg_it_dt[29:28];
+
+        field {
+            name = "phy_rg_it_ck";
+            desc = "High-speed mode current adjustment for the clock channel";
+            sw = rw;
+            hw = r;
+            reset = 0x2;
+        } phy_rg_it_ck[27:26];
+
+        field {
+            name = "phy_rg_it_lp";
+            desc = "Low-power mode current adjustment";
+            sw = rw;
+            hw = r;
+            reset = 0x2;
+        } phy_rg_it_lp[25:24];
+
+        enum PHY_CFG_LINK0_phy_da_ulpb_ck_enum {
+            ENABLE_F = 0 { name = "Enable F"; desc = "enable"; };
+            DISABLE = 1 { name = "Disable"; desc = "disable"; };
+        };
+
+        field {
+            name = "phy_da_ulpb_ck";
+            desc = "Ultra-low-power mode enable for the clock lane, active low";
+            sw = rw;
+            hw = r;
+            encode = PHY_CFG_LINK0_phy_da_ulpb_ck_enum;
+            reset = 0x1;
+        } phy_da_ulpb_ck[20:20];
+
+        enum PHY_CFG_LINK0_phy_da_ulpb_enum {
+            ENABLE_F = 0 { name = "Enable F"; desc = "enable"; };
+            DISABLE = 1 { name = "Disable"; desc = "disable"; };
+        };
+
+        field {
+            name = "phy_da_ulpb";
+            desc = "Ultra-low-power mode enable for data lanes, active low. Each bit corresponds to one data lane. Bit[16] corresponds to data lane 0. Bit[17] corresponds to data lane 1. Bit[18] corresponds to data lane 2. Bit[19] corresponds to data lane 3";
+            sw = rw;
+            hw = r;
+            encode = PHY_CFG_LINK0_phy_da_ulpb_enum;
+            reset = 0xF;
+        } phy_da_ulpb[19:16];
+
+        enum PHY_CFG_LINK0_phy_rg_en_lp_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "phy_rg_en_lp";
+            desc = "LP mode enable, active high In LVDS mode, the common mode voltage may trigger an internal LP-related circuit. Therefore, this signal must be disabled in LVDS mode.";
+            sw = rw;
+            hw = r;
+            encode = PHY_CFG_LINK0_phy_rg_en_lp_enum;
+            reset = 0x0;
+        } phy_rg_en_lp[12:12];
+
+        enum PHY_CFG_LINK0_phy_rg_en_cmos_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "phy_rg_en_cmos";
+            desc = "CMOS mode enable, active high";
+            sw = rw;
+            hw = r;
+            encode = PHY_CFG_LINK0_phy_rg_en_cmos_enum;
+            reset = 0x0;
+        } phy_rg_en_cmos[8:8];
+
+        enum PHY_CFG_LINK0_phy_rg_en_clk_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "phy_rg_en_clk";
+            desc = "Clock lane enable, active high";
+            sw = rw;
+            hw = r;
+            encode = PHY_CFG_LINK0_phy_rg_en_clk_enum;
+            reset = 0x0;
+        } phy_rg_en_clk[4:4];
+
+        enum PHY_CFG_LINK0_phy_rg_en_d_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "phy_rg_en_d";
+            desc = "Data lane enable, active high";
+            sw = rw;
+            hw = r;
+            encode = PHY_CFG_LINK0_phy_rg_en_d_enum;
+            reset = 0x0;
+        } phy_rg_en_d[3:0];
+    } PHY_CFG_LINK0 @ 0x1028;
+
+    reg {
+        name = "MIPI data channel quantity register";
+        desc = "MIPI_LANES_NUM is an MIPI data channel quantity register.
+
+Data sheet 9.3.6 MIPI_LANES_NUM (offset 0x1030, printed page 9-157, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 58444).";
+
+        enum MIPI_LANES_NUM_lane_num_enum {
+            ONE_DATA_CHANNEL = 0 { name = "One Data Channel"; desc = "one data channel"; };
+            TWO_DATA_CHANNELS = 1 { name = "Two Data Channels"; desc = "two data channels"; };
+            THREE_DATA_CHANNELS = 2 { name = "Three Data Channels"; desc = "three data channels"; };
+            FOUR_DATA_CHANNELS = 3 { name = "Four Data Channels"; desc = "four data channels"; };
+        };
+
+        field {
+            name = "lane_num";
+            desc = "Number of enabled data channels";
+            sw = rw;
+            hw = r;
+            encode = MIPI_LANES_NUM_lane_num_enum;
+            reset = 0x0;
+        } lane_num[1:0];
+    } MIPI_LANES_NUM @ 0x1030;
+
+    reg {
+        name = "MIPI controller data ID 1 register";
+        desc = "MIPI_DI_1 is an MIPI controller data with ID 1 register.
+
+Data sheet 9.3.6 MIPI_DI_1 (offset 0x1038, printed page 9-158, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 58481).";
+
+        field {
+            name = "di3_vc";
+            desc = "Virtual channel of data with ID 3";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } di3_vc[31:30];
+
+        enum MIPI_DI_1_di3_dt_enum {
+            RAW10 = 0x2B { name = "Raw10"; desc = "RAW10"; };
+            RAW12 = 0x2C { name = "Raw12"; desc = "RAW12"; };
+            RAW14_OTHER_VALUES = 0x2D { name = "Raw14 Other Values"; desc = "RAW14 Other values: reserved"; };
+        };
+
+        field {
+            name = "di3_dt";
+            desc = "Type of data with ID 3";
+            sw = rw;
+            hw = r;
+            encode = MIPI_DI_1_di3_dt_enum;
+            reset = 0x0;
+        } di3_dt[29:24];
+
+        field {
+            name = "di2_vc";
+            desc = "Virtual channel of data with ID 2";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } di2_vc[23:22];
+
+        enum MIPI_DI_1_di2_dt_enum {
+            RAW10 = 0x2B { name = "Raw10"; desc = "RAW10"; };
+            RAW12 = 0x2C { name = "Raw12"; desc = "RAW12"; };
+            RAW14_OTHER_VALUES = 0x2D { name = "Raw14 Other Values"; desc = "RAW14 Other values: reserved"; };
+        };
+
+        field {
+            name = "di2_dt";
+            desc = "Type of data with ID 2";
+            sw = rw;
+            hw = r;
+            encode = MIPI_DI_1_di2_dt_enum;
+            reset = 0x0;
+        } di2_dt[21:16];
+
+        field {
+            name = "di1_vc";
+            desc = "Virtual channel of data with ID 1";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } di1_vc[15:14];
+
+        enum MIPI_DI_1_di1_dt_enum {
+            RAW10 = 0x2B { name = "Raw10"; desc = "RAW10"; };
+            RAW12 = 0x2C { name = "Raw12"; desc = "RAW12"; };
+            RAW14_OTHER_VALUES = 0x2D { name = "Raw14 Other Values"; desc = "RAW14 Other values: reserved"; };
+        };
+
+        field {
+            name = "di1_dt";
+            desc = "Type of data with ID 1";
+            sw = rw;
+            hw = r;
+            encode = MIPI_DI_1_di1_dt_enum;
+            reset = 0x0;
+        } di1_dt[13:8];
+
+        field {
+            name = "di0_vc";
+            desc = "Virtual channel of data with ID 0";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } di0_vc[7:6];
+
+        enum MIPI_DI_1_di0_dt_enum {
+            RAW10 = 0x2B { name = "Raw10"; desc = "RAW10"; };
+            RAW12 = 0x2C { name = "Raw12"; desc = "RAW12"; };
+            RAW14_OTHER_VALUES = 0x2D { name = "Raw14 Other Values"; desc = "RAW14 Other values: reserved"; };
+        };
+
+        field {
+            name = "di0_dt";
+            desc = "Type of data with ID 0";
+            sw = rw;
+            hw = r;
+            encode = MIPI_DI_1_di0_dt_enum;
+            reset = 0x0;
+        } di0_dt[5:0];
+    } MIPI_DI_1 @ 0x1038;
+
+    reg {
+        name = "MIPI controller data ID 2 register";
+        desc = "MIPI_DI_2 is an MIPI controller data with ID 2 register.
+
+Data sheet 9.3.6 MIPI_DI_2 (offset 0x103C, printed page 9-159, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 58531).";
+
+        field {
+            name = "di7_vc";
+            desc = "Virtual channel of data with ID 7";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } di7_vc[31:30];
+
+        enum MIPI_DI_2_di7_dt_enum {
+            RAW10 = 0x2B { name = "Raw10"; desc = "RAW10"; };
+            RAW12 = 0x2C { name = "Raw12"; desc = "RAW12"; };
+            RAW14_OTHER_VALUES = 0x2D { name = "Raw14 Other Values"; desc = "RAW14 Other values: reserved"; };
+        };
+
+        field {
+            name = "di7_dt";
+            desc = "Type of data with ID 7";
+            sw = rw;
+            hw = r;
+            encode = MIPI_DI_2_di7_dt_enum;
+            reset = 0x0;
+        } di7_dt[29:24];
+
+        field {
+            name = "di6_vc";
+            desc = "Virtual channel of data with ID 6";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } di6_vc[23:22];
+
+        enum MIPI_DI_2_di6_dt_enum {
+            RAW10 = 0x2B { name = "Raw10"; desc = "RAW10"; };
+            RAW12 = 0x2C { name = "Raw12"; desc = "RAW12"; };
+            RAW14_OTHER_VALUES = 0x2D { name = "Raw14 Other Values"; desc = "RAW14 Other values: reserved"; };
+        };
+
+        field {
+            name = "di6_dt";
+            desc = "Type of data with ID 6";
+            sw = rw;
+            hw = r;
+            encode = MIPI_DI_2_di6_dt_enum;
+            reset = 0x0;
+        } di6_dt[21:16];
+
+        field {
+            name = "di5_vc";
+            desc = "Virtual channel of data with ID 5";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } di5_vc[15:14];
+
+        enum MIPI_DI_2_di5_dt_enum {
+            RAW10 = 0x2B { name = "Raw10"; desc = "RAW10"; };
+            RAW12 = 0x2C { name = "Raw12"; desc = "RAW12"; };
+            RAW14_OTHER_VALUES = 0x2D { name = "Raw14 Other Values"; desc = "RAW14 Other values: reserved"; };
+        };
+
+        field {
+            name = "di5_dt";
+            desc = "Type of data with ID 5";
+            sw = rw;
+            hw = r;
+            encode = MIPI_DI_2_di5_dt_enum;
+            reset = 0x0;
+        } di5_dt[13:8];
+
+        field {
+            name = "di4_vc";
+            desc = "Virtual channel of data with ID 4";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } di4_vc[7:6];
+
+        enum MIPI_DI_2_di4_dt_enum {
+            RAW10 = 0x2B { name = "Raw10"; desc = "RAW10"; };
+            RAW12 = 0x2C { name = "Raw12"; desc = "RAW12"; };
+            RAW14_OTHER_VALUES = 0x2D { name = "Raw14 Other Values"; desc = "RAW14 Other values: reserved"; };
+        };
+
+        field {
+            name = "di4_dt";
+            desc = "Type of data with ID 4";
+            sw = rw;
+            hw = r;
+            encode = MIPI_DI_2_di4_dt_enum;
+            reset = 0x0;
+        } di4_dt[5:0];
+    } MIPI_DI_2 @ 0x103C;
+
+    reg {
+        name = "MIPI raw interrupt 1 register";
+        desc = "MIPI_INTR1_RAW is an MIPI raw interrupt 1 register.
+
+Data sheet 9.3.6 MIPI_INTR1_RAW (offset 0x1040, printed page 9-160, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 58581).";
+
+        field {
+            name = "intr_ecc_double";
+            desc = "The header has at least two errors, which cannot be fixed by ECC. This field is cleared on a read.";
+            sw = r;
+            hw = w;
+            onread = rclr;
+            reset = 0x0;
+        } intr_ecc_double[28:28];
+
+        field {
+            name = "intr_crc_vc3";
+            desc = "VC3 data CRC error. This field is cleared on a read.";
+            sw = r;
+            hw = w;
+            onread = rclr;
+            reset = 0x0;
+        } intr_crc_vc3[27:27];
+
+        field {
+            name = "intr_crc_vc2";
+            desc = "VC2 data CRC error. This field is cleared on a read.";
+            sw = r;
+            hw = w;
+            onread = rclr;
+            reset = 0x0;
+        } intr_crc_vc2[26:26];
+
+        field {
+            name = "intr_crc_vc1";
+            desc = "VC1 data CRC error. This field is cleared on a read.";
+            sw = r;
+            hw = w;
+            onread = rclr;
+            reset = 0x0;
+        } intr_crc_vc1[25:25];
+
+        field {
+            name = "intr_crc_vc0";
+            desc = "VC0 data CRC error. This field is cleared on a read.";
+            sw = r;
+            hw = w;
+            onread = rclr;
+            reset = 0x0;
+        } intr_crc_vc0[24:24];
+
+        field {
+            name = "intr_l_seq_di3";
+            desc = "VC3 and DT3 line sequence error. This field is cleared on a read.";
+            sw = r;
+            hw = w;
+            onread = rclr;
+            reset = 0x0;
+        } intr_l_seq_di3[23:23];
+
+        field {
+            name = "intr_l_seq_di2";
+            desc = "VC2 and DT2 line sequence error. This field is cleared on a read.";
+            sw = r;
+            hw = w;
+            onread = rclr;
+            reset = 0x0;
+        } intr_l_seq_di2[22:22];
+
+        field {
+            name = "intr_l_seq_di1";
+            desc = "VC1 and DT1 line sequence error. This field is cleared on a read.";
+            sw = r;
+            hw = w;
+            onread = rclr;
+            reset = 0x0;
+        } intr_l_seq_di1[21:21];
+
+        field {
+            name = "intr_l_seq_di0";
+            desc = "VC0 and DT0 line sequence error. This field is cleared on a read.";
+            sw = r;
+            hw = w;
+            onread = rclr;
+            reset = 0x0;
+        } intr_l_seq_di0[20:20];
+
+        field {
+            name = "intr_l_bndy_di3";
+            desc = "SOL and EOL mismatch for VC3 and DT3. This field is cleared on a read.";
+            sw = r;
+            hw = w;
+            onread = rclr;
+            reset = 0x0;
+        } intr_l_bndy_di3[19:19];
+
+        field {
+            name = "intr_l_bndy_di2";
+            desc = "SOL and EOL mismatch for VC2 and DT2. This field is cleared on a read.";
+            sw = r;
+            hw = w;
+            onread = rclr;
+            reset = 0x0;
+        } intr_l_bndy_di2[18:18];
+
+        field {
+            name = "intr_l_bndy_di1";
+            desc = "SOL and EOL mismatch for VC1 and DT1. This field is cleared on a read.";
+            sw = r;
+            hw = w;
+            onread = rclr;
+            reset = 0x0;
+        } intr_l_bndy_di1[17:17];
+
+        field {
+            name = "intr_l_bndy_di0";
+            desc = "SOL and EOL mismatch for VC0 and DT0. This field is cleared on a read.";
+            sw = r;
+            hw = w;
+            onread = rclr;
+            reset = 0x0;
+        } intr_l_bndy_di0[16:16];
+
+        field {
+            name = "intr_f_crc_vc3";
+            desc = "In the last frame of data, VC3 channel data has at least one CRC error. This field is cleared on a read.";
+            sw = r;
+            hw = w;
+            onread = rclr;
+            reset = 0x0;
+        } intr_f_crc_vc3[15:15];
+
+        field {
+            name = "intr_f_crc_vc2";
+            desc = "In the last frame of data, VC2 channel data has at least one CRC error. This field is cleared on a read.";
+            sw = r;
+            hw = w;
+            onread = rclr;
+            reset = 0x0;
+        } intr_f_crc_vc2[14:14];
+
+        field {
+            name = "intr_f_crc_vc1";
+            desc = "In the last frame of data, VC1 channel data has at least one CRC error. This field is cleared on a read.";
+            sw = r;
+            hw = w;
+            onread = rclr;
+            reset = 0x0;
+        } intr_f_crc_vc1[13:13];
+
+        field {
+            name = "intr_f_crc_vc0";
+            desc = "In the last frame of data, VC0 channel data has at least one CRC error. This field is cleared on a read.";
+            sw = r;
+            hw = w;
+            onread = rclr;
+            reset = 0x0;
+        } intr_f_crc_vc0[12:12];
+
+        field {
+            name = "intr_f_seq_vc3";
+            desc = "VC3 frame sequence error. This field is cleared on a read.";
+            sw = r;
+            hw = w;
+            onread = rclr;
+            reset = 0x0;
+        } intr_f_seq_vc3[11:11];
+
+        field {
+            name = "intr_f_seq_vc2";
+            desc = "VC2 frame sequence error. This field is cleared on a read.";
+            sw = r;
+            hw = w;
+            onread = rclr;
+            reset = 0x0;
+        } intr_f_seq_vc2[10:10];
+
+        field {
+            name = "intr_f_seq_vc1";
+            desc = "VC1 frame sequence error. This field is cleared on a read.";
+            sw = r;
+            hw = w;
+            onread = rclr;
+            reset = 0x0;
+        } intr_f_seq_vc1[9:9];
+
+        field {
+            name = "intr_f_seq_vc0";
+            desc = "VC0 frame sequence error. This field is cleared on a read.";
+            sw = r;
+            hw = w;
+            onread = rclr;
+            reset = 0x0;
+        } intr_f_seq_vc0[8:8];
+
+        field {
+            name = "intr_f_bndry_vc3";
+            desc = "SOF and EOF mismatch for VC3. This field is cleared on a read.";
+            sw = r;
+            hw = w;
+            onread = rclr;
+            reset = 0x0;
+        } intr_f_bndry_vc3[7:7];
+
+        field {
+            name = "intr_f_bndry_vc2";
+            desc = "SOF and EOF mismatch for VC2. This field is cleared on a read.";
+            sw = r;
+            hw = w;
+            onread = rclr;
+            reset = 0x0;
+        } intr_f_bndry_vc2[6:6];
+
+        field {
+            name = "intr_f_bndry_vc1";
+            desc = "SOF and EOF mismatch for VC1. This field is cleared on a read.";
+            sw = r;
+            hw = w;
+            onread = rclr;
+            reset = 0x0;
+        } intr_f_bndry_vc1[5:5];
+
+        field {
+            name = "intr_f_bndry_vc0";
+            desc = "SOF and EOF mismatch for VC0. This field is cleared on a read.";
+            sw = r;
+            hw = w;
+            onread = rclr;
+            reset = 0x0;
+        } intr_f_bndry_vc0[4:4];
+    } MIPI_INTR1_RAW @ 0x1040;
+
+    reg {
+        name = "MIPI raw interrupt 2 register";
+        desc = "MIPI_INTR2_RAW is an MIPI raw interrupt 2 register.
+
+The data sheet bit table prints the names of bits 11..8 run together (intr_vc3_ecc_corrected .. intr_vc0_ecc_corrected); they are separated here.
+
+Data sheet 9.3.6 MIPI_INTR2_RAW (offset 0x1044, printed page 9-161, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 58669).";
+
+        field {
+            name = "intr_l_seq_di7";
+            desc = "VC 7 and DT 7 line sequence error. This field is cleared on a read.";
+            sw = r;
+            hw = w;
+            onread = rclr;
+            reset = 0x0;
+        } intr_l_seq_di7[23:23];
+
+        field {
+            name = "intr_l_seq_di6";
+            desc = "VC 6 and DT 6 line sequence error. This field is cleared on a read.";
+            sw = r;
+            hw = w;
+            onread = rclr;
+            reset = 0x0;
+        } intr_l_seq_di6[22:22];
+
+        field {
+            name = "intr_l_seq_di5";
+            desc = "VC 5 and DT 5 line sequence error. This field is cleared on a read.";
+            sw = r;
+            hw = w;
+            onread = rclr;
+            reset = 0x0;
+        } intr_l_seq_di5[21:21];
+
+        field {
+            name = "intr_l_seq_di4";
+            desc = "VC 4 and DT 4 line sequence error. This field is cleared on a read.";
+            sw = r;
+            hw = w;
+            onread = rclr;
+            reset = 0x0;
+        } intr_l_seq_di4[20:20];
+
+        field {
+            name = "intr_l_bndry_di7";
+            desc = "SOL and EOL mismatch for VC 7 and DT 7. This field is cleared on a read.";
+            sw = r;
+            hw = w;
+            onread = rclr;
+            reset = 0x0;
+        } intr_l_bndry_di7[19:19];
+
+        field {
+            name = "intr_l_bndry_di6";
+            desc = "SOL and EOL mismatch for VC 6 and DT 6. This field is cleared on a read.";
+            sw = r;
+            hw = w;
+            onread = rclr;
+            reset = 0x0;
+        } intr_l_bndry_di6[18:18];
+
+        field {
+            name = "intr_l_bndry_di5";
+            desc = "SOL and EOL mismatch for VC 5 and DT 5. This field is cleared on a read.";
+            sw = r;
+            hw = w;
+            onread = rclr;
+            reset = 0x0;
+        } intr_l_bndry_di5[17:17];
+
+        field {
+            name = "intr_l_bndry_di4";
+            desc = "SOL and EOL mismatch for VC 4 and DT 4. This field is cleared on a read.";
+            sw = r;
+            hw = w;
+            onread = rclr;
+            reset = 0x0;
+        } intr_l_bndry_di4[16:16];
+
+        field {
+            name = "intr_err_id_vc3";
+            desc = "VC3 channel data type is not supported. This field is cleared on a read.";
+            sw = r;
+            hw = w;
+            onread = rclr;
+            reset = 0x0;
+        } intr_err_id_vc3[15:15];
+
+        field {
+            name = "intr_err_id_vc2";
+            desc = "VC2 channel data type is not supported. This field is cleared on a read.";
+            sw = r;
+            hw = w;
+            onread = rclr;
+            reset = 0x0;
+        } intr_err_id_vc2[14:14];
+
+        field {
+            name = "intr_err_id_vc1";
+            desc = "VC1 channel data type is not supported. This field is cleared on a read.";
+            sw = r;
+            hw = w;
+            onread = rclr;
+            reset = 0x0;
+        } intr_err_id_vc1[13:13];
+
+        field {
+            name = "intr_err_id_vc0";
+            desc = "VC0 channel data type is not supported. This field is cleared on a read.";
+            sw = r;
+            hw = w;
+            onread = rclr;
+            reset = 0x0;
+        } intr_err_id_vc0[12:12];
+
+        field {
+            name = "intr_vc3_ecc_corrected";
+            desc = "VC3 channel header error, fixed by ECC. This field is cleared on a read.";
+            sw = r;
+            hw = w;
+            onread = rclr;
+            reset = 0x0;
+        } intr_vc3_ecc_corrected[11:11];
+
+        field {
+            name = "intr_vc2_ecc_corrected";
+            desc = "VC2 channel header error, fixed by ECC. This field is cleared on a read.";
+            sw = r;
+            hw = w;
+            onread = rclr;
+            reset = 0x0;
+        } intr_vc2_ecc_corrected[10:10];
+
+        field {
+            name = "intr_vc1_ecc_corrected";
+            desc = "VC1 channel header error, fixed by ECC. This field is cleared on a read.";
+            sw = r;
+            hw = w;
+            onread = rclr;
+            reset = 0x0;
+        } intr_vc1_ecc_corrected[9:9];
+
+        field {
+            name = "intr_vc0_ecc_corrected";
+            desc = "VC0 channel header error, fixed by ECC. This field is cleared on a read.";
+            sw = r;
+            hw = w;
+            onread = rclr;
+            reset = 0x0;
+        } intr_vc0_ecc_corrected[8:8];
+    } MIPI_INTR2_RAW @ 0x1044;
+
+    reg {
+        name = "MIPI interrupt 1 mask register";
+        desc = "MIPI_INTR1_MASK is an MIPI interrupt 1 mask register.
+
+Data sheet 9.3.6 MIPI_INTR1_MASK (offset 0x1048, printed page 9-163, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 58756).";
+
+        enum MIPI_INTR1_MASK_mask_ecc_double_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+        };
+
+        field {
+            name = "mask_ecc_double";
+            desc = "Ecc_double interrupt mask, corresponding to the relevant bit in the MIPI_INTR1_RAW register";
+            sw = rw;
+            hw = r;
+            encode = MIPI_INTR1_MASK_mask_ecc_double_enum;
+            reset = 0x0;
+        } mask_ecc_double[28:28];
+
+        enum MIPI_INTR1_MASK_mask_crc_vc3_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+        };
+
+        field {
+            name = "mask_crc_vc3";
+            desc = "Crc_vc3 interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = MIPI_INTR1_MASK_mask_crc_vc3_enum;
+            reset = 0x0;
+        } mask_crc_vc3[27:27];
+
+        enum MIPI_INTR1_MASK_mask_crc_vc2_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+        };
+
+        field {
+            name = "mask_crc_vc2";
+            desc = "Crc_vc2 interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = MIPI_INTR1_MASK_mask_crc_vc2_enum;
+            reset = 0x0;
+        } mask_crc_vc2[26:26];
+
+        enum MIPI_INTR1_MASK_mask_crc_vc1_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+        };
+
+        field {
+            name = "mask_crc_vc1";
+            desc = "Crc_vc1 interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = MIPI_INTR1_MASK_mask_crc_vc1_enum;
+            reset = 0x0;
+        } mask_crc_vc1[25:25];
+
+        enum MIPI_INTR1_MASK_mask_crc_vc0_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+        };
+
+        field {
+            name = "mask_crc_vc0";
+            desc = "Crc_vc0 interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = MIPI_INTR1_MASK_mask_crc_vc0_enum;
+            reset = 0x0;
+        } mask_crc_vc0[24:24];
+
+        enum MIPI_INTR1_MASK_mask_l_seq_di3_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+        };
+
+        field {
+            name = "mask_l_seq_di3";
+            desc = "L_seq_di3 interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = MIPI_INTR1_MASK_mask_l_seq_di3_enum;
+            reset = 0x0;
+        } mask_l_seq_di3[23:23];
+
+        enum MIPI_INTR1_MASK_mask_l_seq_di2_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+        };
+
+        field {
+            name = "mask_l_seq_di2";
+            desc = "L_seq_di2 interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = MIPI_INTR1_MASK_mask_l_seq_di2_enum;
+            reset = 0x0;
+        } mask_l_seq_di2[22:22];
+
+        enum MIPI_INTR1_MASK_mask_l_seq_di1_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+        };
+
+        field {
+            name = "mask_l_seq_di1";
+            desc = "L_seq_di1 interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = MIPI_INTR1_MASK_mask_l_seq_di1_enum;
+            reset = 0x0;
+        } mask_l_seq_di1[21:21];
+
+        enum MIPI_INTR1_MASK_mask_l_seq_di0_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+        };
+
+        field {
+            name = "mask_l_seq_di0";
+            desc = "L_seq_di0 interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = MIPI_INTR1_MASK_mask_l_seq_di0_enum;
+            reset = 0x0;
+        } mask_l_seq_di0[20:20];
+
+        enum MIPI_INTR1_MASK_mask_l_bndy_di3_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+        };
+
+        field {
+            name = "mask_l_bndy_di3";
+            desc = "L_bndy_di3 interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = MIPI_INTR1_MASK_mask_l_bndy_di3_enum;
+            reset = 0x0;
+        } mask_l_bndy_di3[19:19];
+
+        enum MIPI_INTR1_MASK_mask_l_bndy_di2_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+        };
+
+        field {
+            name = "mask_l_bndy_di2";
+            desc = "L_bndy_di2 interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = MIPI_INTR1_MASK_mask_l_bndy_di2_enum;
+            reset = 0x0;
+        } mask_l_bndy_di2[18:18];
+
+        enum MIPI_INTR1_MASK_mask_l_bndy_di1_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+        };
+
+        field {
+            name = "mask_l_bndy_di1";
+            desc = "L_bndy_di1 interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = MIPI_INTR1_MASK_mask_l_bndy_di1_enum;
+            reset = 0x0;
+        } mask_l_bndy_di1[17:17];
+
+        enum MIPI_INTR1_MASK_mask_l_bndy_di0_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+        };
+
+        field {
+            name = "mask_l_bndy_di0";
+            desc = "L_bndy_di0 interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = MIPI_INTR1_MASK_mask_l_bndy_di0_enum;
+            reset = 0x0;
+        } mask_l_bndy_di0[16:16];
+
+        enum MIPI_INTR1_MASK_mask_f_crc_vc3_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+        };
+
+        field {
+            name = "mask_f_crc_vc3";
+            desc = "F_crc_vc3 interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = MIPI_INTR1_MASK_mask_f_crc_vc3_enum;
+            reset = 0x0;
+        } mask_f_crc_vc3[15:15];
+
+        enum MIPI_INTR1_MASK_mask_f_crc_vc2_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+        };
+
+        field {
+            name = "mask_f_crc_vc2";
+            desc = "F_crc_vc2 interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = MIPI_INTR1_MASK_mask_f_crc_vc2_enum;
+            reset = 0x0;
+        } mask_f_crc_vc2[14:14];
+
+        enum MIPI_INTR1_MASK_mask_f_crc_vc1_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+        };
+
+        field {
+            name = "mask_f_crc_vc1";
+            desc = "F_crc_vc1 interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = MIPI_INTR1_MASK_mask_f_crc_vc1_enum;
+            reset = 0x0;
+        } mask_f_crc_vc1[13:13];
+
+        enum MIPI_INTR1_MASK_mask_f_crc_vc0_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+        };
+
+        field {
+            name = "mask_f_crc_vc0";
+            desc = "F_crc_vc0 interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = MIPI_INTR1_MASK_mask_f_crc_vc0_enum;
+            reset = 0x0;
+        } mask_f_crc_vc0[12:12];
+
+        enum MIPI_INTR1_MASK_mask_f_seq_vc3_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+        };
+
+        field {
+            name = "mask_f_seq_vc3";
+            desc = "F_seq_vc3 interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = MIPI_INTR1_MASK_mask_f_seq_vc3_enum;
+            reset = 0x0;
+        } mask_f_seq_vc3[11:11];
+
+        enum MIPI_INTR1_MASK_mask_f_seq_vc2_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+        };
+
+        field {
+            name = "mask_f_seq_vc2";
+            desc = "F_seq_vc2 interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = MIPI_INTR1_MASK_mask_f_seq_vc2_enum;
+            reset = 0x0;
+        } mask_f_seq_vc2[10:10];
+
+        enum MIPI_INTR1_MASK_mask_f_seq_vc1_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+        };
+
+        field {
+            name = "mask_f_seq_vc1";
+            desc = "F_seq_vc1 interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = MIPI_INTR1_MASK_mask_f_seq_vc1_enum;
+            reset = 0x0;
+        } mask_f_seq_vc1[9:9];
+
+        enum MIPI_INTR1_MASK_mask_f_seq_vc0_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+        };
+
+        field {
+            name = "mask_f_seq_vc0";
+            desc = "F_seq_vc0 interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = MIPI_INTR1_MASK_mask_f_seq_vc0_enum;
+            reset = 0x0;
+        } mask_f_seq_vc0[8:8];
+
+        enum MIPI_INTR1_MASK_mask_f_bndry_vc3_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+        };
+
+        field {
+            name = "mask_f_bndry_vc3";
+            desc = "F_bndry_vc3 interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = MIPI_INTR1_MASK_mask_f_bndry_vc3_enum;
+            reset = 0x0;
+        } mask_f_bndry_vc3[7:7];
+
+        enum MIPI_INTR1_MASK_mask_f_bndry_vc2_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+        };
+
+        field {
+            name = "mask_f_bndry_vc2";
+            desc = "F_bndry_vc2 interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = MIPI_INTR1_MASK_mask_f_bndry_vc2_enum;
+            reset = 0x0;
+        } mask_f_bndry_vc2[6:6];
+
+        enum MIPI_INTR1_MASK_mask_f_bndry_vc1_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+        };
+
+        field {
+            name = "mask_f_bndry_vc1";
+            desc = "F_bndry_vc1 interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = MIPI_INTR1_MASK_mask_f_bndry_vc1_enum;
+            reset = 0x0;
+        } mask_f_bndry_vc1[5:5];
+
+        enum MIPI_INTR1_MASK_mask_f_bndry_vc0_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+        };
+
+        field {
+            name = "mask_f_bndry_vc0";
+            desc = "F_bndry_vc0 interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = MIPI_INTR1_MASK_mask_f_bndry_vc0_enum;
+            reset = 0x0;
+        } mask_f_bndry_vc0[4:4];
+    } MIPI_INTR1_MASK @ 0x1048;
+
+    reg {
+        name = "MIPI interrupt 2 mask register";
+        desc = "MIPI_INTR2_MASK is an MIPI interrupt 2 mask register.
+
+The data sheet names the mask bits of this register intr_* (not mask_*); the names are kept.
+
+Data sheet 9.3.6 MIPI_INTR2_MASK (offset 0x104C, printed page 9-165, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 58883).";
+
+        enum MIPI_INTR2_MASK_intr_l_seq_di7_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+        };
+
+        field {
+            name = "intr_l_seq_di7";
+            desc = "L_seq_di7 interrupt mask, corresponding to the relevant bit in the MIPI_INTR2_RAW register";
+            sw = rw;
+            hw = r;
+            encode = MIPI_INTR2_MASK_intr_l_seq_di7_enum;
+            reset = 0x0;
+        } intr_l_seq_di7[23:23];
+
+        enum MIPI_INTR2_MASK_intr_l_seq_di6_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+        };
+
+        field {
+            name = "intr_l_seq_di6";
+            desc = "L_seq_di6 interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = MIPI_INTR2_MASK_intr_l_seq_di6_enum;
+            reset = 0x0;
+        } intr_l_seq_di6[22:22];
+
+        enum MIPI_INTR2_MASK_intr_l_seq_di5_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+        };
+
+        field {
+            name = "intr_l_seq_di5";
+            desc = "L_seq_di5 interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = MIPI_INTR2_MASK_intr_l_seq_di5_enum;
+            reset = 0x0;
+        } intr_l_seq_di5[21:21];
+
+        enum MIPI_INTR2_MASK_intr_l_seq_di4_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+        };
+
+        field {
+            name = "intr_l_seq_di4";
+            desc = "L_seq_di4 interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = MIPI_INTR2_MASK_intr_l_seq_di4_enum;
+            reset = 0x0;
+        } intr_l_seq_di4[20:20];
+
+        enum MIPI_INTR2_MASK_intr_l_bndry_di7_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+        };
+
+        field {
+            name = "intr_l_bndry_di7";
+            desc = "L_bndry_di7 interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = MIPI_INTR2_MASK_intr_l_bndry_di7_enum;
+            reset = 0x0;
+        } intr_l_bndry_di7[19:19];
+
+        enum MIPI_INTR2_MASK_intr_l_bndry_di6_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+        };
+
+        field {
+            name = "intr_l_bndry_di6";
+            desc = "L_bndry_di6 interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = MIPI_INTR2_MASK_intr_l_bndry_di6_enum;
+            reset = 0x0;
+        } intr_l_bndry_di6[18:18];
+
+        enum MIPI_INTR2_MASK_intr_l_bndry_di5_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+        };
+
+        field {
+            name = "intr_l_bndry_di5";
+            desc = "L_bndry_di5 interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = MIPI_INTR2_MASK_intr_l_bndry_di5_enum;
+            reset = 0x0;
+        } intr_l_bndry_di5[17:17];
+
+        enum MIPI_INTR2_MASK_intr_l_bndry_di4_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+        };
+
+        field {
+            name = "intr_l_bndry_di4";
+            desc = "L_bndry_di4 interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = MIPI_INTR2_MASK_intr_l_bndry_di4_enum;
+            reset = 0x0;
+        } intr_l_bndry_di4[16:16];
+
+        enum MIPI_INTR2_MASK_intr_err_id_vc3_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+        };
+
+        field {
+            name = "intr_err_id_vc3";
+            desc = "Err_id_vc3 interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = MIPI_INTR2_MASK_intr_err_id_vc3_enum;
+            reset = 0x0;
+        } intr_err_id_vc3[15:15];
+
+        enum MIPI_INTR2_MASK_intr_err_id_vc2_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+        };
+
+        field {
+            name = "intr_err_id_vc2";
+            desc = "Err_id_vc2 interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = MIPI_INTR2_MASK_intr_err_id_vc2_enum;
+            reset = 0x0;
+        } intr_err_id_vc2[14:14];
+
+        enum MIPI_INTR2_MASK_intr_err_id_vc1_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+        };
+
+        field {
+            name = "intr_err_id_vc1";
+            desc = "Err_id_vc1 interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = MIPI_INTR2_MASK_intr_err_id_vc1_enum;
+            reset = 0x0;
+        } intr_err_id_vc1[13:13];
+
+        enum MIPI_INTR2_MASK_intr_err_id_vc0_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+        };
+
+        field {
+            name = "intr_err_id_vc0";
+            desc = "Err_id_vc0 interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = MIPI_INTR2_MASK_intr_err_id_vc0_enum;
+            reset = 0x0;
+        } intr_err_id_vc0[12:12];
+
+        enum MIPI_INTR2_MASK_intr_vc3_ecc_corrected_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+        };
+
+        field {
+            name = "intr_vc3_ecc_corrected";
+            desc = "Vc3_ecc_corrected interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = MIPI_INTR2_MASK_intr_vc3_ecc_corrected_enum;
+            reset = 0x0;
+        } intr_vc3_ecc_corrected[11:11];
+
+        enum MIPI_INTR2_MASK_intr_vc2_ecc_corrected_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+        };
+
+        field {
+            name = "intr_vc2_ecc_corrected";
+            desc = "Vc2_ecc_corrected interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = MIPI_INTR2_MASK_intr_vc2_ecc_corrected_enum;
+            reset = 0x0;
+        } intr_vc2_ecc_corrected[10:10];
+
+        enum MIPI_INTR2_MASK_intr_vc1_ecc_corrected_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+        };
+
+        field {
+            name = "intr_vc1_ecc_corrected";
+            desc = "Vc1_ecc_corrected interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = MIPI_INTR2_MASK_intr_vc1_ecc_corrected_enum;
+            reset = 0x0;
+        } intr_vc1_ecc_corrected[9:9];
+
+        enum MIPI_INTR2_MASK_intr_vc0_ecc_corrected_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            NOT_MASKED = 1 { name = "Not Masked"; desc = "not masked"; };
+        };
+
+        field {
+            name = "intr_vc0_ecc_corrected";
+            desc = "Vc0_ecc_corrected interrupt mask";
+            sw = rw;
+            hw = r;
+            encode = MIPI_INTR2_MASK_intr_vc0_ecc_corrected_enum;
+            reset = 0x0;
+        } intr_vc0_ecc_corrected[8:8];
+    } MIPI_INTR2_MASK @ 0x104C;
+
+    reg {
+        name = "Link 0 MIPI timeout register";
+        desc = "MIPI_TIMEOUT is a link 0 MIPI timeout register.
+
+Data sheet 9.3.6 MIPI_TIMEOUT (offset 0x1060, printed page 9-167, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 58991).";
+
+        enum MIPI_TIMEOUT_timeout_en_d_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "timeout_en_d";
+            desc = "FSM timeout detection enable for data lanes on link 0";
+            sw = rw;
+            hw = r;
+            encode = MIPI_TIMEOUT_timeout_en_d_enum;
+            reset = 0x0;
+        } timeout_en_d[31:31];
+
+        enum MIPI_TIMEOUT_timeout_en_ck_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "timeout_en_ck";
+            desc = "FSM timeout detection enable for the clock lane on link 0 When in the blanking region, the sensor's clock lane may be still in HS mode or enters the LP mode, depending on the features and configuration of the sensor. If the clock lane is still in HS mode, the clock lane timeout detection must be disabled.";
+            sw = rw;
+            hw = r;
+            encode = MIPI_TIMEOUT_timeout_en_ck_enum;
+            reset = 0x0;
+        } timeout_en_ck[30:30];
+
+        field {
+            name = "timeout_param";
+            desc = "FSM timeout threshold for the link 0 PHYCIL module";
+            sw = rw;
+            hw = r;
+            reset = 0x004CFFFF;
+        } timeout_param[23:0];
+    } MIPI_TIMEOUT @ 0x1060;
+
+    reg {
+        name = "Link 0 MIPI time parameter register";
+        desc = "MIPI_FSM_PARAM is a link 0 MIPI time parameter register.
+
+Data sheet 9.3.6 MIPI_FSM_PARAM (offset 0x1064, printed page 9-168, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 59037).";
+
+        field {
+            name = "cyc_clk_hs0";
+            desc = "FSM HS-0 status duration for the clock lane on link 0 The configured value is the actual value minus 1. 0 indicates that the status lasts for one cycle.";
+            sw = rw;
+            hw = r;
+            reset = 0x1D;
+        } cyc_clk_hs0[29:24];
+
+        field {
+            name = "cyc_clk_lp00";
+            desc = "FSM LP-00 status duration for the clock lane on link 0 The configured value is the actual value minus 1. 0 indicates that the status lasts for one cycle.";
+            sw = rw;
+            hw = r;
+            reset = 0xC;
+        } cyc_clk_lp00[21:16];
+
+        field {
+            name = "cyc_data_hs_trail";
+            desc = "FSM HS-TRAIL status duration for data lanes on link 0 The configured value is the actual value minus 1. 0 indicates that the status lasts for one cycle.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } cyc_data_hs_trail[13:8];
+
+        field {
+            name = "cyc_data_lp00";
+            desc = "FSM LP-00 status duration for data lanes on link 0 The configured value is the actual value minus 1. 0 indicates that the status lasts for one cycle.";
+            sw = rw;
+            hw = r;
+            reset = 0xD;
+        } cyc_data_lp00[5:0];
+    } MIPI_FSM_PARAM @ 0x1064;
+
+    reg {
+        name = "MIPI FSM clock gating register";
+        desc = "MIPI_FSM_CKEN is an MIPI FSM clock gating register.
+
+Data sheet 9.3.6 MIPI_FSM_CKEN (offset 0x1068, printed page 9-169, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 59084).";
+
+        enum MIPI_FSM_CKEN_mipi_d3_cken_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "mipi_d3_cken";
+            desc = "FSM clock enable for data lane 3 on link 0";
+            sw = rw;
+            hw = r;
+            encode = MIPI_FSM_CKEN_mipi_d3_cken_enum;
+            reset = 0x1;
+        } mipi_d3_cken[7:7];
+
+        enum MIPI_FSM_CKEN_mipi_d2_cken_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "mipi_d2_cken";
+            desc = "FSM clock enable for data lane 2 on link 0";
+            sw = rw;
+            hw = r;
+            encode = MIPI_FSM_CKEN_mipi_d2_cken_enum;
+            reset = 0x1;
+        } mipi_d2_cken[6:6];
+
+        enum MIPI_FSM_CKEN_mipi_d1_cken_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "mipi_d1_cken";
+            desc = "FSM clock enable for data lane 1 on link 0";
+            sw = rw;
+            hw = r;
+            encode = MIPI_FSM_CKEN_mipi_d1_cken_enum;
+            reset = 0x1;
+        } mipi_d1_cken[5:5];
+
+        enum MIPI_FSM_CKEN_mipi_d0_cken_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "mipi_d0_cken";
+            desc = "FSM clock enable for data lane 0 on link 0";
+            sw = rw;
+            hw = r;
+            encode = MIPI_FSM_CKEN_mipi_d0_cken_enum;
+            reset = 0x1;
+        } mipi_d0_cken[4:4];
+
+        enum MIPI_FSM_CKEN_mipi_ck_cken_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "mipi_ck_cken";
+            desc = "FSM clock enable for the clock lane on link 0";
+            sw = rw;
+            hw = r;
+            encode = MIPI_FSM_CKEN_mipi_ck_cken_enum;
+            reset = 0x1;
+        } mipi_ck_cken[0:0];
+    } MIPI_FSM_CKEN @ 0x1068;
+
+    reg {
+        name = "SOF synchronization code configuration _01 register for lane 0 in LVDS or HiSPI mode";
+        desc = "LINK0_LANE0_SOF_01 is an SOF synchronization code configuration register for lane 0 in LVDS or HiSPI mode.
+
+Data sheet 9.3.6 LINK0_LANE0_SOF_01 (offset 0x1080, printed page 9-170, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 59137).";
+
+        field {
+            name = "lane0_sof_1";
+            desc = "SOF synchronization code of frame 1 for lane 0 in LVDS or HiSPI mode The field is configurable only in WDR mode, and the configuration is invalid in linear mode.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } lane0_sof_1[31:16];
+
+        field {
+            name = "lane0_sof_0";
+            desc = "SOF synchronization code of frame 0 for lane 0 in LVDS or HiSPI mode In WDR mode, the value is the SOF of frame 0. In linear mode, the value is the SOF.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } lane0_sof_0[15:0];
+    } LINK0_LANE0_SOF_01 @ 0x1080;
+
+    reg {
+        name = "EOF synchronization code configuration _01 register for lane 0 in LVDS or HiSPI mode";
+        desc = "LINK0_LANE0_EOF_01 is an EOF synchronization code configuration register for lane 0 in LVDS or HiSPI mode.
+
+Data sheet 9.3.6 LINK0_LANE0_EOF_01 (offset 0x1088, printed page 9-170, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 59165).";
+
+        field {
+            name = "lane0_eof_1";
+            desc = "EOF synchronization code of frame 1 for lane 0 in LVDS or HiSPI mode The field is configurable only in WDR mode, and the configuration is invalid in linear mode.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } lane0_eof_1[31:16];
+
+        field {
+            name = "lane0_eof_0";
+            desc = "EOF synchronization code of frame 0 for lane 0 in LVDS or HiSPI mode In WDR mode, the value is the EOF of frame 0. In linear mode, the value is the EOF.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } lane0_eof_0[15:0];
+    } LINK0_LANE0_EOF_01 @ 0x1088;
+
+    reg {
+        name = "SOL synchronization code configuration _01 register for lane 0 in LVDS or HiSPI mode.";
+        desc = "LINK0_LANE0_SOL_01 is an SOL synchronization code configuration register for lane 0 in LVDS or HiSPI mode.
+
+Data sheet 9.3.6 LINK0_LANE0_SOL_01 (offset 0x1090, printed page 9-171, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 59202).";
+
+        field {
+            name = "lane0_sol_1";
+            desc = "SOL synchronization code of frame 1 for lane 0 in LVDS or HiSPI mode The field is configurable only in WDR mode, and the configuration is invalid in linear mode.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } lane0_sol_1[31:16];
+
+        field {
+            name = "lane0_sol_0";
+            desc = "SOL synchronization code of frame 0 for lane 0 in LVDS or HiSPI mode In WDR mode, the value is the SOL of frame 0. In linear mode, the value is the SOL.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } lane0_sol_0[15:0];
+    } LINK0_LANE0_SOL_01 @ 0x1090;
+
+    reg {
+        name = "EOL synchronization code configuration L_01 register for lane 0 in LVDS or HiSPI mode";
+        desc = "LINK0_LANE0_EOL_01 is an EOL synchronization code configuration register for lane 0 in LVDS or HiSPI mode.
+
+Data sheet 9.3.6 LINK0_LANE0_EOL_01 (offset 0x1098, printed page 9-171, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 59230).";
+
+        field {
+            name = "lane0_eol_1";
+            desc = "EOL synchronization code of frame 1 for lane 0 in LVDS or HiSPI mode The field is configurable only in WDR mode, and the configuration is invalid in linear mode.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } lane0_eol_1[31:16];
+
+        field {
+            name = "lane0_eol_0";
+            desc = "EOL synchronization code of frame 0 for lane 0 in LVDS or HiSPI mode In WDR mode, the value is the EOL of frame 0. In linear mode, the value is the EOL.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } lane0_eol_0[15:0];
+    } LINK0_LANE0_EOL_01 @ 0x1098;
+
+    reg {
+        name = "SOF synchronization code configuration _01 register for lane 1 in LVDS or HiSPI mode";
+        desc = "LINK0_LANE1_SOF_01 is an SOF synchronization code configuration register for lane 1 in LVDS or HiSPI mode.
+
+Data sheet 9.3.6 LINK0_LANE1_SOF_01 (offset 0x10A0, printed page 9-172, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 59267).";
+
+        field {
+            name = "lane1_sof_1";
+            desc = "SOF synchronization code of frame 1 for lane 1 in LVDS or HiSPI mode The field is configurable only in WDR mode, and the configuration is invalid in linear mode.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } lane1_sof_1[31:16];
+
+        field {
+            name = "lane1_sof_0";
+            desc = "SOF synchronization code of frame 0 for lane 1 in LVDS or HiSPI mode In WDR mode, the value is the SOF of frame 0. In linear mode, the value is the SOF.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } lane1_sof_0[15:0];
+    } LINK0_LANE1_SOF_01 @ 0x10A0;
+
+    reg {
+        name = "EOF synchronization code configuration _01 register for lane 1 in LVDS or HiSPI mode";
+        desc = "LINK0_LANE1_EOF_01 is an EOF synchronization code configuration register for lane 1 in LVDS or HiSPI mode.
+
+Data sheet 9.3.6 LINK0_LANE1_EOF_01 (offset 0x10A8, printed page 9-172, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 59295).";
+
+        field {
+            name = "lane1_eof_1";
+            desc = "EOF synchronization code of frame 1 for lane 1 in LVDS or HiSPI mode The field is configurable only in WDR mode, and the configuration is invalid in linear mode.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } lane1_eof_1[31:16];
+
+        field {
+            name = "lane1_eof_0";
+            desc = "EOF synchronization code of frame 0 for lane 1 in LVDS or HiSPI mode In WDR mode, the value is the EOF of frame 0. In linear mode, the value is the EOF.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } lane1_eof_0[15:0];
+    } LINK0_LANE1_EOF_01 @ 0x10A8;
+
+    reg {
+        name = "SOL synchronization code configuration _01 register for lane 1 in LVDS or HiSPI mode.";
+        desc = "LINK0_LANE1_SOL_01 is an SOL synchronization code configuration register for lane 1 in LVDS or HiSPI mode.
+
+Data sheet 9.3.6 LINK0_LANE1_SOL_01 (offset 0x10B0, printed page 9-173, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 59332).";
+
+        field {
+            name = "lane1_sol_1";
+            desc = "SOL synchronization code of frame 1 for lane 1 in LVDS or HiSPI mode The field is configurable only in WDR mode, and the configuration is invalid in linear mode.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } lane1_sol_1[31:16];
+
+        field {
+            name = "lane1_sol_0";
+            desc = "SOL synchronization code of frame 0 for lane 1 in LVDS or HiSPI mode In WDR mode, the value is the SOL of frame 0. In linear mode, the value is the SOL.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } lane1_sol_0[15:0];
+    } LINK0_LANE1_SOL_01 @ 0x10B0;
+
+    reg {
+        name = "EOL synchronization code configuration L_01 register for lane 1 in LVDS or HiSPI mode";
+        desc = "LINK0_LANE1_EOL_01 is an EOL synchronization code configuration register for lane 1 in LVDS or HiSPI mode.
+
+Data sheet 9.3.6 LINK0_LANE1_EOL_01 (offset 0x10B8, printed page 9-173, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 59360).";
+
+        field {
+            name = "lane1_eol_1";
+            desc = "EOL synchronization code of frame 1 for lane 1 in LVDS or HiSPI mode The field is configurable only in WDR mode, and the configuration is invalid in linear mode.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } lane1_eol_1[31:16];
+
+        field {
+            name = "lane1_eol_0";
+            desc = "EOL synchronization code of frame 0 for lane 1 in LVDS or HiSPI mode In WDR mode, the value is the EOL of frame 0. In linear mode, the value is the EOL.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } lane1_eol_0[15:0];
+    } LINK0_LANE1_EOL_01 @ 0x10B8;
+
+    reg {
+        name = "SOF synchronization code configuration _01 register for lane 2 in LVDS or HiSPI mode";
+        desc = "LINK0_LANE2_SOF_01 is an SOF synchronization code configuration register for lane 2 in LVDS or HiSPI mode.
+
+Data sheet 9.3.6 LINK0_LANE2_SOF_01 (offset 0x10C0, printed page 9-174, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 59397).";
+
+        field {
+            name = "lane2_sof_1";
+            desc = "SOF synchronization code of frame 1 for lane 2 in LVDS or HiSPI mode The field is configurable only in WDR mode, and the configuration is invalid in linear mode.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } lane2_sof_1[31:16];
+
+        field {
+            name = "lane2_sof_0";
+            desc = "SOF synchronization code of frame 0 for lane 2 in LVDS or HiSPI mode In WDR mode, the value is the SOF of frame 0. In linear mode, the value is the SOF.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } lane2_sof_0[15:0];
+    } LINK0_LANE2_SOF_01 @ 0x10C0;
+
+    reg {
+        name = "EOF synchronization code configuration _01 register for lane 2 in LVDS or HiSPI mode";
+        desc = "LINK0_LANE2_EOF_01 is an EOF synchronization code configuration register for lane 2 in LVDS or HiSPI mode.
+
+Data sheet 9.3.6 LINK0_LANE2_EOF_01 (offset 0x10C8, printed page 9-174, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 59425).";
+
+        field {
+            name = "lane2_eof_1";
+            desc = "EOF synchronization code of frame 1 for lane 2 in LVDS or HiSPI mode The field is configurable only in WDR mode, and the configuration is invalid in linear mode.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } lane2_eof_1[31:16];
+
+        field {
+            name = "lane2_eof_0";
+            desc = "EOF synchronization code of frame 0 for lane 2 in LVDS or HiSPI mode In WDR mode, the value is the EOF of frame 0. In linear mode, the value is the EOF.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } lane2_eof_0[15:0];
+    } LINK0_LANE2_EOF_01 @ 0x10C8;
+
+    reg {
+        name = "SOL synchronization code configuration _01 register for lane 2 in LVDS or HiSPI mode.";
+        desc = "LINK0_LANE2_SOL_01 is an SOL synchronization code configuration register for lane 2 in LVDS or HiSPI mode.
+
+Data sheet 9.3.6 LINK0_LANE2_SOL_01 (offset 0x10D0, printed page 9-175, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 59462).";
+
+        field {
+            name = "lane2_sol_1";
+            desc = "SOL synchronization code of frame 1 for lane 2 in LVDS or HiSPI mode The field is configurable only in WDR mode, and the configuration is invalid in linear mode.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } lane2_sol_1[31:16];
+
+        field {
+            name = "lane2_sol_0";
+            desc = "SOL synchronization code of frame 0 for lane 2 in LVDS or HiSPI mode In WDR mode, the value is the SOL of frame 0. In linear mode, the value is the SOL.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } lane2_sol_0[15:0];
+    } LINK0_LANE2_SOL_01 @ 0x10D0;
+
+    reg {
+        name = "EOL synchronization code configuration L_01 register for lane 2 in LVDS or HiSPI mode";
+        desc = "LINK0_LANE2_EOL_01 is an EOL synchronization code configuration register for lane 2 in LVDS or HiSPI mode.
+
+Data sheet 9.3.6 LINK0_LANE2_EOL_01 (offset 0x10D8, printed page 9-175, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 59490).";
+
+        field {
+            name = "lane2_eol_1";
+            desc = "EOL synchronization code of frame 1 for lane 2 in LVDS or HiSPI mode The field is configurable only in WDR mode, and the configuration is invalid in linear mode.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } lane2_eol_1[31:16];
+
+        field {
+            name = "lane2_eol_0";
+            desc = "EOL synchronization code of frame 0 for lane 2 in LVDS or HiSPI mode In WDR mode, the value is the EOL of frame 0. In linear mode, the value is the EOL.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } lane2_eol_0[15:0];
+    } LINK0_LANE2_EOL_01 @ 0x10D8;
+
+    reg {
+        name = "SOF synchronization code configuration _01 register for lane 3 in LVDS or HiSPI mode";
+        desc = "LINK0_LANE3_SOF_01 is an SOF synchronization code configuration register for lane 3 in LVDS or HiSPI mode.
+
+Data sheet 9.3.6 LINK0_LANE3_SOF_01 (offset 0x10E0, printed page 9-176, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 59527).";
+
+        field {
+            name = "lane3_sof_1";
+            desc = "SOF synchronization code of frame 1 for lane 3 in LVDS or HiSPI mode The field is configurable only in WDR mode, and the configuration is invalid in linear mode.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } lane3_sof_1[31:16];
+
+        field {
+            name = "lane3_sof_0";
+            desc = "SOF synchronization code of frame 0 for lane 3 in LVDS or HiSPI mode In WDR mode, the value is the SOF of frame 0. In linear mode, the value is the SOF.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } lane3_sof_0[15:0];
+    } LINK0_LANE3_SOF_01 @ 0x10E0;
+
+    reg {
+        name = "EOF synchronization code configuration _01 register for lane 3 in LVDS or HiSPI mode";
+        desc = "LINK0_LANE3_EOF_01 is an EOF synchronization code configuration register for lane 3 in LVDS or HiSPI mode.
+
+Data sheet 9.3.6 LINK0_LANE3_EOF_01 (offset 0x10E8, printed page 9-176, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 59555).";
+
+        field {
+            name = "lane3_eof_1";
+            desc = "EOF synchronization code of frame 1 for lane 3 in LVDS or HiSPI mode The field is configurable only in WDR mode, and the configuration is invalid in linear mode.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } lane3_eof_1[31:16];
+
+        field {
+            name = "lane3_eof_0";
+            desc = "EOF synchronization code of frame 0 for lane 3 in LVDS or HiSPI mode In WDR mode, the value is the EOF of frame 0. In linear mode, the value is the EOF.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } lane3_eof_0[15:0];
+    } LINK0_LANE3_EOF_01 @ 0x10E8;
+
+    reg {
+        name = "SOL synchronization code configuration _01 register for lane 3 in LVDS or HiSPI mode.";
+        desc = "LINK0_LANE3_SOL_01 is an SOL synchronization code configuration register for lane 3 in LVDS or HiSPI mode.
+
+Data sheet 9.3.6 LINK0_LANE3_SOL_01 (offset 0x10F0, printed page 9-177, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 59592).";
+
+        field {
+            name = "lane3_sol_1";
+            desc = "SOL synchronization code of frame 1 for lane 3 in LVDS or HiSPI mode The field is configurable only in WDR mode, and the configuration is invalid in linear mode.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } lane3_sol_1[31:16];
+
+        field {
+            name = "lane3_sol_0";
+            desc = "SOL synchronization code of frame 0 for lane 3 in LVDS or HiSPI mode In WDR mode, the value is the SOL of frame 0. In linear mode, the value is the SOL.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } lane3_sol_0[15:0];
+    } LINK0_LANE3_SOL_01 @ 0x10F0;
+
+    reg {
+        name = "EOL synchronization code configuration L_01 register for lane 3 in LVDS or HiSPI mode";
+        desc = "LINK0_LANE3_EOL_01 is an EOL synchronization code configuration register for lane 3 in LVDS or HiSPI mode.
+
+Data sheet 9.3.6 LINK0_LANE3_EOL_01 (offset 0x10F8, printed page 9-177, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 59620).";
+
+        field {
+            name = "lane3_eol_1";
+            desc = "EOL synchronization code of frame 1 for lane 3 in LVDS or HiSPI mode The field is configurable only in WDR mode, and the configuration is invalid in linear mode.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } lane3_eol_1[31:16];
+
+        field {
+            name = "lane3_eol_0";
+            desc = "EOL synchronization code of frame 0 for lane 3 in LVDS or HiSPI mode In WDR mode, the value is the EOL of frame 0. In linear mode, the value is the EOL.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } lane3_eol_0[15:0];
+    } LINK0_LANE3_EOL_01 @ 0x10F8;
+};
+
+`endif
