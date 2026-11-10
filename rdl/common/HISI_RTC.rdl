@@ -2,36 +2,59 @@
 `define HISI_RTC_RDL
 
 regfile eHISI_RTC {
-    name = "RTC Registers";
-    desc = "TODO: Determine if this is a hisi IP, or a ARM IP.";
+    name = "RTC (ARM PL031-style 32-bit counter)";
+    desc = "
+    Real-time clock of the first-generation SoCs: a 32-bit up counter clocked at 1 Hz with a load register, a match (alarm) comparator and one interrupt. The register
+    layout (RTC_DR / RTC_MR / RTC_LR / RTC_CR / RTC_IMSC / RTC_RIS / RTC_MIS / RTC_ICR at 0x00-0x1C) is that of the ARM PrimeCell RTC (PL031); the data sheets do not list
+    the PL031 identification registers (0xFE0-0xFFC) and do not name the IP, so they are not modelled. The count value is converted to year / month / day / hour / minute /
+    second by software (Linux `rtc-pl031`-style driver; the vendor kernels use their own `hi_rtc`). Enabling the counter is one-way: once `rtc_start` is 1 the register can
+    only be cleared by a system reset.
+
+    Used by (base address / interrupt, all registers and resets identical):
+
+    | SoC | Base | Interrupt | Data sheet |
+    | --- | --- | --- | --- |
+    | Hi3511 / Hi3512 V100 | 0x101E8000 | 10 | `hi3511v100--Hi3511-Datasheet.txt` lines 11200-11470 (3.9, Chinese) |
+    | Hi3515 V100 | 0x20060000 | 10 | `hi3515v100--Hi3515-Datasheet.txt` lines 12709-12990 (3.9) |
+    | Hi3516 V100 | 0x20060000 | GIC ID 86 | `hi3516v100--Hi3516-Datasheet.txt` lines 20388-20800 (3.9, Chinese; clock gate / reset in PERI_CRG38) |
+    | Hi3520 V100 | 0x20060000 | 10 | `hi3520v100--Hi3520-Datasheet.txt` lines 16430-16800 (3.9, Chinese) |
+
+    The later SoCs (Hi3516A/C/D V100, Hi3518 V100, Hi3518E V20X, Hi3520D, Hi3516A V200/V300, Hi3519 V101, Hi3516C V300, ...) have a different, SPI-bridged RTC with a
+    100 Hz BCD-style counter: see `eHISI_RTC_SPI`. The field resets (all 0) are given by every data sheet above; they are guarded by `RTC_RESET_G1` (defined in the
+    `defines.rdl` of each of these chips) only so that a chip whose data sheet omits them can leave them unset. Data-sheet only, not hardware verified.
+    ";
 
     /* Fields */
 
     enum RTC_one_enable_enum {
-        ENABLE  = 0x0 { desc = "Enable"; };
-        DISABLE = 0x1 { desc = "Disable"; };
+        DISABLED = 0x0 { desc = "disabled"; };
+        ENABLED  = 0x1 { desc = "enabled"; };
     };
 
     reg {
-        name = "Current Count Value Register";
-        desc = "Used to read the current count value of the internal counter of the RTC.";
+        name = "Current count value register";
+        desc = "RTC_DR is the current count value register. It is used to read the current count value of the internal counter of the RTC.
+
+Data sheet 3.9.6 RTC_DR (offset 0x000, printed page 3-104, `hi3515v100--Hi3515-Datasheet.txt` line 12826).";
 
         field {
             name = "rtc_data";
             desc = "Current count value of the RTC.";
             counter;
-            decrvalue = 1;
+            incrvalue = 1;
             sw = r;
 `ifdef RTC_RESET_G1
             reset = 0x0;
 `endif
-        } rtc_data[0:31];
+        } rtc_data[31:0];
 
     } RTC_DR @ 0x000;
 
     reg {
-        name = "RTC Match Register";
-        desc = "Used to set the match value of the RTC.";
+        name = "RTC match register";
+        desc = "RTC_MR is the RTC match register. It is used to set the match value of the RTC: when the counter reaches this value the raw interrupt is raised and the counter keeps counting.
+
+Data sheet 3.9.6 RTC_MR (offset 0x004, printed page 3-105, `hi3515v100--Hi3515-Datasheet.txt` line 12859).";
 
         field {
             name = "rtc_match";
@@ -39,13 +62,15 @@ regfile eHISI_RTC {
 `ifdef RTC_RESET_G1
             reset = 0x0;
 `endif
-        } rtc_match[0:31];
+        } rtc_match[31:0];
 
     } RTC_MR @ 0x04;
 
     reg {
-        name = "RTC Load Register";
-        desc = "Used to set the initial count value of the RTC.";
+        name = "RTC load register";
+        desc = "RTC_LR is the RTC load register. It is used to set the initial count value of the RTC (the value is loaded into the counter, which then increments by 1 on every rising edge of the 1 Hz count clock).
+
+Data sheet 3.9.6 RTC_LR (offset 0x008, printed page 3-105, `hi3515v100--Hi3515-Datasheet.txt` line 12877).";
 
         field {
             name = "rtc_load";
@@ -53,13 +78,15 @@ regfile eHISI_RTC {
 `ifdef RTC_RESET_G1
             reset = 0x0;
 `endif
-        } rtc_load[0:31];
+        } rtc_load[31:0];
 
     } RTC_LR @ 0x08;
 
     reg {
-        name = "RTC Enable Register";
-        desc = "Used to enable the RTC. If the RTC is enabled, this register can be cleared only when the system is reset. Writing this register has no effect and reading this register returns the current value.";
+        name = "RTC enable register";
+        desc = "RTC_CR is the control register. It is used to enable the RTC. If the RTC is enabled, this register can be cleared only when the system is reset (writing it again has no effect; reading returns the current value).
+
+Data sheet 3.9.6 RTC_CR (offset 0x00C, printed page 3-106, `hi3515v100--Hi3515-Datasheet.txt` line 12905).";
 
         field {
             name = "rtc_start";
@@ -73,12 +100,14 @@ regfile eHISI_RTC {
     } RTC_CR @ 0x0C;
 
     reg {
-        name = "Interrupt Mask Register";
-        desc = "Used to show the interrupt mask status of the RTC.";
+        name = "Interrupt mask register";
+        desc = "RTC_IMSC is the interrupt mask register. It is used to show the interrupt mask status of the RTC. When the interrupt is masked the counter keeps counting; RTC_RIS still shows the raw status.
+
+Data sheet 3.9.6 RTC_IMSC (offset 0x010, printed page 3-106, `hi3515v100--Hi3515-Datasheet.txt` line 12933).";
 
         enum rtc_imsc_enum {
-            MASKED     = 0x0 { desc = "Masked"; };
-            NOT_MASKED = 0x1 { desc = "Not Masked"; };
+            MASKED     = 0x0 { desc = "masked"; };
+            NOT_MASKED = 0x1 { desc = "not masked"; };
         };
 
         field {
@@ -93,17 +122,19 @@ regfile eHISI_RTC {
     } RTC_IMSC @ 0x10;
 
     reg {
-        name = "Raw Interrupt Status Register";
-        desc = "Used to show the status of the raw interrupts of the RTC.";
+        name = "Raw interrupt status register";
+        desc = "RTC_RIS is the raw interrupt status register. It is used to show the status of the raw interrupts of the RTC.
+
+Data sheet 3.9.6 RTC_RIS (offset 0x014, printed page 3-107, `hi3515v100--Hi3515-Datasheet.txt` line 12969).";
 
         enum rtc_ris_enum {
-            NO_INTERRUPT = 0x0 { desc = "No interrupt is generated"; };
-            INTERRUPT    = 0x1 { desc = "An interrupt is generated"; };
+            NO_INTERRUPT = 0x0 { desc = "No interrupt is generated."; };
+            INTERRUPT    = 0x1 { desc = "An interrupt is generated."; };
         };
 
         field {
             name = "rtc_ris";
-            desc = "Current count value of the timer.";
+            desc = "Status of raw interrupts of the RTC.";
             encode = rtc_ris_enum;
             sw = r;
 `ifdef RTC_RESET_G1
@@ -114,12 +145,14 @@ regfile eHISI_RTC {
     } RTC_RIS @ 0x14;
 
     reg {
-        name = "Masked Interrupt Status Register";
-        desc = "Used to show the status of the masked interrupts of the RTC.";
+        name = "Masked interrupt status register";
+        desc = "RTC_MIS is the masked interrupt status register. It is used to show the status of the masked interrupts of the RTC (RTC_RIS and RTC_IMSC).
+
+Data sheet 3.9.6 RTC_MIS (offset 0x018, printed page 3-107, `hi3515v100--Hi3515-Datasheet.txt` line 12993).";
 
         enum rtc_mis_enum {
-            NO_INTERRUPT = 0x0 { desc = "No interrupt is generated, or the interrupt is masked"; };
-            INTERRUPT    = 0x1 { desc = "An interrupt is generated"; };
+            NO_INTERRUPT = 0x0 { desc = "No interrupt is generated, or the interrupt is masked."; };
+            INTERRUPT    = 0x1 { desc = "An interrupt is generated."; };
         };
 
         field {
@@ -135,12 +168,14 @@ regfile eHISI_RTC {
     } RTC_MIS @ 0x18;
 
     reg {
-        name = "Interrupt Clear Register";
-        desc = "Used to clear RTC interrupts.";
+        name = "Interrupt clear register";
+        desc = "RTC_ICR is the interrupt clear register. It is used to clear RTC interrupts (write-only).
+
+Data sheet 3.9.6 RTC_ICR (offset 0x01C, printed page 3-107, `hi3515v100--Hi3515-Datasheet.txt` line 13018).";
 
         enum rtc_icr_enum {
-            NO_EFFECT = 0x0 { desc = "No effect"; };
-            CLEAR     = 0x1 { desc = "Interrupt is cleared"; };
+            NO_EFFECT = 0x0 { desc = "No effect."; };
+            CLEAR     = 0x1 { desc = "The interrupt is cleared."; };
         };
 
         field {
