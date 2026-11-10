@@ -3,7 +3,7 @@
 
 regfile ePERI_CRG {
     name = "Clock and reset generator (CRG), Hi3519 V101";
-    desc = "    PERI_CRGn clock/reset registers at 0x12010000 (CRG; `PERI_CRG` is the HiSilicon register prefix, offset = n x 4). Data sheet: Hi3519 V101 Professional HD IP Camera SoC, Issue 01 (2018-07-05), chapter 3.2 (Clock) and 3.1 (Reset), registers in 3.2.6/3.2.7; the Hi3516A V200 data sheet has the same CRG chapter, register for register (checked 2026-11-10: the same 43 registers, offsets, reset values and field tables). 43 registers, offsets 0x0-0x24 (PLLs), 0x28-0xF0 and 0x13C.
+    desc = "    PERI_CRGn clock/reset registers at 0x12010000 (CRG; `PERI_CRG` is the HiSilicon register prefix, offset = n x 4). Data sheet: Hi3519 V101 Professional HD IP Camera SoC, Issue 01 (2018-07-05), chapter 3.2 (Clock) and 3.1 (Reset), registers in 3.2.6/3.2.7; the Hi3516A V200 data sheet has the same CRG chapter, register for register (checked 2026-11-10: the same 43 registers, offsets, reset values and field tables; the only difference is PERI_CRG19 vedu_clksel, which lists 500 and 594 MHz codes only here). 43 registers, offsets 0x0-0x24 (PLLs), 0x28-0xF0 and 0x13C.
 
     Clock tree facts for bring-up. Input clocks: XIN = 24 MHz crystal, RTC_XIN = 32.768 kHz. Four PLLs, each with two configuration registers (DS Table 3-3): APLL = PERI_CRG_PLL0/1 (offsets 0x0/0x4), DPLL = PERI_CRG_PLL4/5 (0x10/0x14), VPLL = PERI_CRG_PLL6/7 (0x18/0x1C), EPLL = PERI_CRG_PLL8/9 (0x20/0x24). Formula (DS Table 3-4): FOUTVCO = 24 MHz x (fbdiv + frac/2^24) / refdiv, which must stay above 800 MHz and at most 2.3 GHz; FOUTPOSTDIV = FOUTVCO / (postdiv1 x postdiv2) with postdiv1 >= postdiv2; FOUTVCO2X = 2 x FOUTVCO; FOUT1PH0/2/3/4 = FOUTVCO / (postdiv1 x postdiv2 x 2/4/6/8). Reset configurations: APLL 1200 MHz (refdiv 1, fbdiv 50, postdiv 2 x 1 = 600 MHz), DPLL 932 MHz (refdiv 6, fbdiv 233, POSTDIV 466 MHz), VPLL 1188 MHz (POSTDIV 594 MHz), EPLL 1500 MHz (POSTDIV 500 MHz); only the APLL and DPLL are meant to be reprogrammed (the VPLL and EPLL are fixed). PLL change procedure (DS 3.2.5.3): first switch every consumer of the PLL to a non-PLL (or another PLL) clock, change the PLL configuration, wait 0.1 ms and poll the lock bits PERI_CRG58[4:0] (apll [0], dpll [2], vpll [3], epll [4]; gzip_rst_ok is bit 8), then switch back once the PLL is locked.
 
@@ -1769,8 +1769,8 @@ Data sheet 3.2.7 PERI_CRG19 (offset 0x4C, printed page 3-31, `hi3519v101--Hi3519
         enum PERI_CRG19_vedu_clksel_enum {
             RESERVED_0 = 0 { name = "Reserved 0"; desc = "reserved (reset value; select a clock before starting the VEDU)"; };
             CLK_396MHZ = 1 { name = "Clk 396Mhz"; desc = "396 MHz"; };
-            RESERVED_2 = 2 { name = "Reserved 2"; desc = "reserved"; };
-            RESERVED_3 = 3 { name = "Reserved 3"; desc = "reserved"; };
+            CLK_500MHZ = 2 { name = "Clk 500Mhz"; desc = "500 MHz (Hi3519 V101 only; reserved in the Hi3516A V200 data sheet)"; };
+            CLK_594MHZ = 3 { name = "Clk 594Mhz"; desc = "594 MHz (Hi3519 V101 only; reserved in the Hi3516A V200 data sheet)"; };
             RESERVED_4 = 4 { name = "Reserved 4"; desc = "reserved"; };
             RESERVED_5 = 5 { name = "Reserved 5"; desc = "reserved"; };
             RESERVED_6 = 6 { name = "Reserved 6"; desc = "reserved"; };
@@ -1779,7 +1779,7 @@ Data sheet 3.2.7 PERI_CRG19 (offset 0x4C, printed page 3-31, `hi3519v101--Hi3519
 
         field {
             name = "vedu_clksel";
-            desc = "VEDU clock select. Other values are reserved.";
+            desc = "VEDU clock select. Other values are reserved. This is the one CRG difference between the Hi3519 V101 and Hi3516A V200 data sheets (checked 2026-11-10): the Hi3519 V101 sheet (PERI_CRG19 bit table, dump line 5572) lists 001 = 396 MHz, 010 = 500 MHz, 011 = 594 MHz (Table 3-2: VEDU H.265 594 MHz); the Hi3516A V200 sheet (dump line 5739) lists only 001 = 396 MHz (Table 3-2: VEDU 396 MHz). Codes 2 and 3 are therefore Hi3519-only.";
             sw = rw;
             hw = r;
             encode = PERI_CRG19_vedu_clksel_enum;
