@@ -1,12 +1,19 @@
 `ifndef HISI_CIPHER_MC_RDL
 `define HISI_CIPHER_MC_RDL
 
-// 8-channel CIPHER of the Hi3520D / Hi3515A / Hi3515C (Hi3520D data sheet section 3.5, DS-3520D-EN:12690-14360).
-// Not the single-channel CIPHER of the Hi3511 / Hi3515V100 generation (HISI_CIPHER.rdl).
-// Also the CIPHER of the Hi3518EV200 / Hi3516CV200 (data sheet Hi3518E V20X/Hi3516C V200 issue 02 section 13.1, base 0x100C0000, VIC interrupt 13): every register, field, access type
-// and reset value of that data sheet (CHAN0_*, CIPHER_KEY, CHANn_* at 0x1000 + n x 0x80, INT_*, RST_STATUS, CHAN0_CFG) agrees with this block; it too puts the input-queue interrupt bits at
-// INT_STATUS[15:9] (see the hardware-verified note there, verified on the Hi3520D only), calls CHANn_CIPHER_CTRL.weight access '-' and lists CHANn_CIPHER_CTRL bit 8 (ivin_sel) as reserved.
-// The IAGE_CNT / *_LST_RADDR / *_ADDR / *_LENGTH / *_LEFT_* / BRAM_ST0 / IN_ST* / OUT_ST* debug registers are not in that data sheet.
+// 8-channel linked-list CIPHER. The same 25 data sheet registers (CHAN0_*, CIPHER_KEY, CHANn_* at 0x1000 + n x 0x80, INT_*, RST_STATUS, CHAN0_CFG) with the same
+// fields, bit positions and reset values appear in the data sheets of:
+//   Hi3520D / Hi3515A / Hi3515C (Chinese original, section 3.5; base 0x100C0000, VIC interrupt 55)   - hardware verified on the Hi3520D, see the notes below
+//   Hi3516A / Hi3516D V100 (section 3.7; 0x100C0000, interrupt 58), Hi3516C V100 (3.6; 0x100C0000, interrupt 13), Hi3516 V100 (Chinese, 3.6; 0x100C0000, interrupt 61)
+//   Hi3518A / Hi3518C V100 (3.6; 0x100C0000, interrupt 13), Hi3518E V100 (3.6; 0x100C0000, interrupt 13)
+//   Hi3518E V20X / Hi3516C V200 (issue 02 section 13.1; 0x100C0000, interrupt 13)
+//   Hi3516A V200, Hi3519 V101, Hi3516C V300 / Hi3516E V100 (section 13.1; base 0x10080000, interrupt 58 on the AV200/V101, 13 on the CV300): these add the AES GCM
+//   registers at 0x0840-0x093C, enabled with `define CIPHER_MC_GCM in the chip's defines.rdl, and the vendor U-Boot product/cipher driver (drv_cipher_reg.h, base
+//   0x10080000) is written against this generation.
+// Differences between the data sheets, all recorded in the register descriptions: RST_STATUS total reset value (0 or 1), CHANn_CIPHER_CTRL.weight access type
+// ('-', RW or RO) and the input/output naming of INT_STATUS / INT_EN bits [15:9] / [7:1].
+// Not the single-channel CIPHER of the Hi3511 / Hi3515 / Hi3520 V100 generation (HISI_CIPHER.rdl).
+// The IAGE_CNT / *_LST_RADDR / *_ADDR / *_LENGTH / *_LEFT_* / BRAM_ST0 / IN_ST* / OUT_ST* debug registers are in no data sheet, only in the vendor driver header.
 regfile eHISI_CIPHER_MC {
     name = "CIPHER (8 channels)";
     desc = "
@@ -188,6 +195,76 @@ regfile eHISI_CIPHER_MC {
         } cipher_key[31:0];
     } CIPHER_KEY[64] @ 0x0090 += 0x4;
 
+`ifdef CIPHER_MC_GCM
+    /* AES GCM extension of the Hi3516A V200 / Hi3519 V101 / Hi3516C V300 generation, 0x0840 - 0x093C (data sheet 13.1.6). The GCM mode is AES CTR plus GHASH
+       (data sheet 13.1.3 Figure 13-14); the data sheet does not say how a channel is switched into GCM mode (CHANn_CIPHER_CTRL.mode lists ECB/CBC/CFB/OFB/CTR only) and the
+       local vendor driver does not use these registers. */
+    regfile eHISI_CIPHER_MC_GCM_A_LEN {
+        name = "CHANn_GCM_A_LEN (n = 0..7)";
+        desc = "A (additional authenticated data) length of the AES GCM of channel n, 8 bytes per channel at 0x0840 + 0x8 x n (CHAN0 at 0x0840/0x0844 ... CHAN7 at 0x0878/0x087C).";
+        reg { name = "CHANn_GCM_A_LEN_0"; desc = "A length lower 32 bits register for the AES GCM of channel n."; field { name = "chann_gcm_a_len_0"; desc = "Lower 32 bits of the A length for the AES GCM of channel n (unit: 8 bits)."; reset = 0x0; } chann_gcm_a_len_0[31:0]; } CHANn_GCM_A_LEN_0 @ 0x0;
+        reg { name = "CHANn_GCM_A_LEN_1"; desc = "A length upper 32 bits register for the AES GCM of channel n."; field { name = "chann_gcm_a_len_1"; desc = "Upper 32 bits of the A length for the AES GCM of channel n (unit: 8 bits)."; reset = 0x0; } chann_gcm_a_len_1[31:0]; } CHANn_GCM_A_LEN_1 @ 0x4;
+    };
+    eHISI_CIPHER_MC_GCM_A_LEN GCM_A_LEN[8] @ 0x0840 += 0x8;
+
+    regfile eHISI_CIPHER_MC_GCM_PC_LEN {
+        name = "CHANn_GCM_PC_LEN (n = 0..7)";
+        desc = "Payload length of the AES GCM of channel n, 8 bytes per channel at 0x0880 + 0x8 x n (CHAN0 at 0x0880/0x0884 ... CHAN7 at 0x08B8/0x08BC).";
+        reg { name = "CHANn_GCM_PC_LEN_0"; desc = "Payload length lower 32 bits register for the AES GCM of channel n."; field { name = "chann_gcm_pc_len_0"; desc = "Lower 32 bits of the payload length for the AES GCM of channel n (unit: 8 bits)."; reset = 0x0; } chann_gcm_pc_len_0[31:0]; } CHANn_GCM_PC_LEN_0 @ 0x0;
+        reg { name = "CHANn_GCM_PC_LEN_1"; desc = "Payload length upper 32 bits register for the AES GCM of channel n."; field { name = "chann_gcm_pc_len_1"; desc = "Upper 32 bits of the payload length for the AES GCM of channel n (unit: 8 bits)."; reset = 0x0; } chann_gcm_pc_len_1[31:0]; } CHANn_GCM_PC_LEN_1 @ 0x4;
+    };
+    eHISI_CIPHER_MC_GCM_PC_LEN GCM_PC_LEN[8] @ 0x0880 += 0x8;
+
+    reg {
+        name = "CHAN0_3_GCM_IV_LEN";
+        desc = "IV length register for the AES GCM of channels 0-3.";
+        field { name = "chan3_gcm_iv_len"; desc = "IV length of channel 3."; reset = 0x0; } chan3_gcm_iv_len[28:24];
+        field { name = "chan2_gcm_iv_len"; desc = "IV length of channel 2."; reset = 0x0; } chan2_gcm_iv_len[20:16];
+        field { name = "chan1_gcm_iv_len"; desc = "IV length of channel 1."; reset = 0x0; } chan1_gcm_iv_len[12:8];
+        field { name = "chan0_gcm_iv_len"; desc = "IV length of channel 0."; reset = 0x0; } chan0_gcm_iv_len[4:0];
+    } CHAN0_3_GCM_IV_LEN @ 0x08C0;
+
+    reg {
+        name = "CHAN4_7_GCM_IV_LEN";
+        desc = "IV length register for the AES GCM of channels 4-7.";
+        field { name = "chan7_gcm_iv_len"; desc = "IV length of channel 7."; reset = 0x0; } chan7_gcm_iv_len[28:24];
+        field { name = "chan6_gcm_iv_len"; desc = "IV length of channel 6."; reset = 0x0; } chan6_gcm_iv_len[20:16];
+        field { name = "chan5_gcm_iv_len"; desc = "IV length of channel 5."; reset = 0x0; } chan5_gcm_iv_len[12:8];
+        field { name = "chan4_gcm_iv_len"; desc = "IV length of channel 4."; reset = 0x0; } chan4_gcm_iv_len[4:0];
+    } CHAN4_7_GCM_IV_LEN @ 0x08C4;
+
+    reg {
+        name = "CHANn_GCM_IV_LEN_VLD";
+        desc = "GCM IV length validity signal register.";
+        field { name = "chann_gcm_iv_len_vld"; desc = "Whether the IV length of channel n (bit n) is valid after the operation is started in AES GCM mode. 0: invalid (the channel length is 0 or greater than 16 bytes); 1: valid."; sw = r; hw = w; reset = 0x0; } chann_gcm_iv_len_vld[7:0];
+    } CHANn_GCM_IV_LEN_VLD @ 0x08CC;
+
+    reg {
+        name = "CHANn_GCM_TAG_VLD";
+        desc = "GCM tag validity signal register.";
+        field { name = "chann_gcm_tag_vld"; desc = "Whether the tag of channel n (bit n) is valid in AES GCM mode. 0: invalid; 1: valid. Writing 1 clears the bit (data sheet access RWC)."; sw = rw; hw = w; onwrite = woclr; reset = 0x0; } chann_gcm_tag_vld[7:0];
+    } CHANn_GCM_TAG_VLD @ 0x08D0;
+
+    reg {
+        name = "CHANn_GCM_GHASH_A_END";
+        desc = "GCM A calculation end signal register.";
+        field { name = "chann_gcm_ghash_a_end"; desc = "Whether the GHASH of channel n (bit n) over A is finished when the A length is not 0 in AES GCM mode. 0: not finished; 1: finished. Writing 1 clears the bit (data sheet access RWC)."; sw = rw; hw = w; onwrite = woclr; reset = 0x0; } chann_gcm_ghash_a_end[7:0];
+    } CHANn_GCM_GHASH_A_END @ 0x08D4;
+
+    regfile eHISI_CIPHER_MC_GCM_TAG {
+        name = "CHANn_GCM_TAG (n = 0..7)";
+        desc = "GCM tag registers of one channel, 16 bytes per channel at 0x0900 + 0x10 x n.
+
+        !!! NOTE
+            The data sheet prints the offset of CHANn_GCM_TAG_3 as `0x0900 + 0x10 x n + 0x04` (the same as TAG_1); 0x0C is the only consistent value and is used here.";
+        reg { name = "CHANn_GCM_TAG_0"; desc = "GCM tag register 0 for channel n."; field { name = "chann_gcm_tag_0"; desc = "GCM tag[31:0] for channel n."; sw = r; hw = w; reset = 0x0; } chann_gcm_tag_0[31:0]; } CHANn_GCM_TAG_0 @ 0x0;
+        reg { name = "CHANn_GCM_TAG_1"; desc = "GCM tag register 1 for channel n."; field { name = "chann_gcm_tag_1"; desc = "GCM tag[63:32] for channel n."; sw = r; hw = w; reset = 0x0; } chann_gcm_tag_1[31:0]; } CHANn_GCM_TAG_1 @ 0x4;
+        reg { name = "CHANn_GCM_TAG_2"; desc = "GCM tag register 2 for channel n."; field { name = "chann_gcm_tag_2"; desc = "GCM tag[95:64] for channel n."; sw = r; hw = w; reset = 0x0; } chann_gcm_tag_2[31:0]; } CHANn_GCM_TAG_2 @ 0x8;
+        reg { name = "CHANn_GCM_TAG_3"; desc = "GCM tag register 3 for channel n."; field { name = "chann_gcm_tag_3"; desc = "GCM tag[127:96] for channel n."; sw = r; hw = w; reset = 0x0; } chann_gcm_tag_3[31:0]; } CHANn_GCM_TAG_3 @ 0xC;
+    };
+    eHISI_CIPHER_MC_GCM_TAG GCM_TAG[8] @ 0x0900 += 0x10;
+`endif
+
     /* Channel 0 (single block), 0x1000 - 0x1020 */
 
     reg {
@@ -268,7 +345,7 @@ regfile eHISI_CIPHER_MC {
                 Encryption/decryption control register of channel n. Configure it before using the channel. In the modes other than AES-CFB (DES/3DES: other than CFB and OFB), width must not be 0b01 or 0b10.
 
                 !!! NOTE
-                    The data sheet gives the weight field no access type ('-'); it is modelled read/write.
+                    The Hi3520D data sheet gives the weight field no access type ('-'), the Hi3516A V100 data sheet says RW and the Hi3518E V200 / Hi3516A V200 data sheets say RO ('weighted value of the current channel, in units of 64 bytes'; the AV200 feature list says the weight of the multi-block channels is configurable). It is modelled read/write.
 
                 !!! NOTE
                     The data sheet bit table lists bit 8 as reserved (the bit diagram also labels bits 12:11 `byte_seq` / `ts_vld`; the table calls them reserved). ivin_sel[8] is NOT IN THE DATA SHEET for channels 1-7: it is modelled from the vendor driver (sources/u-boot-vendor-2010.06 product/cipher/hal_cipher.c, HAL_Cipher_Config, ~line 712-775), which writes bit 8 of CHANn_CIPHER_CTRL as it does for channel 0 (set together with iv_set in the queue node).
@@ -451,7 +528,7 @@ NOT IN THE DATA SHEET: register defined only in the vendor driver header product
         desc = "Interrupt status register. Bit 0 is reserved (channel 0 has no output queue).
 
         !!! NOTE
-            Input/output bit assignment: HARDWARE VERIFIED on the Hi3520D (channel 1, AES-ECB through the queue, 2026-11-09), contradicting the data sheet text (the data sheet puts the input queue bits at [15:9] and the output queue bits at [7:1]). Bits [7:1] are the INPUT queue interrupts (channel 7..1), bits [15:9] the OUTPUT queue interrupts (channel 7..1), bit 8 is channel 0 done (as in the data sheet). Evidence: with CHAN1_INT_OCNTCFG = 100 and CHAN1_INT_ICNTCFG = 0 one processed packet raised only INT_RAW bit 1 (INT_RAW = 0x2); with both thresholds low INT_RAW = 0x202; the masked INT_STATUS follows INT_EN exactly. This matches the vendor code of the sibling SoC (hal_cipher.c:866-935, HAL_Cipher_EnableInt: `1 << (8 + chnId)` for output, `1 << (0 + chnId)` for input) and the field names here follow it, not the data sheet.";
+            Input/output bit assignment: HARDWARE VERIFIED on the Hi3520D (channel 1, AES-ECB through the queue, 2026-11-09), contradicting the Hi3520D data sheet text (it puts the input queue bits at [15:9] and the output queue bits at [7:1] in INT_STATUS, INT_EN and INT_RAW; the English Hi3516A V100, Hi3518E V200 and Hi3516A V200 data sheets do the same in INT_STATUS and INT_EN but name [15:9] the output queue bits in INT_RAW). Bits [7:1] are the INPUT queue interrupts (channel 7..1), bits [15:9] the OUTPUT queue interrupts (channel 7..1), bit 8 is channel 0 done (as in the data sheet). Evidence: with CHAN1_INT_OCNTCFG = 100 and CHAN1_INT_ICNTCFG = 0 one processed packet raised only INT_RAW bit 1 (INT_RAW = 0x2); with both thresholds low INT_RAW = 0x202; the masked INT_STATUS follows INT_EN exactly. This matches the vendor code of the sibling SoC (hal_cipher.c:866-935, HAL_Cipher_EnableInt: `1 << (8 + chnId)` for output, `1 << (0 + chnId)` for input) and the field names here follow it, not the data sheet.";
         field { name = "ch7_obuf_int"; desc = "Output queue data interrupt for channel 7."; sw = r; hw = w; reset = 0x0; } ch7_obuf_int[15:15];
         field { name = "ch6_obuf_int"; desc = "Output queue data interrupt for channel 6."; sw = r; hw = w; reset = 0x0; } ch6_obuf_int[14:14];
         field { name = "ch5_obuf_int"; desc = "Output queue data interrupt for channel 5."; sw = r; hw = w; reset = 0x0; } ch5_obuf_int[13:13];
@@ -474,7 +551,7 @@ NOT IN THE DATA SHEET: register defined only in the vendor driver header product
         desc = "Interrupt enable register. Bit 0 is reserved. Bit 31 (int_en) is the master enable of the module: the vendor HAL_Cipher_EnableInt sets it whenever it enables a channel interrupt and HAL_Cipher_DisableInt clears it when no other enable bit is left (hal_cipher.c:874, 927). hardware verified 2026-11-09, Hi3520D, linux driver hi3520d-cipher.c: bit 31 must be set for the IRQ line (SPI 23, GIC 55) to fire; the masked INT_STATUS follows INT_EN.
 
         !!! NOTE
-            Input/output bit assignment: HARDWARE VERIFIED on the Hi3520D (channel 1, AES-ECB through the queue, 2026-11-09), contradicting the data sheet text (the data sheet puts the input queue bits at [15:9] and the output queue bits at [7:1]). Bits [7:1] are the INPUT queue interrupts (channel 7..1), bits [15:9] the OUTPUT queue interrupts (channel 7..1), bit 8 is channel 0 done (as in the data sheet). Evidence: with CHAN1_INT_OCNTCFG = 100 and CHAN1_INT_ICNTCFG = 0 one processed packet raised only INT_RAW bit 1 (INT_RAW = 0x2); with both thresholds low INT_RAW = 0x202; the masked INT_STATUS follows INT_EN exactly. This matches the vendor code of the sibling SoC (hal_cipher.c:866-935, HAL_Cipher_EnableInt: `1 << (8 + chnId)` for output, `1 << (0 + chnId)` for input) and the field names here follow it, not the data sheet.";
+            Input/output bit assignment: HARDWARE VERIFIED on the Hi3520D (channel 1, AES-ECB through the queue, 2026-11-09), contradicting the Hi3520D data sheet text (it puts the input queue bits at [15:9] and the output queue bits at [7:1] in INT_STATUS, INT_EN and INT_RAW; the English Hi3516A V100, Hi3518E V200 and Hi3516A V200 data sheets do the same in INT_STATUS and INT_EN but name [15:9] the output queue bits in INT_RAW). Bits [7:1] are the INPUT queue interrupts (channel 7..1), bits [15:9] the OUTPUT queue interrupts (channel 7..1), bit 8 is channel 0 done (as in the data sheet). Evidence: with CHAN1_INT_OCNTCFG = 100 and CHAN1_INT_ICNTCFG = 0 one processed packet raised only INT_RAW bit 1 (INT_RAW = 0x2); with both thresholds low INT_RAW = 0x202; the masked INT_STATUS follows INT_EN exactly. This matches the vendor code of the sibling SoC (hal_cipher.c:866-935, HAL_Cipher_EnableInt: `1 << (8 + chnId)` for output, `1 << (0 + chnId)` for input) and the field names here follow it, not the data sheet.";
         field { name = "int_en"; desc = "Total interrupt enable for the CIPHER module."; encode = CIPHER_MC_enabled_enum; sw = rw; hw = r; reset = 0x0; } int_en[31:31];
         field { name = "ch7_obuf_en"; desc = "Output queue data interrupt enable for channel 7."; encode = CIPHER_MC_enabled_enum; sw = rw; hw = r; reset = 0x0; } ch7_obuf_en[15:15];
         field { name = "ch6_obuf_en"; desc = "Output queue data interrupt enable for channel 6."; encode = CIPHER_MC_enabled_enum; sw = rw; hw = r; reset = 0x0; } ch6_obuf_en[14:14];
@@ -498,7 +575,7 @@ NOT IN THE DATA SHEET: register defined only in the vendor driver header product
         desc = "Raw interrupt status register. The data sheet access type is RWC (read, write to clear); the clear polarity is not stated and is modelled as write-1-to-clear. The vendor HAL_Cipher_ClrIntState (hal_cipher.c:1003) clears pending bits by writing 1s to this register (drv_cipher.c:878 writes 0xffffffff to clear everything), which supports write-1-to-clear. hardware verified 2026-11-09, Hi3520D, linux driver hi3520d-cipher.c: INT_RAW is cleared by writing 1s to the bits (the driver clears with writel(status)). Bit 0 is reserved.
 
         !!! NOTE
-            Input/output bit assignment: HARDWARE VERIFIED on the Hi3520D (channel 1, AES-ECB through the queue, 2026-11-09), contradicting the data sheet text (the data sheet puts the input queue bits at [15:9] and the output queue bits at [7:1]). Bits [7:1] are the INPUT queue interrupts (channel 7..1), bits [15:9] the OUTPUT queue interrupts (channel 7..1), bit 8 is channel 0 done (as in the data sheet). Evidence: with CHAN1_INT_OCNTCFG = 100 and CHAN1_INT_ICNTCFG = 0 one processed packet raised only INT_RAW bit 1 (INT_RAW = 0x2); with both thresholds low INT_RAW = 0x202; the masked INT_STATUS follows INT_EN exactly. This matches the vendor code of the sibling SoC (hal_cipher.c:866-935, HAL_Cipher_EnableInt: `1 << (8 + chnId)` for output, `1 << (0 + chnId)` for input) and the field names here follow it, not the data sheet.";
+            Input/output bit assignment: HARDWARE VERIFIED on the Hi3520D (channel 1, AES-ECB through the queue, 2026-11-09), contradicting the Hi3520D data sheet text (it puts the input queue bits at [15:9] and the output queue bits at [7:1] in INT_STATUS, INT_EN and INT_RAW; the English Hi3516A V100, Hi3518E V200 and Hi3516A V200 data sheets do the same in INT_STATUS and INT_EN but name [15:9] the output queue bits in INT_RAW). Bits [7:1] are the INPUT queue interrupts (channel 7..1), bits [15:9] the OUTPUT queue interrupts (channel 7..1), bit 8 is channel 0 done (as in the data sheet). Evidence: with CHAN1_INT_OCNTCFG = 100 and CHAN1_INT_ICNTCFG = 0 one processed packet raised only INT_RAW bit 1 (INT_RAW = 0x2); with both thresholds low INT_RAW = 0x202; the masked INT_STATUS follows INT_EN exactly. This matches the vendor code of the sibling SoC (hal_cipher.c:866-935, HAL_Cipher_EnableInt: `1 << (8 + chnId)` for output, `1 << (0 + chnId)` for input) and the field names here follow it, not the data sheet.";
         field { name = "ch7_obuf_raw"; desc = "Raw output queue data interrupt for channel 7."; sw = rw; onwrite = woclr; hw = w; reset = 0x0; } ch7_obuf_raw[15:15];
         field { name = "ch6_obuf_raw"; desc = "Raw output queue data interrupt for channel 6."; sw = rw; onwrite = woclr; hw = w; reset = 0x0; } ch6_obuf_raw[14:14];
         field { name = "ch5_obuf_raw"; desc = "Raw output queue data interrupt for channel 5."; sw = rw; onwrite = woclr; hw = w; reset = 0x0; } ch5_obuf_raw[13:13];
@@ -523,7 +600,7 @@ NOT IN THE DATA SHEET: register defined only in the vendor driver header product
 
     reg {
         name = "RST_STATUS";
-        desc = "Reset status indicator register.";
+        desc = "Reset status indicator register. Total reset value 0x0 in the Hi3520D (Chinese original), Hi3516A V100, Hi3518E V200 and Hi3516A V200 data sheets, 0x1 in the Hi3516C V100, Hi3518A/C V100 and Hi3518E V100 data sheets (same bit table). On the Hi3520D the register reads 1 while the module is running (hardware read 2026-11-09); the value during reset is not observable from software, so 0 is kept.";
         field {
             name = "rst_status";
             desc = "Reset status indicator of the CIPHER module.";

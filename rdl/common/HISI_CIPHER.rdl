@@ -1,6 +1,11 @@
 `ifndef HISI_CIPHER_RDL
 `define HISI_CIPHER_RDL
 
+// Single-channel CIPHER of the Hi3511 / Hi3512 (base 0x90040000, VIC interrupt 21), Hi3515 (0x100C0000, interrupt 28) and Hi3520 V100
+// (0x100C0000, interrupt 28). The three data sheets (Hi3511 and Hi3520 Chinese originals, Hi3515 English issue 02) describe the same 14
+// registers with the same fields, access types and reset values (every field resets to 0). The Hi3516A/D V100, Hi3516C V100, Hi3516 V100,
+// Hi3518A/C V100, Hi3518E V200 / Hi3516C V200, Hi3520D / Hi3515A / Hi3515C and the Hi3516A V200 / Hi3519 V101 / Hi3516C V300 generation
+// carry the 8-channel linked-list CIPHER instead (HISI_CIPHER_MC.rdl), which shares nothing with this layout.
 regfile eHISI_CIPHER {
     name = "CIPHER Registers";
     desc = "
@@ -75,7 +80,12 @@ regfile eHISI_CIPHER {
 
     ![The CTR mode of the AES algorithm](assets/cipher-ctr-aes.png)
 
-    TODO: Determine if this is a hisi IP, or a ARM IP.
+    ## Programming
+
+    Single block: write CIPHER_CTRL (cipher_mode = 0), CIPHER_KEY, CIPHER_IVIN (if ivin_sel = 1) and CIPHER_DIN, write CIPHER_ST = 1, wait for INT_CIPHER_STATUS.int_done_status (or poll CIPHER_BUSY), read CIPHER_DOUT / CIPHER_IVOUT.
+    Multi block: cipher_mode = 1, program SRC_START_ADDR, MEM_LENGTH and (dest_addr_set = 1) DEST_START_ADDR, then CIPHER_ST = 1; the module reads and writes the memory through its own AHB master. Writing 0 to CIPHER_ST aborts.
+
+    HiSilicon IP (the vendor driver calls it hi_cipher); none of the local vendor trees contains a driver for this single-channel layout, and nothing is hardware verified.
     ";
 
     /* Fields */
@@ -107,9 +117,7 @@ regfile eHISI_CIPHER {
         field {
             name = "cipher_din_0";
             desc = "Bits 31:0 of data";
-`ifdef CIPHER_RESET_G2
             reset = 0x0;
-`endif
         } cipher_din_0[0:31];
 
     } CIPHER_DIN_0 @ 0x000;
@@ -121,9 +129,7 @@ regfile eHISI_CIPHER {
         field {
             name = "cipher_din_1";
             desc = "Bits 63:32 of data";
-`ifdef CIPHER_RESET_G1
             reset = 0x0;
-`endif
         } cipher_din_1[0:31];
 
     } CIPHER_DIN_1 @ 0x004;
@@ -135,9 +141,7 @@ regfile eHISI_CIPHER {
         field {
             name = "cipher_din_2";
             desc = "Bits 95:64 of data";
-`ifdef CIPHER_RESET_G1
             reset = 0x0;
-`endif
         } cipher_din_2[0:31];
 
     } CIPHER_DIN_2 @ 0x008;
@@ -149,9 +153,7 @@ regfile eHISI_CIPHER {
         field {
             name = "cipher_din_3";
             desc = "Bits 127:96 of data";
-`ifdef CIPHER_RESET_G1
             reset = 0x0;
-`endif
         } cipher_din_3[0:31];
 
     } CIPHER_DIN_3 @ 0x00C;
@@ -172,9 +174,7 @@ regfile eHISI_CIPHER {
         field {
             name = "cipher_ivin_0";
             desc = "Bits 31:0 of data";
-`ifdef CIPHER_RESET_G2
             reset = 0x0;
-`endif
         } cipher_ivin_0[0:31];
 
     } CIPHER_IVIN_0 @ 0x010;
@@ -186,9 +186,7 @@ regfile eHISI_CIPHER {
         field {
             name = "cipher_ivin_1";
             desc = "Bits 31:0 of data";
-`ifdef CIPHER_RESET_G1
             reset = 0x0;
-`endif
         } cipher_ivin_1[0:31];
 
     } CIPHER_IVIN_1 @ 0x014;
@@ -200,9 +198,7 @@ regfile eHISI_CIPHER {
         field {
             name = "cipher_ivin_2";
             desc = "Bits 95:64 of data";
-`ifdef CIPHER_RESET_G1
             reset = 0x0;
-`endif
         } cipher_ivin_2[0:31];
 
     } CIPHER_IVIN_2 @ 0x018;
@@ -214,9 +210,7 @@ regfile eHISI_CIPHER {
         field {
             name = "cipher_ivin_3";
             desc = "Bits 127:96 of data";
-`ifdef CIPHER_RESET_G1
             reset = 0x0;
-`endif
         } cipher_ivin_3[0:31];
 
     } CIPHER_IVIN_3 @ 0x01C;
@@ -243,9 +237,7 @@ regfile eHISI_CIPHER {
         field {
             name = "cipher_key_0";
             desc = "Bits 31:0 of data";
-`ifdef CIPHER_RESET_G2
             reset = 0x0;
-`endif
         } cipher_key_0[0:31];
 
     } CIPHER_KEY_0 @ 0x020;
@@ -257,9 +249,7 @@ regfile eHISI_CIPHER {
         field {
             name = "cipher_key_1";
             desc = "Bits 63:32 of data";
-`ifdef CIPHER_RESET_G1
             reset = 0x0;
-`endif
         } cipher_key_1[0:31];
 
     } CIPHER_KEY_1 @ 0x024;
@@ -271,9 +261,7 @@ regfile eHISI_CIPHER {
         field {
             name = "cipher_key_2";
             desc = "Bits 95:64 of data";
-`ifdef CIPHER_RESET_G1
             reset = 0x0;
-`endif
         } cipher_key_2[0:31];
 
     } CIPHER_KEY_2 @ 0x028;
@@ -285,9 +273,7 @@ regfile eHISI_CIPHER {
         field {
             name = "cipher_key_3";
             desc = "Bits 127:96 of data";
-`ifdef CIPHER_RESET_G1
             reset = 0x0;
-`endif
         } cipher_key_3[0:31];
 
     } CIPHER_KEY_3 @ 0x02C;
@@ -299,9 +285,7 @@ regfile eHISI_CIPHER {
         field {
             name = "cipher_key_4";
             desc = "Bits 159:128 of data";
-`ifdef CIPHER_RESET_G1
             reset = 0x0;
-`endif
         } cipher_key_4[0:31];
 
     } CIPHER_KEY_4 @ 0x030;
@@ -313,9 +297,7 @@ regfile eHISI_CIPHER {
         field {
             name = "cipher_key_5";
             desc = "Bits 191:160 of data";
-`ifdef CIPHER_RESET_G1
             reset = 0x0;
-`endif
         } cipher_key_5[0:31];
 
     } CIPHER_KEY_5 @ 0x034;
@@ -327,9 +309,7 @@ regfile eHISI_CIPHER {
         field {
             name = "cipher_key_6";
             desc = "Bits 223:192 of data";
-`ifdef CIPHER_RESET_G1
             reset = 0x0;
-`endif
         } cipher_key_6[0:31];
 
     } CIPHER_KEY_6 @ 0x038;
@@ -341,9 +321,7 @@ regfile eHISI_CIPHER {
         field {
             name = "cipher_key_7";
             desc = "Bits 255:224 of data";
-`ifdef CIPHER_RESET_G1
             reset = 0x0;
-`endif
         } cipher_key_7[0:31];
 
     } CIPHER_KEY_7 @ 0x03C;
@@ -371,9 +349,7 @@ regfile eHISI_CIPHER {
             name = "cipher_dout_0";
             desc = "Bits 31:0 of data";
             sw = r;
-`ifdef CIPHER_RESET_G1
             reset = 0x0;
-`endif
         } cipher_dout_0[0:31];
 
     } CIPHER_DOUT_0 @ 0x040;
@@ -386,9 +362,7 @@ regfile eHISI_CIPHER {
             name = "cipher_dout_1";
             desc = "Bits 63:32 of data";
             sw = r;
-`ifdef CIPHER_RESET_G1
             reset = 0x0;
-`endif
         } cipher_dout_1[0:31];
 
     } CIPHER_DOUT_1 @ 0x044;
@@ -401,9 +375,7 @@ regfile eHISI_CIPHER {
             name = "cipher_dout_2";
             desc = "Bits 63:32 of data";
             sw = r;
-`ifdef CIPHER_RESET_G1
             reset = 0x0;
-`endif
         } cipher_dout_2[0:31];
 
     } CIPHER_DOUT_2 @ 0x048;
@@ -416,9 +388,7 @@ regfile eHISI_CIPHER {
             name = "cipher_dout_3";
             desc = "Bits 63:32 of data";
             sw = r;
-`ifdef CIPHER_RESET_G1
             reset = 0x0;
-`endif
         } cipher_dout_3[0:31];
 
     } CIPHER_DOUT_3 @ 0x04C;
@@ -444,9 +414,7 @@ regfile eHISI_CIPHER {
             name = "cipher_ivout_0";
             desc = "Bits 31:0 of data";
             sw = r;
-`ifdef CIPHER_RESET_G1
             reset = 0x0;
-`endif
         } cipher_ivout_0[0:31];
 
     } CIPHER_IVOUT_0 @ 0x050;
@@ -459,9 +427,7 @@ regfile eHISI_CIPHER {
             name = "cipher_ivout_1";
             desc = "Bits 63:32 of data";
             sw = r;
-`ifdef CIPHER_RESET_G1
             reset = 0x0;
-`endif
         } cipher_ivout_1[0:31];
 
     } CIPHER_IVOUT_1 @ 0x054;
@@ -474,9 +440,7 @@ regfile eHISI_CIPHER {
             name = "cipher_ivout_2";
             desc = "Bits 95:64 of data";
             sw = r;
-`ifdef CIPHER_RESET_G1
             reset = 0x0;
-`endif
         } cipher_ivout_2[0:31];
 
     } CIPHER_IVOUT_2 @ 0x058;
@@ -489,9 +453,7 @@ regfile eHISI_CIPHER {
             name = "cipher_ivout_3";
             desc = "Bits 127:96 of data";
             sw = r;
-`ifdef CIPHER_RESET_G1
             reset = 0x0;
-`endif
         } cipher_ivout_3[0:31];
 
     } CIPHER_IVOUT_3 @ 0x05C;
@@ -522,9 +484,7 @@ regfile eHISI_CIPHER {
             name = "byte_seq_ram";
             desc = "Controls whether to adjust the byte sequences of the data stored in the memory address space.";
             encode = byte_adjust_enum;
-`ifdef CIPHER_RESET_G1
             reset = 0x0;
-`endif
         } byte_seq_ram[14:14];
 
         field {
@@ -535,9 +495,7 @@ regfile eHISI_CIPHER {
             The input data registers include CIPHER_KEY, CIPHER_IVIN, and CIPHER_DIN. The output data registers include CIPHER_IVOUT and CIPHER_DOUT.
             ";
             encode = byte_adjust_enum;
-`ifdef CIPHER_RESET_G1
             reset = 0x0;
-`endif
         } byte_seq_reg[13:13];
 
         enum dest_addr_set_enum {
@@ -549,9 +507,7 @@ regfile eHISI_CIPHER {
             name = "dest_addr_set";
             desc = "Controls the starting addresses of the off-chip memory for storing the block data to be processed and the block data of operation results.";
             encode = dest_addr_set_enum;
-`ifdef CIPHER_RESET_G1
             reset = 0x0;
-`endif
         } dest_addr_set[12:12];
 
         enum cipher_mode_enum {
@@ -563,9 +519,7 @@ regfile eHISI_CIPHER {
             name = "cipher_mode";
             desc = "Cipher mode selection of the CIPHER module.";
             encode = cipher_mode_enum;
-`ifdef CIPHER_RESET_G1
             reset = 0x0;
-`endif
         } cipher_mode[11:11];
 
         enum ivin_sel_enum {
@@ -577,9 +531,7 @@ regfile eHISI_CIPHER {
             name = "ivin_sel";
             desc = "Input selection of CIPHER_IVIN.";
             encode = ivin_sel_enum;
-`ifdef CIPHER_RESET_G1
             reset = 0x0;
-`endif
         } ivin_sel[10:10];
 
         enum alg_sel_enum {
@@ -593,9 +545,7 @@ regfile eHISI_CIPHER {
             name = "alg_sel";
             desc = "Algorithm selection.";
             encode = alg_sel_enum;
-`ifdef CIPHER_RESET_G1
             reset = 0x0;
-`endif
         } alg_sel[8:9];
 
         field {
@@ -617,6 +567,7 @@ regfile eHISI_CIPHER {
             * `0x2`: 3-key
             * `0x3`: 2-key
             ";
+            reset = 0x0;
         } key_length[6:7];
 
         field {
@@ -638,6 +589,7 @@ regfile eHISI_CIPHER {
             * `0x2`: 1 bits
             * `0x3`: 128 bits
             ";
+            reset = 0x0;
         } width[4:5];
 
         field {
@@ -662,6 +614,7 @@ regfile eHISI_CIPHER {
             * `0x3`: OFB mode
             * Others: ECB mode
             ";
+            reset = 0x0;
         } mode[1:3];
 
         enum decrypt_enum {
@@ -673,9 +626,7 @@ regfile eHISI_CIPHER {
             name = "decrypt";
             desc = "Encryption/decryption selection.";
             encode = decrypt_enum;
-`ifdef CIPHER_RESET_G1
             reset = 0x0;
-`endif
         } decrypt[0:0];
 
     } CIPHER_CTRL @ 0x060;
@@ -694,14 +645,12 @@ regfile eHISI_CIPHER {
             desc = "Error interrupt status. An error occurs when the CIPHER module accesses the bus or the bus is accessed in non-word mode.";
             encode = int_error_enum;
             sw = r;
-`ifdef CIPHER_RESET_G1
             reset = 0x0;
-`endif
         } int_error[1:1];
 
         enum int_done_enum {
-            NOT_COMPLETE = 0x0 { desc = "Encrypt"; };
-            COMPLETE     = 0x1 { desc = "Decrypt"; };
+            NOT_COMPLETE = 0x0 { desc = "The operation is not complete."; };
+            COMPLETE     = 0x1 { desc = "The operation is complete."; };
         };
 
         field {
@@ -709,9 +658,7 @@ regfile eHISI_CIPHER {
             desc = "CIPHER operation complete interrupt.";
             encode = int_done_enum;
             sw = r;
-`ifdef CIPHER_RESET_G1
             reset = 0x0;
-`endif
         } int_done[0:0];
 
     } INT_CIPHER @ 0x064;
@@ -729,9 +676,7 @@ regfile eHISI_CIPHER {
             desc = "CIPHER operation status.";
             encode = cipher_busy_enum;
             sw = r;
-`ifdef CIPHER_RESET_G1
             reset = 0x0;
-`endif
         } cipher_busy[0:0];
 
     } CIPHER_BUSY @ 0x068;
@@ -753,9 +698,7 @@ regfile eHISI_CIPHER {
             name = "cipher_st";
             desc = "Operation start/end control signal of the CIPHER module.";
             encode = cipher_st_enum;
-`ifdef CIPHER_RESET_G1
             reset = 0x0;
-`endif
         } cipher_st[0:0];
 
     } CIPHER_ST @ 0x06C;
@@ -771,9 +714,7 @@ regfile eHISI_CIPHER {
         field {
             name = "src_start_addr";
             desc = "Start address of the off-chip memory for storing the block data to be processed.";
-`ifdef CIPHER_RESET_G1
             reset = 0x0;
-`endif
         } src_start_addr[0:31];
 
     } SRC_START_ADDR @ 0x070;
@@ -797,9 +738,7 @@ regfile eHISI_CIPHER {
         field {
             name = "mem_length";
             desc = "Length of the block data to be processed (measured by 32 bits).";
-`ifdef CIPHER_RESET_G1
             reset = 0x0;
-`endif
         } mem_length[0:31];
 
     } MEM_LENGTH @ 0x074;
@@ -816,9 +755,7 @@ regfile eHISI_CIPHER {
         field {
             name = "dest_start_addr";
             desc = "Start address of the off-chip memory for storing the operation results by blocks.";
-`ifdef CIPHER_RESET_G1
             reset = 0x0;
-`endif
         } dest_start_addr[0:31];
 
     } DEST_START_ADDR @ 0x078;
@@ -830,7 +767,7 @@ regfile eHISI_CIPHER {
 
         * After 0x0000_0003 is written to INT_MASK, the CIPHER module masks the status of INT_CIPHER_STATUS. That is, no interrupt is generated (INT_CIPHER bit[1:0] = 0b00).
         * After 0x0000_0001 is written to INT_MASK, the CIPHER module masks the status of the int_done_status bit of INT_CIPHER_STATUS, so the status does not trigger any interrupt. That is, INT_CIPHER[int_done] is set to 0b0.
-        * After 0x0000_0002 is written to INT_CIPHER_STATUS, the CIPHER module masks the status of the int_error_status bit of INT_CIPHER_STATUS, so the status does not trigger any interrupt. That is, INT_CIPHER[int_error] is set to 0b0.
+        * After 0x0000_0002 is written to INT_MASK, the CIPHER module masks the status of the int_error_status bit of INT_CIPHER_STATUS, so the status does not trigger any interrupt. That is, INT_CIPHER[int_error] is set to 0b0.
         ";
 
         enum interrupt_enum {
@@ -842,18 +779,14 @@ regfile eHISI_CIPHER {
             name = "int_error_mask";
             desc = "Mask control of int_error.";
             encode = interrupt_enum;
-`ifdef CIPHER_RESET_G1
             reset = 0x0;
-`endif
         } int_error_mask[1:1];
 
         field {
             name = "int_done_mask";
             desc = "Mask control of int_done.";
             encode = interrupt_enum;
-`ifdef CIPHER_RESET_G1
             reset = 0x0;
-`endif
         } int_done_mask[0:0];
 
     } INT_MASK @ 0x07C;
@@ -861,11 +794,14 @@ regfile eHISI_CIPHER {
     reg {
         name = "Interrupt Status Register";
         desc = "
-        Writing 1 clears this register. When different values are written to INT_CIPHER_STATUS, the following cases occur:
+        Raw interrupt status (before the INT_MASK masking that produces INT_CIPHER). Both bits are write-1-to-clear (data sheet access type WC):
 
-        * After 0x0000_0001 is written to INT_CIPHER_STATUS, the CIPHER module clears the error interrupt.
-        * After 0x0000_0002 is written to INT_CIPHER_STATUS, the CIPHER module clears the operation complete interrupt.
-        * After 0x0000_0003 is written to INT_CIPHER_STATUS, the CIPHER module clears the error interrupt and operation complete interrupt.
+        * After 0x0000_0001 is written to INT_CIPHER_STATUS, the CIPHER module clears the operation complete interrupt (int_done_status, bit 0).
+        * After 0x0000_0002 is written to INT_CIPHER_STATUS, the CIPHER module clears the error interrupt (int_error_status, bit 1).
+        * After 0x0000_0003 is written to INT_CIPHER_STATUS, the CIPHER module clears both.
+
+        !!! NOTE
+            The English Hi3515 data sheet swaps the first two bullets (0x1 clears the error interrupt, 0x2 the completion interrupt), contradicting its own bit table. The Chinese Hi3511 and Hi3520 originals say 0x0000_0001 clears INT_DONE_STATUS, which matches the bit assignment and is what is modelled here.
         ";
 
         enum int_error_status_enum {
@@ -875,11 +811,12 @@ regfile eHISI_CIPHER {
 
         field {
             name = "int_error_status";
-            desc = "Error interrupt status. An error occurs when the advanced high-performance bus (AHB) is accessed through the master interface of the CIPHER module or the slave interface is accessed in non-word mode.";
+            desc = "Error interrupt status. An error occurs when the advanced high-performance bus (AHB) is accessed through the master interface of the CIPHER module or the slave interface is accessed in non-word mode. Writing 1 clears it.";
             encode = int_error_status_enum;
-`ifdef CIPHER_RESET_G1
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
             reset = 0x0;
-`endif
         } int_error_status[1:1];
 
         enum int_done_status_enum {
@@ -889,11 +826,12 @@ regfile eHISI_CIPHER {
 
         field {
             name = "int_done_status";
-            desc = "CIPHER operation complete interrupt status.";
+            desc = "CIPHER operation complete interrupt status. Writing 1 clears it.";
             encode = int_done_status_enum;
-`ifdef CIPHER_RESET_G1
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
             reset = 0x0;
-`endif
         } int_done_status[0:0];
 
     } INT_CIPHER_STATUS @ 0x080;
