@@ -1,0 +1,588 @@
+`ifndef HISI_NANDC_RDL
+`define HISI_NANDC_RDL
+
+// Chip variant macros (set in the chip's defines.rdl). Without any macro the block is the hinfc301
+// edition (NFC_VERSION 0x310) of the Hi3516C V100 / Hi3518A/C V100 data sheets, also used by the
+// Hi3516 V100 (Chinese data sheet; NFC_VERSION 0x300, NANDC_VERSION_300).
+//   NANDC_V300   hinfc300 edition of the Hi3515 and Hi3520 V100 (24 registers 0x00-0x5C, no DMA;
+//                NFC_CON ecc_en / ecc_type[11:10] / ext_data_ecc_en / protection_en, NFC_STATUS ecc_num,
+//                NFC_ECC_TEST version / empty fields).
+//   NANDC_V620   Hi3516A/D V100 edition (NFC_VERSION 0x620; 4-bit ecc_type up to 64 bits, 16 KB pages,
+//                randomizer, DMA done/error interrupts, NFC_SEGMENT_ID, NF_LP_CTRL, NFC_ERR_NUM*,
+//                NF_RB_MODE, NFC_BADDR_D1-3, NFC_MEM_CTRL; no NFC_BUF_BADDR / NFC_RD_LOGIC_* / NF_STATUS).
+//   NANDC_ECC_TEST_VER   NFC_ECC_TEST[31:16] version and [15:12] FIFO empty flags (reset 0x0020F001):
+//                Hi3515, Hi3520 V100 (implied by NANDC_V300) and Hi3516 V100.
+//   NANDC_VERSION_300    NFC_VERSION reads 0x300 (Hi3516 V100).
+`ifdef NANDC_V300
+`define NANDC_ECC_TEST_VER
+`endif
+
+regfile eHISI_NANDC {
+    name = "HiSilicon parallel NAND flash controller (hinfc300/301/504 family)";
+    desc = "
+    HiSilicon NAND flash controller (NANDC, vendor drivers `hinfc300` / `hinfc301` / `hinfc504` / `hinfc610`) for 8-bit (and on some chips 16-bit) parallel NAND flash on one or two chip selects, with a page buffer (the controller buffer window follows the register space), hardware BCH ECC and, from hinfc301 on, a DMA master. Boot mode (NFC_CON[op_mode] = 0) maps the first pages of the flash read-only for the boot ROM; normal mode is register driven: program NFC_CMD / NFC_ADDRL / NFC_ADDRH / NFC_DATA_NUM, start the sequence with NFC_OP and wait for NFC_STATUS[nfc_ready] or the op_done interrupt, or use the DMA registers (NFC_DMA_CTRL, NFC_BADDR_D / NFC_BADDR_OOB, NFC_DMA_LEN) to move whole pages between the flash and DDR with ECC.
+    Base address 0x10000000 on every SoC. Editions (chip macros in the file header):
+    - hinfc301 (default; NFC_VERSION 0x310): Hi3516C V100 (data sheet 4.3, `Hi3516C-Datasheet.txt` lines 27700-29260) and Hi3518A/C V100 (data sheet 4.3, identical text). The Hi3516 V100 Chinese data sheet (4.2, lines 24905-26500) lists the same 36 registers with NFC_VERSION 0x300 and the hinfc300-style NFC_ECC_TEST (NANDC_VERSION_300, NANDC_ECC_TEST_VER).
+    - hinfc300 (NANDC_V300): Hi3515 (data sheet 4.3, lines 20055-21260, no total reset values printed) and Hi3520 V100 (Chinese data sheet 4.3, lines 23504-24300): registers 0x00-0x5C only; 1/4/8-bit ECC per 512 bytes (ecc_type[11:10] plus ecc_en), register write protection, NFC_STATUS[31:16] per-sector error counts, NFC_ECC_TEST[31:16] version 0x0020 and [15:12] FIFO empty flags. The Hi3515 data sheet gives the NFC_PWIDTH reset as 0x555.
+    - hinfc504/610 (NANDC_V620, NFC_VERSION 0x620): Hi3516A/D V100 (data sheet 4.3, `Hi3516A-Hi3516D-Datasheet.txt` lines 47011-48760): 8/24/40/64-bit ECC per 1 KB, 2-16 KB pages, randomizer, four DMA data base addresses, per-1 KB error counters, DMA done / error interrupts.
+    Interrupts: Hi3516C/Hi3518 V100 and Hi3516A/D NANDC interrupt 11 (shared with the SFC on Hi3516C/Hi3518), Hi3515 / Hi3520 V100 NANDC interrupt 11 as well (see the chip interrupt tables in the VIC/GIC blocks). Clock/reset bits live in each chip's CRG. Not hardware verified.
+";
+
+    reg {
+        name = "NANDC configuration register";
+        desc = "NFC_CON: ECC mode, page size, bus width, chip-select behaviour and boot/normal mode. The reset values of ecc_type, bus_width and pagesize follow the boot-configuration pins (NFC_ECC_TYPE, NFC_BUS_WIDE, NFC_PAGE_SIZE; EBIADR15/16 on the Hi3515).
+
+Resets: 0x182 (Hi3516C/Hi3518 V100: 1-bit ECC, rb_sel 1, 2 KB pages), 0x4886 (Hi3516A/D: randomizer on, 24-bit ECC, cs_ctrl 1, 8 KB pages); the Hi3515 data sheet prints no total reset value (ecc_en = 1).";
+
+`ifdef NANDC_V300
+        field { name = "edo_en"; desc = "NAND flash data read/write in EDO mode: 0 = normal mode, 1 = EDO mode (use according to the requirements of the flash)."; sw = rw; hw = r; reset = 0x0; } edo_en[12:12];
+        enum NFC_CON_ecc_type_enum {
+            NONE = 0 { name = "No ECC"; desc = "non-ECC mode"; };
+            ECC_1BIT = 1 { name = "1-bit ECC"; desc = "1-bit ECC mode"; };
+            ECC_4BIT = 2 { name = "4-bit ECC"; desc = "4-bit ECC mode"; };
+            ECC_8BIT = 3 { name = "8-bit ECC"; desc = "8-bit ECC mode"; };
+        };
+        field { name = "ecc_type"; desc = "ECC mode (per 512-byte sector). The reset value depends on the EBIADR16 / EBIADR15 pins."; sw = rw; hw = r; encode = NFC_CON_ecc_type_enum; reset = 0x0; } ecc_type[11:10];
+        field { name = "ext_data_ecc_en"; desc = "Check / correction enable for the extended data area (the 6 extra bytes per sector); valid only when ecc_en is 1."; sw = rw; hw = r; reset = 0x0; } ext_data_ecc_en[9:9];
+        field { name = "protection_en"; desc = "Register read/write protection enable: 0 = disabled, 1 = enabled."; sw = rw; hw = r; reset = 0x0; } protection_en[8:8];
+        field { name = "cs_ctrl"; desc = "CS control while the NAND flash is busy: 0 = keep CS at 0, 1 = set CS to 1 (the \"CS don't care\" mode of the flash)."; sw = rw; hw = r; reset = 0x0; } cs_ctrl[6:6];
+        field { name = "ecc_en"; desc = "ECC enable: 0 = disabled, 1 = enabled (reset 1)."; sw = rw; hw = r; reset = 0x1; } ecc_en[5:5];
+        enum NFC_CON_pagesize_enum {
+            PAGE_2K = 1 { name = "2 KB"; desc = "2 KB"; };
+            PAGE_4K = 2 { name = "4 KB"; desc = "4 KB"; };
+        };
+        field { name = "pagesize"; desc = "Page size of the NAND flash (other values reserved). The reset value depends on the NFC_PAGE_SIZE pin."; sw = rw; hw = r; encode = NFC_CON_pagesize_enum; reset = 0x1; } pagesize[2:1];
+`else
+`ifdef NANDC_V620
+        field { name = "randomizer_en"; desc = "Randomizer (scrambler) enable: 0 = disabled, 1 = enabled."; sw = rw; hw = r; reset = 0x1; } randomizer_en[14:14];
+        enum NFC_CON_ecc_type_enum {
+            NONE = 0 { name = "No ECC"; desc = "non-ECC"; };
+            ECC_8BIT = 2 { name = "8-bit ECC"; desc = "8 bits per 1 KB"; };
+            ECC_24BIT = 4 { name = "24-bit ECC"; desc = "24 bits per 1 KB"; };
+            ECC_40BIT = 5 { name = "40-bit ECC"; desc = "40 bits per 1 KB"; };
+            ECC_64BIT = 6 { name = "64-bit ECC"; desc = "64 bits per 1 KB; other values reserved"; };
+        };
+        field { name = "ecc_type"; desc = "ECC mode (BCH per 1 KB). The reset value depends on the NFC_ECC_TYPE pins."; sw = rw; hw = r; encode = NFC_CON_ecc_type_enum; reset = 0x4; } ecc_type[12:9];
+        field { name = "rb_sel"; desc = "Ready/busy signal select with several NAND flashes (chip selects): 0 = the flashes share one ready/busy signal, 1 = each flash has its own. With one flash only CS0 and ready_busy0 are used."; sw = rw; hw = r; reset = 0x0; } rb_sel[8:8];
+        field { name = "cs_ctrl"; desc = "CS control while the NAND flash is busy: 0 = CS fixed at 0, 1 = CS set to 1 (the \"CS don't care\" mode of the flash)."; sw = rw; hw = r; reset = 0x1; } cs_ctrl[7:7];
+        field { name = "bus_width"; desc = "Data line width of the NAND flash: 0 = 8 bits, 1 = reserved (16-bit flash not supported on the Hi3516A/D)."; sw = rw; hw = r; reset = 0x0; } bus_width[4:4];
+        enum NFC_CON_page_size_enum {
+            PAGE_2K = 1 { name = "2 KB"; desc = "2 KB"; };
+            PAGE_4K = 2 { name = "4 KB"; desc = "4 KB"; };
+            PAGE_8K = 3 { name = "8 KB"; desc = "8 KB"; };
+            PAGE_16K = 4 { name = "16 KB"; desc = "16 KB; other values reserved"; };
+        };
+        field { name = "page_size"; desc = "Page size of the NAND flash. The reset value depends on the NFC_PAGE_SIZE pins."; sw = rw; hw = r; encode = NFC_CON_page_size_enum; reset = 0x3; } page_size[3:1];
+`else
+        field { name = "edo_en"; desc = "NAND flash data read in EDO mode: 0 = normal mode, 1 = EDO mode (use according to the requirements of the flash)."; sw = rw; hw = r; reset = 0x0; } edo_en[11:11];
+        enum NFC_CON_ecc_type_enum {
+            NONE = 0 { name = "No ECC"; desc = "non-ECC mode"; };
+            ECC_1BIT = 1 { name = "1-bit ECC"; desc = "1-bit mode (per 512 bytes)"; };
+            ECC_4BIT = 2 { name = "4-bit ECC"; desc = "4-bit mode (per 512 bytes)"; };
+            ECC_24BIT_1K = 4 { name = "24-bit ECC per 1 KB"; desc = "24-bit mode for 1 KB; 3 and 5-7 reserved"; };
+        };
+        field { name = "ecc_type"; desc = "ECC mode select. The reset value depends on the NFC_ECC_TYPE pin."; sw = rw; hw = r; encode = NFC_CON_ecc_type_enum; reset = 0x1; } ecc_type[10:8];
+        field { name = "rb_sel"; desc = "Ready/busy signal select with several NAND flashes (chip selects): 0 = the flashes share one ready/busy signal, 1 = each flash has its own. With one flash only CS0 and ready/busy 0 are used."; sw = rw; hw = r; reset = 0x1; } rb_sel[7:7];
+        field { name = "cs_ctrl"; desc = "CS control while the NAND flash is busy: 0 = CS fixed at 0, 1 = CS set to 1 (the \"CS don't care\" mode of the flash)."; sw = rw; hw = r; reset = 0x0; } cs_ctrl[6:6];
+        field { name = "bus_width"; desc = "Data line width of the NAND flash: 0 = 8 bits, 1 = 16 bits. The reset value depends on the NFC_BUS_WIDE pin."; sw = rw; hw = r; reset = 0x0; } bus_width[3:3];
+        enum NFC_CON_pagesize_enum {
+            PAGE_2K = 1 { name = "2 KB"; desc = "2 KB"; };
+            PAGE_4K = 2 { name = "4 KB"; desc = "4 KB"; };
+            PAGE_8K = 3 { name = "8 KB"; desc = "8 KB; 0 reserved"; };
+        };
+        field { name = "pagesize"; desc = "Page size of the NAND flash. The reset value depends on the NFC_PAGE_SIZE pin."; sw = rw; hw = r; encode = NFC_CON_pagesize_enum; reset = 0x1; } pagesize[2:1];
+`endif
+`endif
+        field { name = "op_mode"; desc = "Operating mode of the NANDC: 0 = boot mode, 1 = normal mode."; sw = rw; hw = r; reset = 0x0; } op_mode[0:0];
+    } NFC_CON @ 0x0;
+
+    reg {
+        name = "Read/write pulse width configuration register";
+        desc = "NFC_PWIDTH: widths of the NAND read/write strobes in interface clock cycles (field value 0x0-0xF = 1-16 cycles). Reset 0x333 (Hi3516C/Hi3518/Hi3516 V100), 0x222 (Hi3516A/D), 0x555 (Hi3515 / Hi3520 V100).";
+`ifdef NANDC_V300
+        field { name = "rw_hcnt"; desc = "High-level width of the read/write signal: 0x0-0xF = 1-16 clock cycles."; sw = rw; hw = r; reset = 0x5; } rw_hcnt[11:8];
+        field { name = "r_lcnt"; desc = "Low-level width of the read signal: 0x0-0xF = 1-16 clock cycles."; sw = rw; hw = r; reset = 0x5; } r_lcnt[7:4];
+        field { name = "w_lcnt"; desc = "Low-level width of the write signal: 0x0-0xF = 1-16 clock cycles."; sw = rw; hw = r; reset = 0x5; } w_lcnt[3:0];
+`else
+`ifdef NANDC_V620
+        field { name = "rw_hcnt"; desc = "High-level width of the read/write signal: 0x0-0xF = 1-16 clock cycles."; sw = rw; hw = r; reset = 0x2; } rw_hcnt[11:8];
+        field { name = "r_lcnt"; desc = "Low-level width of the read signal: 0x0-0xF = 1-16 clock cycles."; sw = rw; hw = r; reset = 0x2; } r_lcnt[7:4];
+        field { name = "w_lcnt"; desc = "Low-level width of the write signal: 0x0-0xF = 1-16 clock cycles."; sw = rw; hw = r; reset = 0x2; } w_lcnt[3:0];
+`else
+        field { name = "rw_hcnt"; desc = "High-level width of the read/write signal: 0x0-0xF = 1-16 clock cycles."; sw = rw; hw = r; reset = 0x3; } rw_hcnt[11:8];
+        field { name = "r_lcnt"; desc = "Low-level width of the read signal: 0x0-0xF = 1-16 clock cycles."; sw = rw; hw = r; reset = 0x3; } r_lcnt[7:4];
+        field { name = "w_lcnt"; desc = "Low-level width of the write signal: 0x0-0xF = 1-16 clock cycles."; sw = rw; hw = r; reset = 0x3; } w_lcnt[3:0];
+`endif
+`endif
+    } NFC_PWIDTH @ 0x4;
+
+    reg {
+        name = "Operation interval configuration register";
+        desc = "NFC_OPIDLE: idle intervals inserted into the command sequence (reset 0xFFFFFF). frb_wait and frb_idle count in units of 8 interface clock cycles, the others 0x0-0xF = 1-16 cycles.";
+        field { name = "frb_wait"; desc = "Delay after a read/write command before the ready signal is sampled: frb_wait x 8 interface clock cycles."; sw = rw; hw = r; reset = 0xF; } frb_wait[23:20];
+        field { name = "cmd1_wait"; desc = "Wait after command 1 is sent: 0x0-0xF = 1-16 clock cycles."; sw = rw; hw = r; reset = 0xF; } cmd1_wait[19:16];
+        field { name = "addr_wait"; desc = "Wait after the address is sent: 0x0-0xF = 1-16 clock cycles."; sw = rw; hw = r; reset = 0xF; } addr_wait[15:12];
+`ifndef NANDC_V620
+        field { name = "write_data_wait"; desc = "Wait after data is written: 0x0-0xF = 1-16 clock cycles (reserved in the Hi3516A/D data sheet)."; sw = rw; hw = r; reset = 0xF; } write_data_wait[11:8];
+`endif
+        field { name = "cmd2_wait"; desc = "Wait after command 2 is sent: 0x0-0xF = 1-16 clock cycles."; sw = rw; hw = r; reset = 0xF; } cmd2_wait[7:4];
+        field { name = "frb_idle"; desc = "Delay after the NAND ready signal goes high before the read strobe is sent: frb_idle x 8 interface clock cycles (Hi3516A/D name: wait_ready_wait)."; sw = rw; hw = r; reset = 0xF; } frb_idle[3:0];
+    } NFC_OPIDLE @ 0x8;
+
+    reg {
+        name = "Command word configuration register";
+        desc = "NFC_CMD: the command bytes of a register-mode sequence (reset 0x703000: read-status 0x70, command 2 = 0x30, command 1 = 0).";
+        field { name = "read_status_cmd"; desc = "Read status command word (0x70)."; sw = rw; hw = r; reset = 0x70; } read_status_cmd[23:16];
+        field { name = "cmd2"; desc = "Command 2 sent to the NAND flash by the NANDC."; sw = rw; hw = r; reset = 0x30; } cmd2[15:8];
+        field { name = "cmd1"; desc = "Command 1 sent to the NAND flash by the NANDC."; sw = rw; hw = r; reset = 0x0; } cmd1[7:0];
+    } NFC_CMD @ 0xC;
+
+    reg {
+        name = "Lower-bit address configuration register";
+        desc = "NFC_ADDRL: lower 32 bits of the NAND flash address (column + row cycles).";
+        field { name = "addr_l"; desc = "Lower 32-bit address of the NAND flash."; sw = rw; hw = r; reset = 0x0; } addr_l[31:0];
+    } NFC_ADDRL @ 0x10;
+
+    reg {
+        name = "Upper-bit address configuration register";
+        desc = "NFC_ADDRH: upper address bits of the NAND flash (16 bits; 8 bits on the Hi3516A/D).";
+`ifdef NANDC_V620
+        field { name = "addr_h"; desc = "Upper 8-bit address of the NAND flash."; sw = rw; hw = r; reset = 0x0; } addr_h[7:0];
+`else
+        field { name = "addr_h"; desc = "Upper 16-bit address of the NAND flash."; sw = rw; hw = r; reset = 0x0; } addr_h[15:0];
+`endif
+    } NFC_ADDRH @ 0x14;
+
+    reg {
+        name = "Read/written data count configuration register";
+        desc = "NFC_DATA_NUM: number of bytes moved by a register-mode random read/write; valid only when ecc_type is 0 (no ECC). Reset 0x840 (2112 bytes = 2 KB + 64; Hi3516A/D: 0x2480 = 9344 bytes).";
+`ifdef NANDC_V620
+        field { name = "nfc_data_num"; desc = "Number of bytes read or written randomly by the NANDC; maximum 9344. Valid only when ecc_type is 0."; sw = rw; hw = r; reset = 0x2480; } nfc_data_num[13:0];
+`else
+        field { name = "nfc_data_num"; desc = "Number of bytes read or written randomly by the NANDC; maximum 2368 bytes. Valid only when ecc_type is 00."; sw = rw; hw = r; reset = 0x840; } nfc_data_num[11:0];
+`endif
+    } NFC_DATA_NUM @ 0x18;
+
+    reg {
+        name = "Operation register";
+        desc = "NFC_OP: writing it starts a register-mode command sequence made of the enabled steps (command 1, address, data write, command 2, wait ready, data read, read status). Reset 0xA6E on the Hi3516C/Hi3518 V100 data sheet (5 address cycles, cmd1 / addr / cmd2 / wait-ready / read-data enabled), 0 on the Hi3516A/D sheet.";
+        field { name = "address_cycles"; desc = "Number of address cycles sent to the NAND flash."; sw = rw; hw = r;
+`ifdef NANDC_V620
+            reset = 0x0;
+`else
+            reset = 0x5;
+`endif
+        } address_cycles[11:9];
+        enum NFC_OP_nf_cs_enum {
+            CS0 = 0 { name = "CS 0"; desc = "CS 0"; };
+            CS1 = 1 { name = "CS 1"; desc = "CS 1; other values reserved"; };
+        };
+        field { name = "nf_cs"; desc = "NAND flash chip-select for this operation."; sw = rw; hw = r; encode = NFC_OP_nf_cs_enum; reset = 0x0; } nf_cs[8:7];
+`ifdef NANDC_V620
+        field { name = "cmd1_en"; desc = "Command 1 transmit enable."; sw = rw; hw = r; reset = 0x0; } cmd1_en[6:6];
+        field { name = "addr_en"; desc = "NAND flash address write enable."; sw = rw; hw = r; reset = 0x0; } addr_en[5:5];
+        field { name = "write_data_en"; desc = "NAND flash data write enable (not together with read_data_en)."; sw = rw; hw = r; reset = 0x0; } write_data_en[4:4];
+        field { name = "cmd2_en"; desc = "Command 2 transmit enable."; sw = rw; hw = r; reset = 0x0; } cmd2_en[3:3];
+        field { name = "wait_ready_en"; desc = "Wait for ready/busy high enable."; sw = rw; hw = r; reset = 0x0; } wait_ready_en[2:2];
+        field { name = "read_data_en"; desc = "NAND flash data read enable (starts the read state machine; not together with write_data_en)."; sw = rw; hw = r; reset = 0x0; } read_data_en[1:1];
+`else
+        field { name = "cmd1_en"; desc = "Command 1 transmit enable."; sw = rw; hw = r; reset = 0x1; } cmd1_en[6:6];
+        field { name = "addr_en"; desc = "NAND flash address write enable."; sw = rw; hw = r; reset = 0x1; } addr_en[5:5];
+        field { name = "write_data_en"; desc = "NAND flash data write enable (not together with read_data_en)."; sw = rw; hw = r; reset = 0x0; } write_data_en[4:4];
+        field { name = "cmd2_en"; desc = "Command 2 transmit enable."; sw = rw; hw = r; reset = 0x1; } cmd2_en[3:3];
+        field { name = "wait_ready_en"; desc = "Wait for ready/busy high enable."; sw = rw; hw = r; reset = 0x1; } wait_ready_en[2:2];
+        field { name = "read_data_en"; desc = "NAND flash data read enable (starts the read state machine; not together with write_data_en)."; sw = rw; hw = r; reset = 0x1; } read_data_en[1:1];
+`endif
+        field { name = "read_status_en"; desc = "When 1 the read-status command (0x70) is sent after the sequence and the returned byte is written to NFC_STATUS[nf_status] (not to the buffer), so erase / program results can be collected without CPU intervention. Ignored when read_data_en is 1."; sw = rw; hw = r; reset = 0x0; } read_status_en[0:0];
+    } NFC_OP @ 0x1C;
+
+    reg {
+        name = "Status register";
+        desc = "NFC_STATUS: controller / flash ready status and the status byte read by NFC_OP[read_status_en]. Reset 0x1F on the Hi3516C/Hi3518 V100 and Hi3516A/D data sheets (all ready bits 1); the Hi3515 data sheet prints none.";
+`ifdef NANDC_V300
+        field { name = "ecc_num"; desc = "ECC result per sector. ecc_type 10/11 (4/8-bit): bits [3:0], [7:4], [11:8], [15:12] = number of corrected error bits of sectors 0-3 (including the 6-byte extended data when ext_data_ecc_en is 1). ecc_type 01 (1-bit): 2-bit decoding result per sector 0-3 ([1:0]..[7:6]) and per extended data 0-3 ([9:8]..[15:14]): 00 no error, 01 1-bit error, 10 check-code error with correct data, 11 uncorrectable (2 or more bits)."; sw = r; hw = w; reset = 0x0; } ecc_num[31:16];
+        field { name = "nf_status"; desc = "Status data read back from the NAND flash; valid only when NFC_OP[read_status_en] and nfc_ready are 1."; sw = r; hw = w; reset = 0x0; } nf_status[12:5];
+        field { name = "ready"; desc = "Ready/busy signal status of the NAND flash."; sw = r; hw = w; reset = 0x0; } ready[1:1];
+        field { name = "nfc_ready"; desc = "NANDC ready: 0 = the NANDC is busy, 1 = the operation is complete and the next command can be accepted. Cleared automatically when NFC_OP is written."; sw = r; hw = w; reset = 0x0; } nfc_ready[0:0];
+`else
+`ifdef NANDC_V620
+        field { name = "nfc_randomizer_en"; desc = "Randomizer state of the NANDC (reads the value of NFC_CON[randomizer_en])."; sw = r; hw = w; reset = 0x0; } nfc_randomizer_en[20:20];
+        field { name = "nfc_ecc_type"; desc = "ECC information of the NANDC (reads the value of NFC_CON[ecc_type])."; sw = r; hw = w; reset = 0x0; } nfc_ecc_type[19:16];
+        field { name = "nf_status"; desc = "Status data read back from the NAND flash (NFC_OP[read_status_en])."; sw = r; hw = w; reset = 0x0; } nf_status[15:8];
+`else
+        field { name = "nf_status"; desc = "Status data read back from the NAND flash; valid only when NFC_OP[read_status_en] and nfc_ready are 1."; sw = r; hw = w; reset = 0x0; } nf_status[12:5];
+`endif
+        field { name = "nf1_ready"; desc = "Ready/busy status of the NAND flash on CS1; meaningful when several flashes use their own ready/busy signals (the flashes share one signal by default)."; sw = r; hw = w; reset = 0x1; } nf1_ready[2:2];
+        field { name = "nf0_ready"; desc = "Ready/busy status of the NAND flash on CS0; meaningful when several flashes use their own ready/busy signals."; sw = r; hw = w; reset = 0x1; } nf0_ready[1:1];
+        field { name = "nfc_ready"; desc = "NANDC ready: 0 = the NANDC is busy, 1 = the operation is complete and the next command can be accepted. Cleared automatically when NFC_OP is written."; sw = r; hw = w; reset = 0x1; } nfc_ready[0:0];
+`endif
+    } NFC_STATUS @ 0x20;
+
+    reg {
+        name = "Interrupt enable register";
+        desc = "NFC_INTEN: enables of the NANDC interrupts (0 = disabled, 1 = enabled); the raw status is in NFC_INTS, cleared through NFC_INTCLR. The Hi3515 / Hi3520 V100 data sheets name bits 8 and 7 wr_buf_err_int_en / wr_buf_busy_int_en (same meaning).";
+`ifdef NANDC_V620
+        field { name = "dma_err_en"; desc = "DMA transfer bus error interrupt enable."; sw = rw; hw = r; reset = 0x0; } dma_err_en[10:10];
+        field { name = "dma_done_en"; desc = "DMA transfer completion interrupt enable."; sw = rw; hw = r; reset = 0x0; } dma_done_en[9:9];
+`endif
+        field { name = "wr_lock_en"; desc = "Lock-address write error interrupt enable (a program / erase hit a locked address range)."; sw = rw; hw = r; reset = 0x0; } wr_lock_en[8:8];
+        field { name = "ahb_op_en"; desc = "Buffer access error interrupt enable: the CPU read or wrote the NANDC buffer while the NANDC was transferring data to / from the flash."; sw = rw; hw = r; reset = 0x0; } ahb_op_en[7:7];
+        field { name = "err_invalid"; desc = "Uncorrectable ECC error interrupt enable."; sw = rw; hw = r; reset = 0x0; } err_invalid[6:6];
+        field { name = "err_valid"; desc = "Correctable ECC error interrupt enable."; sw = rw; hw = r; reset = 0x0; } err_valid[5:5];
+        field { name = "cs1_done_en"; desc = "CS1 ready/busy rising-edge interrupt enable."; sw = rw; hw = r; reset = 0x0; } cs1_done_en[2:2];
+        field { name = "cs0_done_en"; desc = "CS0 ready/busy rising-edge interrupt enable."; sw = rw; hw = r; reset = 0x0; } cs0_done_en[1:1];
+        field { name = "op_done_en"; desc = "Current operation done interrupt enable."; sw = rw; hw = r; reset = 0x0; } op_done_en[0:0];
+    } NFC_INTEN @ 0x24;
+
+    reg {
+        name = "Interrupt status register";
+        desc = "NFC_INTS: raw interrupt status (independent of NFC_INTEN); cleared through NFC_INTCLR. Reset 0x3 on the Hi3516C/Hi3518 V100 data sheet (op_done and cs0_done set after reset), 0 on the Hi3516A/D sheet. Correctable / uncorrectable thresholds: 1-bit ECC 1 / 2+ error bits, 4-bit ECC 1-4 / 5+, 8-bit ECC 1-8 / 8+ per 512-byte sector (per 1 KB with the larger BCH modes of the newer chips).";
+`ifdef NANDC_V620
+        field { name = "dma_err"; desc = "DMA transfer bus error interrupt."; sw = r; hw = w; reset = 0x0; } dma_err[10:10];
+        field { name = "dma_done"; desc = "DMA transfer completion interrupt."; sw = r; hw = w; reset = 0x0; } dma_done[9:9];
+`endif
+        field { name = "wr_lock_err"; desc = "Lock-address write error interrupt (data sheet name wr_lock_en / wr_buf_err_int)."; sw = r; hw = w; reset = 0x0; } wr_lock_err[8:8];
+        field { name = "ahb_op_err"; desc = "Buffer access error interrupt: the CPU accessed the NANDC buffer while the NANDC was transferring data (data sheet name ahb_op_en / wr_buf_busy_int)."; sw = r; hw = w; reset = 0x0; } ahb_op_err[7:7];
+        field { name = "err_invalid"; desc = "Uncorrectable ECC error interrupt."; sw = r; hw = w; reset = 0x0; } err_invalid[6:6];
+        field { name = "err_valid"; desc = "Correctable ECC error interrupt (data sheet spelling err_vavid)."; sw = r; hw = w; reset = 0x0; } err_valid[5:5];
+        field { name = "cs1_done"; desc = "CS1 ready/busy went high; only when two flashes with their own ready/busy signals are connected, otherwise fixed at 0."; sw = r; hw = w; reset = 0x0; } cs1_done[2:2];
+        field { name = "cs0_done"; desc = "CS0 ready/busy went high; only when two flashes with their own ready/busy signals are connected, otherwise fixed at 0."; sw = r; hw = w;
+`ifdef NANDC_V620
+            reset = 0x0;
+`else
+`ifdef NANDC_V300
+            reset = 0x0;
+`else
+            reset = 0x1;
+`endif
+`endif
+        } cs0_done[1:1];
+        field { name = "op_done"; desc = "Current operation done interrupt; cleared automatically when NFC_OP is written."; sw = r; hw = w;
+`ifdef NANDC_V620
+            reset = 0x0;
+`else
+`ifdef NANDC_V300
+            reset = 0x0;
+`else
+            reset = 0x1;
+`endif
+`endif
+        } op_done[0:0];
+    } NFC_INTS @ 0x28;
+
+    reg {
+        name = "Interrupt clear register";
+        desc = "NFC_INTCLR: writing 1 clears the corresponding NFC_INTS bit (write-only in the data sheets; the Hi3516C/Hi3518 V100 sheet names bits 6/5 r_5bit_err_clr / r_4bit_err_clr for the uncorrectable / correctable error interrupts).";
+`ifdef NANDC_V620
+        field { name = "dma_err_clr"; desc = "Writing 1 clears dma_err."; sw = rw; hw = w; onwrite = woclr; reset = 0x0; } dma_err_clr[10:10];
+        field { name = "dma_done_clr"; desc = "Writing 1 clears dma_done."; sw = rw; hw = w; onwrite = woclr; reset = 0x0; } dma_done_clr[9:9];
+`endif
+        field { name = "wr_lock_err_clr"; desc = "Writing 1 clears wr_lock_err."; sw = rw; hw = w; onwrite = woclr; reset = 0x0; } wr_lock_err_clr[8:8];
+        field { name = "ahb_op_err_clr"; desc = "Writing 1 clears ahb_op_err."; sw = rw; hw = w; onwrite = woclr; reset = 0x0; } ahb_op_err_clr[7:7];
+        field { name = "err_invalid_clr"; desc = "Writing 1 clears err_invalid (r_5bit_err_clr)."; sw = rw; hw = w; onwrite = woclr; reset = 0x0; } err_invalid_clr[6:6];
+        field { name = "err_valid_clr"; desc = "Writing 1 clears err_valid (r_4bit_err_clr)."; sw = rw; hw = w; onwrite = woclr; reset = 0x0; } err_valid_clr[5:5];
+        field { name = "cs1_done_clr"; desc = "Writing 1 clears cs1_done."; sw = rw; hw = w; onwrite = woclr; reset = 0x0; } cs1_done_clr[2:2];
+        field { name = "cs0_done_clr"; desc = "Writing 1 clears cs0_done."; sw = rw; hw = w; onwrite = woclr; reset = 0x0; } cs0_done_clr[1:1];
+        field { name = "op_done_clr"; desc = "Writing 1 clears op_done."; sw = rw; hw = w; onwrite = woclr; reset = 0x0; } op_done_clr[0:0];
+    } NFC_INTCLR @ 0x2C;
+
+    reg {
+        name = "Lock address configuration register";
+        desc = "NFC_LOCK: flash write-protection control. With lock_en, erase / program operations whose address lies inside one of the four NFC_LOCK_SA/EA ranges are refused and the wr_lock interrupt is raised.";
+        field { name = "lock_excmd_en"; desc = "Also protect the ranges against the extended write commands of NFC_EXPCMD / NFC_EXBCMD (new commands of newer flashes): 0 = disabled, 1 = enabled."; sw = rw; hw = r; reset = 0x0; } lock_excmd_en[3:3];
+        field { name = "lock_en"; desc = "Flash lock enable: erase / program inside a locked range is invalid."; sw = rw; hw = r; reset = 0x0; } lock_en[2:2];
+        field { name = "global_lock_en"; desc = "Global lock: the whole NAND flash cannot be erased or programmed."; sw = rw; hw = r; reset = 0x0; } global_lock_en[1:1];
+        field { name = "lock_down"; desc = "Lock mode: 0 = lock mode, 1 = lock-down mode; once written 1 the bit cannot be changed until a hardware reset."; sw = rw; hw = r; reset = 0x0; } lock_down[0:0];
+    } NFC_LOCK @ 0x30;
+
+    reg {
+        name = "Lock start address 0 configuration register";
+        desc = "NFC_LOCK_SA0: chip select and start row address of write-protected range 0 (the LSB maps to the fifth row-address cycle, i.e. the address is in pages).";
+        field { name = "flash_lock_cs"; desc = "Chip select of the locked range: 0 = CS0, 1 = CS1 (other values reserved)."; sw = rw; hw = r; reset = 0x0; } flash_lock_cs[20:19];
+        field { name = "flash_lock_addr0"; desc = "Lock start address 0 (row address)."; sw = rw; hw = r; reset = 0x0; } flash_lock_addr0[18:0];
+    } NFC_LOCK_SA0 @ 0x34;
+
+    reg {
+        name = "Lock start address 1 configuration register";
+        desc = "NFC_LOCK_SA1: chip select and start row address of write-protected range 1.";
+        field { name = "flash_lock_cs"; desc = "Chip select of the locked range: 0 = CS0, 1 = CS1."; sw = rw; hw = r; reset = 0x0; } flash_lock_cs[20:19];
+        field { name = "flash_lock_addr1"; desc = "Lock start address 1 (row address)."; sw = rw; hw = r; reset = 0x0; } flash_lock_addr1[18:0];
+    } NFC_LOCK_SA1 @ 0x38;
+
+    reg {
+        name = "Lock start address 2 configuration register";
+        desc = "NFC_LOCK_SA2: chip select and start row address of write-protected range 2.";
+        field { name = "flash_lock_cs"; desc = "Chip select of the locked range: 0 = CS0, 1 = CS1."; sw = rw; hw = r; reset = 0x0; } flash_lock_cs[20:19];
+        field { name = "flash_lock_addr2"; desc = "Lock start address 2 (row address)."; sw = rw; hw = r; reset = 0x0; } flash_lock_addr2[18:0];
+    } NFC_LOCK_SA2 @ 0x3C;
+
+    reg {
+        name = "Lock start address 3 configuration register";
+        desc = "NFC_LOCK_SA3: chip select and start row address of write-protected range 3.";
+        field { name = "flash_lock_cs"; desc = "Chip select of the locked range: 0 = CS0, 1 = CS1."; sw = rw; hw = r; reset = 0x0; } flash_lock_cs[20:19];
+        field { name = "flash_lock_addr3"; desc = "Lock start address 3 (row address)."; sw = rw; hw = r; reset = 0x0; } flash_lock_addr3[18:0];
+    } NFC_LOCK_SA3 @ 0x40;
+
+    reg {
+        name = "Lock end address 0 configuration register";
+        desc = "NFC_LOCK_EA0: chip select and end row address of write-protected range 0.";
+        field { name = "flash_lock_cs"; desc = "Chip select of the locked range: 0 = CS0, 1 = CS1."; sw = rw; hw = r; reset = 0x0; } flash_lock_cs[20:19];
+        field { name = "flash_lock_eaddr0"; desc = "Lock end address 0 (row address)."; sw = rw; hw = r; reset = 0x0; } flash_lock_eaddr0[18:0];
+    } NFC_LOCK_EA0 @ 0x44;
+
+    reg {
+        name = "Lock end address 1 configuration register";
+        desc = "NFC_LOCK_EA1: chip select and end row address of write-protected range 1.";
+        field { name = "flash_lock_cs"; desc = "Chip select of the locked range: 0 = CS0, 1 = CS1."; sw = rw; hw = r; reset = 0x0; } flash_lock_cs[20:19];
+        field { name = "flash_lock_eaddr1"; desc = "Lock end address 1 (row address)."; sw = rw; hw = r; reset = 0x0; } flash_lock_eaddr1[18:0];
+    } NFC_LOCK_EA1 @ 0x48;
+
+    reg {
+        name = "Lock end address 2 configuration register";
+        desc = "NFC_LOCK_EA2: chip select and end row address of write-protected range 2.";
+        field { name = "flash_lock_cs"; desc = "Chip select of the locked range: 0 = CS0, 1 = CS1."; sw = rw; hw = r; reset = 0x0; } flash_lock_cs[20:19];
+        field { name = "flash_lock_eaddr2"; desc = "Lock end address 2 (row address)."; sw = rw; hw = r; reset = 0x0; } flash_lock_eaddr2[18:0];
+    } NFC_LOCK_EA2 @ 0x4C;
+
+    reg {
+        name = "Lock end address 3 configuration register";
+        desc = "NFC_LOCK_EA3: chip select and end row address of write-protected range 3.";
+        field { name = "flash_lock_cs"; desc = "Chip select of the locked range: 0 = CS0, 1 = CS1."; sw = rw; hw = r; reset = 0x0; } flash_lock_cs[20:19];
+        field { name = "flash_lock_eaddr3"; desc = "Lock end address 3 (row address)."; sw = rw; hw = r; reset = 0x0; } flash_lock_eaddr3[18:0];
+    } NFC_LOCK_EA3 @ 0x50;
+
+    reg {
+        name = "Extended page command register";
+        desc = "NFC_EXPCMD: up to four additional page-program command opcodes the lock logic recognises as write commands (reset 0).";
+        field { name = "ex_pcmd3"; desc = "Extended page write command 3."; sw = rw; hw = r; reset = 0x0; } ex_pcmd3[31:24];
+        field { name = "ex_pcmd2"; desc = "Extended page write command 2."; sw = rw; hw = r; reset = 0x0; } ex_pcmd2[23:16];
+        field { name = "ex_pcmd1"; desc = "Extended page write command 1."; sw = rw; hw = r; reset = 0x0; } ex_pcmd1[15:8];
+        field { name = "ex_pcmd0"; desc = "Extended page write command 0."; sw = rw; hw = r; reset = 0x0; } ex_pcmd0[7:0];
+    } NFC_EXPCMD @ 0x54;
+
+    reg {
+        name = "Extended block command register";
+        desc = "NFC_EXBCMD: up to two additional block-erase command opcodes the lock logic recognises (reset 0).";
+        field { name = "ex_bcmd1"; desc = "Extended block write command 1."; sw = rw; hw = r; reset = 0x0; } ex_bcmd1[15:8];
+        field { name = "ex_bcmd0"; desc = "Extended block write command 0."; sw = rw; hw = r; reset = 0x0; } ex_bcmd0[7:0];
+    } NFC_EXBCMD @ 0x58;
+
+    reg {
+        name = "ECC test register";
+        desc = "NFC_ECC_TEST: ECC bypass and encode/decode-only test modes. Reset 0x21 (Hi3516C/Hi3518 V100), 0x1 (Hi3516A/D), 0x0020F001 where the upper half carries the version 0x0020 and the FIFO empty flags (Hi3515, Hi3520 V100, Hi3516 V100).";
+`ifdef NANDC_ECC_TEST_VER
+        field { name = "version"; desc = "NANDC version number (0x0020)."; sw = r; hw = w; reset = 0x20; } version[31:16];
+        field { name = "empty"; desc = "Internal FIFO empty flags: bit 15 ECC8 asynchronous FIFO, bit 14 ECC synchronous FIFO, bit 13 NAND write FIFO, bit 12 NAND read FIFO."; sw = r; hw = w; reset = 0xF; } empty[15:12];
+`endif
+`ifdef NANDC_V620
+        field { name = "bb_err"; desc = "Boot failure because of bad blocks: 0 = no bad block, 1 = boot failed because of bad blocks."; sw = rw; hw = r; reset = 0x0; } bb_err[4:4];
+`endif
+        field { name = "ecc_mask"; desc = "ECC function mask: 0 = ECC check / correction according to ecc_type, 1 = ECC check / correction disabled while the data layout is still converted according to ecc_type."; sw = rw; hw = r; reset = 0x0; } ecc_mask[2:2];
+        field { name = "dec_only"; desc = "Decode only: writing 1 runs the ECC decoder without reading or writing the flash; reads as 0."; sw = rw; hw = r; reset = 0x0; } dec_only[1:1];
+        field { name = "enc_only"; desc = "Encode only: writing 1 runs the ECC encoder without reading or writing the flash; reading 1 means encoding / decoding is complete, 0 in progress."; sw = rw; hw = r; reset = 0x1; } enc_only[0:0];
+    } NFC_ECC_TEST @ 0x5C;
+
+`ifndef NANDC_V300
+    reg {
+        name = "DMA control register";
+        desc = "NFC_DMA_CTRL: starts a DMA page transfer between the NANDC buffer / flash and DDR (NFC_BADDR_D, NFC_BADDR_OOB, NFC_DMA_LEN). Reset 0x70 (all burst sizes enabled).";
+`ifdef NANDC_V620
+        field { name = "dma_rd_oob"; desc = "DMA read scope: 0 = the whole page (data + OOB), 1 = only the OOB."; sw = rw; hw = r; reset = 0x0; } dma_rd_oob[12:12];
+`endif
+        field { name = "wr_cmd_disable"; desc = "0 = the NANDC drives the complete read/write sequence (commands, address, data), 1 = only the data phase is driven (CS and read/write strobes, no CLE/ALE)."; sw = rw; hw = r; reset = 0x0; } wr_cmd_disable[11:11];
+`ifndef NANDC_V620
+        field { name = "rw_nf_disable"; desc = "0 = the DMA transfer and the flash read/write run together, 1 = data is only moved between the buffer and DDR, the flash is not accessed."; sw = rw; hw = r; reset = 0x0; } rw_nf_disable[10:10];
+`endif
+        field { name = "dma_nf_cs"; desc = "Chip select of the NAND flash for the DMA operation: 0 = CS0, 1 = CS1 (other values reserved)."; sw = rw; hw = r; reset = 0x0; } dma_nf_cs[9:8];
+        field { name = "dma_addr_num"; desc = "Number of address cycles: 0 = 5, 1 = 4."; sw = rw; hw = r; reset = 0x0; } dma_addr_num[7:7];
+        field { name = "burst16_en"; desc = "AHB burst-16 enable."; sw = rw; hw = r; reset = 0x1; } burst16_en[6:6];
+        field { name = "burst8_en"; desc = "AHB burst-8 enable."; sw = rw; hw = r; reset = 0x1; } burst8_en[5:5];
+        field { name = "burst4_en"; desc = "AHB burst-4 enable."; sw = rw; hw = r; reset = 0x1; } burst4_en[4:4];
+`ifndef NANDC_V620
+        field { name = "oob_area_en"; desc = "OOB area write enable (1-bit ECC mode only)."; sw = rw; hw = r; reset = 0x0; } oob_area_en[3:3];
+        field { name = "data_area_en"; desc = "Data area write enable (1-bit ECC mode only)."; sw = rw; hw = r; reset = 0x0; } data_area_en[2:2];
+`endif
+        field { name = "dma_wr_en"; desc = "DMA direction: 0 = read (flash to DDR), 1 = write (DDR to flash)."; sw = rw; hw = r; reset = 0x0; } dma_wr_en[1:1];
+        field { name = "dma_start"; desc = "DMA start: writing 1 starts the transfer and the bit stays 1 until it is complete (reads 0 when done); writing 0 has no effect."; sw = rw; hw = rw; reset = 0x0; } dma_start[0:0];
+    } NFC_DMA_CTRL @ 0x60;
+
+    reg {
+        name = "DMA data area base address register";
+        desc = "NFC_BADDR_D (NFC_BADDR_D0 on the Hi3516A/D): DDR base address of the page data of the DMA transfer.";
+        field { name = "base_addr_d"; desc = "Base address of the DDR data area to be read or written."; sw = rw; hw = r; reset = 0x0; } base_addr_d[31:0];
+    } NFC_BADDR_D @ 0x64;
+
+    reg {
+        name = "DMA OOB area base address register";
+        desc = "NFC_BADDR_OOB: DDR base address of the OOB data of the DMA transfer (used for DMA writes; on reads the OOB follows the data).";
+        field { name = "base_addr_oob"; desc = "Base address of the DDR OOB area."; sw = rw; hw = r; reset = 0x0; } base_addr_oob[31:0];
+    } NFC_BADDR_OOB @ 0x68;
+
+    reg {
+        name = "DMA transfer length register";
+        desc = "NFC_DMA_LEN: OOB length of DMA writes (ECC0 mode; fixed in the other modes) and, before the Hi3516A/D, the data length used when rw_nf_disable is 1.";
+        field { name = "len_oob"; desc = "OOB length of a DMA write in bytes (4-byte aligned); valid only in ECC0 mode, fixed otherwise."; sw = rw; hw = r; reset = 0x0; } len_oob[28:16];
+`ifndef NANDC_V620
+        field { name = "len_data"; desc = "Data length of the DMA transfer; valid only when NFC_DMA_CTRL[rw_nf_disable] is 1."; sw = rw; hw = r; reset = 0x0; } len_data[11:0];
+`endif
+    } NFC_DMA_LEN @ 0x6C;
+
+    reg {
+        name = "Operation parameter register";
+        desc = "NFC_OP_PARA: which page areas a DMA operation moves and checks. Reset 0x7F (Hi3516C/Hi3518 V100), 0xF (Hi3516A/D; bits 7:4 reserved there).";
+`ifndef NANDC_V620
+        enum NFC_OP_PARA_ext_len_enum {
+            BYTES_4 = 1 { name = "4 bytes"; desc = "4 bytes"; };
+            BYTES_8 = 3 { name = "8 bytes"; desc = "8 bytes; other values reserved"; };
+        };
+        field { name = "ext_len"; desc = "Length of the extended (corrected) data area per ECC block in 24-bit ECC mode; boot-mode defaults 8 bytes for 4 KB pages, 4 bytes for 8 KB pages."; sw = rw; hw = r; encode = NFC_OP_PARA_ext_len_enum; reset = 0x1; } ext_len[7:6];
+        field { name = "oob_ecc_en"; desc = "ECC correction enable for the OOB area (reads only)."; sw = rw; hw = r; reset = 0x1; } oob_ecc_en[5:5];
+        field { name = "data_ecc_en"; desc = "ECC correction enable for the data area (reads only)."; sw = rw; hw = r; reset = 0x1; } data_ecc_en[4:4];
+`endif
+        field { name = "oob_edc_en"; desc = "OOB area check enable: ECC code generation on programming, check on reading."; sw = rw; hw = r; reset = 0x1; } oob_edc_en[3:3];
+        field { name = "data_edc_en"; desc = "Data area check enable: ECC code generation on programming, check on reading."; sw = rw; hw = r; reset = 0x1; } data_edc_en[2:2];
+        field { name = "oob_rw_en"; desc = "Read/write enable for the OOB (redundant) area."; sw = rw; hw = r; reset = 0x1; } oob_rw_en[1:1];
+        field { name = "data_rw_en"; desc = "Read/write enable for the data area."; sw = rw; hw = r; reset = 0x1; } data_rw_en[0:0];
+    } NFC_OP_PARA @ 0x70;
+
+    reg {
+        name = "Version register";
+        desc = "NFC_VERSION: 0x310 (hinfc301: Hi3516C / Hi3518 V100), 0x300 (Hi3516 V100), 0x620 (Hi3516A/D). The vendor drivers key their register layouts on this value (`HINFC301_VER_300`, `HINFC504_VER_620`).";
+`ifdef NANDC_V620
+        field { name = "version"; desc = "Version 0x620."; sw = r; hw = w; reset = 0x620; } version[11:0];
+`else
+`ifdef NANDC_VERSION_300
+        field { name = "version_id"; desc = "Version number 0x300 (data sheet access RW)."; sw = rw; hw = r; reset = 0x300; } version_id[31:0];
+`else
+        field { name = "version_id"; desc = "Version number 0x310 (data sheet access RW)."; sw = rw; hw = r; reset = 0x310; } version_id[31:0];
+`endif
+`endif
+    } NFC_VERSION @ 0x74;
+
+`ifndef NANDC_V620
+    reg {
+        name = "NANDC buffer base address register";
+        desc = "NFC_BUF_BADDR: buffer offsets used by buffer-only DMA transfers (NFC_DMA_CTRL[rw_nf_disable] = 1); undefined otherwise.";
+        field { name = "buf_baddr_rd"; desc = "Buffer address from which a buffer-only DMA reads."; sw = rw; hw = r; reset = 0x0; } buf_baddr_rd[27:16];
+        field { name = "buf_baddr_wr"; desc = "Buffer address to which a buffer-only DMA writes."; sw = rw; hw = r; reset = 0x0; } buf_baddr_wr[11:0];
+    } NFC_BUF_BADDR @ 0x78;
+
+    reg {
+        name = "DMA read logical address register";
+        desc = "NFC_RD_LOGIC_ADDR: start address inside the page (ECC code excluded) of a DMA read, e.g. 2048 (2 KB pages) or 4096 (4 KB pages) to read from the bad-block flag; advanced automatically by NFC_DMA_LEN[len_data] after each DMA read. Valid for DMA reads with rw_nf_disable = 0.";
+        field { name = "rd_logic_addr"; desc = "Logical start address of the DMA read within the page."; sw = rw; hw = r; reset = 0x0; } rd_logic_addr[15:0];
+    } NFC_RD_LOGIC_ADDR @ 0x7C;
+
+    reg {
+        name = "DMA read logical length register";
+        desc = "NFC_RD_LOGIC_LEN: length (ECC code excluded) of a DMA read; cleared automatically after the read. Valid for DMA reads with rw_nf_disable = 0.";
+        field { name = "rd_logic_len"; desc = "Logical length of the DMA read."; sw = rw; hw = r; reset = 0x0; } rd_logic_len[15:0];
+    } NFC_RD_LOGIC_LEN @ 0x80;
+`else
+    reg {
+        name = "DMA data segment ID register";
+        desc = "NFC_SEGMENT_ID: the internal buffer holds 8 KB, so for 16 KB pages this selects the 8 KB segment a buffer operation reads or writes (Hi3516A/D).";
+        field { name = "segment_id"; desc = "8 KB segment of a 16 KB page being read / written: 0 = first, 1 = second, 2 = third, 3 = fourth."; sw = rw; hw = r; reset = 0x0; } segment_id[1:0];
+    } NFC_SEGMENT_ID @ 0x84;
+`endif
+
+    reg {
+        name = "Internal FIFO status register";
+        desc = "NFC_FIFO_EMPTY: empty flags of the internal FIFOs, debugging only (reset 0xFFFF; the Hi3516 V100 sheet prints 0).";
+`ifdef NANDC_V620
+        field { name = "empty_dbg"; desc = "Internal FIFO empty status (debug)."; sw = r; hw = w; reset = 0xFFFF; } empty_dbg[23:0];
+`else
+        field { name = "empty_dbg"; desc = "Internal FIFO empty status (debug)."; sw = r; hw = w; reset = 0xFFFF; } empty_dbg[15:0];
+`endif
+    } NFC_FIFO_EMPTY @ 0x90;
+
+    reg {
+        name = "Boot parameter configuration register";
+        desc = "NFC_BOOT_SET: NAND geometry used by the boot ROM; the reset values follow the nfc_addr_num / nfc_block_size boot pins (data sheet total reset 0).";
+`ifdef NANDC_V620
+        field { name = "boot_page0_cfg"; desc = "Fixed at 1 (page-0 configuration boot)."; sw = rw; hw = r; reset = 0x0; } boot_page0_cfg[3:3];
+        field { name = "addr_num"; desc = "Address cycles sent by the NANDC during boot: 0 = 4, 1 = 5."; sw = rw; hw = r; reset = 0x0; } addr_num[2:2];
+        enum NFC_BOOT_SET_block_size_enum {
+            PAGES_64 = 0 { name = "64 pages"; desc = "64 pages"; };
+            PAGES_128 = 1 { name = "128 pages"; desc = "128 pages"; };
+            PAGES_256 = 2 { name = "256 pages"; desc = "256 pages"; };
+            PAGES_512 = 3 { name = "512 pages"; desc = "512 pages"; };
+        };
+        field { name = "block_size"; desc = "Block size (pages per block) of the NAND flash during boot (data sheet heading: bus width)."; sw = rw; hw = r; encode = NFC_BOOT_SET_block_size_enum; reset = 0x0; } block_size[1:0];
+`else
+        field { name = "addr_num"; desc = "Address cycles sent by the NANDC during boot: 0 = 4, 1 = 5. Reset from the nfc_addr_num pin."; sw = rw; hw = r; reset = 0x0; } addr_num[1:1];
+        field { name = "block_size"; desc = "Block size of the NAND flash during boot: 0 = 64 pages, 1 = 128 pages. Reset from the nfc_block_size pin."; sw = rw; hw = r; reset = 0x0; } block_size[0:0];
+`endif
+    } NFC_BOOT_SET @ 0x94;
+
+`ifndef NANDC_V620
+    reg {
+        name = "NAND flash status register";
+        desc = "NF_STATUS: the status byte returned by the read-status step of the last NFC_OP sequence (NFC_OP[read_status_en] = 1).";
+        field { name = "status"; desc = "Status data read from the NAND flash."; sw = r; hw = w; reset = 0x0; } status[7:0];
+    } NF_STATUS @ 0x98;
+`else
+    reg {
+        name = "NANDC low-power control register";
+        desc = "NF_LP_CTRL: clock gating of the unused ECC paths (Hi3516A/D).";
+        field { name = "clk_gate_en"; desc = "Clock gating: 0 = all clocks enabled, 1 = the clocks not needed for the current ecc_type are gated."; sw = rw; hw = r; reset = 0x0; } clk_gate_en[0:0];
+    } NF_LP_CTRL @ 0x9C;
+
+    reg {
+        name = "Error bit count register 0 for the first buffer operation";
+        desc = "NFC_ERR_NUM0_BUF0: corrected error bits of the first 4 KB of the first buffer operation (2-16 KB pages), one byte per 1 KB ECC block (Hi3516A/D).";
+        field { name = "err_num0_buf0"; desc = "bit[31:24] fourth 1 KB, [23:16] third, [15:8] second, [7:0] first 1 KB."; sw = r; hw = w; reset = 0x0; } err_num0_buf0[31:0];
+    } NFC_ERR_NUM0_BUF0 @ 0xA0;
+
+    reg {
+        name = "Error bit count register 1 for the first buffer operation";
+        desc = "NFC_ERR_NUM1_BUF0: corrected error bits of the last 4 KB of the first buffer operation (8 KB and 16 KB pages).";
+        field { name = "err_num1_buf0"; desc = "bit[31:24] eighth 1 KB, [23:16] seventh, [15:8] sixth, [7:0] fifth 1 KB."; sw = r; hw = w; reset = 0x0; } err_num1_buf0[31:0];
+    } NFC_ERR_NUM1_BUF0 @ 0xA4;
+
+    reg {
+        name = "Error bit count register 0 for the second buffer operation";
+        desc = "NFC_ERR_NUM0_BUF1: corrected error bits of the first 4 KB of the second buffer operation (16 KB pages).";
+        field { name = "err_num0_buf1"; desc = "bit[31:24] fourth 1 KB, [23:16] third, [15:8] second, [7:0] first 1 KB."; sw = r; hw = w; reset = 0x0; } err_num0_buf1[31:0];
+    } NFC_ERR_NUM0_BUF1 @ 0xA8;
+
+    reg {
+        name = "Error bit count register 1 for the second buffer operation";
+        desc = "NFC_ERR_NUM1_BUF1: corrected error bits of the last 4 KB of the second buffer operation (16 KB pages).";
+        field { name = "err_num1_buf1"; desc = "bit[31:24] eighth 1 KB, [23:16] seventh, [15:8] sixth, [7:0] fifth 1 KB."; sw = r; hw = w; reset = 0x0; } err_num1_buf1[31:0];
+    } NFC_ERR_NUM1_BUF1 @ 0xAC;
+
+    reg {
+        name = "NAND flash ready/busy mode register";
+        desc = "NF_RB_MODE: ready/busy signalling mode (Hi3516A/D).";
+        field { name = "status"; desc = "Ready/busy mode: 0 = normal ready signal, 1 = Micron enhanced ClearNAND signalling."; sw = rw; hw = r; reset = 0x0; } status[0:0];
+    } NF_RB_MODE @ 0xB0;
+
+    reg {
+        name = "DMA data area base address register 1";
+        desc = "NFC_BADDR_D1: DDR base address of the second 4 KB of the page data (pages larger than 4 KB; Hi3516A/D).";
+        field { name = "base_addr_d1"; desc = "Base address 1 of the DDR data area."; sw = rw; hw = r; reset = 0x0; } base_addr_d1[31:0];
+    } NFC_BADDR_D1 @ 0xB4;
+
+    reg {
+        name = "DMA data area base address register 2";
+        desc = "NFC_BADDR_D2: DDR base address of the third 4 KB of the page data (16 KB pages; Hi3516A/D).";
+        field { name = "base_addr_d2"; desc = "Base address 2 of the DDR data area."; sw = rw; hw = r; reset = 0x0; } base_addr_d2[31:0];
+    } NFC_BADDR_D2 @ 0xB8;
+
+    reg {
+        name = "DMA data area base address register 3";
+        desc = "NFC_BADDR_D3: DDR base address of the fourth 4 KB of the page data (16 KB pages; Hi3516A/D).";
+        field { name = "base_addr_d3"; desc = "Base address 3 of the DDR data area."; sw = rw; hw = r; reset = 0x0; } base_addr_d3[31:0];
+    } NFC_BADDR_D3 @ 0xBC;
+
+    reg {
+        name = "Instantiated memory management register";
+        desc = "NFC_MEM_CTRL: EMA / EMAW pin values of the instantiated SRAMs (reset 0x2; Hi3516A/D).";
+        field { name = "mem_ctrl"; desc = "[4:1] EMA pin value, [0] EMAW pin value of the buffer SRAM."; sw = rw; hw = r; reset = 0x2; } mem_ctrl[4:0];
+    } NFC_MEM_CTRL @ 0xCC;
+`endif
+`endif
+};
+
+`endif
