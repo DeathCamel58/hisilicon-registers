@@ -5,6 +5,8 @@
 `ifndef HISI_SATA_NPORTS
 `define HISI_SATA_NPORTS 2
 `endif
+// HISI_SATA_G1 (defines.rdl of the Hi3515 V100): first-generation variant of the same controller (Hi3515 data sheet chapter 9): no PHY1 registers (0x60-0x68 reserved),
+// different reset values of CAP1.np, PHY0_CTLH, PORT_SSTS, PORT_FIFOTH (no vendor bypass bits) and PORT_LINK. Not defined = Hi3520D / Hi3515A / Hi3515C layout.
 
 regfile eHISI_AHCI_SATA {
     name = "HiSilicon AHCI 1.2 SATA host controller";
@@ -15,6 +17,14 @@ regfile eHISI_AHCI_SATA {
     registers (0x50-0x6C: test status `SATA_GHC_TM`, PHY0/PHY1 control, PHY0 status, OOB control) and in every port block (0x44 FIFO threshold, 0x50-0x78 link/DMA test status and
     `SATA_PORT_PHYCTL` / `SATA_PORT_PHYSTS`). Linux drives it with the standard `ahci` platform driver plus the HiSilicon glue in `drivers/ata/ahci_sys.c`
     (`ahci_sys_hi3520d_defconfig.c`).
+
+    **Hi3515 V100** (`HISI_SATA_G1`): the same controller and register map (Hi3515 data sheet issue 02 chapter 9, `hi3515v100--Hi3515-Datasheet.txt` lines 42355-44456, two ports at 0x100 / 0x180,
+    base 0x10110000 from the memory map (Table 1-x line 8029; the chapter's own tables print 'base address 0x5202_0000' / '0x5202_0100', a copy-paste from another product), VIC interrupt 9),
+    checked register by register against this file: the generic, PHY0, OOB and port registers agree in offsets, fields, accesses and resets except: `SATA_GHC_CAP1.np` resets 0x03 (text: 'up to two ports'),
+    `SATA_GHC_PI` total reset is printed 0x0000_000F with the same two `port_imp` bits (the extra bits 3:2 are not explained: DS inconsistency), `SATA_PHY0_CTLL` bit 1 is 'reserved' (reset 1, as `fast_tech` here),
+    `SATA_PHY0_CTLH` resets 0x2125 (bit 2 of the reserved field 3:2 is 1), `SATA_PHY1_CTLL` / `SATA_PHY1_CTLH` do not exist (0x60-0x68 reserved; one PHY control set for both lanes), `SATA_PORT_SSTS` resets 0x100
+    (`pxssts_ipm` = 1), `SATA_PORT_FIFOTH` resets 0x10C (bits 31:9 reserved, no vendor bypass bits; `dmac_rxfifo_th` 0x10, `rxfifo_th_sel` 1) and `SATA_PORT_LINK` resets 0x0320_2020 (`link_curr_st` = 3).
+    Its resets and clock gates are SYS_CTRL SC_PERCTRL10 (`sata_phyrst`, `sata_tx0/1_rst`, `sata_rx0/1_rst`, `sata_alive_rst`, bits 19-24) and SC_PEREN/SC_PERDIS. English data sheet only; not hardware verified.
 
     Interrupt: GIC interrupt ID 52 (SPI 20, DS Table 3-16). Clock gate, resets and reference clock select: PERI_CRG45 (sata_cken, sata0_cken, sata1_cken, sata_clk_sel, cko_alive_cksel and the
     seven reset bits); the SATA PHY analog options are in SYS_CTRL PERIPHCTRL3 (`sata_phy0_mpll_ss_sel`, `sata_phy0_ref_clk_sel`) and PERIPHCTRL25 (`sata_test_*`).
@@ -196,10 +206,14 @@ Data sheet 14.7.7 SATA_GHC_CAP1 (offset 0x0, printed page 14-101, `datasheet.txt
 
         field {
             name = "np";
-            desc = "Fixed at 0x01, indicating that a maximum of two ports are supported.";
+            desc = "Fixed at 0x01, indicating that a maximum of two ports are supported. (Hi3515 V100, HISI_SATA_G1: 'Fixed at 0x03, it indicates that up to two ports are supported', data sheet line 42544: the AHCI meaning of 0x03 is four ports; DS inconsistency, value kept as printed.)";
             sw = r;
             hw = na;
+`ifdef HISI_SATA_G1
+            reset = 0x3;
+`else
             reset = 0x1;
+`endif
         } np[4:0];
     } SATA_GHC_CAP1 @ 0x0;
 
@@ -308,6 +322,8 @@ Data sheet 14.7.7 SATA_GHC_IS (offset 0x8, printed page 14-103, `datasheet.txt` 
 
 Corresponds to the AHCI PI register of the Advanced Host Controller Interface 1.2 (the data sheet uses its own names). On the Hi3515C (one SATA port, `Differences Between the Hi3515C and the Hi3520D`, Table 1-1) the data sheet gives no separate reset value; the 0x3 shown is the Hi3520D/Hi3515A value (two ports) and the port array below has one element on the Hi3515C.
 
+Hi3515 V100 (HISI_SATA_G1, data sheet 9.7.1 line 42644): the total reset value is printed 0x0000_000F while the field table has the same two `port_imp` bits (reset 0x3) and bits 31:2 reserved; modelled as on the Hi3520D.
+
 Data sheet 14.7.7 SATA_GHC_PI (offset 0xC, printed page 14-104, `datasheet.txt` line 57518).";
 
         enum SATA_GHC_PI_port_imp_enum {
@@ -334,7 +350,7 @@ Corresponds to the AHCI VS register of the Advanced Host Controller Interface 1.
 Data sheet 14.7.7 SATA_GHC_VS (offset 0x10, printed page 14-104, `datasheet.txt` line 57545).";
 
         field {
-            name = "achi_vs";
+            name = "achi_vs";  // sic: the Hi3520D data sheet spells the field 'achi_vs' (the Hi3515 data sheet: ahci_vs)
             desc = "The supported AHCI version is V1.2.";
             sw = r;
             hw = w;
@@ -602,7 +618,7 @@ Data sheet 14.7.7 SATA_PHY0_CTLL (offset 0x54, printed page 14-108, `datasheet.t
 
         field {
             name = "fast_tech";
-            desc = "Signal that indicates that the IP is processed in a fast technology variant. This bit must be set to 0.";
+            desc = "Signal that indicates that the IP is processed in a fast technology variant. This bit must be set to 0. (Hi3515 V100 data sheet: bit 1 'reserved', RO, same reset 1.)";
             sw = rw;
             hw = r;
             reset = 0x1;
@@ -713,6 +729,16 @@ Data sheet 14.7.7 SATA_PHY0_CTLH (offset 0x58, printed page 14-109, `datasheet.t
             reset = 0x0;
         } rtune_do_tune[4:4];
 
+`ifdef HISI_SATA_G1
+        field {
+            name = "reserved_nz";
+            desc = "Reserved (RW in the Hi3515 data sheet, bits 3:2); bit 2 resets 1: the Hi3515 total reset value is 0x0000_2125 (Hi3520D: 0x2121). Hi3515 V100 only (HISI_SATA_G1).";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } reserved_nz[2:2];
+
+`endif
         field {
             name = "reset_n";
             desc = "Reset signal. This signal must be retained for 5 ns at least.";
@@ -800,6 +826,7 @@ Data sheet 14.7.7 SATA_OOB_CTL (offset 0x6C, printed page 14-111, `datasheet.txt
         } max_cominit[7:0];
     } SATA_OOB_CTL @ 0x6C;
 
+`ifndef HISI_SATA_G1
     reg {
         name = "PHY1 counterpart of SATA_PHY0_CTLL";
         desc = "SATA_PHY1_CTLL is the PHY1 counterpart of SATA_PHY0_CTLL.
@@ -1011,6 +1038,7 @@ Vendor-only register: NOT in the data sheet. The vendor driver (`ahci_sys.c`, `H
             reset = 0x1;
         } wide_xface[0:0];
     } SATA_PHY1_CTLH @ 0x64;
+`endif
 
     regfile {
         name = "SATA port registers";
@@ -1736,11 +1764,15 @@ Data sheet 14.7.7 SATA_PORT_SSTS (offset 0x28 + n x 0x80, printed page 14-120, `
 
             field {
                 name = "pxssts_ipm";
-                desc = "Current port status.";
+                desc = "Current port status. (Hi3515 V100, HISI_SATA_G1: total reset value 0x0000_0100, i.e. this field resets to 1 = active.)";
                 sw = r;
                 hw = w;
                 encode = SATA_PORT_SSTS_pxssts_ipm_enum;
+`ifdef HISI_SATA_G1
+                reset = 0x1;
+`else
                 reset = 0x0;
+`endif
             } pxssts_ipm[11:8];
 
             enum SATA_PORT_SSTS_pxssts_spd_enum {
@@ -2082,8 +2114,11 @@ Data sheet 14.7.7 SATA_PORT_SNTF (offset 0x3C + n x 0x80, printed page 14-124, `
 
 Bits 13:9 are 'reserved' in the data sheet (the DS still prints reset 0xF24, with bits 11:9 set) but the vendor driver `ahci_sys_hi3520d_defconfig.c` (`hi_sata_phy_clk_sel`) writes 0x3F24 to this register of every port with the comment that, due to bugs of the sata controller, specific values are set for both ports to bypass it: [13] data transmit control bypass, [12] record bypass, [11] port-multiplier reset bypass, [10] fetch bypass, [9] 'avoid Seagate rerror bug'. These five bits are added from the vendor driver (not in the data sheet); reset 0, 0, 1, 1, 1 follows the DS total reset 0xF24.
 
+Hi3515 V100 (HISI_SATA_G1, data sheet 9.7.2 line 43875): bits 31:9 are plain reserved (reset 0, no vendor bypass bits: the Hi3515 vendor driver is not in the trees), total reset 0x0000_010C: `dmac_rxfifo_th` 0x10, `rxfifo_th_sel` 1, `link_rxfifo_th` 4.
+
 Data sheet 14.7.7 SATA_PORT_FIFOTH (offset 0x44 + n x 0x80, printed page 14-125, `datasheet.txt` line 58718).";
 
+`ifndef HISI_SATA_G1
             field {
                 name = "bypass_dmac_tx_ctrl";
                 desc = "Vendor-only (not in the data sheet): data transmit control bypass (written 1 by the vendor driver).";
@@ -2123,13 +2158,18 @@ Data sheet 14.7.7 SATA_PORT_FIFOTH (offset 0x44 + n x 0x80, printed page 14-125,
                 hw = r;
                 reset = 0x1;
             } seagate_rerror_fix[9:9];
+`endif
 
             field {
                 name = "dmac_rxfifo_th";
                 desc = "Flow control threshold of the DMAC receive FIFO. During data reception, if the data amount in the DMAC FIFO is above the threshold, the controller starts to control the data flow.";
                 sw = rw;
                 hw = r;
+`ifdef HISI_SATA_G1
+                reset = 0x10;
+`else
                 reset = 0x12;
+`endif
             } dmac_rxfifo_th[8:4];
 
             enum SATA_PORT_FIFOTH_rxfifo_th_sel_enum {
@@ -2143,7 +2183,11 @@ Data sheet 14.7.7 SATA_PORT_FIFOTH (offset 0x44 + n x 0x80, printed page 14-125,
                 sw = rw;
                 hw = r;
                 encode = SATA_PORT_FIFOTH_rxfifo_th_sel_enum;
+`ifdef HISI_SATA_G1
+                reset = 0x1;
+`else
                 reset = 0x0;
+`endif
             } rxfifo_th_sel[3:3];
 
             field {
@@ -2218,10 +2262,14 @@ Data sheet 14.7.7 SATA_PORT_LINK (offset 0x54 + n x 0x80, printed page 14-126, `
 
             field {
                 name = "link_curr_st";
-                desc = "Current status of the LINK_CTL_STATE state machine.";
+                desc = "Current status of the LINK_CTL_STATE state machine. (Hi3515 V100, HISI_SATA_G1: total reset value 0x0320_2020, this field resets to 3.)";
                 sw = r;
                 hw = w;
+`ifdef HISI_SATA_G1
+                reset = 0x3;
+`else
                 reset = 0x0;
+`endif
             } link_curr_st[28:24];
 
             enum SATA_PORT_LINK_link_df_fifo_full_enum {
