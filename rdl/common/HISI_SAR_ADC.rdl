@@ -1,0 +1,178 @@
+`ifndef HISI_SAR_ADC_RDL
+`define HISI_SAR_ADC_RDL
+
+regfile eHISI_SAR_ADC {
+    name = "HiSilicon SAR ADC (10-bit, 2 channels, first generation)";
+    desc = "
+    Successive approximation register ADC of the Hi3516C V100 (data sheet 13.8, `hi3516cv100--Hi3516C-Datasheet.txt` lines 60615-60932, issue 00B02) and Hi3518A/Hi3518C (V100; data sheet 13.8, `hi3518v100--Hi3518-Datasheet.txt`
+    lines 66575-66931, issue 01): 10-bit converter with two input channels (SAR_ADC_CH0 / CH1, reference SAR_ADC_VREF), 4 MHz working clock / at most 200 kHz sampling clock, 3.3 V analog supply, power-down mode, maskable
+    conversion-complete interrupt. Base address 0x200B0000 (both chips); the interrupt is the VIC line 19 shared with the IR receiver (\"IR/SAR_ADC\"). Clock gate PERI_CRG32 `sar_adc_cken` [1] and soft reset
+    PERI_CRG32 `sar_adc_srst_req` [0] (PERI_CRG32 = 0x20030080).
+
+    This is a different, much simpler register set than the LSADC of the later chips (HISI_LSADC.rdl / HISI_LSADC_V2.rdl): a single-shot conversion is started by ADC_CTRL `adc_start`, the interrupt is cleared through
+    ADC_INT_CLR and the result is read from ADC_RESULT. Sequence (data sheet 13.8.3.3): ADC_POWERDOWN `adc_pwrdown` = 0 and PERI_CRG32 `sar_adc_cken` = 1; select the channel in ADC_CTRL `adc_chsel`; clear ADC_INT_MASK
+    `adc_int_mask` to enable the interrupt; set `adc_start`; wait for the interrupt; read ADC_RESULT; set ADC_INT_CLR `adc_int_clr`. The register tables of the two data sheets are identical (register names, offsets, fields and
+    resets). The Hi3516A/Hi3516D (V100) data sheet describes the new LSADC instead; Hi3516 V100, Hi3515, Hi3511, Hi3520, Hi3520D have no ADC block (0x200B0000 is UART2/UART3/CIPHER there).
+    A vendor driver for the Hi3516C V100 block exists in sources/openhisilicon/kernel/adc/hi3516cv100/adc.c and agrees with the offsets and field positions below (ADC_STATUS 0x00, ADC_CTRL 0x04 with `adc_start` bit 0 and
+    channel select bit 16, ADC_POWERDOWN 0x08, ADC_INT_MASK 0x10, ADC_INT_CLR 0x14, ADC_INT_RAW 0x18, ADC_RESULT 0x1C, result mask 0x3FF). Not hardware verified.
+    ";
+
+
+    reg {
+        name = "ADC conversion status register";
+        desc = "ADC_STATUS is an ADC conversion status register.
+
+Data sheet 13.8.5 ADC_STATUS (offset 0x0, printed page 13-143, `hi3516cv100--Hi3516C-Datasheet.txt` line 60700; Hi3518 V100: printed page 13-145, `hi3518v100--Hi3518-Datasheet.txt` line 66659).";
+
+        field {
+            name = "adc_status";
+            desc = "ADC conversion status. The value 1 indicates that the conversion is being performed. After the conversion is complete, writing any value clears the register.";
+            sw = rw;
+            hw = w;
+            onwrite = wclr;
+            reset = 0x0;
+        } adc_status[0:0];
+
+    } ADC_STATUS @ 0x0;
+
+    reg {
+        name = "ADC conversion control register";
+        desc = "ADC_CTRL is an ADC conversion control register.
+
+Data sheet 13.8.5 ADC_CTRL (offset 0x4, printed page 13-143, `hi3516cv100--Hi3516C-Datasheet.txt` line 60729; Hi3518 V100: printed page 13-145, `hi3518v100--Hi3518-Datasheet.txt` line 66687).";
+
+        enum ADC_CTRL_adc_chsel_enum {
+            CHANNEL_0 = 0 { name = "Channel 0"; desc = "channel 0"; };
+            CHANNEL_1 = 1 { name = "Channel 1"; desc = "channel 1"; };
+        };
+
+        field {
+            name = "adc_chsel";
+            desc = "ADC conversion channel select.";
+            sw = rw;
+            hw = r;
+            encode = ADC_CTRL_adc_chsel_enum;
+            reset = 0x0;
+        } adc_chsel[16:16];
+
+        field {
+            name = "adc_start";
+            desc = "ADC conversion start. Writing 1 starts a conversion. After the conversion is complete, hardware automatically sets this field to 0.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } adc_start[0:0];
+
+    } ADC_CTRL @ 0x4;
+
+    reg {
+        name = "ADC mode control register";
+        desc = "ADC_POWERDOWN is an ADC mode control register.
+
+Data sheet 13.8.5 ADC_POWERDOWN (offset 0x8, printed page 13-144, `hi3516cv100--Hi3516C-Datasheet.txt` line 60767; Hi3518 V100: printed page 13-146, `hi3518v100--Hi3518-Datasheet.txt` line 66747).";
+
+        enum ADC_POWERDOWN_adc_pwrdown_enum {
+            NORMAL_MODE = 0 { name = "Normal Mode"; desc = "normal mode"; };
+            POWER_DOWN_MODE = 1 { name = "Power Down Mode"; desc = "power-down mode"; };
+        };
+
+        field {
+            name = "adc_pwrdown";
+            desc = "ADC mode select.";
+            sw = rw;
+            hw = r;
+            encode = ADC_POWERDOWN_adc_pwrdown_enum;
+            reset = 0x0;
+        } adc_pwrdown[0:0];
+
+    } ADC_POWERDOWN @ 0x8;
+
+    reg {
+        name = "Masked ADC conversion completion interrupt register";
+        desc = "ADC_INT_STATUS is a masked ADC conversion completion interrupt register.
+
+Data sheet 13.8.5 ADC_INT_STATUS (offset 0xC, printed page 13-144, `hi3516cv100--Hi3516C-Datasheet.txt` line 60796; Hi3518 V100: printed page 13-147, `hi3518v100--Hi3518-Datasheet.txt` line 66786).";
+
+        field {
+            name = "adc_masked_int";
+            desc = "Masked ADC conversion completion interrupt.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } adc_masked_int[0:0];
+
+    } ADC_INT_STATUS @ 0xC;
+
+    reg {
+        name = "ADC conversion completion interrupt mask register";
+        desc = "ADC_INT_MASK is an ADC conversion completion interrupt mask register.
+
+Data sheet 13.8.5 ADC_INT_MASK (offset 0x10, printed page 13-145, `hi3516cv100--Hi3516C-Datasheet.txt` line 60828; Hi3518 V100: printed page 13-147, `hi3518v100--Hi3518-Datasheet.txt` line 66813).";
+
+        enum ADC_INT_MASK_adc_int_mask_enum {
+            NOT_MASKED = 0 { name = "Not Masked"; desc = "not masked"; };
+            MASKED = 1 { name = "Masked"; desc = "masked"; };
+        };
+
+        field {
+            name = "adc_int_mask";
+            desc = "ADC conversion completion interrupt mask.";
+            sw = rw;
+            hw = r;
+            encode = ADC_INT_MASK_adc_int_mask_enum;
+            reset = 0x0;
+        } adc_int_mask[0:0];
+
+    } ADC_INT_MASK @ 0x10;
+
+    reg {
+        name = "ADC conversion completion interrupt clear register";
+        desc = "ADC_INT_CLR is an ADC conversion completion interrupt clear register.
+
+Data sheet 13.8.5 ADC_INT_CLR (offset 0x14, printed page 13-145, `hi3516cv100--Hi3516C-Datasheet.txt` line 60857; Hi3518 V100: printed page 13-148, `hi3518v100--Hi3518-Datasheet.txt` line 66851).";
+
+        field {
+            name = "adc_int_clr";
+            desc = "ADC conversion completion interrupt clear. Writing 1 clears the interrupt. After the interrupt is cleared, hardware automatically sets this field to 0.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } adc_int_clr[0:0];
+
+    } ADC_INT_CLR @ 0x14;
+
+    reg {
+        name = "Raw ADC conversion completion interrupt register";
+        desc = "ADC_INT_RAW is a raw ADC conversion completion interrupt register.
+
+Data sheet 13.8.5 ADC_INT_RAW (offset 0x18, printed page 13-146, `hi3516cv100--Hi3516C-Datasheet.txt` line 60891; Hi3518 V100: printed page 13-148, `hi3518v100--Hi3518-Datasheet.txt` line 66880).";
+
+        field {
+            name = "adc_raw_int";
+            desc = "Raw ADC conversion completion interrupt.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } adc_raw_int[0:0];
+
+    } ADC_INT_RAW @ 0x18;
+
+    reg {
+        name = "ADC conversion result register";
+        desc = "ADC_RESULT is an ADC conversion result register.
+
+Data sheet 13.8.5 ADC_RESULT (offset 0x1C, printed page 13-146, `hi3516cv100--Hi3516C-Datasheet.txt` line 60918; Hi3518 V100: printed page 13-149, `hi3518v100--Hi3518-Datasheet.txt` line 66917).";
+
+        field {
+            name = "adc_result_reg";
+            desc = "ADC conversion result.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } adc_result_reg[9:0];
+
+    } ADC_RESULT @ 0x1C;
+
+};
+
+`endif
