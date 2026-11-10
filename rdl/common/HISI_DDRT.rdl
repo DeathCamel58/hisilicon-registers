@@ -3,7 +3,9 @@
 
 regfile eHISI_DDRT {
     name = "HiSilicon DDR test module";
-    desc = "Partly described: the offsets (0x00-0x4C, DQ_ERR_CNT[8] at 0x60, DQ_ERR_OVFL at 0x80) and the few bit uses (OP, STATUS) come from the Hi3535 U-Boot DDR data-eye training code, which uses the same base address, clock/reset bits and SYS_CTRL enable bit; they are NOT verified on a Hi3520D (no Hi3520D DDRT code or data sheet text exists in the tree). No reset values are known, bits not used by that code are plain fields. All registers in this block have unverified meaning on this SoC. DDR test module (DDRT) at 0x206D0000 (data sheet Table 1-1 lists the window only; no register description). Used by the vendor DDR training: clock enable PERI_CRG 0x200300D8 bit 3, reset bit 2 and SYS_CTRL 0x2005003C bit 15 (U-Boot `DDRT_CLK`, `DDRT_RESET`, `DDRT_ENABLE_SYS`). The registers below are the Hi3535 U-Boot (`ddr_dataeye_training.h`) set, which uses the same base address; the Hi3520D U-Boot tree has no DDRT register definitions (its training code is not in the tree). Treat as sibling-chip information, not Hi3520D data. Note: the tree also has a Hi3520D V200 U-Boot DDR training (`sources/openipc-u-boot-hi3520dv200/product/hiddrtv200/ddrtv200.h`, same base 0x206D0000) whose register list agrees with the offsets below and additionally has ERR_NUM 0x50, INTS 0x54, INTEN 0x58, INTCLR 0x5C, BIT_ERR_CNT0/1 0x90/0x94, BIT_ERR_OVFL 0xA0 and SEED 0x38, WADDR_OFFSET1 0x28, REVERSED_BIT_HIGHER 0x34 (not yet modelled here; it is a V200 chip, so still not a V100 confirmation).";
+    desc = "Partly described: the offsets (0x00-0x4C, DQ_ERR_CNT[8] at 0x60, DQ_ERR_OVFL at 0x80) and the few bit uses (OP, STATUS) come from the Hi3535 U-Boot DDR data-eye training code, which uses the same base address, clock/reset bits and SYS_CTRL enable bit; they are NOT verified on a Hi3520D (no Hi3520D DDRT code or data sheet text exists in the tree). No reset values are known, bits not used by that code are plain fields. All registers in this block have unverified meaning on this SoC. DDR test module (DDRT) at 0x206D0000 (data sheet Table 1-1 lists the window only; no register description). Used by the vendor DDR training: clock enable PERI_CRG 0x200300D8 bit 3, reset bit 2 and SYS_CTRL 0x2005003C bit 15 (U-Boot `DDRT_CLK`, `DDRT_RESET`, `DDRT_ENABLE_SYS`). The registers below are the Hi3535 U-Boot (`ddr_dataeye_training.h`) set, which uses the same base address; the Hi3520D U-Boot tree has no DDRT register definitions (its training code is not in the tree). Treat as sibling-chip information, not Hi3520D data. Note: the tree also has a Hi3520D V200 U-Boot DDR training (`sources/openipc-u-boot-hi3520dv200/product/hiddrtv200/ddrtv200.h`, same base 0x206D0000) whose register list agrees with the offsets below and additionally has ERR_NUM 0x50, INTS 0x54, INTEN 0x58, INTCLR 0x5C, BIT_ERR_CNT0/1 0x90/0x94, BIT_ERR_OVFL 0xA0 and SEED 0x38, WADDR_OFFSET1 0x28, REVERSED_BIT_HIGHER 0x34 (only SEED modelled here; it is a V200 chip, so still not a V100 confirmation).
+
+Cross-chip (vendor U-Boot 2010.06 `drivers/ddr/ddr_ddrt_s40.h` and `ddr_ddrt_t28.h`, 2026-11-10): the generic DDR training driver uses one identical DDRT register list for every chip it supports (Hi3518E V20X, Hi3516C V300, Hi3516A V200, Hi3519 V101, Hi3521A/D, Hi3531A/D, Hi3536): OP 0x0, STATUS 0x4, BURST_CONFIG 0x8 (= DDRT_BURST_TRANSFER here), MEM_CONFIG 0xC, BURST_NUM 0x10, ADDR_NUM 0x14, LOOP_NUM 0x18, DDR_BASE_ADDR 0x1C (= DDRT_START_ADDR here), ADDR 0x20, REVERSED_DQ 0x30, SEED 0x38, KDATA 0x3C, DATA0-3 0x40-0x4C, DQ_ERR_CNT(n) 0x60 + 4n, DQ_ERR_OVFL 0x80; it does not use 0x24 (ADDR_OFFSET0, Hi3535 only). The Hi3516A V100 `cpu/hi3516a/ddr_dataeye_training.h` has the same names as the Hi3535 set at 0x206D0000. Bases: 0x206D0000 (Hi3520D, Hi3516A/D V100, Hi3518E V20X), 0x11200000 (Hi3516C V300 / E V100), 0x12050000 (Hi3516A V200, Hi3519 V101); the SYS_CTRL DDRT pattern/scratch register is SC 0x94 on all of them (`SYSCTRL_DDRT_PATTERN`; the Hi3516A V200 / Hi3519 add a secure copy at 0x130). Vendor constants for MEM_CONFIG: `DDRT_DDR_MEM_WIDTH 12` (bit position of the SDRAM total-width field, value 0 = 16-bit / 1 = 32-bit as the generic code shifts the DMC mem_width into it), `DDRT_DDR_COL_WIDTH 0x2`, `DDRT_DDR_ROW_WIDTH 0x50`, `DDRT_DDR_BANK_WIDTH 0x100` (ORed together: column width field at [3:0], row width at [7:4], bank width at [9:8]; the Hi3535 code writes the sum 0x1142). OP: `DDRT_TEST_MODE_MASK 0x300`, `DDRT_CFG_START 0x1`; STATUS: `DDRT_TEST_DONE_MASK 0x1`, `DDRT_TEST_PASS_MASK 0x2`; BURST_CONFIG values 0x4F (data eye) / 0x43 (gate training). No data sheet documents the block.";
 
     reg {
         name = "DDRT operation register";
@@ -179,6 +181,18 @@ Vendor U-Boot `arch/arm/cpu/hi3535/ddr_dataeye_training.[ch]` (Hi3535 DDR traini
             hw = r;
         } value[31:0];
     } DDRT_REVERSED_DQ @ 0x30;
+
+    reg {
+        name = "DDRT PRBS seed";
+        desc = "Starting random seed of the PRBS pattern generator (`DDRT_SEED`, vendor `ddr_ddrt_s40.h` / `ddr_ddrt_t28.h`; the generic training code writes `DDRT_CFG_SEED` 0x6D6D6D6D). Also in the Hi3520D V200 `ddrtv200.h` list. Not in the Hi3535 training code, unverified on the Hi3520D.";
+
+        field {
+            name = "seed";
+            desc = "PRBS seed (layout not documented).";
+            sw = rw;
+            hw = r;
+        } seed[31:0];
+    } DDRT_SEED @ 0x38;
 
     reg {
         name = "Ddrt Kdata";
