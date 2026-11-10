@@ -801,6 +801,14 @@ regfile eHISI_VDP {
     name = "HiSilicon video display processor";
     desc = "
     HiSilicon video display processor (VDP) at 0x205C0000, GIC interrupt ID 67. Reads video and graphics layers from DDR over AXI, overlays them (crossbar/mixer CBM) and drives the display channels: video layers VHD0 (HD, scaler ZME, 16 \"regions\" per layer: VHDPmxxx), VSD0/VSD1 (SD), graphics layers G0, G2, G3 (G0 with decompression DCMP registers), cursor layer HC0, write-back channel WBC2, display channels DHD0 (HD: HDMI/VGA), DSD0 and DSD1 (SD/CVBS with the DATE and DATE1 TV encoders), plus a PARA block that loads the ZME coefficient tables (VHD H/V luma/chroma coefficients at 0xD000.., WBC coefficients at 0xE000..). Registers and reset values are from Hi3520D/Hi3515A/Hi3515C data sheet issue 07, chapter 11.2 (`datasheet.txt` lines 35754-48186; the data sheet notes the Hi3520D VDP base 0x205C0000 and the register addressing at line 35930). The VDP is almost entirely \"non-instant\" registers: write the register, then pulse the layer or channel `*UPD` (update) bit; the register groups are updated on the vertical blanking of the display channel. Arrays: VHDPm* m = 0..15 stride 0x20 (`VHDP*` below), VSDi* i = 0..1 stride 0x1000 (`VSD*`). The vendor U-Boot VO code (`product/hiosd/vo/hi3520d/vou_reg.h`, \"Created file for 3520D\") has the same register set as C unions; offsets and names were not cross-checked field by field (that header is generated from the same RTL tables) but the layer/channel structure agrees. Not hardware verified.
+
+    **Other chips (data sheet cross-check 2026-11-09):** the Hi3518 V100 / Hi3518E V100 / Hi3516C V100 VDP (113 registers in those data sheets) is a cut-down version of this block: 81 registers
+    are identical by offset, name, fields and reset (the VSD1, G3, HC0-less CBM, DSD1 and DATE1 sets plus the global registers), its remaining 32 registers are the VSD1 layer at 0x4000-0x4C04
+    which this file models as `VSD[1]`, and DATE_DACDET1/2 at 0xC4AC/0xC4B0 (not here). Differences in the shared registers: the G3 CSC coefficients are RO there (fixed), G3CBMPARA has
+    palpha_range at bit 8, G3CSCIDC csc_mode at bit 28, CBMMIX4 has no mixer_prio2, DSD1CLIPL/H reset 0x4010_1010 / 0x00EB_F0F0 and DSD1STATE reset 0x110, DATE1_COEFF23 reset 0x0065_4321,
+    VOINTSTA/VOMSKINTSTA/VOINTMSK carry only the VSD1/G3/DSD1/DATE1 bits (bit 23 g3rr_int, bit 20 vsd1rr_int, bit 29 vdac_int), VOCTRL names bits [19:16]/[11:8]/[7:4] outstd_wid0/
+    outstd_rid0/outstd_rid1 and VOMUX has bt1120_sel_yc at bit 23. Those chips are not instantiated with this regfile. The Hi3511 / Hi3512 / Hi3515 / Hi3520 VOU, the Hi3516 V100 VDP and the
+    Hi3518E V20X / Hi3516A / Hi3516C V300 / Hi3519 VDP (`eHISI_VDP_V2`, V1/G2/DHD1 names) are other generations.
     ";
 
     reg {
