@@ -102,10 +102,19 @@ regfile eDDRC {
         } ecc_derr[4:4];
 `endif
 
+`ifdef DDRC_RESET_G3
+        // Hi3520 V100 (original Chinese data sheet DDRC_STATUS, 0 = 初始化中, 1 = 正常工作模式): the polarity is the
+        // opposite of the Hi3518 / Hi3520D data sheets (0 = normal, 1 = initializing). Reset 1 (DS total 0x4D).
+        enum DDRC_STATUS_in_init_enum {
+            INITIALIZING = 0x0 { desc = "Initializing."; };
+            NORMAL       = 0x1 { desc = "Normal operating mode."; };
+        };
+`else
         enum DDRC_STATUS_in_init_enum {
             NORMAL         = 0x0 { desc = "Normal."; };
             INITIALIZATION = 0x1 { desc = "Initialization state."; };
         };
+`endif
 
         field {
             name = "in_init";
@@ -120,6 +129,16 @@ regfile eDDRC {
             sw = r;
             hw = w;
         } in_init[3:3];
+
+`ifdef DDRC_RESET_G3
+        field {
+            name = "reserved_nz";
+            desc = "Reserved in the bit table ([31:4] RO reserved), but the Hi3520 V100 data sheet total reset value is 0x0000_004D, so bit 6 reads 1 after reset (original Chinese data sheet 4.1.7 DDRC_STATUS, `hi3520v100--Hi3520-Datasheet.txt` line 20606).";
+            sw = r;
+            hw = na;
+            reset = 0x1;
+        } reserved_nz[6:6];
+`endif
 
         enum DDRC_STATUS_in_sr_enum {
             NORMAL       = 0x0 { desc = "Normal."; };
@@ -206,13 +225,17 @@ regfile eDDRC {
 
 `ifdef DDRC_INIT_REQ_FIELD
         enum DDRC_SREFCTRL_init_req_enum {
-            NORMAL  = 0x0 { desc = "Normal operating mode."; };
-            TESTING = 0x1 { desc = "The initialization starts. When the initialization is complete, this bit is cleared automatically."; };
+            NORMAL     = 0x0 { desc = "Normal operating mode."; };
+            START_INIT = 0x1 { desc = "Start the hardware initialization. When the initialization is complete, this bit is cleared automatically."; };
         };
 
         field {
             name = "init_req";
-            desc = "Hardware initialization control. Only writing 1 to this bit has effect.";
+`ifdef DDRC_RESET_G3
+            desc = "Hardware initialization control. Only writing 1 to this bit has effect (self-clearing). Hi3520 V100: the data sheet calls this register DDRC_CTRL (0x004, reset 0x0000_0001, `hi3520v100--Hi3520-Datasheet.txt` line 20653) with the same two bits; its bit-name row also prints clk_ratio at bit 2 while the bit table lists [31:2] as reserved, so bit 2 is not modelled.";
+`else
+            desc = "Hardware initialization control. Only writing 1 to this bit has effect (self-clearing).";
+`endif
             encode = DDRC_SREFCTRL_init_req_enum;
             reset = 0x0;
         } init_req[1:1];
@@ -254,32 +277,25 @@ regfile eDDRC {
 `ifdef DDRC_EMRS01_0X08_REG
     reg {
         name = "Mode configuration register for DDR";
+        desc = "Hi3520 V100 DDR2 mode register 1 (DDRC_EMRS01). Bits [31:23] and [15:12] are reserved and must be written as 0. Original Chinese data sheet 4.1.7 (`hi3520v100--Hi3520-Datasheet.txt` line 20686), total reset 0x0000_0000.";
 
         field {
             name = "ddr_rtt1";
-            desc = "DDR2 SDRAM matched impedance. This bit works together with bit[ddr_rtt0].";
+            desc = "DDR2 SDRAM termination (RTT), high bit. {ddr_rtt1, ddr_rtt0}: 00 termination disabled, 01 75 ohm, 10 150 ohm, 11 50 ohm. Configure according to the DDR2 SDRAM vendor manual (original Chinese data sheet DDRC_EMRS01, `hi3520v100--Hi3520-Datasheet.txt` line 20686).";
             reset = 0x0;
         } ddr_rtt1[22:22];
 
-        enum DDRC_EMRS01_ddr_rtt0_enum {
-            OHM_75  = 0x1 { desc = "75 ╬⌐"; };
-            OHM_150 = 0x2 { desc = "150 ╬⌐"; };
-            OHM_50  = 0x3 { desc = "50 ╬⌐"; };
-        };
+        field {
+            name = "ddr_al";
+            desc = "Reserved, must be written as 0 (the data sheet names the field ddr_al, additive latency, but documents it as reserved).";
+            reset = 0x0;
+        } ddr_al[21:19];
 
         field {
             name = "ddr_rtt0";
-            desc = "
-            DDR2 SDRAM matched impedance. This bit works together with bit[ddr_rtt0].
-
-            !!! NOTE
-                Configure this bit according to the instructions in the DDR2 SDRAM manuals.
-
-            !!! CAUTION
-                The datasheet specifies this as bit `18` only, with `19` being reserved. This data is too large for `18`, so I did a best guess and allocated `19` as well.
-            ";
-            encode = DDRC_EMRS01_ddr_rtt0_enum;
-        } ddr_rtt0[19:18];
+            desc = "DDR2 SDRAM termination (RTT), low bit. {ddr_rtt1, ddr_rtt0}: 00 termination disabled, 01 75 ohm, 10 150 ohm, 11 50 ohm. Configure according to the DDR2 SDRAM vendor manual.";
+            reset = 0x0;
+        } ddr_rtt0[18:18];
 
         enum DDRC_EMRS01_ddr_drv_enum {
             STRONG = 0x0 { desc = "Strong drive"; };
@@ -301,15 +317,16 @@ regfile eDDRC {
         } ddr_dll_en[16:16];
 
         enum DDRC_EMRS01_ddr_wr_enum {
-            CYCLE_3 = 0x2 { desc = "3 Clock Cycles"; };
-            CYCLE_4 = 0x3 { desc = "4 Clock Cycles"; };
-            CYCLE_5 = 0x4 { desc = "5 Clock Cycles"; };
-            CYCLE_6 = 0x5 { desc = "6 Clock Cycles"; };
+            CYCLE_2 = 0x2 { desc = "2 clock cycles"; };
+            CYCLE_3 = 0x3 { desc = "3 clock cycles"; };
+            CYCLE_4 = 0x4 { desc = "4 clock cycles"; };
+            CYCLE_5 = 0x5 { desc = "5 clock cycles"; };
+            CYCLE_6 = 0x6 { desc = "6 clock cycles"; };
         };
 
         field {
             name = "ddr_wr";
-            desc = "DDR2 SDRAM write recovery time.";
+            desc = "DDR2 SDRAM write recovery time (other values reserved).";
             encode = DDRC_EMRS01_ddr_wr_enum;
             reset = 0x0;
         } ddr_wr[11:9];
@@ -347,18 +364,14 @@ regfile eDDRC {
 
         field {
             name = "ddr_cas";
-            desc = "
-            DDR2 SDRAM CAS configuration.
-
-            !!! NOTE
-                The CL cannot be set to 3. You must set the CL to a value greater than 3.
-            ";
+            desc = "DDR2 SDRAM CAS latency (other values reserved).";
             encode = DDRC_EMRS01_ddr_cas_enum;
             reset = 0x0;
         } ddr_cas[6:4];
 
         enum DDRC_EMRS01_ddr_bt_enum {
-            IN_SEQUENCE = 0x0 { desc = "In Sequence"; };
+            SEQUENTIAL = 0x0 { desc = "Sequential burst"; };
+            RESERVED   = 0x1 { desc = "Reserved"; };
         };
 
         field {
@@ -375,7 +388,7 @@ regfile eDDRC {
 
         field {
             name = "ddr_bl";
-            desc = "DDR2 SDRAM burst length.";
+            desc = "DDR2 SDRAM burst length (other values reserved).";
             encode = DDRC_EMRS01_ddr_bl_enum;
             reset = 0x0;
         } ddr_bl[2:0];
@@ -429,15 +442,17 @@ regfile eDDRC {
 `ifdef DDRC_CONFIG_0x10_REG
     reg {
         name = "DDRC Configuration Register";
+        desc = "Hi3520 V100 DDRC_CONFIG (original Chinese data sheet 4.1.7, `hi3520v100--Hi3520-Datasheet.txt` line 20825, total reset 0x0000_6022). Bits 19, 17, [11:10] and 3 are reserved (RW).";
 
         field {
             name = "init_arefnum";
             desc = "
-                Count of auto refreshes required for the hardware initialization.
+                Number of auto refreshes issued by the hardware initialization.
 
-                * `0x0000`ΓÇô`0x0010`: 2
-                * `0x0011`ΓÇô`0x1111`: n clock cycles. The letter n indicates the corresponding decimal value.
+                * `0x0`-`0x2`: 2
+                * `0x3`-`0xF`: n (decimal value of the field)
             ";
+            reset = 0x0;
         } init_arefnum[31:28];
 
         field {
@@ -451,6 +466,7 @@ regfile eDDRC {
                 !!! NOTE
                     For example, 0x03 indicates that the DDR2 SDRAM enters the low-power mode automatically if it does not receive any request within three clock cycles.
             ";
+            reset = 0x0;
         } pr_prd[27:20];
 
         field {
@@ -473,19 +489,13 @@ regfile eDDRC {
         } pd_en[16:16];
 
         enum DDRC_CONFIG_mem_type_enum {
-            SDRAM_16    = 0x0 { desc = "16-bit mobile SDRAM"; };
-            SDRAM_32    = 0x1 { desc = "32-bit mobile SDRAM"; };
-            DDR_16      = 0x2 { desc = "16-bit DDR"; };
-            DDR_32      = 0x3 { desc = "32-bit DDR"; };
-            DDR_I_16    = 0x4 { desc = "16-bit DDR I"; };
-            DDR_I_32    = 0x5 { desc = "32-bit DDR I"; };
-            DDR_II_16   = 0x6 { desc = "16-bit DDR II"; };
-            DDR_II_32   = 0x7 { desc = "32-bit DDR II"; };
+            DDR2_16 = 0x6 { desc = "16-bit DDR2"; };
+            DDR2_32 = 0x7 { desc = "32-bit DDR2"; };
         };
 
         field {
             name = "mem_type";
-            desc = "External memory type.";
+            desc = "External memory type (the data sheet documents only 0x6 and 0x7, other values reserved).";
             encode = DDRC_CONFIG_mem_type_enum;
             reset = 0x6;
         } mem_type[15:12];
@@ -697,7 +707,7 @@ regfile eDDRC {
             reset = 0x0;
         } pd_en[16:16];
 
-`ifndef DDRC_TIMING_ENABLE_CONTROL
+`ifndef DDRC_CONFIG0_NO_2T   // Hi3518 / Hi3516C data sheets: bits [15:14] reserved (RW); Hi3520D: ddrc_2t_sel / ddrc_2t_en
         enum DDRC_CONFIG0_ddrc_2t_sel_enum {
             VALID_ONE  = 0x0 { desc = "On the DDR interface, the CS_N signal is valid for one cycle, RAS_N, CAS_N and WE_N are valid for two cycles, and the address is valid for two cycles."; };
             ALWAYS_LOW = 0x1 { desc = "On the DDR interface, the CS_N signal is always active low, and RAS_N, CAS_N and WE_N are valid for one cycle , the address is valid for two cycles."; };
@@ -1045,11 +1055,23 @@ regfile eDDRC {
             CYCLE_15  = 0xF { desc = "15 Clock Cycles"; };
         };
 
+        enum DDRC_TIMING0_tmrd_enum {
+            CYCLE_1_0 = 0x0 { desc = "1 clock cycle"; };
+            CYCLE_1_1 = 0x1 { desc = "1 clock cycle"; };
+            CYCLE_2   = 0x2 { desc = "2 clock cycles"; };
+            CYCLE_3   = 0x3 { desc = "3 clock cycles"; };
+            CYCLE_4   = 0x4 { desc = "4 clock cycles"; };
+            CYCLE_5   = 0x5 { desc = "5 clock cycles"; };
+            CYCLE_6   = 0x6 { desc = "6 clock cycles"; };
+            CYCLE_7   = 0x7 { desc = "7 clock cycles"; };
+        };
+
         field {
             name = "tmrd";
-            desc = "Wait period for the Load Mode Register (LMR) command";
-            encode = DDRC_TIMING0_clk_cycles_1_enum;
-        } tmrd[31:28];
+            desc = "Wait period for the Load Mode Register (LMR) command. Bit 31 is reserved (original Chinese data sheet DDRC_TIMING0, `hi3520v100--Hi3520-Datasheet.txt` line 20937, total reset 0x7FFF_3F1F).";
+            encode = DDRC_TIMING0_tmrd_enum;
+            reset = 0x7;
+        } tmrd[30:28];
 
         field {
             name = "trrd";
@@ -1136,32 +1158,14 @@ regfile eDDRC {
     reg {
         name = "DDR Timing Parameter Register 1";
 
-        enum DDRC_TIMING1_clk_cycles_1_enum {
-            CYCLE_1_0 = 0x0 { desc = "1 Clock Cycle"; };
-            CYCLE_1_1 = 0x1 { desc = "1 Clock Cycle"; };
-            CYCLE_2   = 0x2 { desc = "2 Clock Cycles"; };
-            CYCLE_3   = 0x3 { desc = "3 Clock Cycles"; };
-            CYCLE_4   = 0x4 { desc = "4 Clock Cycles"; };
-            CYCLE_5   = 0x5 { desc = "5 Clock Cycles"; };
-            CYCLE_6   = 0x6 { desc = "6 Clock Cycles"; };
-            CYCLE_7   = 0x7 { desc = "7 Clock Cycles"; };
-            CYCLE_8   = 0x8 { desc = "8 Clock Cycles"; };
-            CYCLE_9   = 0x9 { desc = "9 Clock Cycles"; };
-            CYCLE_10  = 0xA { desc = "10 Clock Cycles"; };
-            CYCLE_11  = 0xB { desc = "11 Clock Cycles"; };
-            CYCLE_12  = 0xC { desc = "12 Clock Cycles"; };
-            CYCLE_13  = 0xD { desc = "13 Clock Cycles"; };
-            CYCLE_14  = 0xE { desc = "14 Clock Cycles"; };
-            CYCLE_15  = 0xF { desc = "15 Clock Cycles"; };
-        };
-
         field {
             name = "tsre";
             desc = "
-                Exit the wait cycle from Self-Refresh to Read Command.
-                0x0: 1 clock cycle
-                0x01-0xFF: nx2 clock cycles.
-                For DDR3 SDRAM, this value configures the tXSDLL value.
+                Wait period from exiting self-refresh to a read command.
+
+                * `0x00`-`0xFF`: n clock cycles (devices usually require 200 clock cycles).
+
+                Original Chinese data sheet DDRC_TIMING1 (`hi3520v100--Hi3520-Datasheet.txt` line 21011, total reset 0xFF01_23FF). Bits 19 and 11 are reserved.
             ";
             reset = 0xFF;
         } tsre[31:24];
@@ -1169,52 +1173,59 @@ regfile eDDRC {
         field {
             name = "trdlat";
             desc = "
-                DDRPHY inherent latency.
+                Read data latency, determined by the length of the DQS traces on the board.
 
                 * `0x0`-`0xF`: n+1 cycles.
-
-                When using Dolphin PHY, it is configured as 0x5.
-                Valid when read_mode=1 (delayed read mode).
             ";
+            reset = 0x0;
         } trdlat[23:20];
 
         field {
             name = "trtw";
             desc = "
-                Latency from last read data to first write data.
+                Latency from the last read data to the first write data.
 
-                * `0x0`-`0x1`: 1 clock cycle;
-                * `0x2`-`0xF`: n+1 clock cycle.
+                * `0b000`-`0b110`: n+1 clock cycles.
             ";
-        } trtw[19:16];
+            reset = 0x1;
+        } trtw[18:16];
 
         field {
             name = "twl";
             desc = "
-                Wait period from write command to write data.
+                Wait period from the write command to the write data.
+
+                * `0x0`-`0xF`: n clock cycles.
 
                 !!! NOTE
-                    In DDR2 mode, twl is configured as tcl-1, and twl ΓÇôtaond ΓëÑ1 should be satisfied when twl is configured.
-                    The time parameter is calculated according to the ddr sram clock cycle.
+                    In DDR2 mode twl is configured as tcl-1, and twl-taond >= 1 must hold.
             ";
-            encode = DDRC_TIMING1_clk_cycles_1_enum;
             reset = 0x2;
         } twl[15:12];
 
+        enum DDRC_TIMING1_tcl_enum {
+            CL_3 = 0x3 { desc = "CL = 3"; };
+            CL_4 = 0x4 { desc = "CL = 4"; };
+            CL_5 = 0x5 { desc = "CL = 5"; };
+            CL_6 = 0x6 { desc = "CL = 6"; };
+        };
+
         field {
             name = "tcl";
-            desc = "DDR read command to read data delay (CAS Latency).";
-            encode = DDRC_TIMING1_clk_cycles_1_enum;
-        } tcl[11:8];
+            desc = "DDR read command to read data delay (CAS latency); other values reserved.";
+            encode = DDRC_TIMING1_tcl_enum;
+            reset = 0x3;
+        } tcl[10:8];
 
         field {
             name = "trfc";
             desc = "
-                Auto refresh command period and auto refresh to active (AREF period or AREF to ACT) command wait period. This register selects a large value for configuration max{trfc,tzqcs}.
+                Auto refresh command period and auto refresh to active (AREF period or AREF to ACT) command wait period.
 
                 * `0x00`-`0x01`: 1 clock cycle;
                 * `0x02`-`0xFF`: n clock cycles.
             ";
+            reset = 0xFF;
         } trfc[7:0];
 
     } DDRC_TIMING1 @ 0x0024;
@@ -1260,29 +1271,30 @@ regfile eDDRC {
             CYCLE_15 = 0xF { desc = "15 Clock Cycles"; };
         };
 
+        enum DDRC_TIMING2_cycles2_enum {
+            CYCLE_1_0 = 0x0 { desc = "1 clock cycle"; };
+            CYCLE_1_1 = 0x1 { desc = "1 clock cycle"; };
+            CYCLE_2   = 0x2 { desc = "2 clock cycles"; };
+            CYCLE_3   = 0x3 { desc = "3 clock cycles"; };
+        };
+
         field {
             name = "tcke";
-            desc = "
-                The minimum time to maintain a low power state
-                This value needs to configure the maximum value among tCKESR, tCKSRE, tCKSRX, and tCKE. When using Dophin's DDRPHY, the value of this register is configured as max{tCKSRx,tCKE}+3.
-            ";
-            encode = DDRC_TIMING2_clk_cycles_enum;
-        } tcke[31:28];
+            desc = "Minimum time the DDR stays in the low-power state. Bits [31:30], [27:26], [19:18] and 11 are reserved (original Chinese data sheet DDRC_TIMING2, `hi3520v100--Hi3520-Datasheet.txt` line 21081, total reset 0x33F3_F7FF).";
+            encode = DDRC_TIMING2_cycles2_enum;
+            reset = 0x3;
+        } tcke[29:28];
 
         field {
             name = "twtr";
-            desc = "The wait cycle for the last write data to read command (write to read) of the write operation.";
-            encode = DDRC_TIMING2_clk_cycles_enum;
-        } twtr[27:24];
+            desc = "Wait period from the last write data to a read command (write to read).";
+            encode = DDRC_TIMING2_cycles2_enum;
+            reset = 0x3;
+        } twtr[25:24];
 
         field {
             name = "twr";
-            desc = "
-                Write recovery wait period.
-
-                !!! NOTE
-                    When DFS is required, the tWR parameter needs to be configured according to the highest possible frequency of the chip in DFS . And the configuration of tWR cannot be modified with the frequency change of DDR .
-            ";
+            desc = "Write recovery wait period.";
             encode = DDRC_TIMING2_clk_cycles_enum;
             reset = 0xF;
         } twr[23:20];
@@ -1290,23 +1302,22 @@ regfile eDDRC {
         field {
             name = "tfaw";
             desc = "
-                4 consecutive active command cycles.
+                Four consecutive activate commands window.
 
                 * `0x00`-`0x3F`: n clock cycles
             ";
+            reset = 0x3F;
         } tfaw[17:12];
 
         field {
             name = "taref";
             desc = "
-                Automatic refresh cycle.
+                Auto refresh period.
 
-                `0x000`: Automatic refresh disabled.
-                `0x001`-`0x7FF`: SDRAM refresh cycle time is 16xn clock cycles.
-
-                The configuration interval time is (tREFI = 7800ns)/16/tclk. Tclk is twice the operating cycle when SDRAM is used.
-                When DDRC_CONFIG1[aref_mode]=1, this register needs to be configured with an interval time of 8 x tREFI.
+                `0x000`: auto refresh disabled.
+                `0x001`-`0x7FF`: SDRAM refresh period of 16 x n clock cycles (e.g. 0x008 = 128 clock cycles; depends on the SDRAM operating frequency).
             ";
+            reset = 0x7FF;
         } taref[10:0];
 
     } DDRC_TIMING2 @ 0x0028;
@@ -1382,80 +1393,49 @@ regfile eDDRC {
 `ifdef DDRC_TIMING3_0x2C_REG
     reg {
         name = "DDR Timing Parameter Register 3";
-
-        field {
-            name = "tzq_prd";
-            desc = "
-                ZQCS command cycle.
-
-                * `0x000`: ZQCS command disabled
-                * `0x001`-`0x3FF`: nx128 AREF cycles.
-
-                ZQCS command cycle time is nx128 taref clock cycles.
-            ";
-        } tzq_prd[31:22];
-
-        field {
-            name = "tzqinit";
-            desc = "
-                ZQ initialization delay period.
-
-                * `0x0`-`0x1ff`: n+1 clock cycles.
-
-                This value configures the maximum value of tZQINIT, tDLLK.
-            ";
-        } tzqinit[21:12];
+        desc = "Hi3520 V100 DDRC_TIMING3 (original Chinese data sheet 4.1.7, `hi3520v100--Hi3520-Datasheet.txt` line 21149, total reset 0x0000_0F02). Bits [31:22] (RO), [19:12] and [7:3] are reserved.";
 
         enum DDRC_TIMING3_taond_enum {
-            CYCLE_0  = 0x0 { desc = "2/2.5"; };
-            CYCLE_1  = 0x1 { desc = "3/3.5"; };
-            CYCLE_2  = 0x2 { desc = "4/4.5"; };
-            CYCLE_3  = 0x3 { desc = "5/5.5"; };
+            CYCLE_2  = 0x0 { desc = "2/2.5"; };
+            CYCLE_3  = 0x1 { desc = "3/3.5"; };
+            CYCLE_4  = 0x2 { desc = "4/4.5"; };
+            CYCLE_5  = 0x3 { desc = "5/5.5"; };
         };
 
         field {
             name = "taond";
-            desc = "
-                ODT (On-die termination) open and close cycle.
-                In DDR2 mode (taond/taofd), enum applies.
-                In DDR3 mode, this value is configured as tWL-1.
-                !!! NOTE
-                    This time parameter is calculated according to ddr sram clock cycle.
-            ";
+            desc = "ODT (on-die termination) turn-on / turn-off period (tAOND / tAOFD) in clock cycles.";
             encode = DDRC_TIMING3_taond_enum;
-            reset = 0xF;
-        } taond[11:8];
+            reset = 0x0;
+        } taond[21:20];
 
         field {
             name = "txard";
             desc = "
-                Exit DDR low-power state wait cycle.
+                Wait period for exiting the DDR2 SDRAM low-power state.
 
-                * `0x0`-`0xF`: n clock cycles, n represents a decimal number
-
-                Take the maximum value among {tXP,tXARD,tXARDS,tXS}. In DDR3 mode, when this register is configured as tXS, txard only needs to be configured as an equivalent clock cycle of 10ns.
+                * `0x0`-`0xF`: n clock cycles (use the maximum of tXP, tXARD and tXARDS).
             ";
-        } txard[7:4];
+            reset = 0xF;
+        } txard[11:8];
 
         enum DDRC_TIMING3_trtp_enum {
-            CYCLE_2_0 = 0x0 { desc = "2 Clock Cycles"; };
-            CYCLE_2_1 = 0x1 { desc = "2 Clock Cycles"; };
-            CYCLE_2_2 = 0x2 { desc = "2 Clock Cycles"; };
-            CYCLE_3   = 0x3 { desc = "3 Clock Cycles"; };
-            CYCLE_4   = 0x4 { desc = "4 Clock Cycles"; };
-            CYCLE_5   = 0x5 { desc = "5 Clock Cycles"; };
-            CYCLE_6   = 0x6 { desc = "6 Clock Cycles"; };
-            CYCLE_7   = 0x7 { desc = "7 Clock Cycles"; };
+            CYCLE_2_0 = 0x0 { desc = "2 clock cycles"; };
+            CYCLE_2_1 = 0x1 { desc = "2 clock cycles"; };
+            CYCLE_2_2 = 0x2 { desc = "2 clock cycles"; };
+            CYCLE_3   = 0x3 { desc = "3 clock cycles"; };
+            CYCLE_4   = 0x4 { desc = "4 clock cycles"; };
+            CYCLE_5   = 0x5 { desc = "5 clock cycles"; };
+            CYCLE_6   = 0x6 { desc = "6 clock cycles"; };
+            CYCLE_7   = 0x7 { desc = "7 clock cycles"; };
         };
 
         field {
             name = "trtp";
-            desc = "
-                Exit DDR low-power state wait cycle.
-                Take the maximum value among {tXP,tXARD,tXARDS,tXS}. In DDR3 mode, when this register is configured as tXS, txard only needs to be configured as an equivalent clock cycle of 10ns.
-            ";
+            desc = "Read command to precharge command wait period. The delay is AL + BL/2 + max(trtp, 2) - 2.";
             encode = DDRC_TIMING3_trtp_enum;
-        } trtp[3:0];
+            reset = 0x2;
+        } trtp[2:0];
 
     } DDRC_TIMING3 @ 0x002C;
 `endif
@@ -1471,7 +1451,7 @@ regfile eDDRC {
 
         field {
             name = "dt_byte_7";
-            desc = "Byte 7 training enable.";
+            desc = "Byte 7 training enable. The data sheets print one 8-bit field dt_byte[31:24] (bit n = byte n training enable); it is modelled as one bit per byte lane here.";
             encode = dt_byte_enum;
         } dt_byte_7[31:31];
 
@@ -1526,6 +1506,7 @@ regfile eDDRC {
                 * `0x0`-`0x5`: n clock cycles
                 * Other values: reserved
             ";
+            reset = 0x0;
         } train_start_pos[19:16];
 `endif
 
@@ -1535,8 +1516,9 @@ regfile eDDRC {
             desc = "
                 Number of ranks in the gating training.
 
-                * `0x0`ΓÇô`0x3`: n + 1 ranks
+                * `0x0`-`0x3`: n + 1 ranks
             ";
+            reset = 0x0;
         } train_rank[13:12];
 `endif
 
@@ -2134,7 +2116,9 @@ regfile eDDRC {
                 * `0x2`–`0xF`: n clock cycles
 
                 The parameter is equal to `twlo`+`twloe` defined in the DDR3 protocol.
+                Hi3518 data sheet total reset 0x000F_2028 (`hi3518v100--Hi3518-Datasheet.txt` line 28362).
                 ";
+            reset = 0xF;
         } twlo[19:16];
 
         field {
@@ -2143,8 +2127,9 @@ regfile eDDRC {
                 DDR3 write level start delay.
 
                 * `0x0`–`0x1`: 1 clock cycle
-                * `0x02`-0x3F`: n clock cycles
+                * `0x02`-`0x3F`: n clock cycles
             ";
+            reset = 0x20;
         } twldqsen[13:8];
 
         field {
@@ -2155,6 +2140,7 @@ regfile eDDRC {
                 * `0x0`–`0x1`: 1 clock cycle
                 * `0x02`-`0x3F`: n clock cycles
             ";
+            reset = 0x28;
         } twlmrd[5:0];
 
     } DDRC_TIMING4 @ 0x0060;
@@ -2163,31 +2149,23 @@ regfile eDDRC {
 `ifdef DDRC_ODT_CONFIG_0x94_REG
     reg {
         name = "DDR ODT Feature Configuration Register";
-
-        enum DDRC_ODTCFG_rodt_enum {
-            DISABLE_READING = 0x0 { desc = "Disable reading ODT."; };
-            ENABLE_READING  = 0x1 { desc = "Enable read ODT."; };
-        };
+        desc = "Hi3520 V100 DDRC_ODT_CONFIG (original Chinese data sheet 4.1.7, `hi3520v100--Hi3520-Datasheet.txt` line 21204, total reset 0x0000_0001). Bits [31:2] are reserved (RO).";
 
         field {
             name = "rodt";
-            desc = "Rank reads ODT configuration.";
-            encode = DDRC_ODTCFG_rodt_enum;
-        } rodt[16:16];
-
-        enum DDRC_ODTCFG_wodt_enum {
-            ENABLE_WRITING  = 0x1 { desc = "Enable writing ODT."; };
-            DISABLE_WRITING = 0x0 { desc = "Disable writing ODT."; };
-        };
+            desc = "Read ODT enable.";
+            encode = DDRC_enabled_enum;
+            reset = 0x0;
+        } rodt[1:1];
 
         field {
             name = "wodt";
-            desc = "Rank reads ODT configuration.";
-            encode = DDRC_ODTCFG_wodt_enum;
+            desc = "Write ODT enable.";
+            encode = DDRC_enabled_enum;
             reset = 0x1;
         } wodt[0:0];
 
-    } DDRC_ODTCFG @ 0x0094;
+    } DDRC_ODT_CONFIG @ 0x0094;
 `endif
 
 `ifdef DDRC_DTRADDR_REG
@@ -2302,7 +2280,7 @@ regfile eDDRC {
 
         field {
             name = "dt_byte_7";
-            desc = "Byte 7 training enable.";
+            desc = "Byte 7 training enable. The data sheets print one 8-bit field dt_byte[31:24] (bit n = byte n training enable); it is modelled as one bit per byte lane here.";
             encode = dt_byte_enum;
             reset = 0x0;
         } dt_byte_7[31:31];
@@ -2365,6 +2343,7 @@ regfile eDDRC {
                 * `0x0`-`0x5`: n clock cycles
                 * Other values: reserved
             ";
+            reset = 0x0;
         } train_start_pos[19:16];
 `endif
 
@@ -2474,11 +2453,6 @@ regfile eDDRC {
     reg {
         name = "DDRC Gating Track Period Configuration Register";
 
-        enum DDRC_DTRPRD_track_en_enum {
-            FORBIDDEN = 0x0 { desc = "Forbidden."; };
-            ENABLE    = 0x1 { desc = "Enable."; };
-        };
-
         field {
             name = "track_prd";
             desc = "
@@ -2487,7 +2461,7 @@ regfile eDDRC {
                 * `0x0`: 1 AREF period
                 * `0x1`-`0x7FF`: n + 1 AREF periods
             ";
-            encode = DDRC_DTRPRD_track_en_enum;
+            reset = 0x0;
         } track_prd[19:0];
 
     } DDRC_DTRPRD @ 0x00B0;
@@ -2549,6 +2523,8 @@ regfile eDDRC {
             desc = "Phase shift status of the byte gating position for byte 7.";
             encode = DDRC_DTRSTATUS_dtr_st_enum;
             sw = r;
+            hw = w;
+            reset = 0x0;
         } dtr_st_byte_7[31:30];
 
         field {
@@ -2556,6 +2532,8 @@ regfile eDDRC {
             desc = "Phase shift status of the byte gating position for byte 6.";
             encode = DDRC_DTRSTATUS_dtr_st_enum;
             sw = r;
+            hw = w;
+            reset = 0x0;
         } dtr_st_byte_6[29:28];
 
         field {
@@ -2563,6 +2541,8 @@ regfile eDDRC {
             desc = "Phase shift status of the byte gating position for byte 5.";
             encode = DDRC_DTRSTATUS_dtr_st_enum;
             sw = r;
+            hw = w;
+            reset = 0x0;
         } dtr_st_byte_5[27:26];
 
         field {
@@ -2570,6 +2550,8 @@ regfile eDDRC {
             desc = "Phase shift status of the byte gating position for byte 4.";
             encode = DDRC_DTRSTATUS_dtr_st_enum;
             sw = r;
+            hw = w;
+            reset = 0x0;
         } dtr_st_byte_4[25:24];
 
         field {
@@ -2577,6 +2559,8 @@ regfile eDDRC {
             desc = "Phase shift status of the byte gating position for byte 3.";
             encode = DDRC_DTRSTATUS_dtr_st_enum;
             sw = r;
+            hw = w;
+            reset = 0x0;
         } dtr_st_byte_3[23:22];
 
         field {
@@ -2584,6 +2568,8 @@ regfile eDDRC {
             desc = "Phase shift status of the byte gating position for byte 2.";
             encode = DDRC_DTRSTATUS_dtr_st_enum;
             sw = r;
+            hw = w;
+            reset = 0x0;
         } dtr_st_byte_2[21:20];
 
         field {
@@ -2591,6 +2577,8 @@ regfile eDDRC {
             desc = "Phase shift status of the byte gating position for byte 1.";
             encode = DDRC_DTRSTATUS_dtr_st_enum;
             sw = r;
+            hw = w;
+            reset = 0x0;
         } dtr_st_byte_1[19:18];
 
         field {
@@ -2598,6 +2586,8 @@ regfile eDDRC {
             desc = "Phase shift status of the byte gating position for byte 0.";
             encode = DDRC_DTRSTATUS_dtr_st_enum;
             sw = r;
+            hw = w;
+            reset = 0x0;
         } dtr_st_byte_0[17:16];
 
         enum DDRC_DTRSTATUS_dtr_ok_enum {
@@ -2610,6 +2600,8 @@ regfile eDDRC {
             desc = "Gating training status for byte 7.";
             encode = DDRC_DTRSTATUS_dtr_ok_enum;
             sw = r;
+            hw = w;
+            reset = 0x0;
         } dtr_ok_byte_7[15:15];
 
         field {
@@ -2617,6 +2609,8 @@ regfile eDDRC {
             desc = "Gating training status for byte 6.";
             encode = DDRC_DTRSTATUS_dtr_ok_enum;
             sw = r;
+            hw = w;
+            reset = 0x0;
         } dtr_ok_byte_6[14:14];
 
         field {
@@ -2624,6 +2618,8 @@ regfile eDDRC {
             desc = "Gating training status for byte 5.";
             encode = DDRC_DTRSTATUS_dtr_ok_enum;
             sw = r;
+            hw = w;
+            reset = 0x0;
         } dtr_ok_byte_5[13:13];
 
         field {
@@ -2631,6 +2627,8 @@ regfile eDDRC {
             desc = "Gating training status for byte 4.";
             encode = DDRC_DTRSTATUS_dtr_ok_enum;
             sw = r;
+            hw = w;
+            reset = 0x0;
         } dtr_ok_byte_4[12:12];
 
         field {
@@ -2638,6 +2636,8 @@ regfile eDDRC {
             desc = "Gating training status for byte 3.";
             encode = DDRC_DTRSTATUS_dtr_ok_enum;
             sw = r;
+            hw = w;
+            reset = 0x0;
         } dtr_ok_byte_3[11:11];
 
         field {
@@ -2645,6 +2645,8 @@ regfile eDDRC {
             desc = "Gating training status for byte 2.";
             encode = DDRC_DTRSTATUS_dtr_ok_enum;
             sw = r;
+            hw = w;
+            reset = 0x0;
         } dtr_ok_byte_2[10:10];
 
         field {
@@ -2652,6 +2654,8 @@ regfile eDDRC {
             desc = "Gating training status for byte 1.";
             encode = DDRC_DTRSTATUS_dtr_ok_enum;
             sw = r;
+            hw = w;
+            reset = 0x0;
         } dtr_ok_byte_1[9:9];
 
         field {
@@ -2659,6 +2663,8 @@ regfile eDDRC {
             desc = "Gating training status for byte 0.";
             encode = DDRC_DTRSTATUS_dtr_ok_enum;
             sw = r;
+            hw = w;
+            reset = 0x0;
         } dtr_ok_byte_0[8:8];
 
         enum DDRC_DTRSTATUS_dtr_err_enum {
@@ -2671,6 +2677,8 @@ regfile eDDRC {
             desc = "Auto tracking error status of the gating position for byte 7.";
             encode = DDRC_DTRSTATUS_dtr_err_enum;
             sw = r;
+            hw = w;
+            reset = 0x0;
         } dtr_err_byte_7[7:7];
 
         field {
@@ -2678,6 +2686,8 @@ regfile eDDRC {
             desc = "Auto tracking error status of the gating position for byte 6.";
             encode = DDRC_DTRSTATUS_dtr_err_enum;
             sw = r;
+            hw = w;
+            reset = 0x0;
         } dtr_err_byte_6[6:6];
 
         field {
@@ -2685,6 +2695,8 @@ regfile eDDRC {
             desc = "Auto tracking error status of the gating position for byte 5.";
             encode = DDRC_DTRSTATUS_dtr_err_enum;
             sw = r;
+            hw = w;
+            reset = 0x0;
         } dtr_err_byte_5[5:5];
 
         field {
@@ -2692,6 +2704,8 @@ regfile eDDRC {
             desc = "Auto tracking error status of the gating position for byte 4.";
             encode = DDRC_DTRSTATUS_dtr_err_enum;
             sw = r;
+            hw = w;
+            reset = 0x0;
         } dtr_err_byte_4[4:4];
 
         field {
@@ -2699,6 +2713,8 @@ regfile eDDRC {
             desc = "Auto tracking error status of the gating position for byte 3.";
             encode = DDRC_DTRSTATUS_dtr_err_enum;
             sw = r;
+            hw = w;
+            reset = 0x0;
         } dtr_err_byte_3[3:3];
 
         field {
@@ -2706,6 +2722,8 @@ regfile eDDRC {
             desc = "Auto tracking error status of the gating position for byte 2.";
             encode = DDRC_DTRSTATUS_dtr_err_enum;
             sw = r;
+            hw = w;
+            reset = 0x0;
         } dtr_err_byte_2[2:2];
 
         field {
@@ -2713,6 +2731,8 @@ regfile eDDRC {
             desc = "Auto tracking error status of the gating position for byte 1.";
             encode = DDRC_DTRSTATUS_dtr_err_enum;
             sw = r;
+            hw = w;
+            reset = 0x0;
         } dtr_err_byte_1[1:1];
 
         field {
@@ -2720,6 +2740,8 @@ regfile eDDRC {
             desc = "Auto tracking error status of the gating position for byte 0.";
             encode = DDRC_DTRSTATUS_dtr_err_enum;
             sw = r;
+            hw = w;
+            reset = 0x0;
         } dtr_err_byte_0[0:0];
 
     } DDRC_DTRSTATUS @ 0x00D4;
@@ -2898,6 +2920,17 @@ regfile eDDRC {
 `ifdef DDRC_QOSCFG1_VAR1
         field {
             name = "id_map";
+            desc = "
+                Selects four bits of the bus ID for the QoS configuration lookup:
+
+                * bit[15:12]: bus ID bit mapped to bit[3] of the QoS ID
+                * bit[11:8]: bus ID bit mapped to bit[2]
+                * bit[7:4]: bus ID bit mapped to bit[1]
+                * bit[3:0]: bus ID bit mapped to bit[0]
+
+                For example, 0x5320 uses ID[5], ID[3], ID[2] and ID[0] of the bus ID for the ID mapping and priority configuration. Bits [31:16] are reserved (RO).
+                Hi3520 V100: the data sheet calls this register DDRC_QOS_CONFIG (original Chinese data sheet 4.1.7, `hi3520v100--Hi3520-Datasheet.txt` line 21242, total reset 0x0000_3210).
+            ";
             reset = 0x3210;
         } id_map[15:0];
 `endif
@@ -2938,6 +2971,45 @@ regfile eDDRC {
         } id_map_wr[15:0];
 `endif
     } DDRC_QOSCFG1 @ 0x0104;
+`endif
+
+`ifdef DDRC_RESET_G3
+    reg {
+        name = "DDRC command priority configuration register";
+        desc = "One register per QoS ID, n = 0..15 (0x108 + 0x4 x n). Original Chinese data sheet 4.1.7 DDRC_QOS (`hi3520v100--Hi3520-Datasheet.txt` line 21269, total reset 0x0000_0000; the register is missing from the summary table 4-6). Bits [31:17] (RO), [15:14] and 3 are reserved.";
+
+        field {
+            name = "qos_en";
+            desc = "QoS signal enable.";
+            encode = DDRC_enabled_enum;
+            reset = 0x0;
+        } qos_en[16:16];
+
+        field {
+            name = "qos";
+            desc = "Channel aging time; the recommended range is 0x002-0x3FF.";
+            reset = 0x0;
+        } qos[13:4];
+
+        enum DDRC_QOS_pri_enum {
+            HIGHEST = 0x0 { desc = "Highest priority."; };
+            HIGHER  = 0x1 { desc = "Higher priority."; };
+            P2      = 0x2 { desc = "Priority 2."; };
+            P3      = 0x3 { desc = "Priority 3."; };
+            P4      = 0x4 { desc = "Priority 4."; };
+            P5      = 0x5 { desc = "Priority 5."; };
+            P6      = 0x6 { desc = "Priority 6."; };
+            LOWEST  = 0x7 { desc = "Lowest priority."; };
+        };
+
+        field {
+            name = "pri";
+            desc = "Channel priority (000 highest ... 111 lowest).";
+            encode = DDRC_QOS_pri_enum;
+            reset = 0x0;
+        } pri[2:0];
+
+    } DDRC_QOS[16] @ 0x0108 += 0x4;
 `endif
 
 `ifdef DDRC_QOS_0x150_REG
@@ -3011,7 +3083,11 @@ regfile eDDRC {
 `ifdef DDRC_FLUX_0x200_REG
     reg {
         name = "DDRC AXI port bandwidth flux control configuration register";
+`ifdef DDRC_FLUX_6_PORTS
+        desc = "One register per AXI port, ports = 0..5 (0x200 + 0x4 x ports; Hi3518 data sheet `ports(0-5)`).";
+`else
         desc = "One register per AXI port, ports = 0..4 (0x200 + 0x4 x ports).";
+`endif
 
         field {
             name = "flux_port_en";
@@ -3054,51 +3130,58 @@ regfile eDDRC {
             reset = 0x0;
         } flux[9:0];
 
+`ifdef DDRC_FLUX_6_PORTS
+    } DDRC_FLUX[6] @ 0x0200 += 0x4;
+`else
     } DDRC_FLUX[5] @ 0x0200 += 0x4;
+`endif
 `endif
 
 `ifdef DDRC_DLL_CONTROL_0x240_REG
     reg {
         name = "DLL Control Register";
-        desc = "
-        !!! CAUTION
-            Determine if this is at `0x200` or `0x240`. The `hi3520dv100` datasheet says both?
-        ";
+        desc = "Hi3520 V100 DDRC_DLL_CONTROL: DLL bypass enable, one bit per DLL (original Chinese data sheet 4.1.7, `hi3520v100--Hi3520-Datasheet.txt` line 21321, total reset 0x0000_0000; the summary table 4-6 at line 20582 lists the register at 0x200 while the register description header says 0x240: the description is followed here). Bits [31:6] are reserved (RO).";
 
         field {
             name = "dll_bypass_command";
             desc = "Command Channel DLL Bypass Enable";
-            encode = DDRC_one_enable_enum;
+            encode = DDRC_enabled_enum;
+            reset = 0x0;
         } dll_bypass_command[5:5];
 
         field {
             name = "dll_bypass_ecc";
             desc = "ECC Data Channel DLL Bypass Enable";
-            encode = DDRC_one_enable_enum;
+            encode = DDRC_enabled_enum;
+            reset = 0x0;
         } dll_bypass_ecc[4:4];
 
         field {
             name = "dll_bypass_data_byte_3";
             desc = "Data Byte 3 Channel DLL Bypass Enable";
-            encode = DDRC_one_enable_enum;
+            encode = DDRC_enabled_enum;
+            reset = 0x0;
         } dll_bypass_data_byte_3[3:3];
 
         field {
             name = "dll_bypass_data_byte_2";
             desc = "Data Byte 2 Channel DLL Bypass Enable";
-            encode = DDRC_one_enable_enum;
+            encode = DDRC_enabled_enum;
+            reset = 0x0;
         } dll_bypass_data_byte_2[2:2];
 
         field {
             name = "dll_bypass_data_byte_1";
             desc = "Data Byte 1 Channel DLL Bypass Enable";
-            encode = DDRC_one_enable_enum;
+            encode = DDRC_enabled_enum;
+            reset = 0x0;
         } dll_bypass_data_byte_1[1:1];
 
         field {
             name = "dll_bypass_data_byte_0";
             desc = "Data Byte 0 Channel DLL Bypass Enable";
-            encode = DDRC_one_enable_enum;
+            encode = DDRC_enabled_enum;
+            reset = 0x0;
         } dll_bypass_data_byte_0[0:0];
 
     } DDRC_DLL_CONTROL @ 0x0240;
@@ -3142,8 +3225,9 @@ regfile eDDRC {
             desc = "
             Channel select of the returned data.
 
-            * `0x0`–`0x7`: channel n select
+            * `0x0`-`0x7`: channel n select
             ";
+            reset = 0x0;
         } byte_sel[2:0];
 
     } DDRC_TEST1 @ 0x0244;
@@ -3175,6 +3259,8 @@ regfile eDDRC {
         field {
             name = "data_h";
             desc = "Upper 32 bits of the training data.";
+            sw = r;
+            hw = w;
             reset = 0x0;
         } data_h[31:0];
 
@@ -3188,6 +3274,8 @@ regfile eDDRC {
         field {
             name = "data_l";
             desc = "Lower 32 bits of the training data.";
+            sw = r;
+            hw = w;
             reset = 0x0;
         } data_l[31:0];
 
@@ -3204,9 +3292,11 @@ regfile eDDRC {
             Number of times of correct training data.
 
             * `0x0`–`0xF`: n + 1
-            * [3 x (N + 1) – 1:3 x N]: number of times of correct byteN
+            * [3 x (N + 1) - 1:3 x N]: number of times of correct byteN
             ";
             sw = r;
+            hw = w;
+            reset = 0x0;
         } dt_ok_cnt[31:0];
 
     } DDRC_TEST4 @ 0x0250;
@@ -3313,13 +3403,13 @@ regfile eDDRC {
         } ae[13:13];
 
         enum DDRC_IO_CONFIG_ddr_mode_enum {
-            DDR2 = 0x0 { desc = "DDR2 Mode"; };
-            DDR3 = 0x1 { desc = "DDR1 Mode"; };
+            DDR2 = 0x0 { desc = "DDR2 mode"; };
+            DDR1 = 0x1 { desc = "DDR (DDR1) mode"; };
         };
 
         field {
             name = "ddr_mode";
-            desc = "Controls the output driving mode of the IO";
+            desc = "Controls the output driving mode of the IO (original Chinese data sheet DDRC_IO_CONFIG, `hi3520v100--Hi3520-Datasheet.txt` line 21388, total reset 0x0000_0000; bits [31:14] reserved).";
             encode = DDRC_IO_CONFIG_ddr_mode_enum;
             reset = 0x0;
         } ddr_mode[12:12];
@@ -3339,6 +3429,7 @@ regfile eDDRC {
             * `0x0`: `SSTL_2` class1
             * `0x1`: `SSTL_2` class2
             ";
+            reset = 0x0;
         } ck_ds[11:11];
 
         field {
@@ -3356,12 +3447,13 @@ regfile eDDRC {
             * `0x0`: `SSTL_2` class1
             * `0x1`: `SSTL_2` class2
             ";
+            reset = 0x0;
         } cmd_ds[10:10];
 
         field {
             name = "dqs_ds";
             desc = "
-            Controls the driving mode of the DQ/DM IO
+            Controls the driving mode of the DQ/DM IO (so named in the data sheet; the field names dqs_ds / dq_ds appear swapped against their descriptions)
 
             In DDR2 Mode:
 
@@ -3373,6 +3465,7 @@ regfile eDDRC {
             * `0x0`: `SSTL_2` class1
             * `0x1`: `SSTL_2` class2
             ";
+            reset = 0x0;
         } dqs_ds[9:9];
 
         field {
@@ -3390,12 +3483,14 @@ regfile eDDRC {
             * `0x0`: `SSTL_2` class1
             * `0x1`: `SSTL_2` class2
             ";
+            reset = 0x0;
         } dq_ds[8:8];
 
         enum DDRC_IO_CONFIG_rtt_enum {
-            OHM_150 = 0x1 { desc = "150 Γäª"; };
-            OHM_75  = 0x2 { desc = "75 Γäª"; };
-            OHM_50  = 0x3 { desc = "50 Γäª"; };
+            DISABLED = 0x0 { desc = "ODT disabled"; };
+            OHM_150  = 0x1 { desc = "150 ohm"; };
+            OHM_75   = 0x2 { desc = "75 ohm"; };
+            OHM_50   = 0x3 { desc = "50 ohm"; };
         };
 
         field {
@@ -3570,91 +3665,6 @@ regfile eDDRC {
     } DDRC_PHYSTATUS @ 0x0404;
 `endif
 
-`ifdef DDRC_PUB_PIR_REG
-    reg {
-        name = "PHY Initialization Register";
-        field {
-            name = "initbyp";
-            reset = 0x0;
-        } initbyp[31:31];
-
-        field {
-            name = "zcalbyp";
-            reset = 0x0;
-        } zcalbyp[30:30];
-
-        field {
-            name = "lockbyp";
-            reset = 0x0;
-        } lockbyp[29:29];
-
-        field {
-            name = "clrsr";
-            reset = 0x0;
-        } clrsr[28:28];
-
-        field {
-            name = "ctldinit";
-            reset = 0x0;
-        } ctldinit[18:18];
-
-        field {
-            name = "dllbyp";
-            reset = 0x0;
-        } dllbyp[17:17];
-
-        field {
-            name = "icpc";
-            reset = 0x0;
-        } icpc[16:16];
-
-        field {
-            name = "eyetrn";
-            reset = 0x0;
-        } eyetrn[8:8];
-
-        field {
-            name = "qstrn";
-            reset = 0x0;
-        } qstrn[7:7];
-
-        field {
-            name = "draminit";
-            reset = 0x0;
-        } draminit[6:6];
-
-        field {
-            name = "dramrst";
-            reset = 0x0;
-        } dramrst[5:5];
-
-        field {
-            name = "itmsrst";
-            reset = 0x0;
-        } itmsrst[4:4];
-
-        field {
-            name = "zcal";
-            reset = 0x0;
-        } zcal[3:3];
-
-        field {
-            name = "dlllock";
-            reset = 0x0;
-        } dlllock[2:2];
-
-        field {
-            name = "dllsrst";
-            reset = 0x0;
-        } dllsrst[1:1];
-
-        field {
-            name = "init";
-            reset = 0x0;
-        } init[0:0];
-    } DDRC_PUB_PIR @ 0x0404;
-`endif
-
 `ifdef DDRC_PHYCTRL_REG
     reg {
         name = "DDRPHY Control Register";
@@ -3672,1009 +3682,6 @@ regfile eDDRC {
         } phy_init_start[0:0];
 
     } DDRC_PHYCTRL @ 0x0408;
-`endif
-
-`ifdef DDRC_PUB_PGCR_REG
-    reg {
-        name = "PHY General Configuration Register";
-        field {
-            name = "lbmode";
-            reset = 0x0;
-        } lbmode[31:31];
-
-        field {
-            name = "lbgdqs";
-            reset = 0x0;
-        } lbgdqs[30:30];
-
-        field {
-            name = "lbdqss";
-            reset = 0x0;
-        } lbdqss[29:29];
-
-        field {
-            name = "rfshdt";
-            reset = 0x0;
-        } rfshdt[28:25];
-
-        field {
-            name = "pddisdx";
-            reset = 0x1;
-        } pddisdx[24:24];
-
-        field {
-            name = "zcksel";
-            reset = 0x2;
-        } zcksel[23:22];
-
-        field {
-            name = "ranken";
-            reset = 0x1;
-        } ranken[21:18];
-
-        field {
-            name = "ioddrm";
-            reset = 0x0;
-        } ioddrm[17:16];
-
-        field {
-            name = "iolb";
-            reset = 0x0;
-        } iolb[15:15];
-
-        field {
-            name = "ckinv";
-            reset = 0x0;
-        } ckinv[14:14];
-
-        field {
-            name = "ckdv";
-            reset = 0x2;
-        } ckdv[13:12];
-
-        field {
-            name = "cken";
-            reset = 0x7;
-        } cken[11:9];
-
-        field {
-            name = "dtosel";
-            reset = 0x0;
-        } dtosel[8:5];
-
-        field {
-            name = "dftlmt";
-            reset = 0x0;
-        } dftlmt[4:3];
-
-        field {
-            name = "dftcmp";
-            reset = 0x1;
-        } dftcmp[2:2];
-
-        field {
-            name = "dqscfg";
-            reset = 0x0;
-        } dqscfg[1:1];
-
-        field {
-            name = "itmdmd";
-            reset = 0x0;
-        } itmdmd[0:0];
-    } DDRC_PUB_PGCR @ 0x0408;
-`endif
-
-`ifdef DDRC_PUB_PGSR_REG
-    reg {
-        name = "PHY General Status Register";
-        field {
-            name = "tq";
-            sw = r;
-            hw = w;
-            reset = 0x0;
-        } tq[31:31];
-
-        field {
-            name = "dfterr";
-            sw = r;
-            hw = w;
-            reset = 0x0;
-        } dfterr[7:7];
-
-        field {
-            name = "dtierr";
-            sw = r;
-            hw = w;
-            reset = 0x0;
-        } dtierr[6:6];
-
-        field {
-            name = "dterr";
-            sw = r;
-            hw = w;
-            reset = 0x0;
-        } dterr[5:5];
-
-        field {
-            name = "dtdone";
-            sw = r;
-            hw = w;
-            reset = 0x0;
-        } dtdone[4:4];
-
-        field {
-            name = "didone";
-            sw = r;
-            hw = w;
-            reset = 0x0;
-        } didone[3:3];
-
-        field {
-            name = "zcdone";
-            sw = r;
-            hw = w;
-            reset = 0x0;
-        } zcdone[2:2];
-
-        field {
-            name = "dldone";
-            sw = r;
-            hw = w;
-            reset = 0x0;
-        } dldone[1:1];
-
-        field {
-            name = "idone";
-            sw = r;
-            hw = w;
-            reset = 0x0;
-        } idone[0:0];
-    } DDRC_PUB_PGSR @ 0x040C;
-`endif
-
-`ifdef DDRC_PUB_DLLGCR_REG
-    reg {
-        name = "DLL General Control Register";
-        field {
-            name = "dllrsvd2";
-            reset = 0x0;
-        } dllrsvd2[31:30];
-
-        field {
-            name = "lockdet";
-            reset = 0x0;
-        } lockdet[29:29];
-
-        field {
-            name = "dllrsvd1";
-            reset = 0x0;
-        } dllrsvd1[28:28];
-
-        field {
-            name = "sbias";
-            reset = 0x37;
-        } sbias[27:20];
-
-        field {
-            name = "mbias";
-            reset = 0x37;
-        } mbias[19:12];
-
-        field {
-            name = "testsw";
-            reset = 0x0;
-        } testsw[11:11];
-
-        field {
-            name = "atc";
-            reset = 0x0;
-        } atc[10:9];
-
-        field {
-            name = "dtc";
-            reset = 0x0;
-        } dtc[8:6];
-
-        field {
-            name = "testen";
-            reset = 0x0;
-        } testen[5:5];
-
-        field {
-            name = "ipump";
-            reset = 0x0;
-        } ipump[4:2];
-
-        field {
-            name = "dres";
-            reset = 0x0;
-        } dres[1:0];
-    } DDRC_PUB_DLLGCR @ 0x0410;
-`endif
-
-`ifdef DDRC_PUB_ACDLLCR_REG
-    reg {
-        name = "DLL General Control Register";
-        field {
-            name = "dlldis";
-            reset = 0x0;
-        } dlldis[31:31];
-
-        field {
-            name = "dllsrst";
-            reset = 0x1;
-        } dllsrst[30:30];
-
-        field {
-            name = "sdlbmode";
-            reset = 0x0;
-        } sdlbmode[19:19];
-
-        field {
-            name = "atesten";
-            reset = 0x0;
-        } atesten[18:18];
-
-        field {
-            name = "sdphase";
-            reset = 0x0;
-        } sdphase[17:14];
-
-        field {
-            name = "sstart";
-            reset = 0x0;
-        } sstart[13:12];
-
-        field {
-            name = "mfwdly";
-            reset = 0x0;
-        } mfwdly[11:9];
-
-        field {
-            name = "mfbdly";
-            reset = 0x0;
-        } mfbdly[8:6];
-
-        field {
-            name = "sfwdly";
-            reset = 0x0;
-        } sfwdly[5:3];
-
-        field {
-            name = "sfbdly";
-            reset = 0x0;
-        } sfbdly[2:0];
-    } DDRC_PUB_ACDLLCR @ 0x0414;
-`endif
-
-`ifdef DDRC_PUB_PTR0_REG
-    reg {
-        name = "PHY Timing Register 0";
-        field {
-            name = "titmsrst";
-            reset = 0x8;
-        } titmsrst[21:18];
-
-        field {
-            name = "tdlllock";
-            reset = 0xABE;
-        } tdlllock[17:6];
-
-        field {
-            name = "tdllsrst";
-            reset = 0x1B;
-        } tdllsrst[5:0];
-    } DDRC_PUB_PTR0 @ 0x0418;
-`endif
-
-`ifdef DDRC_PUB_PTR1_REG
-    reg {
-        name = "PHY Timing Register 1";
-        field {
-            name = "tdinit1";
-            reset = 0xC0;
-        } tdinit1[26:19];
-
-        field {
-            name = "tdinit0";
-            reset = 0x4111D;
-        } tdinit0[18:0];
-    } DDRC_PUB_PTR1 @ 0x041C;
-`endif
-
-`ifdef DDRC_PUB_PTR2_REG
-    reg {
-        name = "PHY Timing Register 2";
-        field {
-            name = "tdinit3";
-            reset = 0x216;
-        } tdinit3[26:17];
-
-        field {
-            name = "tdinit2";
-            reset = 0x1A072;
-        } tdinit2[16:0];
-    } DDRC_PUB_PTR2 @ 0x0420;
-`endif
-
-`ifdef DDRC_PUB_ACIOCR_REG
-    reg {
-        name = "AC I/O Configuration Register";
-        field {
-            name = "acsr";
-            sw = r;
-            hw = w;
-            reset = 0x0;
-        } acsr[31:30];
-
-        field {
-            name = "rstiom";
-            reset = 0x1;
-        } rstiom[29:29];
-
-        field {
-            name = "rstpdr";
-            reset = 0x1;
-        } rstpdr[28:28];
-
-        field {
-            name = "rstpdd";
-            reset = 0x0;
-        } rstpdd[27:27];
-
-        field {
-            name = "rstodt";
-            reset = 0x0;
-        } rstodt[26:26];
-
-        field {
-            name = "rankpdr";
-            reset = 0x1;
-        } rankpdr[25:22];
-
-        field {
-            name = "cspdd";
-            reset = 0x0;
-        } cspdd[21:18];
-
-        field {
-            name = "rankodt";
-            reset = 0x0;
-        } rankodt[17:14];
-
-        field {
-            name = "ckpdr";
-            reset = 0x1;
-        } ckpdr[13:11];
-
-        field {
-            name = "ckpdd";
-            reset = 0x0;
-        } ckpdd[10:8];
-
-        field {
-            name = "ckodt";
-            reset = 0x0;
-        } ckodt[7:5];
-
-        field {
-            name = "acpdr";
-            reset = 0x1;
-        } acpdr[4:4];
-
-        field {
-            name = "acpdd";
-            reset = 0x0;
-        } acpdd[3:3];
-
-        field {
-            name = "acodt";
-            reset = 0x0;
-        } acodt[2:2];
-
-        field {
-            name = "acoe";
-            reset = 0x1;
-        } acoe[1:1];
-
-        field {
-            name = "aciom";
-            reset = 0x0;
-        } aciom[0:0];
-    } DDRC_PUB_ACIOCR @ 0x0424;
-`endif
-
-`ifdef DDRC_PUB_DXCCR_REG
-    reg {
-        name = "DATX8 Common Configuration Register";
-        field {
-            name = "dxsr";
-            reset = 0x0;
-        } dxsr[13:12];
-
-        field {
-            name = "dqsnres";
-            reset = 0x8;
-        } dqsnres[11:8];
-
-        field {
-            name = "dqsres";
-            reset = 0x0;
-        } dqsres[7:4];
-
-        field {
-            name = "dxpdr";
-            reset = 0x0;
-        } dxpdr[3:3];
-
-        field {
-            name = "dxpdd";
-            reset = 0x0;
-        } dxpdd[2:2];
-
-        field {
-            name = "dxiom";
-            reset = 0x0;
-        } dxiom[1:1];
-
-        field {
-            name = "dxodt";
-            reset = 0x0;
-        } dxodt[0:0];
-    } DDRC_PUB_DXCCR @ 0x0428;
-`endif
-
-`ifdef DDRC_PUB_DSGCR_REG
-    reg {
-        name = "DDR System General Configuration Register";
-        field {
-            name = "ckeoe";
-            reset = 0x1;
-        } ckeoe[31:31];
-
-        field {
-            name = "rstoe";
-            reset = 0x1;
-        } rstoe[30:30];
-
-        field {
-            name = "odtoe";
-            reset = 0x1;
-        } odtoe[29:29];
-
-        field {
-            name = "ckoe";
-            reset = 0x1;
-        } ckoe[28:28];
-
-        field {
-            name = "tpdoe";
-            reset = 0x1;
-        } tpdoe[27:27];
-
-        field {
-            name = "tpdpd";
-            reset = 0x0;
-        } tpdpd[26:26];
-
-        field {
-            name = "nl2oe";
-            reset = 0x1;
-        } nl2oe[25:25];
-
-        field {
-            name = "nl2pd";
-            reset = 0x0;
-        } nl2pd[24:24];
-
-        field {
-            name = "odtpdd";
-            reset = 0x0;
-        } odtpdd[23:20];
-
-        field {
-            name = "ckepdd";
-            reset = 0x0;
-        } ckepdd[19:16];
-
-        field {
-            name = "dqsge";
-            reset = 0x0;
-        } dqsge[10:8];
-
-        field {
-            name = "dqsgx";
-            reset = 0x0;
-        } dqsgx[7:5];
-
-        field {
-            name = "lpdllpd";
-            reset = 0x1;
-        } lpdllpd[4:4];
-
-        field {
-            name = "lpiopd";
-            reset = 0x1;
-        } lpiopd[3:3];
-
-        field {
-            name = "zuen";
-            reset = 0x1;
-        } zuen[2:2];
-
-        field {
-            name = "bdisen";
-            reset = 0x1;
-        } bdisen[1:1];
-
-        field {
-            name = "puren";
-            reset = 0x1;
-        } puren[0:0];
-    } DDRC_PUB_DSGCR @ 0x042C;
-`endif
-
-`ifdef DDRC_PUB_DCR_REG
-    reg {
-        name = "DRAM Configuration Register";
-        field {
-            name = "tpd";
-            reset = 0x0;
-        } tpd[31:31];
-
-        field {
-            name = "rdimm";
-            reset = 0x0;
-        } rdimm[30:30];
-
-        field {
-            name = "udimm";
-            reset = 0x0;
-        } udimm[29:29];
-
-        field {
-            name = "ddr2t";
-            reset = 0x0;
-        } ddr2t[28:28];
-
-        field {
-            name = "nosra";
-            reset = 0x0;
-        } nosra[27:27];
-
-        field {
-            name = "ddrtype";
-            reset = 0x0;
-        } ddrtype[9:8];
-
-        field {
-            name = "mprdq";
-            reset = 0x0;
-        } mprdq[7:7];
-
-        field {
-            name = "pdq";
-            reset = 0x0;
-        } pdq[6:4];
-
-        field {
-            name = "ddr8bnk";
-            reset = 0x1;
-        } ddr8bnk[3:3];
-
-        field {
-            name = "ddrmd";
-            reset = 0x3;
-        } ddrmd[2:0];
-    } DDRC_PUB_DCR @ 0x0430;
-`endif
-
-`ifdef DDRC_PUB_DTPR0_REG
-    reg {
-        name = "DRAM Timing Parameters Register 0";
-        field {
-            name = "tccd";
-            reset = 0x0;
-        } tccd[31:31];
-
-        field {
-            name = "trc";
-            reset = 0x18;
-        } trc[30:25];
-
-        field {
-            name = "trrd";
-            reset = 0x4;
-        } trrd[24:21];
-
-        field {
-            name = "tras";
-            reset = 0x12;
-        } tras[20:16];
-
-        field {
-            name = "trcd";
-            reset = 0x6;
-        } trcd[15:12];
-
-        field {
-            name = "trp";
-            reset = 0x6;
-        } trp[11:8];
-
-        field {
-            name = "twtr";
-            reset = 0x3;
-        } twtr[7:5];
-
-        field {
-            name = "trtp";
-            reset = 0x3;
-        } trtp[4:2];
-
-        field {
-            name = "tmrd";
-            reset = 0x2;
-        } tmrd[1:0];
-    } DDRC_PUB_DTPR0 @ 0x0434;
-`endif
-
-`ifdef DDRC_PUB_DTPR1_REG
-    reg {
-        name = "DRAM Timing Parameters Register 1";
-        field {
-            name = "tdqsckmax";
-            reset = 0x1;
-        } tdqsckmax[29:27];
-
-        field {
-            name = "tdqsck";
-            reset = 0x1;
-        } tdqsck[26:24];
-
-        field {
-            name = "trfc";
-            reset = 0x83;
-        } trfc[23:16];
-
-        field {
-            name = "trtodt";
-            reset = 0x0;
-        } trtodt[11:11];
-
-        field {
-            name = "tmod";
-            reset = 0x0;
-        } tmod[10:9];
-
-        field {
-            name = "tfaw";
-            reset = 0x12;
-        } tfaw[8:3];
-
-        field {
-            name = "trtw";
-            reset = 0x0;
-        } trtw[2:2];
-
-        field {
-            name = "taondtaofd";
-            reset = 0x0;
-        } taondtaofd[1:0];
-    } DDRC_PUB_DTPR1 @ 0x0438;
-`endif
-
-`ifdef DDRC_PUB_DTPR2_REG
-    reg {
-        name = "DRAM Timing Parameters Register 2";
-        field {
-            name = "tdllk";
-            reset = 0x200;
-        } tdllk[28:19];
-
-        field {
-            name = "tcke";
-            reset = 0x3;
-        } tcke[18:15];
-
-        field {
-            name = "txp";
-            reset = 0x8;
-        } txp[14:10];
-
-        field {
-            name = "txs";
-            reset = 0xC8;
-        } txs[9:0];
-    } DDRC_PUB_DTPR2 @ 0x043C;
-`endif
-
-`ifdef DDRC_PUB_MR0_REG
-    reg {
-        name = "Mode Register 0";
-        field {
-            name = "mr0";
-            reset = 0xA52;
-        } mr0[15:0];
-    } DDRC_PUB_MR0 @ 0x0440;
-`endif
-
-`ifdef DDRC_PUB_MR1_REG
-    reg {
-        name = "Mode Register 1";
-        field {
-            name = "mr1";
-            reset = 0x0;
-        } mr1[15:0];
-    } DDRC_PUB_MR1 @ 0x0444;
-`endif
-
-`ifdef DDRC_PUB_MR2_REG
-    reg {
-        name = "Mode Register 2";
-        field {
-            name = "mr2";
-            reset = 0x0;
-        } mr2[15:0];
-    } DDRC_PUB_MR2 @ 0x0448;
-`endif
-
-`ifdef DDRC_PUB_MR3_REG
-    reg {
-        name = "Mode Register 3";
-        field {
-            name = "mr3";
-            reset = 0x0;
-        } mr3[15:0];
-    } DDRC_PUB_MR3 @ 0x044C;
-`endif
-
-`ifdef DDRC_PUB_ODTCR_REG
-    reg {
-        name = "ODT Configuration Register";
-        field {
-            name = "wrodt3";
-            reset = 0x0;
-        } wrodt3[31:28];
-
-        field {
-            name = "wrodt2";
-            reset = 0x0;
-        } wrodt2[27:24];
-
-        field {
-            name = "wrodt1";
-            reset = 0x0;
-        } wrodt1[23:20];
-
-        field {
-            name = "wrodt0";
-            reset = 0x1;
-        } wrodt0[19:16];
-
-        field {
-            name = "rdodt3";
-            reset = 0x0;
-        } rdodt3[15:12];
-
-        field {
-            name = "rdodt2";
-            reset = 0x0;
-        } rdodt2[11:8];
-
-        field {
-            name = "rdodt1";
-            reset = 0x0;
-        } rdodt1[7:4];
-
-        field {
-            name = "rdodt0";
-            reset = 0x0;
-        } rdodt0[3:0];
-    } DDRC_PUB_ODTCR @ 0x0450;
-`endif
-
-`ifdef DDRC_PUB_DTAR_REG
-    reg {
-        name = "Data Training Address Register";
-        field {
-            name = "dtmpr";
-            reset = 0x0;
-        } dtmpr[31:31];
-
-        field {
-            name = "dtbank";
-            reset = 0x0;
-        } dtbank[30:28];
-
-        field {
-            name = "dtrow";
-            reset = 0x0;
-        } dtrow[27:12];
-
-        field {
-            name = "dtcol";
-            reset = 0x0;
-        } dtcol[11:0];
-    } DDRC_PUB_DTAR @ 0x0454;
-`endif
-
-`ifdef DDRC_PUB_DTDR0_REG
-    reg {
-        name = "Data Training Register 0";
-        field {
-            name = "dtbyte3";
-            reset = 0xDD;
-        } dtbyte3[31:24];
-
-        field {
-            name = "dtbyte2";
-            reset = 0x22;
-        } dtbyte2[23:16];
-
-        field {
-            name = "dtbyte1";
-            reset = 0xEE;
-        } dtbyte1[15:8];
-
-        field {
-            name = "dtbyte0";
-            reset = 0x11;
-        } dtbyte0[7:0];
-    } DDRC_PUB_DTDR0 @ 0x0458;
-`endif
-
-`ifdef DDRC_PUB_DTDR1_REG
-    reg {
-        name = "Data Training Register 1";
-        field {
-            name = "dtbyte7";
-            reset = 0x77;
-        } dtbyte7[31:24];
-
-        field {
-            name = "dtbyte6";
-            reset = 0x88;
-        } dtbyte6[23:16];
-
-        field {
-            name = "dtbyte5";
-            reset = 0xBB;
-        } dtbyte5[15:8];
-
-        field {
-            name = "dtbyte4";
-            reset = 0x44;
-        } dtbyte4[7:0];
-    } DDRC_PUB_DTDR1 @ 0x045C;
-`endif
-
-`ifdef DDRC_PUB_ZQ_CTRL0_REG
-    reg {
-        name = "PUB DDR PHY I/O Compensation Configuration Register 0";
-        field {
-            name = "zqpd";
-            reset = 0x0;
-        } zqpd[31:31];
-
-        field {
-            name = "zcal";
-            reset = 0x0;
-        } zcal[30:30];
-
-        field {
-            name = "zcalbyp";
-            reset = 0x0;
-        } zcalbyp[29:29];
-
-        field {
-            name = "zden";
-            reset = 0x0;
-        } zden[28:28];
-
-        field {
-            name = "zdata";
-            reset = 0x14A;
-        } zdata[27:0];
-    } DDRC_PUB_ZQ_CTRL0 @ 0x0580;
-`endif
-
-`ifdef DDRC_PUB_ZQ_CTRL1_REG
-    reg {
-        name = "PUB DDR PHY I/O Compensation Configuration Register 1";
-        field {
-            name = "zprog_odt";
-            reset = 0x7;
-        } zprog_odt[7:4];
-
-        field {
-            name = "zprog_drv";
-            reset = 0xB;
-        } zprog_drv[3:0];
-    } DDRC_PUB_ZQ_CTRL1 @ 0x0584;
-`endif
-
-`ifdef DDRC_PUB_ZQ_STATUS0_REG
-    reg {
-        name = "PUB DDR PHY I/O Compensation Status Register 0";
-        field {
-            name = "zdone";
-            sw = r;
-            hw = w;
-            reset = 0x0;
-        } zdone[31:31];
-
-        field {
-            name = "zerr";
-            sw = r;
-            hw = w;
-            reset = 0x0;
-        } zerr[30:30];
-
-        field {
-            name = "zctrl";
-            sw = r;
-            hw = w;
-            reset = 0x0;
-        } zctrl[27:0];
-    } DDRC_PUB_ZQ_STATUS0 @ 0x0588;
-`endif
-
-`ifdef DDRC_PUB_ZQ_STATUS1_REG
-    reg {
-        name = "PUB DDR PHY I/O Compensation Status Register 1";
-        field {
-            name = "opu";
-            sw = r;
-            hw = w;
-            reset = 0x0;
-        } opu[7:6];
-
-        field {
-            name = "opd";
-            sw = r;
-            hw = w;
-            reset = 0x0;
-        } opd[5:4];
-
-        field {
-            name = "zpu";
-            sw = r;
-            hw = w;
-            reset = 0x0;
-        } zpu[3:2];
-
-        field {
-            name = "zpd";
-            sw = r;
-            hw = w;
-            reset = 0x0;
-        } zpd[1:0];
-    } DDRC_PUB_ZQ_STATUS1 @ 0x058C;
-`endif
-
-`ifdef DDRC_PUB_DXNGCR_REG
-    // TODO: Figure out how to write the code for DDRC_PUB_DXNGCR
-`endif
-
-`ifdef DDRC_PUB_DXNGSR0_REG
-    // TODO: Figure out how to write the code for DDRC_PUB_DXNGSR0
-`endif
-
-`ifdef DDRC_PUB_DXNGSR1_REG
-    // TODO: Figure out how to write the code for DDRC_PUB_DXNGSR1
-`endif
-
-`ifdef DDRC_PUB_DXNDLLCR_REG
-    // TODO: Figure out how to write the code for DDRC_PUB_DXNDLLCR
-`endif
-
-`ifdef DDRC_PUB_DXNDQTR_REG
-    // TODO: Figure out how to write the code for DDRC_PUB_DXNDQTR
-`endif
-
-`ifdef DDRC_PUB_DXNDQSTR_REG
-    // TODO: Figure out how to write the code for DDRC_PUB_DXNDQSTR
 `endif
 
 `ifdef DDRC_PHY_REG1_REG
@@ -6168,4 +5175,1507 @@ regfile eDDRC {
 `endif
 
 };
+
+`ifdef DDRC_PUB_PIR_REG
+regfile eDDRC_PUB_PHY {
+    name = "DDR PHY (Synopsys DWC DDR PHY PUB) registers";
+    desc = "
+        DDR PHY register block of the Hi3518 / Hi3516C generation: the DesignWare DDR PHY utility block (PUB, `DDRC_PUB_*`). The data sheet lists it as a separate block, Table 4-7 'Summary of the DDR PHY registers (base address: 0x2012_0000)' with offsets 0x404.. (`hi3518v100--Hi3518-Datasheet.txt` line 27415; Hi3516C data sheet Table 4-7, `hi3516cv100--Hi3516C-Datasheet.txt` line 21445, identical). The vendor U-Boot agrees: `arch/arm/include/asm/arch-hi3518/platform.h` DDR_PHY_BASE 0x20120000 and `arch/arm/cpu/hi3518/start.S` writes PGCR / PIR / reads PGSR at DDR_PHY_BASE + 0x408 / 0x404 / 0x40C. Instantiate it at 0x20120000, not inside the DDRC window (the registers were wrongly placed at DDRC + 0x404 before).
+        The DATX8 registers DXnGCR .. DXnDQSTR (0x5C0 + 0x40 x n, n = 0..1) are described in the data sheet but missing from its summary table. English data sheet only (no Chinese original of the Hi3518 data sheet in the tree); no reset values verified on hardware.
+    ";
+
+`ifdef DDRC_PUB_PIR_REG
+    reg {
+        name = "PHY Initialization Register";
+        field {
+            name = "initbyp";
+            reset = 0x0;
+        } initbyp[31:31];
+
+        field {
+            name = "zcalbyp";
+            reset = 0x0;
+        } zcalbyp[30:30];
+
+        field {
+            name = "lockbyp";
+            reset = 0x0;
+        } lockbyp[29:29];
+
+        field {
+            name = "clrsr";
+            reset = 0x0;
+        } clrsr[28:28];
+
+        field {
+            name = "ctldinit";
+            reset = 0x0;
+        } ctldinit[18:18];
+
+        field {
+            name = "dllbyp";
+            reset = 0x0;
+        } dllbyp[17:17];
+
+        field {
+            name = "icpc";
+            reset = 0x0;
+        } icpc[16:16];
+
+        field {
+            name = "eyetrn";
+            reset = 0x0;
+        } eyetrn[8:8];
+
+        field {
+            name = "qstrn";
+            reset = 0x0;
+        } qstrn[7:7];
+
+        field {
+            name = "draminit";
+            reset = 0x0;
+        } draminit[6:6];
+
+        field {
+            name = "dramrst";
+            reset = 0x0;
+        } dramrst[5:5];
+
+        field {
+            name = "itmsrst";
+            reset = 0x0;
+        } itmsrst[4:4];
+
+        field {
+            name = "zcal";
+            reset = 0x0;
+        } zcal[3:3];
+
+        field {
+            name = "dlllock";
+            reset = 0x0;
+        } dlllock[2:2];
+
+        field {
+            name = "dllsrst";
+            reset = 0x0;
+        } dllsrst[1:1];
+
+        field {
+            name = "init";
+            reset = 0x0;
+        } init[0:0];
+    } DDRC_PUB_PIR @ 0x0404;
+`endif
+
+`ifdef DDRC_PUB_PGCR_REG
+    reg {
+        name = "PHY General Configuration Register";
+        field {
+            name = "lbmode";
+            reset = 0x0;
+        } lbmode[31:31];
+
+        field {
+            name = "lbgdqs";
+            reset = 0x0;
+        } lbgdqs[30:30];
+
+        field {
+            name = "lbdqss";
+            reset = 0x0;
+        } lbdqss[29:29];
+
+        field {
+            name = "rfshdt";
+            reset = 0x0;
+        } rfshdt[28:25];
+
+        field {
+            name = "pddisdx";
+            reset = 0x1;
+        } pddisdx[24:24];
+
+        field {
+            name = "zcksel";
+            reset = 0x2;
+        } zcksel[23:22];
+
+        field {
+            name = "ranken";
+            reset = 0x1;
+        } ranken[21:18];
+
+        field {
+            name = "ioddrm";
+            reset = 0x0;
+        } ioddrm[17:16];
+
+        field {
+            name = "iolb";
+            reset = 0x0;
+        } iolb[15:15];
+
+        field {
+            name = "ckinv";
+            reset = 0x0;
+        } ckinv[14:14];
+
+        field {
+            name = "ckdv";
+            reset = 0x2;
+        } ckdv[13:12];
+
+        field {
+            name = "cken";
+            reset = 0x7;
+        } cken[11:9];
+
+        field {
+            name = "dtosel";
+            reset = 0x0;
+        } dtosel[8:5];
+
+        field {
+            name = "dftlmt";
+            reset = 0x0;
+        } dftlmt[4:3];
+
+        field {
+            name = "dftcmp";
+            reset = 0x1;
+        } dftcmp[2:2];
+
+        field {
+            name = "dqscfg";
+            reset = 0x0;
+        } dqscfg[1:1];
+
+        field {
+            name = "itmdmd";
+            reset = 0x0;
+        } itmdmd[0:0];
+    } DDRC_PUB_PGCR @ 0x0408;
+`endif
+
+`ifdef DDRC_PUB_PGSR_REG
+    reg {
+        name = "PHY General Status Register";
+        field {
+            name = "tq";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } tq[31:31];
+
+        field {
+            name = "dfterr";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } dfterr[7:7];
+
+        field {
+            name = "dtierr";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } dtierr[6:6];
+
+        field {
+            name = "dterr";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } dterr[5:5];
+
+        field {
+            name = "dtdone";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } dtdone[4:4];
+
+        field {
+            name = "didone";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } didone[3:3];
+
+        field {
+            name = "zcdone";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } zcdone[2:2];
+
+        field {
+            name = "dldone";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } dldone[1:1];
+
+        field {
+            name = "idone";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } idone[0:0];
+    } DDRC_PUB_PGSR @ 0x040C;
+`endif
+
+`ifdef DDRC_PUB_DLLGCR_REG
+    reg {
+        name = "DLL General Control Register";
+        field {
+            name = "dllrsvd2";
+            reset = 0x0;
+        } dllrsvd2[31:30];
+
+        field {
+            name = "lockdet";
+            reset = 0x0;
+        } lockdet[29:29];
+
+        field {
+            name = "dllrsvd1";
+            reset = 0x0;
+        } dllrsvd1[28:28];
+
+        field {
+            name = "sbias";
+            reset = 0x37;
+        } sbias[27:20];
+
+        field {
+            name = "mbias";
+            reset = 0x37;
+        } mbias[19:12];
+
+        field {
+            name = "testsw";
+            reset = 0x0;
+        } testsw[11:11];
+
+        field {
+            name = "atc";
+            reset = 0x0;
+        } atc[10:9];
+
+        field {
+            name = "dtc";
+            reset = 0x0;
+        } dtc[8:6];
+
+        field {
+            name = "testen";
+            reset = 0x0;
+        } testen[5:5];
+
+        field {
+            name = "ipump";
+            reset = 0x0;
+        } ipump[4:2];
+
+        field {
+            name = "dres";
+            reset = 0x0;
+        } dres[1:0];
+    } DDRC_PUB_DLLGCR @ 0x0410;
+`endif
+
+`ifdef DDRC_PUB_ACDLLCR_REG
+    reg {
+        name = "DLL General Control Register";
+        field {
+            name = "dlldis";
+            reset = 0x0;
+        } dlldis[31:31];
+
+        field {
+            name = "dllsrst";
+            reset = 0x1;
+        } dllsrst[30:30];
+
+        field {
+            name = "sdlbmode";
+            reset = 0x0;
+        } sdlbmode[19:19];
+
+        field {
+            name = "atesten";
+            reset = 0x0;
+        } atesten[18:18];
+
+        field {
+            name = "sdphase";
+            reset = 0x0;
+        } sdphase[17:14];
+
+        field {
+            name = "sstart";
+            reset = 0x0;
+        } sstart[13:12];
+
+        field {
+            name = "mfwdly";
+            reset = 0x0;
+        } mfwdly[11:9];
+
+        field {
+            name = "mfbdly";
+            reset = 0x0;
+        } mfbdly[8:6];
+
+        field {
+            name = "sfwdly";
+            reset = 0x0;
+        } sfwdly[5:3];
+
+        field {
+            name = "sfbdly";
+            reset = 0x0;
+        } sfbdly[2:0];
+    } DDRC_PUB_ACDLLCR @ 0x0414;
+`endif
+
+`ifdef DDRC_PUB_PTR0_REG
+    reg {
+        name = "PHY Timing Register 0";
+        field {
+            name = "titmsrst";
+            reset = 0x8;
+        } titmsrst[21:18];
+
+        field {
+            name = "tdlllock";
+            reset = 0xABE;
+        } tdlllock[17:6];
+
+        field {
+            name = "tdllsrst";
+            reset = 0x1B;
+        } tdllsrst[5:0];
+    } DDRC_PUB_PTR0 @ 0x0418;
+`endif
+
+`ifdef DDRC_PUB_PTR1_REG
+    reg {
+        name = "PHY Timing Register 1";
+        field {
+            name = "tdinit1";
+            reset = 0xC0;
+        } tdinit1[26:19];
+
+        field {
+            name = "tdinit0";
+            reset = 0x4111D;
+        } tdinit0[18:0];
+    } DDRC_PUB_PTR1 @ 0x041C;
+`endif
+
+`ifdef DDRC_PUB_PTR2_REG
+    reg {
+        name = "PHY Timing Register 2";
+        field {
+            name = "tdinit3";
+            reset = 0x216;
+        } tdinit3[26:17];
+
+        field {
+            name = "tdinit2";
+            reset = 0x1A072;
+        } tdinit2[16:0];
+    } DDRC_PUB_PTR2 @ 0x0420;
+`endif
+
+`ifdef DDRC_PUB_ACIOCR_REG
+    reg {
+        name = "AC I/O Configuration Register";
+        field {
+            name = "acsr";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } acsr[31:30];
+
+        field {
+            name = "rstiom";
+            reset = 0x1;
+        } rstiom[29:29];
+
+        field {
+            name = "rstpdr";
+            reset = 0x1;
+        } rstpdr[28:28];
+
+        field {
+            name = "rstpdd";
+            reset = 0x0;
+        } rstpdd[27:27];
+
+        field {
+            name = "rstodt";
+            reset = 0x0;
+        } rstodt[26:26];
+
+        field {
+            name = "rankpdr";
+            reset = 0x1;
+        } rankpdr[25:22];
+
+        field {
+            name = "cspdd";
+            reset = 0x0;
+        } cspdd[21:18];
+
+        field {
+            name = "rankodt";
+            reset = 0x0;
+        } rankodt[17:14];
+
+        field {
+            name = "ckpdr";
+            reset = 0x1;
+        } ckpdr[13:11];
+
+        field {
+            name = "ckpdd";
+            reset = 0x0;
+        } ckpdd[10:8];
+
+        field {
+            name = "ckodt";
+            reset = 0x0;
+        } ckodt[7:5];
+
+        field {
+            name = "acpdr";
+            reset = 0x1;
+        } acpdr[4:4];
+
+        field {
+            name = "acpdd";
+            reset = 0x0;
+        } acpdd[3:3];
+
+        field {
+            name = "acodt";
+            reset = 0x0;
+        } acodt[2:2];
+
+        field {
+            name = "acoe";
+            reset = 0x1;
+        } acoe[1:1];
+
+        field {
+            name = "aciom";
+            reset = 0x0;
+        } aciom[0:0];
+    } DDRC_PUB_ACIOCR @ 0x0424;
+`endif
+
+`ifdef DDRC_PUB_DXCCR_REG
+    reg {
+        name = "DATX8 Common Configuration Register";
+        field {
+            name = "dxsr";
+            reset = 0x0;
+        } dxsr[13:12];
+
+        field {
+            name = "dqsnres";
+            reset = 0x8;
+        } dqsnres[11:8];
+
+        field {
+            name = "dqsres";
+            reset = 0x0;
+        } dqsres[7:4];
+
+        field {
+            name = "dxpdr";
+            reset = 0x0;
+        } dxpdr[3:3];
+
+        field {
+            name = "dxpdd";
+            reset = 0x0;
+        } dxpdd[2:2];
+
+        field {
+            name = "dxiom";
+            reset = 0x0;
+        } dxiom[1:1];
+
+        field {
+            name = "dxodt";
+            reset = 0x0;
+        } dxodt[0:0];
+    } DDRC_PUB_DXCCR @ 0x0428;
+`endif
+
+`ifdef DDRC_PUB_DSGCR_REG
+    reg {
+        name = "DDR System General Configuration Register";
+        field {
+            name = "ckeoe";
+            reset = 0x1;
+        } ckeoe[31:31];
+
+        field {
+            name = "rstoe";
+            reset = 0x1;
+        } rstoe[30:30];
+
+        field {
+            name = "odtoe";
+            reset = 0x1;
+        } odtoe[29:29];
+
+        field {
+            name = "ckoe";
+            reset = 0x1;
+        } ckoe[28:28];
+
+        field {
+            name = "tpdoe";
+            reset = 0x1;
+        } tpdoe[27:27];
+
+        field {
+            name = "tpdpd";
+            reset = 0x0;
+        } tpdpd[26:26];
+
+        field {
+            name = "nl2oe";
+            reset = 0x1;
+        } nl2oe[25:25];
+
+        field {
+            name = "nl2pd";
+            reset = 0x0;
+        } nl2pd[24:24];
+
+        field {
+            name = "odtpdd";
+            reset = 0x0;
+        } odtpdd[23:20];
+
+        field {
+            name = "ckepdd";
+            reset = 0x0;
+        } ckepdd[19:16];
+
+        field {
+            name = "dqsge";
+            reset = 0x0;
+        } dqsge[10:8];
+
+        field {
+            name = "dqsgx";
+            reset = 0x0;
+        } dqsgx[7:5];
+
+        field {
+            name = "lpdllpd";
+            reset = 0x1;
+        } lpdllpd[4:4];
+
+        field {
+            name = "lpiopd";
+            reset = 0x1;
+        } lpiopd[3:3];
+
+        field {
+            name = "zuen";
+            reset = 0x1;
+        } zuen[2:2];
+
+        field {
+            name = "bdisen";
+            reset = 0x1;
+        } bdisen[1:1];
+
+        field {
+            name = "puren";
+            reset = 0x1;
+        } puren[0:0];
+    } DDRC_PUB_DSGCR @ 0x042C;
+`endif
+
+`ifdef DDRC_PUB_DCR_REG
+    reg {
+        name = "DRAM Configuration Register";
+        field {
+            name = "tpd";
+            reset = 0x0;
+        } tpd[31:31];
+
+        field {
+            name = "rdimm";
+            reset = 0x0;
+        } rdimm[30:30];
+
+        field {
+            name = "udimm";
+            reset = 0x0;
+        } udimm[29:29];
+
+        field {
+            name = "ddr2t";
+            reset = 0x0;
+        } ddr2t[28:28];
+
+        field {
+            name = "nosra";
+            reset = 0x0;
+        } nosra[27:27];
+
+        field {
+            name = "ddrtype";
+            reset = 0x0;
+        } ddrtype[9:8];
+
+        field {
+            name = "mprdq";
+            reset = 0x0;
+        } mprdq[7:7];
+
+        field {
+            name = "pdq";
+            reset = 0x0;
+        } pdq[6:4];
+
+        field {
+            name = "ddr8bnk";
+            reset = 0x1;
+        } ddr8bnk[3:3];
+
+        field {
+            name = "ddrmd";
+            reset = 0x3;
+        } ddrmd[2:0];
+    } DDRC_PUB_DCR @ 0x0430;
+`endif
+
+`ifdef DDRC_PUB_DTPR0_REG
+    reg {
+        name = "DRAM Timing Parameters Register 0";
+        field {
+            name = "tccd";
+            reset = 0x0;
+        } tccd[31:31];
+
+        field {
+            name = "trc";
+            reset = 0x18;
+        } trc[30:25];
+
+        field {
+            name = "trrd";
+            reset = 0x4;
+        } trrd[24:21];
+
+        field {
+            name = "tras";
+            reset = 0x12;
+        } tras[20:16];
+
+        field {
+            name = "trcd";
+            reset = 0x6;
+        } trcd[15:12];
+
+        field {
+            name = "trp";
+            reset = 0x6;
+        } trp[11:8];
+
+        field {
+            name = "twtr";
+            reset = 0x3;
+        } twtr[7:5];
+
+        field {
+            name = "trtp";
+            reset = 0x3;
+        } trtp[4:2];
+
+        field {
+            name = "tmrd";
+            reset = 0x2;
+        } tmrd[1:0];
+    } DDRC_PUB_DTPR0 @ 0x0434;
+`endif
+
+`ifdef DDRC_PUB_DTPR1_REG
+    reg {
+        name = "DRAM Timing Parameters Register 1";
+        field {
+            name = "tdqsckmax";
+            reset = 0x1;
+        } tdqsckmax[29:27];
+
+        field {
+            name = "tdqsck";
+            reset = 0x1;
+        } tdqsck[26:24];
+
+        field {
+            name = "trfc";
+            reset = 0x83;
+        } trfc[23:16];
+
+        field {
+            name = "trtodt";
+            reset = 0x0;
+        } trtodt[11:11];
+
+        field {
+            name = "tmod";
+            reset = 0x0;
+        } tmod[10:9];
+
+        field {
+            name = "tfaw";
+            reset = 0x12;
+        } tfaw[8:3];
+
+        field {
+            name = "trtw";
+            reset = 0x0;
+        } trtw[2:2];
+
+        field {
+            name = "taondtaofd";
+            reset = 0x0;
+        } taondtaofd[1:0];
+    } DDRC_PUB_DTPR1 @ 0x0438;
+`endif
+
+`ifdef DDRC_PUB_DTPR2_REG
+    reg {
+        name = "DRAM Timing Parameters Register 2";
+        field {
+            name = "tdllk";
+            reset = 0x200;
+        } tdllk[28:19];
+
+        field {
+            name = "tcke";
+            reset = 0x3;
+        } tcke[18:15];
+
+        field {
+            name = "txp";
+            reset = 0x8;
+        } txp[14:10];
+
+        field {
+            name = "txs";
+            reset = 0xC8;
+        } txs[9:0];
+    } DDRC_PUB_DTPR2 @ 0x043C;
+`endif
+
+`ifdef DDRC_PUB_MR0_REG
+    reg {
+        name = "Mode Register 0";
+        field {
+            name = "mr0";
+            reset = 0xA52;
+        } mr0[15:0];
+    } DDRC_PUB_MR0 @ 0x0440;
+`endif
+
+`ifdef DDRC_PUB_MR1_REG
+    reg {
+        name = "Mode Register 1";
+        field {
+            name = "mr1";
+            reset = 0x0;
+        } mr1[15:0];
+    } DDRC_PUB_MR1 @ 0x0444;
+`endif
+
+`ifdef DDRC_PUB_MR2_REG
+    reg {
+        name = "Mode Register 2";
+        field {
+            name = "mr2";
+            reset = 0x0;
+        } mr2[15:0];
+    } DDRC_PUB_MR2 @ 0x0448;
+`endif
+
+`ifdef DDRC_PUB_MR3_REG
+    reg {
+        name = "Mode Register 3";
+        field {
+            name = "mr3";
+            reset = 0x0;
+        } mr3[15:0];
+    } DDRC_PUB_MR3 @ 0x044C;
+`endif
+
+`ifdef DDRC_PUB_ODTCR_REG
+    reg {
+        name = "ODT Configuration Register";
+        field {
+            name = "wrodt3";
+            reset = 0x0;
+        } wrodt3[31:28];
+
+        field {
+            name = "wrodt2";
+            reset = 0x0;
+        } wrodt2[27:24];
+
+        field {
+            name = "wrodt1";
+            reset = 0x0;
+        } wrodt1[23:20];
+
+        field {
+            name = "wrodt0";
+            reset = 0x1;
+        } wrodt0[19:16];
+
+        field {
+            name = "rdodt3";
+            reset = 0x0;
+        } rdodt3[15:12];
+
+        field {
+            name = "rdodt2";
+            reset = 0x0;
+        } rdodt2[11:8];
+
+        field {
+            name = "rdodt1";
+            reset = 0x0;
+        } rdodt1[7:4];
+
+        field {
+            name = "rdodt0";
+            reset = 0x0;
+        } rdodt0[3:0];
+    } DDRC_PUB_ODTCR @ 0x0450;
+`endif
+
+`ifdef DDRC_PUB_DTAR_REG
+    reg {
+        name = "Data Training Address Register";
+        field {
+            name = "dtmpr";
+            reset = 0x0;
+        } dtmpr[31:31];
+
+        field {
+            name = "dtbank";
+            reset = 0x0;
+        } dtbank[30:28];
+
+        field {
+            name = "dtrow";
+            reset = 0x0;
+        } dtrow[27:12];
+
+        field {
+            name = "dtcol";
+            reset = 0x0;
+        } dtcol[11:0];
+    } DDRC_PUB_DTAR @ 0x0454;
+`endif
+
+`ifdef DDRC_PUB_DTDR0_REG
+    reg {
+        name = "Data Training Register 0";
+        field {
+            name = "dtbyte3";
+            reset = 0xDD;
+        } dtbyte3[31:24];
+
+        field {
+            name = "dtbyte2";
+            reset = 0x22;
+        } dtbyte2[23:16];
+
+        field {
+            name = "dtbyte1";
+            reset = 0xEE;
+        } dtbyte1[15:8];
+
+        field {
+            name = "dtbyte0";
+            reset = 0x11;
+        } dtbyte0[7:0];
+    } DDRC_PUB_DTDR0 @ 0x0458;
+`endif
+
+`ifdef DDRC_PUB_DTDR1_REG
+    reg {
+        name = "Data Training Register 1";
+        field {
+            name = "dtbyte7";
+            reset = 0x77;
+        } dtbyte7[31:24];
+
+        field {
+            name = "dtbyte6";
+            reset = 0x88;
+        } dtbyte6[23:16];
+
+        field {
+            name = "dtbyte5";
+            reset = 0xBB;
+        } dtbyte5[15:8];
+
+        field {
+            name = "dtbyte4";
+            reset = 0x44;
+        } dtbyte4[7:0];
+    } DDRC_PUB_DTDR1 @ 0x045C;
+`endif
+
+`ifdef DDRC_PUB_ZQ_CTRL0_REG
+    reg {
+        name = "PUB DDR PHY I/O Compensation Configuration Register 0";
+        field {
+            name = "zqpd";
+            reset = 0x0;
+        } zqpd[31:31];
+
+        field {
+            name = "zcal";
+            reset = 0x0;
+        } zcal[30:30];
+
+        field {
+            name = "zcalbyp";
+            reset = 0x0;
+        } zcalbyp[29:29];
+
+        field {
+            name = "zden";
+            reset = 0x0;
+        } zden[28:28];
+
+        field {
+            name = "zdata";
+            reset = 0x14A;
+        } zdata[27:0];
+    } DDRC_PUB_ZQ_CTRL0 @ 0x0580;
+`endif
+
+`ifdef DDRC_PUB_ZQ_CTRL1_REG
+    reg {
+        name = "PUB DDR PHY I/O Compensation Configuration Register 1";
+        field {
+            name = "zprog_odt";
+            reset = 0x7;
+        } zprog_odt[7:4];
+
+        field {
+            name = "zprog_drv";
+            reset = 0xB;
+        } zprog_drv[3:0];
+    } DDRC_PUB_ZQ_CTRL1 @ 0x0584;
+`endif
+
+`ifdef DDRC_PUB_ZQ_STATUS0_REG
+    reg {
+        name = "PUB DDR PHY I/O Compensation Status Register 0";
+        field {
+            name = "zdone";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } zdone[31:31];
+
+        field {
+            name = "zerr";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } zerr[30:30];
+
+        field {
+            name = "zctrl";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } zctrl[27:0];
+    } DDRC_PUB_ZQ_STATUS0 @ 0x0588;
+`endif
+
+`ifdef DDRC_PUB_ZQ_STATUS1_REG
+    reg {
+        name = "PUB DDR PHY I/O Compensation Status Register 1";
+        field {
+            name = "opu";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } opu[7:6];
+
+        field {
+            name = "opd";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } opd[5:4];
+
+        field {
+            name = "zpu";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } zpu[3:2];
+
+        field {
+            name = "zpd";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } zpd[1:0];
+    } DDRC_PUB_ZQ_STATUS1 @ 0x058C;
+`endif
+
+`ifdef DDRC_PUB_DXNGCR_REG
+    regfile {
+        name = "DATX8 (data byte lane) registers";
+        desc = "One register set per data byte lane, blanes = 0..1, at 0x5C0 + 0x40 x blanes (data sheet offsets 0x5C0 + 0x40 x blanes .. 0x5D4 + 0x40 x blanes).";
+
+`ifdef DDRC_PUB_DXNGCR_REG
+        reg {
+            name = "DATX8 general configuration register";
+            desc = "One register per data byte lane, blanes = 0..1 (0x5C0 + 0x40 x blanes). Hi3518 data sheet 4.1.6 DDRC_PUB_DXNGCR (`hi3518v100--Hi3518-Datasheet.txt` line 31136, total reset 0x0000_0E81; not in the summary table 4-7). Bits [31:14] reserved (RW).";
+
+            enum DDRC_PUB_DXNGCR_rttoal_enum {
+                TWO_CYCLES = 0x0 { desc = "ODT control is set to DQSODT/DQODT almost two cycles before the read data preamble."; };
+                ONE_CYCLE  = 0x1 { desc = "ODT control is set to DQSODT/DQODT almost one cycle before the read data preamble."; };
+            };
+
+            field {
+                name = "rttoal";
+                desc = "RTT on additive latency: when the ODT control of the DQ/DQS SSTL I/Os is set to the value in DQODT/DQSODT during read cycles.";
+                encode = DDRC_PUB_DXNGCR_rttoal_enum;
+                reset = 0x0;
+            } rttoal[13:13];
+
+            field {
+                name = "rttoh";
+                desc = "RTT output hold: number of clock cycles (0-3) after the read data postamble during which the ODT control retains DQSODT for DQS or DQODT for DQ/DM before it is disabled, when dynamic ODT control is used.";
+                reset = 0x1;
+            } rttoh[12:11];
+
+            field {
+                name = "dqrtt";
+                desc = "DQ dynamic RTT control. 1: the ODT control of the DQ/DM SSTL I/Os is set to DQODT during reads and 0 in any other cycle; 0: always DQODT.";
+                reset = 0x1;
+            } dqrtt[10:10];
+
+            field {
+                name = "dqsrtt";
+                desc = "DQS dynamic RTT control. 1: the ODT control of the DQS SSTL I/Os is set to DQSODT during reads and 0 in any other cycle; 0: always DQSODT.";
+                reset = 0x1;
+            } dqsrtt[9:9];
+
+            enum DDRC_PUB_DXNGCR_dsen_enum {
+                DISABLED_LOW  = 0x0 { desc = "DQS disabled (driven to constant 0)"; };
+                INVERTED      = 0x1 { desc = "DQS toggling with inverted polarity"; };
+                NORMAL        = 0x2 { desc = "DQS toggling with normal polarity (default)"; };
+                DISABLED_HIGH = 0x3 { desc = "DQS disabled (driven to constant 1)"; };
+            };
+
+            field {
+                name = "dsen";
+                desc = "Write DQS enable: whether the write DQS going to the SDRAM toggles or is static, and whether it is inverted (DQS# is always the inversion of DQS). Valid only when the DQS/DQS# output enable is on, otherwise DQS/DQS# is tristated.";
+                encode = DDRC_PUB_DXNGCR_dsen_enum;
+                reset = 0x1;
+            } dsen[8:7];
+
+            field {
+                name = "dqsrpd";
+                desc = "DQSR power down: when set, the PDQSR cell is powered down.";
+                reset = 0x0;
+            } dqsrpd[6:6];
+
+            field {
+                name = "dxpdr";
+                desc = "Data power down receiver: when set, the input receiver on the DQ, DM and DQS/DQS# pins of the byte is powered down.";
+                reset = 0x0;
+            } dxpdr[5:5];
+
+            field {
+                name = "dxpdd";
+                desc = "Data power down driver: when set, the output driver on the DQ, DM and DQS/DQS# pins of the byte is powered down.";
+                reset = 0x0;
+            } dxpdd[4:4];
+
+            enum DDRC_PUB_DXNGCR_dxiom_enum {
+                SSTL = 0x0 { desc = "SSTL mode"; };
+                CMOS = 0x1 { desc = "CMOS mode"; };
+            };
+
+            field {
+                name = "dxiom";
+                desc = "Data I/O mode of the DQ, DM and DQS/DQS# pins of the byte.";
+                encode = DDRC_PUB_DXNGCR_dxiom_enum;
+                reset = 0x0;
+            } dxiom[3:3];
+
+            field {
+                name = "dqodt";
+                desc = "Data on-die termination: when set, the on-die termination is enabled on the DQ and DM pins of the byte.";
+                reset = 0x0;
+            } dqodt[2:2];
+
+            field {
+                name = "dqsodt";
+                desc = "DQS on-die termination: when set, the on-die termination is enabled on the DQS/DQS# pins of the byte.";
+                reset = 0x0;
+            } dqsodt[1:1];
+
+            field {
+                name = "dxen";
+                desc = "Data byte enable: when set, the DATX8 and the SSTL I/Os of the data byte are enabled. 0 disables the byte (its SSTL I/Os enter power-down and the DATX8 DLL enters bypass mode).";
+                reset = 0x1;
+            } dxen[0:0];
+
+        } DDRC_PUB_DXNGCR @ 0x0;
+`endif
+
+`ifdef DDRC_PUB_DXNGSR0_REG
+        reg {
+            name = "DATX8 general status register 0";
+            desc = "One register per data byte lane, blanes = 0..1 (0x5C4 + 0x40 x blanes). Hi3518 data sheet 4.1.6 DDRC_PUB_DXNGSR0 (`hi3518v100--Hi3518-Datasheet.txt` line 31243, total reset 0x0000_0000). Bits [31:25] and 12 reserved.";
+
+            field {
+                name = "dtpass";
+                desc = "Data training pass count: number of passing configurations during DQS gate training. Bits [2:0] are rank 0, [5:3] rank 1, and so on.";
+                sw = r;
+                hw = w;
+                reset = 0x0;
+            } dtpass[24:13];
+
+            field {
+                name = "dtierr";
+                desc = "Data training intermittent error (a pass followed by a failure and another pass) during data training of the byte; bit n is rank n.";
+                sw = r;
+                hw = w;
+                reset = 0x0;
+            } dtierr[11:8];
+
+            field {
+                name = "dterr";
+                desc = "Data training error: no valid DQS gating window could be found during data training of the byte; bit n is rank n.";
+                sw = r;
+                hw = w;
+                reset = 0x0;
+            } dterr[7:4];
+
+            field {
+                name = "dtdone";
+                desc = "Data training done for the byte; bit n is rank n.";
+                sw = r;
+                hw = w;
+                reset = 0x0;
+            } dtdone[3:0];
+
+        } DDRC_PUB_DXNGSR0 @ 0x4;
+`endif
+
+`ifdef DDRC_PUB_DXNGSR1_REG
+        reg {
+            name = "DATX8 general status register 1";
+            desc = "One register per data byte lane, blanes = 0..1 (0x5C8 + 0x40 x blanes). Hi3518 data sheet 4.1.6 DDRC_PUB_DXNGSR1 (`hi3518v100--Hi3518-Datasheet.txt` line 31286, total reset 0x0000_0000). Bits [31:12] reserved.";
+
+            field {
+                name = "dqsdft";
+                desc = "DQS drift of the read data strobe of the byte, two bits per rank ([1:0] rank 0, [3:2] rank 1, ...): 00 no drift, 01 90 degree drift, 10 180 degree drift, 11 270 degree drift or more.";
+                sw = r;
+                hw = w;
+                reset = 0x0;
+            } dqsdft[11:4];
+
+            field {
+                name = "dfterr";
+                desc = "DQS drift error: the read data strobe of the byte has drifted by at least the drift limit configured in PGCR; bit n is rank n.";
+                sw = r;
+                hw = w;
+                reset = 0x0;
+            } dfterr[3:0];
+
+        } DDRC_PUB_DXNGSR1 @ 0x8;
+`endif
+
+`ifdef DDRC_PUB_DXNDLLCR_REG
+        reg {
+            name = "DATX8 DLL control register";
+            desc = "One register per data byte lane, blanes = 0..1 (0x5CC + 0x40 x blanes). Hi3518 data sheet 4.1.6 DDRC_PUB_DXNDLLCR (`hi3518v100--Hi3518-Datasheet.txt` line 31331, total reset 0x4000_0000). Bits [29:20] reserved.";
+
+            field {
+                name = "dlldis";
+                desc = "DLL disable: a disabled DLL is bypassed (0 = DLL enabled).";
+                reset = 0x0;
+            } dlldis[31:31];
+
+            field {
+                name = "dllsrst";
+                desc = "DLL soft reset: soft-resets the byte DLL by driving its soft reset pin.";
+                reset = 0x1;
+            } dllsrst[30:30];
+
+            field {
+                name = "sdlbmode";
+                desc = "Slave DLL loopback mode: no 90 degree phase shift on the read DQS/DQS#; must be set when the byte PHYs operate in loopback mode (e.g. BIST loopback). Only for PHYs with this feature.";
+                reset = 0x0;
+            } sdlbmode[19:19];
+
+            field {
+                name = "atesten";
+                desc = "Analog test enable: outputs the analog test signal on the DLL analog test output (test_out_a), tristated when 0.";
+                reset = 0x0;
+            } atesten[18:18];
+
+            enum DDRC_PUB_DXNDLLCR_sdphase_enum {
+                DEG_90_0  = 0x0 { desc = "90"; };
+                DEG_72_0  = 0x1 { desc = "72"; };
+                DEG_54_0  = 0x2 { desc = "54"; };
+                DEG_36    = 0x3 { desc = "36"; };
+                DEG_108_0 = 0x4 { desc = "108"; };
+                DEG_90_1  = 0x5 { desc = "90"; };
+                DEG_72_1  = 0x6 { desc = "72"; };
+                DEG_54_1  = 0x7 { desc = "54"; };
+                DEG_126_0 = 0x8 { desc = "126"; };
+                DEG_108_1 = 0x9 { desc = "108"; };
+                DEG_90_2  = 0xA { desc = "90"; };
+                DEG_72_2  = 0xB { desc = "72"; };
+                DEG_144   = 0xC { desc = "144"; };
+                DEG_126_1 = 0xD { desc = "126"; };
+                DEG_108_2 = 0xE { desc = "108"; };
+                DEG_90_3  = 0xF { desc = "90"; };
+            };
+
+            field {
+                name = "sdphase";
+                desc = "Slave DLL phase trim: phase difference (degrees) between the input clock and the corresponding output clock of the slave DLL.";
+                encode = DDRC_PUB_DXNDLLCR_sdphase_enum;
+                reset = 0x0;
+            } sdphase[17:14];
+
+            field {
+                name = "sstart";
+                desc = "Slave auto startup: 0x: the slave DLL starts automatically once the master DLL is locked; 10: automatic startup disabled, phase detector disabled; 11: automatic startup disabled, phase detector enabled.";
+                reset = 0x0;
+            } sstart[13:12];
+
+            field {
+                name = "mfwdly";
+                desc = "Master feed-forward delay trim (000 minimum ... 111 maximum delay).";
+                reset = 0x0;
+            } mfwdly[11:9];
+
+            field {
+                name = "mfbdly";
+                desc = "Master feedback delay trim (000 minimum ... 111 maximum delay).";
+                reset = 0x0;
+            } mfbdly[8:6];
+
+            field {
+                name = "sfwdly";
+                desc = "Slave feed-forward delay trim (000 minimum ... 111 maximum delay).";
+                reset = 0x0;
+            } sfwdly[5:3];
+
+            field {
+                name = "sfbdly";
+                desc = "Slave feedback delay trim (000 minimum ... 111 maximum delay).";
+                reset = 0x0;
+            } sfbdly[2:0];
+
+        } DDRC_PUB_DXNDLLCR @ 0xC;
+`endif
+
+`ifdef DDRC_PUB_DXNDQTR_REG
+        reg {
+            name = "DATX8 DQ timing register";
+            desc = "One register per data byte lane, blanes = 0..1 (0x5D0 + 0x40 x blanes). Hi3518 data sheet 4.1.6 DDRC_PUB_DXNDQTR (`hi3518v100--Hi3518-Datasheet.txt` line 31441, total reset 0xFFFF_FFFF). Each 4-bit dqdlyN field delays data bit N of the byte relative to the nominal delay that matches the data strobes through the slave DLL and clock tree: the low two bits delay the data clocked by DQS, the high two bits the data clocked by DQS#, each 00 nominal, 01 +1 step, 10 +2 steps, 11 +3 steps (step size per the DWC DDR PHY data book).";
+
+            field {
+                name = "dqdly7";
+                desc = "DQ7 delay.";
+                reset = 0xF;
+            } dqdly7[31:28];
+
+            field {
+                name = "dqdly6";
+                desc = "DQ6 delay.";
+                reset = 0xF;
+            } dqdly6[27:24];
+
+            field {
+                name = "dqdly5";
+                desc = "DQ5 delay.";
+                reset = 0xF;
+            } dqdly5[23:20];
+
+            field {
+                name = "dqdly4";
+                desc = "DQ4 delay.";
+                reset = 0xF;
+            } dqdly4[19:16];
+
+            field {
+                name = "dqdly3";
+                desc = "DQ3 delay.";
+                reset = 0xF;
+            } dqdly3[15:12];
+
+            field {
+                name = "dqdly2";
+                desc = "DQ2 delay.";
+                reset = 0xF;
+            } dqdly2[11:8];
+
+            field {
+                name = "dqdly1";
+                desc = "DQ1 delay.";
+                reset = 0xF;
+            } dqdly1[7:4];
+
+            field {
+                name = "dqdly0";
+                desc = "DQ0 delay.";
+                reset = 0xF;
+            } dqdly0[3:0];
+
+        } DDRC_PUB_DXNDQTR @ 0x10;
+`endif
+
+`ifdef DDRC_PUB_DXNDQSTR_REG
+        reg {
+            name = "DATX8 DQS timing register";
+            desc = "One register per data byte lane, blanes = 0..1 (0x5D4 + 0x40 x blanes). Hi3518 data sheet 4.1.6 DDRC_PUB_DXNDQSTR (`hi3518v100--Hi3518-Datasheet.txt` line 31508, total reset 0x3DB0_1000). Bits [31:30] reserved. The rank 1-3 fields are present but the Hi3518 supports one rank only (data sheet note).";
+
+            field {
+                name = "dmdly";
+                desc = "DM delay relative to the nominal delay matching the data strobes: low two bits for data clocked by DQS, high two bits for data clocked by DQS#, each 00 nominal, 01 +1 step, 10 +2 steps, 11 +3 steps.";
+                reset = 0xF;
+            } dmdly[29:26];
+
+            enum DDRC_PUB_DXNDQSTR_dqsdly_enum {
+                MINUS_3 = 0x0 { desc = "nominal delay - 3 steps"; };
+                MINUS_2 = 0x1 { desc = "nominal delay - 2 steps"; };
+                MINUS_1 = 0x2 { desc = "nominal delay - 1 step"; };
+                NOMINAL = 0x3 { desc = "nominal delay"; };
+                PLUS_1  = 0x4 { desc = "nominal delay + 1 step"; };
+                PLUS_2  = 0x5 { desc = "nominal delay + 2 steps"; };
+                PLUS_3  = 0x6 { desc = "nominal delay + 3 steps"; };
+                PLUS_4  = 0x7 { desc = "nominal delay + 4 steps"; };
+            };
+
+            field {
+                name = "dqsndly";
+                desc = "DQS# delay relative to the nominal delay matching the data bits through the slave DLL and clock tree.";
+                encode = DDRC_PUB_DXNDQSTR_dqsdly_enum;
+                reset = 0x3;
+            } dqsndly[25:23];
+
+            field {
+                name = "dqsdly";
+                desc = "DQS delay relative to the nominal delay matching the data bits through the slave DLL and clock tree.";
+                encode = DDRC_PUB_DXNDQSTR_dqsdly_enum;
+                reset = 0x3;
+            } dqsdly[22:20];
+
+            enum DDRC_PUB_DXNDQSTR_dgps_enum {
+                CLK90  = 0x0 { desc = "90 degree clock (clk90)"; };
+                CLK180 = 0x1 { desc = "180 degree clock (clk180)"; };
+                CLK270 = 0x2 { desc = "270 degree clock (clk270)"; };
+                CLK0   = 0x3 { desc = "360 degree clock (clk0)"; };
+            };
+
+            field {
+                name = "r3dgps";
+                desc = "Rank 3 DQS gating phase select: the clock used to enable the data strobes during reads so that the strobe values around the preamble/postamble are filtered out. Set by the PUBL during automatic DQS data training and updated by the drift compensation (unless disabled in PGCR); can be overwritten by software. The actual reset value depends on the configured number of ranks; the Hi3518 does not support this rank.";
+                encode = DDRC_PUB_DXNDQSTR_dgps_enum;
+                reset = 0x0;
+            } r3dgps[19:18];
+
+            field {
+                name = "r2dgps";
+                desc = "Rank 2 DQS gating phase select: the clock used to enable the data strobes during reads so that the strobe values around the preamble/postamble are filtered out. Set by the PUBL during automatic DQS data training and updated by the drift compensation (unless disabled in PGCR); can be overwritten by software. The actual reset value depends on the configured number of ranks; the Hi3518 does not support this rank.";
+                encode = DDRC_PUB_DXNDQSTR_dgps_enum;
+                reset = 0x0;
+            } r2dgps[17:16];
+
+            field {
+                name = "r1dgps";
+                desc = "Rank 1 DQS gating phase select: the clock used to enable the data strobes during reads so that the strobe values around the preamble/postamble are filtered out. Set by the PUBL during automatic DQS data training and updated by the drift compensation (unless disabled in PGCR); can be overwritten by software. The actual reset value depends on the configured number of ranks; the Hi3518 does not support this rank.";
+                encode = DDRC_PUB_DXNDQSTR_dgps_enum;
+                reset = 0x0;
+            } r1dgps[15:14];
+
+            field {
+                name = "r0dgps";
+                desc = "Rank 0 DQS gating phase select: the clock used to enable the data strobes during reads so that the strobe values around the preamble/postamble are filtered out. Set by the PUBL during automatic DQS data training and updated by the drift compensation (unless disabled in PGCR); can be overwritten by software.";
+                encode = DDRC_PUB_DXNDQSTR_dgps_enum;
+                reset = 0x1;
+            } r0dgps[13:12];
+
+            enum DDRC_PUB_DXNDQSTR_dgsl_enum {
+                EXTRA_0 = 0x0 { desc = "no extra clock cycles"; };
+                EXTRA_1 = 0x1 { desc = "1 extra clock cycle"; };
+                EXTRA_2 = 0x2 { desc = "2 extra clock cycles"; };
+                EXTRA_3 = 0x3 { desc = "3 extra clock cycles"; };
+                EXTRA_4 = 0x4 { desc = "4 extra clock cycles"; };
+                EXTRA_5 = 0x5 { desc = "5 extra clock cycles"; };
+            };
+
+            field {
+                name = "r3dgsl";
+                desc = "Rank 3 DQS gating system latency: extra clock cycles (at most five) before valid DDR read data, compensating board and system delays. Set by the PUBL during automatic DQS data training; can be overwritten by software. Values 6 and 7 are reserved. The actual reset value depends on the configured number of ranks; the Hi3518 does not support this rank.";
+                encode = DDRC_PUB_DXNDQSTR_dgsl_enum;
+                reset = 0x0;
+            } r3dgsl[11:9];
+
+            field {
+                name = "r2dgsl";
+                desc = "Rank 2 DQS gating system latency: extra clock cycles (at most five) before valid DDR read data, compensating board and system delays. Set by the PUBL during automatic DQS data training; can be overwritten by software. Values 6 and 7 are reserved. The actual reset value depends on the configured number of ranks; the Hi3518 does not support this rank.";
+                encode = DDRC_PUB_DXNDQSTR_dgsl_enum;
+                reset = 0x0;
+            } r2dgsl[8:6];
+
+            field {
+                name = "r1dgsl";
+                desc = "Rank 1 DQS gating system latency: extra clock cycles (at most five) before valid DDR read data, compensating board and system delays. Set by the PUBL during automatic DQS data training; can be overwritten by software. Values 6 and 7 are reserved. The actual reset value depends on the configured number of ranks; the Hi3518 does not support this rank.";
+                encode = DDRC_PUB_DXNDQSTR_dgsl_enum;
+                reset = 0x0;
+            } r1dgsl[5:3];
+
+            field {
+                name = "r0dgsl";
+                desc = "Rank 0 DQS gating system latency: extra clock cycles (at most five) before valid DDR read data, compensating board and system delays. Set by the PUBL during automatic DQS data training; can be overwritten by software. Values 6 and 7 are reserved.";
+                encode = DDRC_PUB_DXNDQSTR_dgsl_enum;
+                reset = 0x0;
+            } r0dgsl[2:0];
+
+        } DDRC_PUB_DXNDQSTR @ 0x14;
+`endif
+
+    } DDRC_PUB_DX[2] @ 0x05C0 += 0x40;
+`endif
+
+};
+`endif
+
 `endif
