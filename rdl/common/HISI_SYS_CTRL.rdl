@@ -570,22 +570,7 @@ regfile eSYS_CTRL {
 `ifdef SYS_CTRL_PLLFCTRL_REG
     reg {
         name = "PLL Frequency Control Register";
-        desc = "
-            Used to control the frequency of ARMPLL and enable the bypass function. When ARMPLL needs to be bypassed, set the SC_PLLFCTRL[armpll_bypass] bit to 1. At this time, ARMPLL outputs and external crystal oscillator clock.
-
-            The phase locked loop output clock frequency is calculated by this formula: `Fpll = Fxin * M/(N*2^OD)`
-
-            Where:
-
-                * `M` >= 2
-                * `N` >= 2
-                * 1MHz <= `Fxin/N` <= 25MHz
-                * 200MHz <= `Fpll*2^OD` <= 1GHz
-
-            * `Fxin` is the clock frequency of the external crystal oscillator
-            * `Fpll` is the PLL output clock
-            * `M`, `N`, and `OD` are configured with the corresponding bits in the register
-        ";
+        desc = "ARMPLL frequency control register (Hi3511/Hi3512 only; the chip has a single PLL that generates the ARM and bus clocks and, divided, the MMC, USB, PCI and SIO clocks of SC_PERCTRL2/3). `Fpll = Fxin x M / (N x 2^OD)` with M >= 2, N >= 2, 1 MHz <= Fxin / N <= 25 MHz and 200 MHz <= Fpll x 2^OD <= 1 GHz; Fxin is the external crystal clock. Reset value 0x0000_0909 (M = 0x90 = 144, N = 9, OD = 0): with the 27 MHz crystal the ARMPLL outputs 27 x 144 / 9 = 432 MHz and the ARM clock is 216 MHz (halved). The ARM subsystem nevertheless boots from the crystal (SLOW mode, SC_CTRL modestatus 0x2) and runs from the PLL only after a switch to NORMAL mode; the frequency may only be changed in SLOW mode, the PLL needs 0.5 ms to settle (SC_PLLCTRL[plltime]) and there is no lock-status bit. Setting armpll_bypass makes the PLL output the crystal clock. Write-protected by SC_PERLOCK (0x044, unlock value 0x1ACC_E551); the protection is off after reset and the sheet recommends enabling it at boot.";
 
         enum SC_PLLCTRL_armpll_bypass_enum {
             NO_BYPASS = 0x0 { desc = "Don't bypass"; };
@@ -594,7 +579,7 @@ regfile eSYS_CTRL {
 
         field {
             name = "armpll_bypass";
-            desc = "ARMPLL clock divider bypass control.";
+            desc = "ARMPLL bypass control: 1 = the ARMPLL output is replaced by the external crystal clock.";
             encode = SC_PLLCTRL_armpll_bypass_enum;
 `ifdef SYS_CTRL_RESET_G1
             reset = 0x0;
@@ -603,7 +588,7 @@ regfile eSYS_CTRL {
 
         field {
             name = "armpll_od";
-            desc = "ARM clock frequency division control, OD, output frequency division coefficient";
+            desc = "Output divider exponent OD: `Fpll = Fxin x M / (N x 2^OD)`, 200 MHz <= Fpll x 2^OD <= 1 GHz. Reset 0.";
 `ifdef SYS_CTRL_RESET_G1
             reset = 0x0;
 `endif
@@ -611,7 +596,7 @@ regfile eSYS_CTRL {
 
         field {
             name = "armpll_m";
-            desc = "ARM clock frequency division control, M, multiplication factor";
+            desc = "Multiplier M (>= 2). Reset 0x90 = 144: with the 27 MHz crystal, N = 9 and OD = 0 the ARMPLL outputs 432 MHz; the ARM clock is 216 MHz and the ARM:HCLK ratio is set by SC_PERCTRL2[arm_hclk_sel].";
 `ifdef SYS_CTRL_RESET_G1
             reset = 0x90;
 `endif
@@ -619,7 +604,7 @@ regfile eSYS_CTRL {
 
         field {
             name = "armpll_n";
-            desc = "ARM clock frequency division control, N, frequency division coefficient";
+            desc = "Reference divider N (>= 2), 1 MHz <= Fxin / N <= 25 MHz. Reset 9 (27 MHz / 9 = 3 MHz).";
 `ifdef SYS_CTRL_RESET_G1
             reset = 0x9;
 `endif
@@ -638,154 +623,231 @@ regfile eSYS_CTRL {
                 This register can be write-protected by the register SC_LOCKEN, and the write operation to this register is valid only when the write protection is disabled.
         ";
 `ifdef SYS_CTRL_PERIPHCTRL0_VAR1
+        enum PERIPHCTRL0_srst_act1_enum {
+            RELEASE = 0x0 { desc = "soft reset released (module runs)"; };
+            RESET = 0x1 { desc = "soft reset asserted"; };
+        };
+
         field {
             name = "i2c_srst";
+            desc = "I2C soft reset control. Polarity per the data sheet: 1 = soft reset, 0 = reset released. A module soft reset is write 1 then write 0.";
+            encode = PERIPHCTRL0_srst_act1_enum;
             reset = 0x0;
         } i2c_srst[25:25];
 
         field {
             name = "uart2_srst";
+            desc = "UART2 soft reset control. Polarity per the data sheet: 1 = soft reset, 0 = reset released. A module soft reset is write 1 then write 0.";
+            encode = PERIPHCTRL0_srst_act1_enum;
             reset = 0x0;
         } uart2_srst[24:24];
 
+        enum PERIPHCTRL0_srst_act0_enum {
+            RESET = 0x0 { desc = "soft reset asserted"; };
+            RELEASE = 0x1 { desc = "soft reset released (module runs)"; };
+        };
+
         field {
             name = "rtc_srst";
+            desc = "RTC module soft reset control. Polarity per the data sheet: 0 = soft reset, 1 = reset released. The reset value 0 therefore reads as reset asserted after power-on [inferred: the sheet does not comment on it]; write 1 before using the module.";
+            encode = PERIPHCTRL0_srst_act0_enum;
             reset = 0x0;
         } rtc_srst[23:23];
 
         field {
             name = "usb_srst";
+            desc = "USB 1.1 host module soft reset control. Polarity per the data sheet: 0 = soft reset, 1 = reset released. The reset value 0 therefore reads as reset asserted after power-on [inferred: the sheet does not comment on it]; write 1 before using the module.";
+            encode = PERIPHCTRL0_srst_act0_enum;
             reset = 0x0;
         } usb_srst[22:22];
 
         field {
             name = "otg_srst";
+            desc = "USB 2.0 OTG module soft reset control. Polarity per the data sheet: 0 = soft reset, 1 = reset released. The reset value 0 therefore reads as reset asserted after power-on [inferred: the sheet does not comment on it]; write 1 before using the module.";
+            encode = PERIPHCTRL0_srst_act0_enum;
             reset = 0x0;
         } otg_srst[21:21];
 
         field {
             name = "armcore_srst";
+            desc = "ARM core soft reset control. Polarity per the data sheet: 0 = soft reset, 1 = reset released. The reset value 0 therefore reads as reset asserted after power-on [inferred: the sheet does not comment on it]; write 1 before using the module. Sheet note: in active-load (self-boot) mode this bit cannot control the ARM core reset; in passive-load mode the ARM core is held in reset after power-on and this bit releases it.";
+            encode = PERIPHCTRL0_srst_act0_enum;
             reset = 0x0;
         } armcore_srst[20:20];
 
         field {
             name = "vo_srst";
+            desc = "VO soft reset control. Polarity per the data sheet: 0 = soft reset, 1 = reset released. The reset value 0 therefore reads as reset asserted after power-on [inferred: the sheet does not comment on it]; write 1 before using the module.";
+            encode = PERIPHCTRL0_srst_act0_enum;
             reset = 0x0;
         } vo_srst[19:19];
 
         field {
             name = "vi3_srst";
+            desc = "VI3 interface clock-domain soft reset control. Polarity per the data sheet: 0 = soft reset, 1 = reset released. The reset value 0 therefore reads as reset asserted after power-on [inferred: the sheet does not comment on it]; write 1 before using the module.";
+            encode = PERIPHCTRL0_srst_act0_enum;
             reset = 0x0;
         } vi3_srst[18:18];
 
         field {
             name = "vi2_srst";
+            desc = "VI2 interface clock-domain soft reset control. Polarity per the data sheet: 0 = soft reset, 1 = reset released. The reset value 0 therefore reads as reset asserted after power-on [inferred: the sheet does not comment on it]; write 1 before using the module.";
+            encode = PERIPHCTRL0_srst_act0_enum;
             reset = 0x0;
         } vi2_srst[17:17];
 
         field {
             name = "vi1_srst";
+            desc = "VI1 interface clock-domain soft reset control. Polarity per the data sheet: 0 = soft reset, 1 = reset released. The reset value 0 therefore reads as reset asserted after power-on [inferred: the sheet does not comment on it]; write 1 before using the module.";
+            encode = PERIPHCTRL0_srst_act0_enum;
             reset = 0x0;
         } vi1_srst[16:16];
 
         field {
             name = "vi0_srst";
+            desc = "VI0 interface clock-domain soft reset control. Polarity per the data sheet: 0 = soft reset, 1 = reset released. The reset value 0 therefore reads as reset asserted after power-on [inferred: the sheet does not comment on it]; write 1 before using the module.";
+            encode = PERIPHCTRL0_srst_act0_enum;
             reset = 0x0;
         } vi0_srst[15:15];
 
         field {
             name = "vi_srst";
+            desc = "VI AHB clock-domain soft reset control. Polarity per the data sheet: 0 = soft reset, 1 = reset released. The reset value 0 therefore reads as reset asserted after power-on [inferred: the sheet does not comment on it]; write 1 before using the module.";
+            encode = PERIPHCTRL0_srst_act0_enum;
             reset = 0x0;
         } vi_srst[14:14];
 
         field {
             name = "smi_srst";
+            desc = "SMI module soft reset control. Polarity per the data sheet: 1 = soft reset, 0 = reset released. A module soft reset is write 1 then write 0.";
+            encode = PERIPHCTRL0_srst_act1_enum;
             reset = 0x0;
         } smi_srst[13:13];
 
         field {
             name = "eth_srst";
+            desc = "ETH module soft reset control. Polarity per the data sheet: 0 = soft reset, 1 = reset released. The reset value 0 therefore reads as reset asserted after power-on [inferred: the sheet does not comment on it]; write 1 before using the module.";
+            encode = PERIPHCTRL0_srst_act0_enum;
             reset = 0x0;
         } eth_srst[12:12];
 
         field {
             name = "sio1_srst";
+            desc = "SIO1 module soft reset control. Polarity per the data sheet: 1 = soft reset, 0 = reset released. A module soft reset is write 1 then write 0.";
+            encode = PERIPHCTRL0_srst_act1_enum;
             reset = 0x0;
         } sio1_srst[11:11];
 
         field {
             name = "sio0_srst";
+            desc = "SIO0 module soft reset control. Polarity per the data sheet: 1 = soft reset, 0 = reset released. A module soft reset is write 1 then write 0.";
+            encode = PERIPHCTRL0_srst_act1_enum;
             reset = 0x0;
         } sio0_srst[10:10];
 
         field {
             name = "mmc_srst";
+            desc = "MMC module soft reset control. Polarity per the data sheet: 0 = soft reset, 1 = reset released. The reset value 0 therefore reads as reset asserted after power-on [inferred: the sheet does not comment on it]; write 1 before using the module.";
+            encode = PERIPHCTRL0_srst_act0_enum;
             reset = 0x0;
         } mmc_srst[9:9];
 
         field {
             name = "pci_srst";
+            desc = "PCI module soft reset control. Polarity per the data sheet: 1 = soft reset, 0 = reset released. A module soft reset is write 1 then write 0.";
+            encode = PERIPHCTRL0_srst_act1_enum;
             reset = 0x0;
         } pci_srst[8:8];
 
         field {
             name = "ir_srst";
+            desc = "IR module soft reset control. Polarity per the data sheet: 1 = soft reset, 0 = reset released. A module soft reset is write 1 then write 0.";
+            encode = PERIPHCTRL0_srst_act1_enum;
             reset = 0x0;
         } ir_srst[7:7];
 
         field {
             name = "ssp_srst";
+            desc = "SSP module soft reset control. Polarity per the data sheet: 1 = soft reset, 0 = reset released. A module soft reset is write 1 then write 0.";
+            encode = PERIPHCTRL0_srst_act1_enum;
             reset = 0x0;
         } ssp_srst[6:6];
 
         field {
             name = "uart1_srst";
+            desc = "UART1 soft reset control. Polarity per the data sheet: 1 = soft reset, 0 = reset released. A module soft reset is write 1 then write 0.";
+            encode = PERIPHCTRL0_srst_act1_enum;
             reset = 0x0;
         } uart1_srst[5:5];
 
         field {
             name = "uart0_srst";
+            desc = "UART0 soft reset control. Polarity per the data sheet: 1 = soft reset, 0 = reset released. A module soft reset is write 1 then write 0. The sheet's example: write 1 to uart0_srst, then write 0.";
+            encode = PERIPHCTRL0_srst_act1_enum;
             reset = 0x0;
         } uart0_srst[4:4];
 
         field {
             name = "dsu_srst";
+            desc = "DSU soft reset control. Polarity per the data sheet: 1 = soft reset, 0 = reset released. A module soft reset is write 1 then write 0.";
+            encode = PERIPHCTRL0_srst_act1_enum;
             reset = 0x0;
         } dsu_srst[3:3];
 
         field {
             name = "cipher_srst";
+            desc = "CIPHER soft reset control. Polarity per the data sheet: 1 = soft reset, 0 = reset released. A module soft reset is write 1 then write 0.";
+            encode = PERIPHCTRL0_srst_act1_enum;
             reset = 0x0;
         } cipher_srst[2:2];
 
         field {
             name = "vedu_srst";
+            desc = "VEDU (video encoding/decoding unit) soft reset control. Polarity per the data sheet: 1 = soft reset, 0 = reset released. A module soft reset is write 1 then write 0.";
+            encode = PERIPHCTRL0_srst_act1_enum;
             reset = 0x0;
         } vedu_srst[0:0];
 `endif
 `ifdef SYS_CTRL_PERIPHCTRL0_VAR2
+        enum PERIPHCTRL0_apll_dsmpd_enum {
+            FRACTIONAL = 0x0 { desc = "fractional (decimal) frequency-division mode"; };
+            INTEGER = 0x1 { desc = "integer frequency-division mode (recommended values use 1 with frac = 0)"; };
+        };
+
         field {
             name = "apll_dsmpd";
+            desc = "ARM PLL (APLL): generates the ARM and bus clocks. Hi3515: FOUT2 = 400 MHz and FOUT3 = 266 MHz, recommended SC_PERCTRL0 = 0x8900_0000, SC_PERCTRL1 = 0x006C_30C8 (FOUTVCO = 24 x 200 / 3 = 1600 MHz). Hi3520: FOUT2 = 600, FOUT3 = 400, FOUT4 = 300 MHz, recommended 0x8900_0000 / 0x006C_1064 (FOUTVCO = 24 x 100 / 1 = 2400 MHz). The PLL may only be reprogrammed in SLOW mode (SC_CTRL[modectrl]) and needs 0.1 ms to settle (Hi3515 DS 3.2.3, Hi3520 DS 3.2.3); lock status in SC_PERCTRL23[0]. All reset values are 0: the PLL is off and the chip boots from the 24 MHz crystal (SLOW mode, sysmode default 0xB). Frequency-division mode (delta-sigma modulator power-down). Sheet inconsistency: the Hi3515 APLL/VPLL0/VPLL1 and the Hi3520 APLL bit tables say 0 = fractional, 1 = integer; the Hi3515 EPLL and the Hi3520 VPLL0/VPLL1/EPLL bit tables say the opposite. The recommended values of every PLL (bit 31 = 1 with frac = 0) imply 1 = integer mode, which is the reading used here. Recommended: postdiv2 = 1, postdiv1 = 1 (both chips). Table 3-2 of both sheets swaps the names (EPLL = SC_PERCTRL2/3, VPLL0 = 4/5, VPLL1 = 6/7); the register summary, the bit tables and tables 3-4 to 3-7 agree with the assignment used here.";
+            encode = PERIPHCTRL0_apll_dsmpd_enum;
             reset = 0x0;
         } apll_dsmpd[31:31];
 
+        enum PERIPHCTRL0_apll_bypass_enum {
+            NO_BYPASS = 0x0 { desc = "no bypass"; };
+            BYPASS = 0x1 { desc = "bypass (the PLL output is the 24 MHz reference)"; };
+        };
+
         field {
             name = "apll_bypass";
+            desc = "PLL clock-divider bypass control.";
+            encode = PERIPHCTRL0_apll_bypass_enum;
             reset = 0x0;
         } apll_bypass[30:30];
 
         field {
             name = "apll_postdiv2";
+            desc = "Level-2 output divider: `FOUTPOSTDIV = FOUTVCO / (postdiv1 x postdiv2)`. Recommended: postdiv2 = 1, postdiv1 = 1 (both chips).";
             reset = 0x0;
         } apll_postdiv2[29:27];
 
         field {
             name = "apll_postdiv1";
+            desc = "Level-1 output divider: `FOUTPOSTDIV = FOUTVCO / (postdiv1 x postdiv2)`, `FOUT1ph0 = FOUTVCO / (postdiv1 x 2)`, `FOUT2 = FOUTVCO / (postdiv1 x 4)`, `FOUT3 = FOUTVCO / (postdiv1 x 6)`, `FOUT4 = FOUTVCO / (postdiv1 x 8)`. Recommended: postdiv2 = 1, postdiv1 = 1 (both chips).";
             reset = 0x0;
         } apll_postdiv1[26:24];
 
         field {
             name = "apll_frac";
+            desc = "Fractional multiplier: `FOUTVCO = 24 MHz x (fbdiv + frac / 2^24) / refdiv`, FOUTVCO must stay within 800 MHz to 2.4 GHz; 0 in integer mode. Recommended: postdiv2 = 1, postdiv1 = 1 (both chips).";
             reset = 0x0;
         } apll_frac[23:0];
 `endif
@@ -1019,38 +1081,60 @@ regfile eSYS_CTRL {
         } pinmuxctrl1_0[1:0];
 `endif
 `ifdef SYS_CTRL_PERIPHCTRL1_VAR2
+        enum PERIPHCTRL1_apll_reset_enum {
+            RESET = 0x0 { desc = "PLL in reset"; };
+            RUN = 0x1 { desc = "PLL not in reset"; };
+        };
+
         field {
             name = "apll_reset";
+            desc = "PLL reset control. Reset value 0 = the PLL is held in reset after power-on (the chip boots in SLOW mode from the 24 MHz crystal); the recommended value is 1.";
+            encode = PERIPHCTRL1_apll_reset_enum;
             reset = 0x0;
         } apll_reset[22:22];
 
+        enum PERIPHCTRL1_pd_enum {
+            OFF = 0x0 { desc = "powered down (sheet wording: disabled)"; };
+            ON = 0x1 { desc = "powered up (sheet wording: enabled)"; };
+        };
+
         field {
             name = "apll_pd";
+            desc = "PLL power-down control; despite the name, 1 = powered up (sheet: 0 = disabled, 1 = enabled). Reset value 0 = PLL off; the recommended value is 1.";
+            encode = PERIPHCTRL1_pd_enum;
             reset = 0x0;
         } apll_pd[21:21];
 
         field {
             name = "apll_foutvcopd";
+            desc = "FOUTVCO output power-down control (0 = off, 1 = on). Recommended 0: FOUTVCO itself is not used, the postdiv outputs still run.";
+            encode = PERIPHCTRL1_pd_enum;
             reset = 0x0;
         } apll_foutvcopd[20:20];
 
         field {
             name = "apll_postdivpd";
+            desc = "FOUTPOSTDIV output power-down control (0 = off, 1 = on). Recommended 1.";
+            encode = PERIPHCTRL1_pd_enum;
             reset = 0x0;
         } apll_postdivpd[19:19];
 
         field {
             name = "apll_fout4phasepd";
+            desc = "FOUT1ph0/FOUT2/FOUT3/FOUT4 output power-down control (0 = off, 1 = on). Recommended 1.";
+            encode = PERIPHCTRL1_pd_enum;
             reset = 0x0;
         } apll_fout4phasepd[18:18];
 
         field {
             name = "apll_refdiv";
+            desc = "Reference clock divider: `FOUTVCO = 24 MHz x (fbdiv + frac / 2^24) / refdiv`. Recommended: 3 (Hi3515), 1 (Hi3520).";
             reset = 0x0;
         } apll_refdiv[17:12];
 
         field {
             name = "apll_fbdiv";
+            desc = "Integer multiplier: `FOUTVCO = 24 MHz x (fbdiv + frac / 2^24) / refdiv`. Recommended: 0x0C8 = 200 (Hi3515), 0x064 = 100 (Hi3520).";
             reset = 0x0;
         } apll_fbdiv[11:0];
 `endif
@@ -1134,551 +1218,722 @@ regfile eSYS_CTRL {
         name = "Peripheral Clock Enable Register";
         desc = "Peripheral clock enable register (Hi3511/Hi3512, Hi3515, Hi3520 V100). Write-only set register: writing 1 to a bit enables the clock of that module, writing 0 has no effect; SC_PERDIS (0x028) is the matching clear register and SC_PERCLKEN (0x02C) the read-back status. The data sheets print a total reset value of 0xFFFF_FFFF with every bit (reserved bits included) at 1; a write-only register has no readable reset value, so the reserved bits are not modelled here and the field resets only mirror the power-on state of SC_PERCLKEN (all peripheral clocks enabled). Sheet example (Hi3511): disable SMI with `SC_PERDIS = 0x0000_0010`, re-enable with `SC_PEREN = 0x0000_0010`, verify with SC_PERCLKEN[4]. The same example in the Hi3515/Hi3520 sheets (write 0x0000_0004 to SC_PERDIS, 0x0000_0001 to SC_PEREN, check SC_PERCLKEN[3]) does not match their bit numbering (SMI is bit 3 = 0x8) and is taken as a sheet error. Hi3511 reserved bits: [31:23], [1]; Hi3515: [28], [26], [13:12], [10], [0]; Hi3520: [1:0].";
 `ifdef SYS_CTRL_PEREN_VAR1
+        enum PEREN_clken_enum {
+            NO_EFFECT = 0x0 { desc = "no effect"; };
+            ENABLE = 0x1 { desc = "enable the clock"; };
+        };
+
         field {
             name = "uart2clken";
+            desc = "UART2 module clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } uart2clken[22:22];
 
         field {
             name = "usbclken";
+            desc = "USB 1.1 host module clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } usbclken[21:21];
 
         field {
             name = "otgclken";
+            desc = "USB 2.0 OTG module clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } otgclken[20:20];
 
         field {
             name = "sio1clken";
+            desc = "SIO1 module AHB clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } sio1clken[19:19];
 
         field {
             name = "sio0clken";
+            desc = "SIO0 module AHB clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } sio0clken[18:18];
 
         field {
             name = "ethclken";
+            desc = "ETH module clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } ethclken[17:17];
 
         field {
             name = "vi3clken";
+            desc = "VI3 interface clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } vi3clken[16:16];
 
         field {
             name = "vi2clken";
+            desc = "VI2 interface clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } vi2clken[15:15];
 
         field {
             name = "vi1clken";
+            desc = "VI1 interface clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } vi1clken[14:14];
 
         field {
             name = "vi0clken";
+            desc = "VI0 interface clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } vi0clken[13:13];
 
         field {
             name = "vihclken";
+            desc = "VI module AHB clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } vihclken[12:12];
 
         field {
             name = "voclken";
+            desc = "VO clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } voclken[11:11];
 
         field {
             name = "mmcclken";
+            desc = "MMC module clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } mmcclken[10:10];
 
         field {
             name = "pciclken";
+            desc = "PCI module clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } pciclken[9:9];
 
         field {
             name = "irclken";
+            desc = "IR module clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } irclken[8:8];
 
         field {
             name = "sspclken";
+            desc = "SSP module clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } sspclken[7:7];
 
         field {
             name = "uart1clken";
+            desc = "UART1 module clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } uart1clken[6:6];
 
         field {
             name = "uart0clken";
+            desc = "UART0 module clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } uart0clken[5:5];
 
         field {
             name = "smiclken";
+            desc = "SMI module clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } smiclken[4:4];
 
         field {
             name = "dsuclken";
+            desc = "DSU module clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } dsuclken[3:3];
 
         field {
             name = "cipherclken";
+            desc = "CIPHER module clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } cipherclken[2:2];
 
         field {
             name = "veduclken";
+            desc = "VEDU module clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } veduclken[0:0];
 `endif
 `ifdef SYS_CTRL_PEREN_VAR2
+        enum PEREN_clken_enum {
+            NO_EFFECT = 0x0 { desc = "no effect"; };
+            ENABLE = 0x1 { desc = "enable the clock"; };
+        };
+
         field {
             name = "vdac1clken";
+            desc = "Video DAC1 clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } vdac1clken[31:31];
 
         field {
             name = "vdac0clken";
+            desc = "Video DAC0 clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } vdac0clken[30:30];
 
         field {
             name = "sspclken";
+            desc = "SSP clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } sspclken[29:29];
 
         field {
             name = "nandcclken";
+            desc = "NANDC clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } nandcclken[27:27];
 
         field {
             name = "vohdclken";
+            desc = "VO HD channel clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } vohdclken[25:25];
 
         field {
             name = "vosdclken";
+            desc = "VO SD channel clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } vosdclken[24:24];
 
         field {
             name = "vobusclken";
+            desc = "VO bus clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } vobusclken[23:23];
 
         field {
             name = "usbclken";
+            desc = "USB clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } usbclken[22:22];
 
         field {
             name = "ethclken";
+            desc = "ETH clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } ethclken[21:21];
 
         field {
             name = "vi3clken";
+            desc = "VI3 port clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } vi3clken[20:20];
 
         field {
             name = "vi2clken";
+            desc = "VI2 port clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } vi2clken[19:19];
 
         field {
             name = "vi1clken";
+            desc = "VI1 port clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } vi1clken[18:18];
 
         field {
             name = "vi0clken";
+            desc = "VI0 port clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } vi0clken[17:17];
 
         field {
             name = "vibusclken";
+            desc = "VI bus clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } vibusclken[16:16];
 
         field {
             name = "tdeclken";
+            desc = "TDE clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } tdeclken[15:15];
 
         field {
             name = "mmcclken";
+            desc = "MMC clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } mmcclken[14:14];
 
         field {
             name = "irclken";
+            desc = "IR clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } irclken[11:11];
 
         field {
             name = "sio1clken";
+            desc = "SIO1 clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } sio1clken[9:9];
 
         field {
             name = "sio0clken";
+            desc = "SIO0 clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } sio0clken[8:8];
 
         field {
             name = "uart3clken";
+            desc = "UART3 clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } uart3clken[7:7];
 
         field {
             name = "uart2clken";
+            desc = "UART2 clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } uart2clken[6:6];
 
         field {
             name = "uart1clken";
+            desc = "UART1 clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } uart1clken[5:5];
 
         field {
             name = "uart0clken";
+            desc = "UART0 clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } uart0clken[4:4];
 
         field {
             name = "smiclken";
+            desc = "SMI clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } smiclken[3:3];
 
         field {
             name = "cipherclken";
+            desc = "CIPHER clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } cipherclken[2:2];
 
         field {
             name = "sataclkgate";
+            desc = "SATA clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } sataclkgate[1:1];
 `endif
 `ifdef SYS_CTRL_PEREN_VAR3
+        enum PEREN_clken_enum {
+            NO_EFFECT = 0x0 { desc = "no effect"; };
+            ENABLE = 0x1 { desc = "enable the clock"; };
+        };
+
         field {
             name = "vdac1clken";
+            desc = "Video DAC1 clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } vdac1clken[31:31];
 
         field {
             name = "vdac0clken";
+            desc = "Video DAC0 clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } vdac0clken[30:30];
 
         field {
             name = "sspclken";
+            desc = "SSP clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } sspclken[29:29];
 
         field {
             name = "arm9clken";
+            desc = "ARM926 (ARM9) clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } arm9clken[28:28];
 
         field {
             name = "nandcclken";
+            desc = "NANDC clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } nandcclken[27:27];
 
         field {
             name = "voadclken";
+            desc = "VO AD part clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } voadclken[26:26];
 
         field {
             name = "vohdclken";
+            desc = "VO HD part clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } vohdclken[25:25];
 
         field {
             name = "vosdclken";
+            desc = "VO SD part clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } vosdclken[24:24];
 
         field {
             name = "vobusclken";
+            desc = "VO bus-side clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } vobusclken[23:23];
 
         field {
             name = "usbclken";
+            desc = "USB clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } usbclken[22:22];
 
         field {
             name = "ethclken";
+            desc = "ETH (GMAC) clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } ethclken[21:21];
 
         field {
             name = "vi3clken";
+            desc = "VI3 port clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } vi3clken[20:20];
 
         field {
             name = "vi2clken";
+            desc = "VI2 port clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } vi2clken[19:19];
 
         field {
             name = "vi1clken";
+            desc = "VI1 port clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } vi1clken[18:18];
 
         field {
             name = "vi0clken";
+            desc = "VI0 port clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } vi0clken[17:17];
 
         field {
             name = "vibusclken";
+            desc = "VI bus-side clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } vibusclken[16:16];
 
         field {
             name = "tdeclken";
+            desc = "TDE clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } tdeclken[15:15];
 
         field {
             name = "mmcclken";
+            desc = "MMC clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } mmcclken[14:14];
 
         field {
             name = "pciclken";
+            desc = "PCI clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } pciclken[13:13];
 
         field {
             name = "ipcmclken";
+            desc = "IPCM clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } ipcmclken[12:12];
 
         field {
             name = "irclken";
+            desc = "IR clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } irclken[11:11];
 
         field {
             name = "sio2clken";
+            desc = "SIO2 clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } sio2clken[10:10];
 
         field {
             name = "sio1clken";
+            desc = "SIO1 clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } sio1clken[9:9];
 
         field {
             name = "sio0clken";
+            desc = "SIO0 clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } sio0clken[8:8];
 
         field {
             name = "uart3clken";
+            desc = "UART3 clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } uart3clken[7:7];
 
         field {
             name = "uart2clken";
+            desc = "UART2 clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } uart2clken[6:6];
 
         field {
             name = "uart1clken";
+            desc = "UART1 clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } uart1clken[5:5];
 
         field {
             name = "uart0clken";
+            desc = "UART0 clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } uart0clken[4:4];
 
         field {
             name = "smiclken";
+            desc = "SMI clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } smiclken[3:3];
 
         field {
             name = "cipherclken";
+            desc = "CIPHER clock enable: write 1 to enable the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PEREN_clken_enum;
             reset = 0x1;
         } cipherclken[2:2];
 `endif
@@ -1690,551 +1945,722 @@ regfile eSYS_CTRL {
         name = "Peripheral Clock Disable Register";
         desc = "Peripheral clock disable register (Hi3511/Hi3512, Hi3515, Hi3520 V100). Write-only clear register: writing 1 to a bit gates the clock of that module, writing 0 has no effect; SC_PEREN (0x024) enables, SC_PERCLKEN (0x02C) reads the state. Total reset value in the sheets: Hi3511 and Hi3520 0x0000_0000; Hi3515 0x0400_0402 (bits 26 and 10 are reserved there and bit 1 is sataclkdis): a write-only register has no readable reset value, so those bits are not modelled.";
 `ifdef SYS_CTRL_PERDIS_VAR1
+        enum PERDIS_clkdis_enum {
+            NO_EFFECT = 0x0 { desc = "no effect"; };
+            DISABLE = 0x1 { desc = "disable the clock"; };
+        };
+
         field {
             name = "uart2clkdis";
+            desc = "UART2 module clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } uart2clkdis[22:22];
 
         field {
             name = "usbclkdis";
+            desc = "USB 1.1 host module clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } usbclkdis[21:21];
 
         field {
             name = "otgclkdis";
+            desc = "USB 2.0 OTG module clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } otgclkdis[20:20];
 
         field {
             name = "sio1clkdis";
+            desc = "SIO1 module AHB clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } sio1clkdis[19:19];
 
         field {
             name = "sio0clkdis";
+            desc = "SIO0 module AHB clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } sio0clkdis[18:18];
 
         field {
             name = "ethclkdis";
+            desc = "ETH module clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } ethclkdis[17:17];
 
         field {
             name = "vi3clkdis";
+            desc = "VI3 interface clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } vi3clkdis[16:16];
 
         field {
             name = "vi2clkdis";
+            desc = "VI2 interface clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } vi2clkdis[15:15];
 
         field {
             name = "vi1clkdis";
+            desc = "VI1 interface clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } vi1clkdis[14:14];
 
         field {
             name = "vi0clkdis";
+            desc = "VI0 interface clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } vi0clkdis[13:13];
 
         field {
             name = "vihclkdis";
+            desc = "VI module AHB clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } vihclkdis[12:12];
 
         field {
             name = "voclkdis";
+            desc = "VO clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } voclkdis[11:11];
 
         field {
             name = "mmcclkdis";
+            desc = "MMC module clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } mmcclkdis[10:10];
 
         field {
             name = "pciclkdis";
+            desc = "PCI module clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } pciclkdis[9:9];
 
         field {
             name = "irclkdis";
+            desc = "IR module clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } irclkdis[8:8];
 
         field {
             name = "sspclkdis";
+            desc = "SSP module clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } sspclkdis[7:7];
 
         field {
             name = "uart1clkdis";
+            desc = "UART1 module clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } uart1clkdis[6:6];
 
         field {
             name = "uart0clkdis";
+            desc = "UART0 module clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } uart0clkdis[5:5];
 
         field {
             name = "smiclkdis";
+            desc = "SMI module clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } smiclkdis[4:4];
 
         field {
             name = "dsuclkdis";
+            desc = "DSU module clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } dsuclkdis[3:3];
 
         field {
             name = "cipherclkdis";
+            desc = "CIPHER module clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } cipherclkdis[2:2];
 
         field {
             name = "veduclkdis";
+            desc = "VEDU module clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } veduclkdis[0:0];
 `endif
 `ifdef SYS_CTRL_PERDIS_VAR2
+        enum PERDIS_clkdis_enum {
+            NO_EFFECT = 0x0 { desc = "no effect"; };
+            DISABLE = 0x1 { desc = "disable the clock"; };
+        };
+
         field {
             name = "vdac1clkdis";
+            desc = "Video DAC1 clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } vdac1clkdis[31:31];
 
         field {
             name = "vdac0clkdis";
+            desc = "Video DAC0 clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } vdac0clkdis[30:30];
 
         field {
             name = "sspclkdis";
+            desc = "SSP clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } sspclkdis[29:29];
 
         field {
             name = "nandcclkdis";
+            desc = "NANDC clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } nandcclkdis[27:27];
 
         field {
             name = "vohdclkdis";
+            desc = "VO HD channel clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } vohdclkdis[25:25];
 
         field {
             name = "vosdclkdis";
+            desc = "VO SD channel clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } vosdclkdis[24:24];
 
         field {
             name = "vobusclkdis";
+            desc = "VO bus clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } vobusclkdis[23:23];
 
         field {
             name = "usbclkdis";
+            desc = "USB clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } usbclkdis[22:22];
 
         field {
             name = "ethclkdis";
+            desc = "ETH clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } ethclkdis[21:21];
 
         field {
             name = "vi3clkdis";
+            desc = "VI3 port clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } vi3clkdis[20:20];
 
         field {
             name = "vi2clkdis";
+            desc = "VI2 port clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } vi2clkdis[19:19];
 
         field {
             name = "vi1clkdis";
+            desc = "VI1 port clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } vi1clkdis[18:18];
 
         field {
             name = "vi0clkdis";
+            desc = "VI0 port clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } vi0clkdis[17:17];
 
         field {
             name = "vibusclkdis";
+            desc = "VI bus clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } vibusclkdis[16:16];
 
         field {
             name = "tdeclkdis";
+            desc = "TDE clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } tdeclkdis[15:15];
 
         field {
             name = "mmcclkdis";
+            desc = "MMC clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } mmcclkdis[14:14];
 
         field {
             name = "irclkdis";
+            desc = "IR clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } irclkdis[11:11];
 
         field {
             name = "sio1clkdis";
+            desc = "SIO1 clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } sio1clkdis[9:9];
 
         field {
             name = "sio0clkdis";
+            desc = "SIO0 clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } sio0clkdis[8:8];
 
         field {
             name = "uart3clkdis";
+            desc = "UART3 clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } uart3clkdis[7:7];
 
         field {
             name = "uart2clkdis";
+            desc = "UART2 clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } uart2clkdis[6:6];
 
         field {
             name = "uart1clkdis";
+            desc = "UART1 clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } uart1clkdis[5:5];
 
         field {
             name = "uart0clkdis";
+            desc = "UART0 clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } uart0clkdis[4:4];
 
         field {
             name = "smiclkdis";
+            desc = "SMI clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } smiclkdis[3:3];
 
         field {
             name = "cipherclkdis";
+            desc = "CIPHER clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } cipherclkdis[2:2];
 
         field {
             name = "sataclkdis";
+            desc = "SATA clock disable: write 1 to disable (gate) the clock, 0 has no effect. The sheet's reset row shows 1 for this write-only bit (total reset value 0x0400_0402); kept as printed, it has no readable meaning.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x1;
         } sataclkdis[1:1];
 `endif
 `ifdef SYS_CTRL_PERDIS_VAR3
+        enum PERDIS_clkdis_enum {
+            NO_EFFECT = 0x0 { desc = "no effect"; };
+            DISABLE = 0x1 { desc = "disable the clock"; };
+        };
+
         field {
             name = "vdac1clkdis";
+            desc = "Video DAC1 clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } vdac1clkdis[31:31];
 
         field {
             name = "vdac0clkdis";
+            desc = "Video DAC0 clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } vdac0clkdis[30:30];
 
         field {
             name = "sspclkdis";
+            desc = "SSP clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } sspclkdis[29:29];
 
         field {
             name = "arm9clkdis";
+            desc = "ARM926 (ARM9) clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } arm9clkdis[28:28];
 
         field {
             name = "nandcclkdis";
+            desc = "NANDC clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } nandcclkdis[27:27];
 
         field {
             name = "voadclkdis";
+            desc = "VO AD part clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } voadclkdis[26:26];
 
         field {
             name = "vohdclkdis";
+            desc = "VO HD part clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } vohdclkdis[25:25];
 
         field {
             name = "vosdclkdis";
+            desc = "VO SD part clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } vosdclkdis[24:24];
 
         field {
             name = "vobusclkdis";
+            desc = "VO bus-side clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } vobusclkdis[23:23];
 
         field {
             name = "usbclkdis";
+            desc = "USB clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } usbclkdis[22:22];
 
         field {
             name = "ethclkdis";
+            desc = "ETH (GMAC) clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } ethclkdis[21:21];
 
         field {
             name = "vi3clkdis";
+            desc = "VI3 port clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } vi3clkdis[20:20];
 
         field {
             name = "vi2clkdis";
+            desc = "VI2 port clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } vi2clkdis[19:19];
 
         field {
             name = "vi1clkdis";
+            desc = "VI1 port clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } vi1clkdis[18:18];
 
         field {
             name = "vi0clkdis";
+            desc = "VI0 port clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } vi0clkdis[17:17];
 
         field {
             name = "vibusclkdis";
+            desc = "VI bus-side clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } vibusclkdis[16:16];
 
         field {
             name = "tdeclkdis";
+            desc = "TDE clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } tdeclkdis[15:15];
 
         field {
             name = "mmcclkdis";
+            desc = "MMC clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } mmcclkdis[14:14];
 
         field {
             name = "pciclkdis";
+            desc = "PCI clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } pciclkdis[13:13];
 
         field {
             name = "ipcmclkdis";
+            desc = "IPCM clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } ipcmclkdis[12:12];
 
         field {
             name = "irclkdis";
+            desc = "IR clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } irclkdis[11:11];
 
         field {
             name = "sio2clkdis";
+            desc = "SIO2 clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } sio2clkdis[10:10];
 
         field {
             name = "sio1clkdis";
+            desc = "SIO1 clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } sio1clkdis[9:9];
 
         field {
             name = "sio0clkdis";
+            desc = "SIO0 clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } sio0clkdis[8:8];
 
         field {
             name = "uart3clkdis";
+            desc = "UART3 clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } uart3clkdis[7:7];
 
         field {
             name = "uart2clkdis";
+            desc = "UART2 clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } uart2clkdis[6:6];
 
         field {
             name = "uart1clkdis";
+            desc = "UART1 clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } uart1clkdis[5:5];
 
         field {
             name = "uart0clkdis";
+            desc = "UART0 clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } uart0clkdis[4:4];
 
         field {
             name = "smiclkdis";
+            desc = "SMI clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } smiclkdis[3:3];
 
         field {
             name = "cipherclkdis";
+            desc = "CIPHER clock disable: write 1 to disable (gate) the clock, 0 has no effect.";
             sw = w;
             hw = r;
+            encode = PERDIS_clkdis_enum;
             reset = 0x0;
         } cipherclkdis[2:2];
 `endif
@@ -2254,150 +2680,197 @@ regfile eSYS_CTRL {
             reset = 0x1ff;
         } reserved_nz_31_23[31:23];
 
+        enum PERCLKEN_clkstat_enum {
+            OFF = 0x0 { desc = "clock off"; };
+            ON = 0x1 { desc = "clock on"; };
+        };
+
         field {
             name = "uart2clken";
+            desc = "UART2 module clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } uart2clken[22:22];
 
         field {
             name = "usbclkden";
+            desc = "USB 1.1 host module clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on). The sheet spells the bit name usbclkden (sic).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } usbclkden[21:21];
 
         field {
             name = "otgclken";
+            desc = "USB 2.0 OTG module clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } otgclken[20:20];
 
         field {
             name = "sio1clken";
+            desc = "SIO1 module AHB clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } sio1clken[19:19];
 
         field {
             name = "sio0clken";
+            desc = "SIO0 module AHB clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } sio0clken[18:18];
 
         field {
             name = "ethclken";
+            desc = "ETH module clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } ethclken[17:17];
 
         field {
             name = "vi3clken";
+            desc = "VI3 interface clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } vi3clken[16:16];
 
         field {
             name = "vi2clken";
+            desc = "VI2 interface clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } vi2clken[15:15];
 
         field {
             name = "vi1clken";
+            desc = "VI1 interface clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } vi1clken[14:14];
 
         field {
             name = "vi0clken";
+            desc = "VI0 interface clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } vi0clken[13:13];
 
         field {
             name = "vihclken";
+            desc = "VI module AHB clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } vihclken[12:12];
 
         field {
             name = "voclken";
+            desc = "VO clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } voclken[11:11];
 
         field {
             name = "mmcclken";
+            desc = "MMC module clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } mmcclken[10:10];
 
         field {
             name = "pciclken";
+            desc = "PCI module clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } pciclken[9:9];
 
         field {
             name = "irclken";
+            desc = "IR module clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } irclken[8:8];
 
         field {
             name = "sspclken";
+            desc = "SSP module clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } sspclken[7:7];
 
         field {
             name = "uart1clken";
+            desc = "UART1 module clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } uart1clken[6:6];
 
         field {
             name = "uart0clken";
+            desc = "UART0 module clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } uart0clken[5:5];
 
         field {
             name = "smiclken";
+            desc = "SMI module clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } smiclken[4:4];
 
         field {
             name = "dsuclken";
+            desc = "DSU module clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } dsuclken[3:3];
 
         field {
             name = "cipherclken";
+            desc = "CIPHER module clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } cipherclken[2:2];
 
@@ -2411,37 +2884,52 @@ regfile eSYS_CTRL {
 
         field {
             name = "veduclken";
+            desc = "VEDU module clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } veduclken[0:0];
 `endif
 `ifdef SYS_CTRL_PERCLKEN_VAR2
+        enum PERCLKEN_clkstat_enum {
+            OFF = 0x0 { desc = "clock off"; };
+            ON = 0x1 { desc = "clock on"; };
+        };
+
         field {
             name = "vdac1clkstat";
+            desc = "Video DAC1 clock status: 0 = clock off, 1 = clock on. The bit row of the sheet shows reset 0, but the revision note of issue 00B03 changes the total reset value to 0xEFFF_CFFF (bit 31 = 1), which is used here.";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } vdac1clkstat[31:31];
 
         field {
             name = "vdac0clkstat";
+            desc = "Video DAC0 clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } vdac0clkstat[30:30];
 
         field {
             name = "sspclkstat";
+            desc = "SSP clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } sspclkstat[29:29];
 
         field {
             name = "nandcclkstat";
+            desc = "NANDC clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } nandcclkstat[27:27];
 
@@ -2455,162 +2943,208 @@ regfile eSYS_CTRL {
 
         field {
             name = "vohdclkstat";
+            desc = "VO HD channel clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } vohdclkstat[25:25];
 
         field {
             name = "vosdclkstat";
+            desc = "VO SD channel clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } vosdclkstat[24:24];
 
         field {
             name = "vobusclkstat";
+            desc = "VO bus clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } vobusclkstat[23:23];
 
         field {
             name = "usbclkstat";
+            desc = "USB clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } usbclkstat[22:22];
 
         field {
             name = "ethclkstat";
+            desc = "ETH clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } ethclkstat[21:21];
 
         field {
             name = "vi3clkstat";
+            desc = "VI3 port clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } vi3clkstat[20:20];
 
         field {
             name = "vi2clkstat";
+            desc = "VI2 port clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } vi2clkstat[19:19];
 
         field {
             name = "vi1clkstat";
+            desc = "VI1 port clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } vi1clkstat[18:18];
 
         field {
             name = "vi0clkstat";
+            desc = "VI0 port clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } vi0clkstat[17:17];
 
         field {
             name = "vibusclkstat";
+            desc = "VI bus clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } vibusclkstat[16:16];
 
         field {
             name = "tdeclkstat";
+            desc = "TDE clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } tdeclkstat[15:15];
 
         field {
             name = "mmcclkstat";
+            desc = "MMC clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } mmcclkstat[14:14];
 
         field {
             name = "irclkstat";
+            desc = "IR clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } irclkstat[11:11];
 
         field {
             name = "sio2clkstat";
+            desc = "SIO2 clock status: 0 = clock off, 1 = clock on. Status only: the Hi3515 SC_PEREN/SC_PERDIS have no SIO2 bit (bit 10 reserved there); reads 1 after reset.";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } sio2clkstat[10:10];
 
         field {
             name = "sio1clkstat";
+            desc = "SIO1 clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } sio1clkstat[9:9];
 
         field {
             name = "sio0clkstat";
+            desc = "SIO0 clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } sio0clkstat[8:8];
 
         field {
             name = "uart3clkstat";
+            desc = "UART3 clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } uart3clkstat[7:7];
 
         field {
             name = "uart2clkstat";
+            desc = "UART2 clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } uart2clkstat[6:6];
 
         field {
             name = "uart1clkstat";
+            desc = "UART1 clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } uart1clkstat[5:5];
 
         field {
             name = "uart0clkstat";
+            desc = "UART0 clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } uart0clkstat[4:4];
 
         field {
             name = "smiclkstat";
+            desc = "SMI clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } smiclkstat[3:3];
 
         field {
             name = "cipherclkstat";
+            desc = "CIPHER clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } cipherclkstat[2:2];
 
         field {
             name = "sataclkstat";
+            desc = "SATA clock status: 0 = clock off, 1 = clock on. Reads 1 after reset.";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } sataclkstat[1:1];
 
@@ -2623,213 +3157,278 @@ regfile eSYS_CTRL {
         } reserved_nz_0_0[0:0];
 `endif
 `ifdef SYS_CTRL_PERCLKEN_VAR3
+        enum PERCLKEN_clkstat_enum {
+            OFF = 0x0 { desc = "clock off"; };
+            ON = 0x1 { desc = "clock on"; };
+        };
+
         field {
             name = "vdac1clkstat";
+            desc = "Video DAC1 clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } vdac1clkstat[31:31];
 
         field {
             name = "vdac0clkstat";
+            desc = "Video DAC0 clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } vdac0clkstat[30:30];
 
         field {
             name = "sspclkstat";
+            desc = "SSP clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } sspclkstat[29:29];
 
         field {
             name = "arm9clkstat";
+            desc = "ARM926 (ARM9) clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } arm9clkstat[28:28];
 
         field {
             name = "nandcclkstat";
+            desc = "NANDC clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } nandcclkstat[27:27];
 
         field {
             name = "voadclkstat";
+            desc = "VO AD part clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } voadclkstat[26:26];
 
         field {
             name = "vohdclkstat";
+            desc = "VO HD part clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } vohdclkstat[25:25];
 
         field {
             name = "vosdclkstat";
+            desc = "VO SD part clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } vosdclkstat[24:24];
 
         field {
             name = "vobusclkstat";
+            desc = "VO bus-side clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } vobusclkstat[23:23];
 
         field {
             name = "usbclkstat";
+            desc = "USB clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } usbclkstat[22:22];
 
         field {
             name = "ethclkstat";
+            desc = "ETH (GMAC) clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } ethclkstat[21:21];
 
         field {
             name = "vi3clkstat";
+            desc = "VI3 port clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } vi3clkstat[20:20];
 
         field {
             name = "vi2clkstat";
+            desc = "VI2 port clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } vi2clkstat[19:19];
 
         field {
             name = "vi1clkstat";
+            desc = "VI1 port clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } vi1clkstat[18:18];
 
         field {
             name = "vi0clkstat";
+            desc = "VI0 port clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } vi0clkstat[17:17];
 
         field {
             name = "vibusclkstat";
+            desc = "VI bus-side clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } vibusclkstat[16:16];
 
         field {
             name = "tdeclkstat";
+            desc = "TDE clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } tdeclkstat[15:15];
 
         field {
             name = "mmcclkstat";
+            desc = "MMC clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } mmcclkstat[14:14];
 
         field {
             name = "pciclkstat";
+            desc = "PCI clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } pciclkstat[13:13];
 
         field {
             name = "ipcmclkstat";
+            desc = "IPCM clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } ipcmclkstat[12:12];
 
         field {
             name = "irclkstat";
+            desc = "IR clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } irclkstat[11:11];
 
         field {
             name = "sio2clkstat";
+            desc = "SIO2 clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } sio2clkstat[10:10];
 
         field {
             name = "sio1clkstat";
+            desc = "SIO1 clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } sio1clkstat[9:9];
 
         field {
             name = "sio0clkstat";
+            desc = "SIO0 clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } sio0clkstat[8:8];
 
         field {
             name = "uart3clkstat";
+            desc = "UART3 clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } uart3clkstat[7:7];
 
         field {
             name = "uart2clkstat";
+            desc = "UART2 clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } uart2clkstat[6:6];
 
         field {
             name = "uart1clkstat";
+            desc = "UART1 clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } uart1clkstat[5:5];
 
         field {
             name = "uart0clkstat";
+            desc = "UART0 clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } uart0clkstat[4:4];
 
         field {
             name = "smiclkstat";
+            desc = "SMI clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } smiclkstat[3:3];
 
         field {
             name = "cipherclkstat";
+            desc = "CIPHER clock status: 0 = clock off, 1 = clock on. Reads 1 after reset (all peripheral clocks are enabled at power-on).";
             sw = r;
             hw = w;
+            encode = PERCLKEN_clkstat_enum;
             reset = 0x1;
         } cipherclkstat[2:2];
 
@@ -2937,109 +3536,243 @@ regfile eSYS_CTRL {
     reg {
         name = "Peripheral control register 2";
 `ifdef SYS_CTRL_PERIPHCTRL2_VAR1
+        enum PERIPHCTRL2_vedu_power_mode_enum {
+            NORMAL = 0x0 { desc = "normal clock-gating mode"; };
+            LOW_POWER = 0x1 { desc = "low-power clock-gating mode"; };
+        };
+
         field {
             name = "vedu_power_mode";
+            desc = "VEDU clock-gating low-power mode control.";
+            encode = PERIPHCTRL2_vedu_power_mode_enum;
             reset = 0x0;
         } vedu_power_mode[26:26];
 
+        enum PERIPHCTRL2_otg24_sel_enum {
+            PIN = 0x0 { desc = "24 MHz clock input from the pin"; };
+            PLL = 0x1 { desc = "24 MHz clock divided from the internal PLL"; };
+        };
+
         field {
             name = "otg24_sel";
+            desc = "USB 2.0 OTG 24 MHz clock source select.";
+            encode = PERIPHCTRL2_otg24_sel_enum;
             reset = 0x0;
         } otg24_sel[25:25];
 
+        enum PERIPHCTRL2_smiclk_sel_enum {
+            DIV1 = 0x0 { desc = "AHB clock /1"; };
+            DIV2 = 0x1 { desc = "AHB clock /2"; };
+        };
+
         field {
             name = "smiclk_sel";
+            desc = "SMI module working clock: AHB clock divider select.";
+            encode = PERIPHCTRL2_smiclk_sel_enum;
             reset = 0x0;
         } smiclk_sel[24:24];
 
+        enum PERIPHCTRL2_pciclk_sel_enum {
+            DIV6 = 0x0 { desc = "/6"; };
+            DIV7 = 0x1 { desc = "/7"; };
+            DIV8 = 0x2 { desc = "/8"; };
+            DIV9 = 0x3 { desc = "/9"; };
+            DIV10 = 0x4 { desc = "/10"; };
+            DIV11 = 0x5 { desc = "/11"; };
+            DIV12 = 0x6 { desc = "/12"; };
+            DIV13 = 0x7 { desc = "/13"; };
+            DIV14 = 0x8 { desc = "/14"; };
+            DIV15 = 0x9 { desc = "/15"; };
+            DIV16 = 0xa { desc = "/16"; };
+            DIV18 = 0xb { desc = "/18"; };
+            DIV20 = 0xc { desc = "/20"; };
+            DIV24 = 0xd { desc = "/24"; };
+            RSVD14 = 0xe { desc = "reserved"; };
+            RSVD15 = 0xf { desc = "reserved"; };
+        };
+
         field {
             name = "pciclk_sel";
+            desc = "PCI module working clock: divider of the PLL (ARMPLL, SC_PLLFCTRL) output clock, 6 to 24.";
+            encode = PERIPHCTRL2_pciclk_sel_enum;
             reset = 0x0;
         } pciclk_sel[23:20];
 
+        enum PERIPHCTRL2_vidiv_enum {
+            DIV2 = 0x0 { desc = "port clock divided by 2"; };
+            DIV4 = 0x1 { desc = "port clock divided by 4"; };
+            DIV1 = 0x2 { desc = "port clock (not divided)"; };
+            RSVD = 0x3 { desc = "reserved"; };
+        };
+
         field {
             name = "vi3div_sel";
+            desc = "VI3 divided clock control (divider of the VI3 port clock).";
+            encode = PERIPHCTRL2_vidiv_enum;
             reset = 0x0;
         } vi3div_sel[19:18];
 
         field {
             name = "vi2div_sel";
+            desc = "VI2 divided clock control (divider of the VI2 port clock).";
+            encode = PERIPHCTRL2_vidiv_enum;
             reset = 0x0;
         } vi2div_sel[17:16];
 
         field {
             name = "vi1div_sel";
+            desc = "VI1 divided clock control (divider of the VI1 port clock).";
+            encode = PERIPHCTRL2_vidiv_enum;
             reset = 0x0;
         } vi1div_sel[15:14];
 
         field {
             name = "vi0div_sel";
+            desc = "VI0 divided clock control (divider of the VI0 port clock).";
+            encode = PERIPHCTRL2_vidiv_enum;
             reset = 0x0;
         } vi0div_sel[13:12];
 
+        enum PERIPHCTRL2_usb48clk_sel_enum {
+            RSVD = 0x0 { desc = "reserved"; };
+            DIV10 = 0x1 { desc = "PLL output /10"; };
+            DIV11 = 0x2 { desc = "PLL output /11"; };
+            DIV12 = 0x3 { desc = "PLL output /12"; };
+        };
+
         field {
             name = "usb48clk_sel";
+            desc = "USB 1.1 host 48 MHz clock: divider of the PLL (ARMPLL) output clock. The USB 1.1 host clock must be exactly 48 MHz, so the PLL output must be an integer multiple of 48 MHz (sheet note).";
+            encode = PERIPHCTRL2_usb48clk_sel_enum;
             reset = 0x0;
         } usb48clk_sel[9:8];
 
+        enum PERIPHCTRL2_arm_hclk_sel_enum {
+            RATIO_2_1 = 0x0 { desc = "ARM:HCLK = 2:1"; };
+            RATIO_1_1 = 0x1 { desc = "ARM:HCLK = 1:1"; };
+        };
+
         field {
             name = "arm_hclk_sel";
+            desc = "ARM clock to HCLK (bus clock) ratio (sheet table 3-2: ARM frequency mode).";
+            encode = PERIPHCTRL2_arm_hclk_sel_enum;
             reset = 0x0;
         } arm_hclk_sel[7:7];
 
+        enum PERIPHCTRL2_mmcsap_sel_enum {
+            NORMAL = 0x0 { desc = "sample with the normal-phase clock"; };
+            INVERTED = 0x1 { desc = "sample with the inverted clock"; };
+        };
+
         field {
             name = "mmcsap_sel";
+            desc = "MMC card-data sampling clock phase.";
+            encode = PERIPHCTRL2_mmcsap_sel_enum;
             reset = 0x0;
         } mmcsap_sel[6:6];
 
+        enum PERIPHCTRL2_mmcclk_sel_enum {
+            DIV8 = 0x0 { desc = "PLL output /8"; };
+            DIV10 = 0x1 { desc = "PLL output /10"; };
+            DIV12 = 0x2 { desc = "PLL output /12"; };
+            DIV14 = 0x3 { desc = "PLL output /14"; };
+        };
+
         field {
             name = "mmcclk_sel";
+            desc = "MMC module working clock: divider of the PLL (ARMPLL) output clock.";
+            encode = PERIPHCTRL2_mmcclk_sel_enum;
             reset = 0x0;
         } mmcclk_sel[5:4];
 
+        enum PERIPHCTRL2_vi3_vi2_sel_enum {
+            VI3 = 0x0 { desc = "clock input on the VI3 port"; };
+            VI2 = 0x1 { desc = "clock input on the VI2 port"; };
+        };
+
         field {
             name = "vi3_vi2_sel";
+            desc = "VI3 port clock select.";
+            encode = PERIPHCTRL2_vi3_vi2_sel_enum;
             reset = 0x0;
         } vi3_vi2_sel[3:3];
 
+        enum PERIPHCTRL2_vi2_vi0_sel_enum {
+            VI2 = 0x0 { desc = "clock input on the VI2 port"; };
+            VI0 = 0x1 { desc = "clock input on the VI0 port"; };
+        };
+
         field {
             name = "vi2_vi0_sel";
+            desc = "VI2 port clock select.";
+            encode = PERIPHCTRL2_vi2_vi0_sel_enum;
             reset = 0x0;
         } vi2_vi0_sel[2:2];
 
+        enum PERIPHCTRL2_vi1_vi0_sel_enum {
+            VI1 = 0x0 { desc = "clock input on the VI1 port"; };
+            VI0 = 0x1 { desc = "clock input on the VI0 port"; };
+        };
+
         field {
             name = "vi1_vi0_sel";
+            desc = "VI1 port clock select.";
+            encode = PERIPHCTRL2_vi1_vi0_sel_enum;
             reset = 0x0;
         } vi1_vi0_sel[1:1];
 
+        enum PERIPHCTRL2_phase0_enum {
+            INVERTED = 0x0 { desc = "inverted-phase clock"; };
+            NORMAL = 0x1 { desc = "normal-phase clock"; };
+        };
+
         field {
             name = "voout_sel";
+            desc = "VO output clock phase.";
+            encode = PERIPHCTRL2_phase0_enum;
             reset = 0x0;
         } voout_sel[0:0];
 `endif
 `ifdef SYS_CTRL_PERIPHCTRL2_VAR2
+        enum PERIPHCTRL2_vpll0_dsmpd_enum {
+            FRACTIONAL = 0x0 { desc = "fractional (decimal) frequency-division mode"; };
+            INTEGER = 0x1 { desc = "integer frequency-division mode (recommended values use 1 with frac = 0)"; };
+        };
+
         field {
             name = "vpll0_dsmpd";
+            desc = "Video PLL0 (VPLL0): generates the VO0 clock from FOUTPOSTDIV; values depend on the display timing. Sheet examples: Hi3515 108 MHz = 0xAB00_0000 / 0x006C_2087 (54 MHz: postdiv2 = 5, postdiv1 = 3, refdiv = 2, fbdiv = 135, output divided by 2 to VO0); Hi3520 54 MHz = 0xB400_0000 / 0x006C_1036. Reset values 0 = PLL off; lock status in SC_PERCTRL23[1]. Frequency-division mode (delta-sigma modulator power-down). Sheet inconsistency: the Hi3515 APLL/VPLL0/VPLL1 and the Hi3520 APLL bit tables say 0 = fractional, 1 = integer; the Hi3515 EPLL and the Hi3520 VPLL0/VPLL1/EPLL bit tables say the opposite. The recommended values of every PLL (bit 31 = 1 with frac = 0) imply 1 = integer mode, which is the reading used here. Table 3-2 of both sheets swaps the names (EPLL = SC_PERCTRL2/3, VPLL0 = 4/5, VPLL1 = 6/7); the register summary, the bit tables and tables 3-4 to 3-7 agree with the assignment used here.";
+            encode = PERIPHCTRL2_vpll0_dsmpd_enum;
             reset = 0x0;
         } vpll0_dsmpd[31:31];
 
+        enum PERIPHCTRL2_vpll0_bypass_enum {
+            NO_BYPASS = 0x0 { desc = "no bypass"; };
+            BYPASS = 0x1 { desc = "bypass (the PLL output is the 24 MHz reference)"; };
+        };
+
         field {
             name = "vpll0_bypass";
+            desc = "PLL clock-divider bypass control.";
+            encode = PERIPHCTRL2_vpll0_bypass_enum;
             reset = 0x0;
         } vpll0_bypass[30:30];
 
         field {
             name = "vpll0_postdiv2";
+            desc = "Level-2 output divider: `FOUTPOSTDIV = FOUTVCO / (postdiv1 x postdiv2)`.";
             reset = 0x0;
         } vpll0_postdiv2[29:27];
 
         field {
             name = "vpll0_postdiv1";
+            desc = "Level-1 output divider: `FOUTPOSTDIV = FOUTVCO / (postdiv1 x postdiv2)`, `FOUT1ph0 = FOUTVCO / (postdiv1 x 2)`, `FOUT2 = FOUTVCO / (postdiv1 x 4)`, `FOUT3 = FOUTVCO / (postdiv1 x 6)`, `FOUT4 = FOUTVCO / (postdiv1 x 8)`.";
             reset = 0x0;
         } vpll0_postdiv1[26:24];
 
         field {
             name = "vpll0_frac";
+            desc = "Fractional multiplier: `FOUTVCO = 24 MHz x (fbdiv + frac / 2^24) / refdiv`, FOUTVCO must stay within 800 MHz to 2.4 GHz; 0 in integer mode.";
             reset = 0x0;
         } vpll0_frac[23:0];
 `endif
@@ -3063,54 +3796,103 @@ regfile eSYS_CTRL {
         name = "Peripheral control register 3";
         desc = "SATA PHY control register device. On the Hi3520D (DS 3.4.5, `datasheet.txt` line 10979) it holds the MPLL reference offset (`sata_phy0_ref_clk_sel`, 0 = no offset) and the spread-spectrum select (`sata_phy0_mpll_ss_sel`, must be 0); the vendor SATA driver never writes it. The DS total reset 0x5D75F000 has non-zero bits in the reserved field [31:10] (not modelled). PHY clocks/resets: PERI_CRG45; PHY test options: PERIPHCTRL25. Hardware (Hi3520D V100 board, read on hardware 2026-11-08, stock U-Boot prompt after a cold boot): reads 0x5D75F000, which equals the data sheet total reset; the RDL reset was 0 because the reserved bits [31:10] were not modelled (now the field reserved_nz). The value may be set by the BootROM before the prompt (it is the value at the stock U-Boot prompt after a cold boot; stock U-Boot does not touch SATA).";
 `ifdef SYS_CTRL_PERIPHCTRL3_VAR1
+        enum PERIPHCTRL3_siolrclk_sel_enum {
+            DIV2 = 0x0 { desc = "/2"; };
+            DIV4 = 0x1 { desc = "/4"; };
+            DIV8 = 0x2 { desc = "/8"; };
+            DIV16 = 0x3 { desc = "/16"; };
+            DIV32 = 0x4 { desc = "/32"; };
+            DIV48 = 0x5 { desc = "/48"; };
+            DIV64 = 0x6 { desc = "/64"; };
+            RSVD = 0x7 { desc = "reserved"; };
+        };
+
         field {
             name = "siolrclk_sel";
+            desc = "SIO sampling (LR) clock: divider of the SIO bit-stream clock.";
+            encode = PERIPHCTRL3_siolrclk_sel_enum;
             reset = 0x0;
         } siolrclk_sel[29:27];
 
+        enum PERIPHCTRL3_siobclk_sel_enum {
+            DIV1 = 0x0 { desc = "/1"; };
+            DIV2 = 0x1 { desc = "/2"; };
+            DIV4 = 0x2 { desc = "/4"; };
+            DIV8 = 0x3 { desc = "/8"; };
+            DIV16 = 0x4 { desc = "/16"; };
+            DIV32 = 0x5 { desc = "/32"; };
+            RSVD6 = 0x6 { desc = "reserved"; };
+            RSVD7 = 0x7 { desc = "reserved"; };
+        };
+
         field {
             name = "siobclk_sel";
+            desc = "SIO bit-stream clock: divider of the SIO system clock.";
+            encode = PERIPHCTRL3_siobclk_sel_enum;
             reset = 0x0;
         } siobclk_sel[26:24];
 
         field {
             name = "sioclk_sel";
+            desc = "SIO system clock: arbitrary divider of the PLL (ARMPLL) output clock, `Fsio = K x Fpll / 2^27` with K = this field. Used only when SC_PERCTRL4[sio0_clksel]/[sio1_clksel] select the CRG divider. Sheet example (ARMPLL 540 MHz, MCLK 12.288 MHz): K = 0x002E_9A77.";
             reset = 0x0;
         } sioclk_sel[23:0];
 `endif
 `ifdef SYS_CTRL_PERIPHCTRL3_VAR2
+        enum PERIPHCTRL3_vpll0_reset_enum {
+            RESET = 0x0 { desc = "PLL in reset"; };
+            RUN = 0x1 { desc = "PLL not in reset"; };
+        };
+
         field {
             name = "vpll0_reset";
+            desc = "PLL reset control. Reset value 0 = the PLL is held in reset after power-on (the chip boots in SLOW mode from the 24 MHz crystal); the recommended value is 1.";
+            encode = PERIPHCTRL3_vpll0_reset_enum;
             reset = 0x0;
         } vpll0_reset[22:22];
 
+        enum PERIPHCTRL3_pd_enum {
+            OFF = 0x0 { desc = "powered down (sheet wording: disabled)"; };
+            ON = 0x1 { desc = "powered up (sheet wording: enabled)"; };
+        };
+
         field {
             name = "vpll0_pd";
+            desc = "PLL power-down control; despite the name, 1 = powered up (sheet: 0 = disabled, 1 = enabled). Reset value 0 = PLL off; the recommended value is 1.";
+            encode = PERIPHCTRL3_pd_enum;
             reset = 0x0;
         } vpll0_pd[21:21];
 
         field {
             name = "vpll0_foutvcopd";
+            desc = "FOUTVCO output power-down control (0 = off, 1 = on). Recommended 0: FOUTVCO itself is not used, the postdiv outputs still run.";
+            encode = PERIPHCTRL3_pd_enum;
             reset = 0x0;
         } vpll0_foutvcopd[20:20];
 
         field {
             name = "vpll0_postdivpd";
+            desc = "FOUTPOSTDIV output power-down control (0 = off, 1 = on). Recommended 1.";
+            encode = PERIPHCTRL3_pd_enum;
             reset = 0x0;
         } vpll0_postdivpd[19:19];
 
         field {
             name = "vpll0_fout4phasepd";
+            desc = "FOUT1ph0/FOUT2/FOUT3/FOUT4 output power-down control (0 = off, 1 = on). Recommended 1.";
+            encode = PERIPHCTRL3_pd_enum;
             reset = 0x0;
         } vpll0_fout4phasepd[18:18];
 
         field {
             name = "vpll0_refdiv";
+            desc = "Reference clock divider: `FOUTVCO = 24 MHz x (fbdiv + frac / 2^24) / refdiv`.";
             reset = 0x0;
         } vpll0_refdiv[17:12];
 
         field {
             name = "vpll0_fbdiv";
+            desc = "Integer multiplier: `FOUTVCO = 24 MHz x (fbdiv + frac / 2^24) / refdiv`.";
             reset = 0x0;
         } vpll0_fbdiv[11:0];
 `endif
@@ -3185,99 +3967,214 @@ regfile eSYS_CTRL {
         name = "Peripheral control register 4";
         desc = "Hardware (Hi3520D V100 board, read on hardware 2026-11-08, stock U-Boot prompt after a cold boot): reads 0x00008000 (bit 15, `mdu_ddrt_mst_sel` on the Hi3520D, is set), reset here 0. Boot value (DDR training uses the DDR tester as bus master), not taken as the reset value.";
 `ifdef SYS_CTRL_PERIPHCTRL4_VAR1
+        enum PERIPHCTRL4_cs1_mode_enum {
+            ACTIVE_LOW = 0x0 { desc = "active low"; };
+            ACTIVE_HIGH = 0x1 { desc = "active high"; };
+        };
+
         field {
             name = "cs1_mode";
+            desc = "EBI chip select EBICS1 polarity.";
+            encode = PERIPHCTRL4_cs1_mode_enum;
             reset = 0x0;
         } cs1_mode[28:28];
 
+        enum PERIPHCTRL4_cs0_mode_enum {
+            ACTIVE_LOW = 0x0 { desc = "active low"; };
+            ACTIVE_HIGH = 0x1 { desc = "active high"; };
+        };
+
         field {
             name = "cs0_mode";
+            desc = "EBI chip select EBICS0 polarity.";
+            encode = PERIPHCTRL4_cs0_mode_enum;
             reset = 0x0;
         } cs0_mode[27:27];
 
+        enum PERIPHCTRL4_rts_mode_enum {
+            NORMAL = 0x0 { desc = "normal output"; };
+            INVERTED = 0x1 { desc = "inverted output"; };
+        };
+
         field {
             name = "rts_mode";
+            desc = "UART1 RTS output mode.";
+            encode = PERIPHCTRL4_rts_mode_enum;
             reset = 0x0;
         } rts_mode[26:26];
 
+        enum PERIPHCTRL4_otg_for_srp_enum {
+            NO_SRP = 0x0 { desc = "SRP scheme not selected"; };
+            SRP = 0x1 { desc = "SRP scheme selected"; };
+        };
+
         field {
             name = "otg_for_srp";
+            desc = "USB 2.0 OTG: use the power-detect SRP scheme.";
+            encode = PERIPHCTRL4_otg_for_srp_enum;
             reset = 0x0;
         } otg_for_srp[24:24];
 
+        enum PERIPHCTRL4_otg_for_glitch_enum {
+            NONE = 0x0 { desc = "no debounce"; };
+            US3 = 0x1 { desc = "3 us"; };
+            US10 = 0x2 { desc = "10 us"; };
+            US30 = 0x3 { desc = "30 us"; };
+            US100 = 0x4 { desc = "100 us"; };
+            US300 = 0x5 { desc = "300 us"; };
+            MS1 = 0x6 { desc = "1 ms"; };
+            MS3 = 0x7 { desc = "3 ms"; };
+        };
+
         field {
             name = "otg_for_glitch";
+            desc = "USB 2.0 OTG VBUS debounce (glitch removal) time.";
+            encode = PERIPHCTRL4_otg_for_glitch_enum;
             reset = 0x0;
         } otg_for_glitch[23:21];
 
+        enum PERIPHCTRL4_pciclk_mode_enum {
+            INPUT = 0x0 { desc = "PCI clock is an input"; };
+            OUTPUT = 0x1 { desc = "PCI clock is an output"; };
+        };
+
         field {
             name = "pciclk_mode";
+            desc = "PCI clock direction.";
+            encode = PERIPHCTRL4_pciclk_mode_enum;
             reset = 0x0;
         } pciclk_mode[20:20];
 
+        enum PERIPHCTRL4_pci_bridge_mode_enum {
+            DEVICE = 0x0 { desc = "device"; };
+            HOST = 0x1 { desc = "host"; };
+        };
+
         field {
             name = "pci_bridge_mode";
+            desc = "PCI bridge mode.";
+            encode = PERIPHCTRL4_pci_bridge_mode_enum;
             reset = 0x0;
         } pci_bridge_mode[17:17];
 
+        enum PERIPHCTRL4_pci_sim_fast_enum {
+            NORMAL = 0x0 { desc = "normal operation"; };
+            FAST_SIM = 0x1 { desc = "fast simulation"; };
+        };
+
         field {
             name = "pci_sim_fast";
+            desc = "PCI fast simulation select.";
+            encode = PERIPHCTRL4_pci_sim_fast_enum;
             reset = 0x0;
         } pci_sim_fast[16:16];
 
+        enum PERIPHCTRL4_uart1_mode_enum {
+            UART = 0x0 { desc = "normal serial port"; };
+            IRDA = 0x1 { desc = "infrared (IrDA) serial port"; };
+        };
+
         field {
             name = "uart1_mode";
+            desc = "UART1 mode.";
+            encode = PERIPHCTRL4_uart1_mode_enum;
             reset = 0x0;
         } uart1_mode[15:15];
 
+        enum PERIPHCTRL4_sio1_clksel_enum {
+            SIO_OR_PIN = 0x0 { desc = "SIO internal divider or external input"; };
+            CRG = 0x1 { desc = "generated by the CRG divider (SC_PERCTRL3)"; };
+        };
+
         field {
             name = "sio1_clksel";
+            desc = "SIO1 clock and frame-sync source.";
+            encode = PERIPHCTRL4_sio1_clksel_enum;
             reset = 0x0;
         } sio1_clksel[9:9];
 
+        enum PERIPHCTRL4_sio0_clksel_enum {
+            SIO_OR_PIN = 0x0 { desc = "SIO internal divider or external input"; };
+            CRG = 0x1 { desc = "generated by the CRG divider (SC_PERCTRL3)"; };
+        };
+
         field {
             name = "sio0_clksel";
+            desc = "SIO0 clock and frame-sync source.";
+            encode = PERIPHCTRL4_sio0_clksel_enum;
             reset = 0x0;
         } sio0_clksel[7:7];
 
+        enum PERIPHCTRL4_sm_cancel_wait_enum {
+            NORMAL = 0x0 { desc = "normal wait"; };
+            ABORT = 0x1 { desc = "forcibly abort the SMI interface operation"; };
+        };
+
         field {
             name = "sm_cancel_wait";
+            desc = "SMI external wait abort control.";
+            encode = PERIPHCTRL4_sm_cancel_wait_enum;
             reset = 0x0;
         } sm_cancel_wait[6:6];
 
         field {
             name = "otg_tx_tune";
+            desc = "USB 2.0 OTG PHY transmitter tuning. [1:0] DP/DM high-speed supply: 00 default, 01 default -4.5%, 10 default +9%, 11 default +4.5%. [3:2] DP/DM high-speed edge rate: 00 default, 01 faster than default, 10 faster than 01, 11 slower than default.";
             reset = 0x0;
         } otg_tx_tune[4:1];
 
+        enum PERIPHCTRL4_i2c_delay_bypass_enum {
+            DELAY = 0x0 { desc = "I2C signals pass through the 300 ns delay"; };
+            BYPASS = 0x1 { desc = "I2C signals bypass the 300 ns delay"; };
+        };
+
         field {
             name = "i2c_delay_bypass";
+            desc = "I2C signal 300 ns delay bypass. Note the opposite polarity of SC_PERCTRL11[5] on the Hi3515/Hi3520.";
+            encode = PERIPHCTRL4_i2c_delay_bypass_enum;
             reset = 0x0;
         } i2c_delay_bypass[0:0];
 `endif
 `ifdef SYS_CTRL_PERIPHCTRL4_VAR2
+        enum PERIPHCTRL4_vpll1_dsmpd_enum {
+            FRACTIONAL = 0x0 { desc = "fractional (decimal) frequency-division mode"; };
+            INTEGER = 0x1 { desc = "integer frequency-division mode (recommended values use 1 with frac = 0)"; };
+        };
+
         field {
             name = "vpll1_dsmpd";
+            desc = "Video PLL1 (VPLL1): generates the VO1 clock from FOUTPOSTDIV; values depend on the display timing. Sheet examples: 74.25 MHz = postdiv2 = 4, postdiv1 = 5, refdiv = 1, fbdiv = 61, frac = 14680064; Hi3515 65 MHz = 0xA300_0000 / 0x006C_2041; Hi3520 108 MHz = 0x9C00_0000 / 0x006C_1036. Reset values 0 = PLL off; lock status in SC_PERCTRL23[2]. Frequency-division mode (delta-sigma modulator power-down). Sheet inconsistency: the Hi3515 APLL/VPLL0/VPLL1 and the Hi3520 APLL bit tables say 0 = fractional, 1 = integer; the Hi3515 EPLL and the Hi3520 VPLL0/VPLL1/EPLL bit tables say the opposite. The recommended values of every PLL (bit 31 = 1 with frac = 0) imply 1 = integer mode, which is the reading used here. Table 3-2 of both sheets swaps the names (EPLL = SC_PERCTRL2/3, VPLL0 = 4/5, VPLL1 = 6/7); the register summary, the bit tables and tables 3-4 to 3-7 agree with the assignment used here.";
+            encode = PERIPHCTRL4_vpll1_dsmpd_enum;
             reset = 0x0;
         } vpll1_dsmpd[31:31];
 
+        enum PERIPHCTRL4_vpll1_bypass_enum {
+            NO_BYPASS = 0x0 { desc = "no bypass"; };
+            BYPASS = 0x1 { desc = "bypass (the PLL output is the 24 MHz reference)"; };
+        };
+
         field {
             name = "vpll1_bypass";
+            desc = "PLL clock-divider bypass control.";
+            encode = PERIPHCTRL4_vpll1_bypass_enum;
             reset = 0x0;
         } vpll1_bypass[30:30];
 
         field {
             name = "vpll1_postdiv2";
+            desc = "Level-2 output divider: `FOUTPOSTDIV = FOUTVCO / (postdiv1 x postdiv2)`.";
             reset = 0x0;
         } vpll1_postdiv2[29:27];
 
         field {
             name = "vpll1_postdiv1";
+            desc = "Level-1 output divider: `FOUTPOSTDIV = FOUTVCO / (postdiv1 x postdiv2)`, `FOUT1ph0 = FOUTVCO / (postdiv1 x 2)`, `FOUT2 = FOUTVCO / (postdiv1 x 4)`, `FOUT3 = FOUTVCO / (postdiv1 x 6)`, `FOUT4 = FOUTVCO / (postdiv1 x 8)`.";
             reset = 0x0;
         } vpll1_postdiv1[26:24];
 
         field {
             name = "vpll1_frac";
+            desc = "Fractional multiplier: `FOUTVCO = 24 MHz x (fbdiv + frac / 2^24) / refdiv`, FOUTVCO must stay within 800 MHz to 2.4 GHz; 0 in integer mode.";
             reset = 0x0;
         } vpll1_frac[23:0];
 `endif
@@ -3445,38 +4342,60 @@ regfile eSYS_CTRL {
         name = "Peripheral control register 5";
         desc = "MEDIA0 bus master port timeout control register 0";
 `ifdef SYS_CTRL_PERIPHCTRL5_VAR1
+        enum PERIPHCTRL5_vpll1_reset_enum {
+            RESET = 0x0 { desc = "PLL in reset"; };
+            RUN = 0x1 { desc = "PLL not in reset"; };
+        };
+
         field {
             name = "vpll1_reset";
+            desc = "PLL reset control. Reset value 0 = the PLL is held in reset after power-on (the chip boots in SLOW mode from the 24 MHz crystal); the recommended value is 1.";
+            encode = PERIPHCTRL5_vpll1_reset_enum;
             reset = 0x0;
         } vpll1_reset[22:22];
 
+        enum PERIPHCTRL5_pd_enum {
+            OFF = 0x0 { desc = "powered down (sheet wording: disabled)"; };
+            ON = 0x1 { desc = "powered up (sheet wording: enabled)"; };
+        };
+
         field {
             name = "vpll1_pd";
+            desc = "PLL power-down control; despite the name, 1 = powered up (sheet: 0 = disabled, 1 = enabled). Reset value 0 = PLL off; the recommended value is 1.";
+            encode = PERIPHCTRL5_pd_enum;
             reset = 0x0;
         } vpll1_pd[21:21];
 
         field {
             name = "vpll1_foutvcopd";
+            desc = "FOUTVCO output power-down control (0 = off, 1 = on). Recommended 0: FOUTVCO itself is not used, the postdiv outputs still run.";
+            encode = PERIPHCTRL5_pd_enum;
             reset = 0x0;
         } vpll1_foutvcopd[20:20];
 
         field {
             name = "vpll1_postdivpd";
+            desc = "FOUTPOSTDIV output power-down control (0 = off, 1 = on). Recommended 1.";
+            encode = PERIPHCTRL5_pd_enum;
             reset = 0x0;
         } vpll1_postdivpd[19:19];
 
         field {
             name = "vpll1_fout4phasepd";
+            desc = "FOUT1ph0/FOUT2/FOUT3/FOUT4 output power-down control (0 = off, 1 = on). Recommended 1.";
+            encode = PERIPHCTRL5_pd_enum;
             reset = 0x0;
         } vpll1_fout4phasepd[18:18];
 
         field {
             name = "vpll1_refdiv";
+            desc = "Reference clock divider: `FOUTVCO = 24 MHz x (fbdiv + frac / 2^24) / refdiv`.";
             reset = 0x0;
         } vpll1_refdiv[17:12];
 
         field {
             name = "vpll1_fbdiv";
+            desc = "Integer multiplier: `FOUTVCO = 24 MHz x (fbdiv + frac / 2^24) / refdiv`.";
             reset = 0x0;
         } vpll1_fbdiv[11:0];
 `endif
@@ -3565,28 +4484,45 @@ regfile eSYS_CTRL {
         name = "Peripheral control register 6";
         desc = "MEDIA0 bus master port timeout control register 1";
 `ifdef SYS_CTRL_PERIPHCTRL6_VAR1
+        enum PERIPHCTRL6_epll_dsmpd_enum {
+            FRACTIONAL = 0x0 { desc = "fractional (decimal) frequency-division mode"; };
+            INTEGER = 0x1 { desc = "integer frequency-division mode (recommended values use 1 with frac = 0)"; };
+        };
+
         field {
             name = "epll_dsmpd";
+            desc = "Ethernet PLL (EPLL, Hi3520: GMAC PLL): generates the ETH clocks and the SIO master clock source (SC_PERCTRL13/14/16, EPLL output 500 MHz); on the Hi3515 also the 125 MHz SATA clock (SC_PERCTRL9[1]). Hi3515: FOUT1ph0 = 500, FOUT2 = 250, FOUT4 = 125 MHz, recommended SC_PERCTRL6 = 0xA100_0000, SC_PERCTRL7 = 0x006C_307D (FOUTVCO = 24 x 125 / 3 = 1000 MHz, postdiv2 = 4, postdiv1 = 1). Hi3520: FOUTPOSTDIV = 500, FOUT1ph0 = 250, FOUT2 = 125, FOUT4 = 62.5 MHz, recommended 0x8B00_0000 / 0x006C_207D (FOUTVCO = 24 x 125 / 2 = 1500 MHz, postdiv2 = 1, postdiv1 = 3). Reset values 0 = PLL off; lock status in SC_PERCTRL23[3]. Frequency-division mode (delta-sigma modulator power-down). Sheet inconsistency: the Hi3515 APLL/VPLL0/VPLL1 and the Hi3520 APLL bit tables say 0 = fractional, 1 = integer; the Hi3515 EPLL and the Hi3520 VPLL0/VPLL1/EPLL bit tables say the opposite. The recommended values of every PLL (bit 31 = 1 with frac = 0) imply 1 = integer mode, which is the reading used here. Recommended: Hi3515 postdiv2 = 4, postdiv1 = 1; Hi3520 postdiv2 = 1, postdiv1 = 3. Table 3-2 of both sheets swaps the names (EPLL = SC_PERCTRL2/3, VPLL0 = 4/5, VPLL1 = 6/7); the register summary, the bit tables and tables 3-4 to 3-7 agree with the assignment used here.";
+            encode = PERIPHCTRL6_epll_dsmpd_enum;
             reset = 0x0;
         } epll_dsmpd[31:31];
 
+        enum PERIPHCTRL6_epll_bypass_enum {
+            NO_BYPASS = 0x0 { desc = "no bypass"; };
+            BYPASS = 0x1 { desc = "bypass (the PLL output is the 24 MHz reference)"; };
+        };
+
         field {
             name = "epll_bypass";
+            desc = "PLL clock-divider bypass control.";
+            encode = PERIPHCTRL6_epll_bypass_enum;
             reset = 0x0;
         } epll_bypass[30:30];
 
         field {
             name = "epll_postdiv2";
+            desc = "Level-2 output divider: `FOUTPOSTDIV = FOUTVCO / (postdiv1 x postdiv2)`. Recommended: Hi3515 postdiv2 = 4, postdiv1 = 1; Hi3520 postdiv2 = 1, postdiv1 = 3.";
             reset = 0x0;
         } epll_postdiv2[29:27];
 
         field {
             name = "epll_postdiv1";
+            desc = "Level-1 output divider: `FOUTPOSTDIV = FOUTVCO / (postdiv1 x postdiv2)`, `FOUT1ph0 = FOUTVCO / (postdiv1 x 2)`, `FOUT2 = FOUTVCO / (postdiv1 x 4)`, `FOUT3 = FOUTVCO / (postdiv1 x 6)`, `FOUT4 = FOUTVCO / (postdiv1 x 8)`. Recommended: Hi3515 postdiv2 = 4, postdiv1 = 1; Hi3520 postdiv2 = 1, postdiv1 = 3.";
             reset = 0x0;
         } epll_postdiv1[26:24];
 
         field {
             name = "epll_frac";
+            desc = "Fractional multiplier: `FOUTVCO = 24 MHz x (fbdiv + frac / 2^24) / refdiv`, FOUTVCO must stay within 800 MHz to 2.4 GHz; 0 in integer mode. Recommended: Hi3515 postdiv2 = 4, postdiv1 = 1; Hi3520 postdiv2 = 1, postdiv1 = 3.";
             reset = 0x0;
         } epll_frac[23:0];
 `endif
@@ -3651,38 +4587,60 @@ regfile eSYS_CTRL {
     reg {
         name = "Peripheral control register 7";
 `ifdef SYS_CTRL_PERIPHCTRL7_VAR1
+        enum PERIPHCTRL7_epll_reset_enum {
+            RESET = 0x0 { desc = "PLL in reset"; };
+            RUN = 0x1 { desc = "PLL not in reset"; };
+        };
+
         field {
             name = "epll_reset";
+            desc = "PLL reset control. Reset value 0 = the PLL is held in reset after power-on (the chip boots in SLOW mode from the 24 MHz crystal); the recommended value is 1.";
+            encode = PERIPHCTRL7_epll_reset_enum;
             reset = 0x0;
         } epll_reset[22:22];
 
+        enum PERIPHCTRL7_pd_enum {
+            OFF = 0x0 { desc = "powered down (sheet wording: disabled)"; };
+            ON = 0x1 { desc = "powered up (sheet wording: enabled)"; };
+        };
+
         field {
             name = "epll_pd";
+            desc = "PLL power-down control; despite the name, 1 = powered up (sheet: 0 = disabled, 1 = enabled). Reset value 0 = PLL off; the recommended value is 1.";
+            encode = PERIPHCTRL7_pd_enum;
             reset = 0x0;
         } epll_pd[21:21];
 
         field {
             name = "epll_foutvcopd";
+            desc = "FOUTVCO output power-down control (0 = off, 1 = on). Recommended 0: FOUTVCO itself is not used, the postdiv outputs still run.";
+            encode = PERIPHCTRL7_pd_enum;
             reset = 0x0;
         } epll_foutvcopd[20:20];
 
         field {
             name = "epll_postdivpd";
+            desc = "FOUTPOSTDIV output power-down control (0 = off, 1 = on). Recommended 1.";
+            encode = PERIPHCTRL7_pd_enum;
             reset = 0x0;
         } epll_postdivpd[19:19];
 
         field {
             name = "epll_fout4phasepd";
+            desc = "FOUT1ph0/FOUT2/FOUT3/FOUT4 output power-down control (0 = off, 1 = on). Recommended 1.";
+            encode = PERIPHCTRL7_pd_enum;
             reset = 0x0;
         } epll_fout4phasepd[18:18];
 
         field {
             name = "epll_refdiv";
+            desc = "Reference clock divider: `FOUTVCO = 24 MHz x (fbdiv + frac / 2^24) / refdiv`. Recommended: 3 (Hi3515), 2 (Hi3520).";
             reset = 0x0;
         } epll_refdiv[17:12];
 
         field {
             name = "epll_fbdiv";
+            desc = "Integer multiplier: `FOUTVCO = 24 MHz x (fbdiv + frac / 2^24) / refdiv`. Recommended: 0x07D = 125 (both chips).";
             reset = 0x0;
         } epll_fbdiv[11:0];
 `endif
@@ -3704,66 +4662,100 @@ regfile eSYS_CTRL {
     reg {
         name = "Peripheral control register 8";
         // Hi3515 (SYS_CTRL_PERIPHCTRL8_VAR1): bits 27 (voad), 20 (gmac), 19 (mdio), 17 (sio2), 13 (pci), 1 (arm9), 0 (arm11) are reserved in its data sheet; they are Hi3520 V100 (ARM11 + ARM9, GMAC) resets.
+        enum PERIPHCTRL8_srst_act0_enum {
+            RESET = 0x0 { desc = "soft reset asserted"; };
+            RELEASE = 0x1 { desc = "soft reset released (module runs)"; };
+        };
+
+        enum PERIPHCTRL8_srst_act1_enum {
+            RELEASE = 0x0 { desc = "soft reset released (module runs)"; };
+            RESET = 0x1 { desc = "soft reset asserted"; };
+        };
+
         field {
             name = "usb_srst";
+            desc = "USB port (Hi3520: USB module) soft reset control. Polarity per the data sheet: 0 = soft reset, 1 = reset released. The reset value 0 therefore reads as reset asserted after power-on [inferred: the sheet does not comment on it]; write 1 before using the module.";
+            encode = PERIPHCTRL8_srst_act0_enum;
             reset = 0x0;
         } usb_srst[31:31];
 
         field {
             name = "usb_hrst";
+            desc = "USB bus-side soft reset control. Polarity per the data sheet: 0 = soft reset, 1 = reset released. The reset value 0 therefore reads as reset asserted after power-on [inferred: the sheet does not comment on it]; write 1 before using the module.";
+            encode = PERIPHCTRL8_srst_act0_enum;
             reset = 0x0;
         } usb_hrst[30:30];
 
         field {
             name = "vohd_srst";
+            desc = "VO HD part soft reset control. Polarity per the data sheet: 0 = soft reset, 1 = reset released. The reset value 0 therefore reads as reset asserted after power-on [inferred: the sheet does not comment on it]; write 1 before using the module.";
+            encode = PERIPHCTRL8_srst_act0_enum;
             reset = 0x0;
         } vohd_srst[29:29];
 
         field {
             name = "vosd_srst";
+            desc = "VO SD part soft reset control. Polarity per the data sheet: 0 = soft reset, 1 = reset released. The reset value 0 therefore reads as reset asserted after power-on [inferred: the sheet does not comment on it]; write 1 before using the module.";
+            encode = PERIPHCTRL8_srst_act0_enum;
             reset = 0x0;
         } vosd_srst[28:28];
 
 `ifndef SYS_CTRL_PERIPHCTRL8_VAR1   // reserved in the Hi3515 data sheet
         field {
             name = "voad_srst";
+            desc = "VO AD part soft reset control (Hi3520 only). Polarity per the data sheet: 0 = soft reset, 1 = reset released. The reset value 0 therefore reads as reset asserted after power-on [inferred: the sheet does not comment on it]; write 1 before using the module.";
+            encode = PERIPHCTRL8_srst_act0_enum;
             reset = 0x0;
         } voad_srst[27:27];
 `endif
 
         field {
             name = "vo_srst";
+            desc = "VO bus-side soft reset control. Polarity per the data sheet: 0 = soft reset, 1 = reset released. The reset value 0 therefore reads as reset asserted after power-on [inferred: the sheet does not comment on it]; write 1 before using the module.";
+            encode = PERIPHCTRL8_srst_act0_enum;
             reset = 0x0;
         } vo_srst[26:26];
 
         field {
             name = "vi3_srst";
+            desc = "VI3 port (interface side) soft reset control. Polarity per the data sheet: 0 = soft reset, 1 = reset released. The reset value 0 therefore reads as reset asserted after power-on [inferred: the sheet does not comment on it]; write 1 before using the module.";
+            encode = PERIPHCTRL8_srst_act0_enum;
             reset = 0x0;
         } vi3_srst[25:25];
 
         field {
             name = "vi2_srst";
+            desc = "VI2 port (interface side) soft reset control. Polarity per the data sheet: 0 = soft reset, 1 = reset released. The reset value 0 therefore reads as reset asserted after power-on [inferred: the sheet does not comment on it]; write 1 before using the module.";
+            encode = PERIPHCTRL8_srst_act0_enum;
             reset = 0x0;
         } vi2_srst[24:24];
 
         field {
             name = "vi1_srst";
+            desc = "VI1 port (interface side) soft reset control. Polarity per the data sheet: 0 = soft reset, 1 = reset released. The reset value 0 therefore reads as reset asserted after power-on [inferred: the sheet does not comment on it]; write 1 before using the module.";
+            encode = PERIPHCTRL8_srst_act0_enum;
             reset = 0x0;
         } vi1_srst[23:23];
 
         field {
             name = "vi0_srst";
+            desc = "VI0 port (interface side) soft reset control. Polarity per the data sheet: 0 = soft reset, 1 = reset released. The reset value 0 therefore reads as reset asserted after power-on [inferred: the sheet does not comment on it]; write 1 before using the module.";
+            encode = PERIPHCTRL8_srst_act0_enum;
             reset = 0x0;
         } vi0_srst[22:22];
 
         field {
             name = "vi_srst";
+            desc = "VI bus-side soft reset control. Polarity per the data sheet: 0 = soft reset, 1 = reset released. The reset value 0 therefore reads as reset asserted after power-on [inferred: the sheet does not comment on it]; write 1 before using the module.";
+            encode = PERIPHCTRL8_srst_act0_enum;
             reset = 0x0;
         } vi_srst[21:21];
 
 `ifndef SYS_CTRL_PERIPHCTRL8_VAR1   // reserved in the Hi3515 data sheet
         field {
             name = "gmac_srst";
+            desc = "GMAC interface-side soft reset control (Hi3520 only). Polarity per the data sheet: 0 = soft reset, 1 = reset released. The reset value 0 therefore reads as reset asserted after power-on [inferred: the sheet does not comment on it]; write 1 before using the module.";
+            encode = PERIPHCTRL8_srst_act0_enum;
             reset = 0x0;
         } gmac_srst[20:20];
 `endif
@@ -3771,92 +4763,126 @@ regfile eSYS_CTRL {
 `ifndef SYS_CTRL_PERIPHCTRL8_VAR1   // reserved in the Hi3515 data sheet
         field {
             name = "mdio_srst";
+            desc = "GMAC MDIO soft reset control (Hi3520 only). Polarity per the data sheet: 0 = soft reset, 1 = reset released. The reset value 0 therefore reads as reset asserted after power-on [inferred: the sheet does not comment on it]; write 1 before using the module.";
+            encode = PERIPHCTRL8_srst_act0_enum;
             reset = 0x0;
         } mdio_srst[19:19];
 `endif
 
         field {
             name = "eth_srst";
+            desc = "ETH bus-side (Hi3520: GMAC bus-side) soft reset control. Polarity per the data sheet: 0 = soft reset, 1 = reset released. The reset value 0 therefore reads as reset asserted after power-on [inferred: the sheet does not comment on it]; write 1 before using the module.";
+            encode = PERIPHCTRL8_srst_act0_enum;
             reset = 0x0;
         } eth_srst[18:18];
 
 `ifndef SYS_CTRL_PERIPHCTRL8_VAR1   // reserved in the Hi3515 data sheet
         field {
             name = "sio2_srst";
+            desc = "SIO2 soft reset control (Hi3520 only). Polarity per the data sheet: 1 = soft reset, 0 = reset released. A module soft reset is write 1 then write 0.";
+            encode = PERIPHCTRL8_srst_act1_enum;
             reset = 0x0;
         } sio2_srst[17:17];
 `endif
 
         field {
             name = "sio1_srst";
+            desc = "SIO1 soft reset control. Polarity per the data sheet: 1 = soft reset, 0 = reset released. A module soft reset is write 1 then write 0.";
+            encode = PERIPHCTRL8_srst_act1_enum;
             reset = 0x0;
         } sio1_srst[16:16];
 
         field {
             name = "sio0_srst";
+            desc = "SIO0 soft reset control. Polarity per the data sheet: 1 = soft reset, 0 = reset released. A module soft reset is write 1 then write 0.";
+            encode = PERIPHCTRL8_srst_act1_enum;
             reset = 0x0;
         } sio0_srst[15:15];
 
         field {
             name = "mmc_srst";
+            desc = "MMC soft reset control. Polarity per the data sheet: 0 = soft reset, 1 = reset released. The reset value 0 therefore reads as reset asserted after power-on [inferred: the sheet does not comment on it]; write 1 before using the module.";
+            encode = PERIPHCTRL8_srst_act0_enum;
             reset = 0x0;
         } mmc_srst[14:14];
 
 `ifndef SYS_CTRL_PERIPHCTRL8_VAR1   // reserved in the Hi3515 data sheet
         field {
             name = "pci_srst";
+            desc = "PCI soft reset control (Hi3520 only). Polarity per the data sheet: 1 = soft reset, 0 = reset released. A module soft reset is write 1 then write 0.";
+            encode = PERIPHCTRL8_srst_act1_enum;
             reset = 0x0;
         } pci_srst[13:13];
 `endif
 
         field {
             name = "i2c_srst";
+            desc = "I2C soft reset control. Polarity per the data sheet: 1 = soft reset, 0 = reset released. A module soft reset is write 1 then write 0.";
+            encode = PERIPHCTRL8_srst_act1_enum;
             reset = 0x0;
         } i2c_srst[12:12];
 
         field {
             name = "rtc_srst";
+            desc = "RTC soft reset control. Polarity per the data sheet: 1 = soft reset, 0 = reset released. A module soft reset is write 1 then write 0.";
+            encode = PERIPHCTRL8_srst_act1_enum;
             reset = 0x0;
         } rtc_srst[11:11];
 
         field {
             name = "ir_srst";
+            desc = "IR soft reset control. Polarity per the data sheet: 1 = soft reset, 0 = reset released. A module soft reset is write 1 then write 0.";
+            encode = PERIPHCTRL8_srst_act1_enum;
             reset = 0x0;
         } ir_srst[10:10];
 
         field {
             name = "uart3_srst";
+            desc = "UART3 soft reset control. Polarity per the data sheet: 1 = soft reset, 0 = reset released. A module soft reset is write 1 then write 0.";
+            encode = PERIPHCTRL8_srst_act1_enum;
             reset = 0x0;
         } uart3_srst[9:9];
 
         field {
             name = "uart2_srst";
+            desc = "UART2 soft reset control. Polarity per the data sheet: 1 = soft reset, 0 = reset released. A module soft reset is write 1 then write 0.";
+            encode = PERIPHCTRL8_srst_act1_enum;
             reset = 0x0;
         } uart2_srst[8:8];
 
         field {
             name = "uart1_srst";
+            desc = "UART1 soft reset control. Polarity per the data sheet: 1 = soft reset, 0 = reset released. A module soft reset is write 1 then write 0.";
+            encode = PERIPHCTRL8_srst_act1_enum;
             reset = 0x0;
         } uart1_srst[7:7];
 
         field {
             name = "uart0_srst";
+            desc = "UART0 soft reset control. Polarity per the data sheet: 1 = soft reset, 0 = reset released. A module soft reset is write 1 then write 0.";
+            encode = PERIPHCTRL8_srst_act1_enum;
             reset = 0x0;
         } uart0_srst[6:6];
 
         field {
             name = "cipher_srst";
+            desc = "CIPHER soft reset control. Polarity per the data sheet: 1 = soft reset, 0 = reset released. A module soft reset is write 1 then write 0.";
+            encode = PERIPHCTRL8_srst_act1_enum;
             reset = 0x0;
         } cipher_srst[5:5];
 
         field {
             name = "ssmc_srst";
+            desc = "SSMC (SMI) soft reset control. Polarity per the data sheet: 1 = soft reset, 0 = reset released. A module soft reset is write 1 then write 0.";
+            encode = PERIPHCTRL8_srst_act1_enum;
             reset = 0x0;
         } ssmc_srst[4:4];
 
 `ifndef SYS_CTRL_PERIPHCTRL8_VAR1   // reserved in the Hi3515 data sheet
         field {
             name = "arm9_srst";
+            desc = "ARM926 soft reset control (Hi3520 only). Polarity per the data sheet: 0 = soft reset, 1 = reset released. The reset value 0 therefore reads as reset asserted after power-on [inferred: the sheet does not comment on it]; write 1 before using the module.";
+            encode = PERIPHCTRL8_srst_act0_enum;
             reset = 0x0;
         } arm9_srst[1:1];
 `endif
@@ -3864,6 +4890,8 @@ regfile eSYS_CTRL {
 `ifndef SYS_CTRL_PERIPHCTRL8_VAR1   // reserved in the Hi3515 data sheet
         field {
             name = "arm11_srst";
+            desc = "ARM1176 soft reset control (Hi3520 only). Polarity per the data sheet: 0 = soft reset, 1 = reset released. The reset value 0 therefore reads as reset asserted after power-on [inferred: the sheet does not comment on it]; write 1 before using the module.";
+            encode = PERIPHCTRL8_srst_act0_enum;
             reset = 0x0;
         } arm11_srst[0:0];
 `endif
@@ -3875,80 +4903,168 @@ regfile eSYS_CTRL {
         name = "Peripheral control register 9";
         desc = "MEDIA0 bus master port priority control register";
 `ifdef SYS_CTRL_PERIPHCTRL9_VAR1
+        enum PERIPHCTRL9_aclkout_sel_enum {
+            SIO0 = 0x0 { desc = "SIO0 system clock"; };
+            SIO1 = 0x1 { desc = "SIO1 system clock"; };
+        };
+
         field {
             name = "aclkout_sel";
+            desc = "ACKOUT output clock select.";
+            encode = PERIPHCTRL9_aclkout_sel_enum;
             reset = 0x0;
         } aclkout_sel[25:25];
 
+        enum PERIPHCTRL9_mmcsap_sel_enum {
+            NORMAL = 0x0 { desc = "sample with the normal-phase clock"; };
+            INVERTED = 0x1 { desc = "sample with the inverted clock"; };
+        };
+
         field {
             name = "mmcsap_sel";
+            desc = "MMC card-data sampling clock phase.";
+            encode = PERIPHCTRL9_mmcsap_sel_enum;
             reset = 0x0;
         } mmcsap_sel[22:22];
 
+        enum PERIPHCTRL9_mmcclk_enum {
+            F25M = 0x0 { desc = "25 MHz"; };
+            F50M = 0x1 { desc = "50 MHz"; };
+            RSVD = 0x2 { desc = "reserved"; };
+            F19M23 = 0x3 { desc = "19.23 MHz"; };
+        };
+
         field {
             name = "mmcclk_sel";
+            desc = "MMC working clock frequency.";
+            encode = PERIPHCTRL9_mmcclk_enum;
             reset = 0x0;
         } mmcclk_sel[21:20];
 
         field {
             name = "vo1out_sel";
+            desc = "Reserved (RO) in the Hi3515 sheet; the clock chapter (table 3-12) still lists it as the VO1 BT.1120 output clock phase select.";
             sw = r;
             hw = w;
             reset = 0x0;
         } vo1out_sel[19:19];
 
+        enum PERIPHCTRL9_phase1_enum {
+            NORMAL = 0x0 { desc = "normal-phase clock"; };
+            INVERTED = 0x1 { desc = "inverted-phase clock"; };
+        };
+
         field {
             name = "vo0out_sel";
+            desc = "VO0 port output clock phase (BT.656). Note: the Hi3515 sheet gives 0 = normal, 1 = inverted; the Hi3520 and Hi3511 sheets give the opposite polarity for their bit.";
+            encode = PERIPHCTRL9_phase1_enum;
             reset = 0x0;
         } vo0out_sel[18:18];
 
+        enum PERIPHCTRL9_vidiv_enum {
+            DIV2 = 0x0 { desc = "port clock divided by 2"; };
+            DIV4 = 0x1 { desc = "port clock divided by 4"; };
+            DIV1 = 0x2 { desc = "port clock (not divided)"; };
+            RSVD = 0x3 { desc = "reserved"; };
+        };
+
         field {
             name = "vi3div_sel";
+            desc = "VI3 port clock divider.";
+            encode = PERIPHCTRL9_vidiv_enum;
             reset = 0x0;
         } vi3div_sel[13:12];
 
         field {
             name = "vi2div_sel";
+            desc = "VI2 port clock divider.";
+            encode = PERIPHCTRL9_vidiv_enum;
             reset = 0x0;
         } vi2div_sel[11:10];
 
         field {
             name = "vi1div_sel";
+            desc = "VI1 port clock divider.";
+            encode = PERIPHCTRL9_vidiv_enum;
             reset = 0x0;
         } vi1div_sel[9:8];
 
         field {
             name = "vi0div_sel";
+            desc = "VI0 port clock divider.";
+            encode = PERIPHCTRL9_vidiv_enum;
             reset = 0x0;
         } vi0div_sel[7:6];
 
+        enum PERIPHCTRL9_vi3_vi2_sel_enum {
+            VI3 = 0x0 { desc = "input clock of the VI3 port"; };
+            VI2 = 0x1 { desc = "input clock of the VI2 port"; };
+        };
+
         field {
             name = "vi3_vi2_sel";
+            desc = "VI3 port clock select.";
+            encode = PERIPHCTRL9_vi3_vi2_sel_enum;
             reset = 0x0;
         } vi3_vi2_sel[5:5];
 
+        enum PERIPHCTRL9_vi1_vi0_sel_enum {
+            VI1 = 0x0 { desc = "input clock of the VI1 port"; };
+            VI0 = 0x1 { desc = "input clock of the VI0 port"; };
+        };
+
         field {
             name = "vi1_vi0_sel";
+            desc = "VI1 port clock select.";
+            encode = PERIPHCTRL9_vi1_vi0_sel_enum;
             reset = 0x0;
         } vi1_vi0_sel[4:4];
 
+        enum PERIPHCTRL9_ssmcclk_sel_enum {
+            RATIO_1_1 = 0x0 { desc = "SSMC:HCLK = 1:1"; };
+            RATIO_1_2 = 0x1 { desc = "SSMC:HCLK = 1:2"; };
+        };
+
         field {
             name = "ssmcclk_sel";
+            desc = "SSMC (SMI) clock to bus clock ratio.";
+            encode = PERIPHCTRL9_ssmcclk_sel_enum;
             reset = 0x0;
         } ssmcclk_sel[3:3];
 
+        enum PERIPHCTRL9_vo0out_clk_sel_enum {
+            VO0 = 0x0 { desc = "VO0 output clock"; };
+            VO1 = 0x1 { desc = "VO1 output clock"; };
+        };
+
         field {
             name = "vo0out_clk_sel";
+            desc = "VO0 port output clock select (for test).";
+            encode = PERIPHCTRL9_vo0out_clk_sel_enum;
             reset = 0x0;
         } vo0out_clk_sel[2:2];
 
+        enum PERIPHCTRL9_sata_clk_sel_enum {
+            F25M = 0x0 { desc = "25 MHz clock"; };
+            EPLL125M = 0x1 { desc = "125 MHz EPLL clock"; };
+        };
+
         field {
             name = "sata_clk_sel";
+            desc = "SATA clock select.";
+            encode = PERIPHCTRL9_sata_clk_sel_enum;
             reset = 0x0;
         } sata_clk_sel[1:1];
 
+        enum PERIPHCTRL9_tde_clk_sel_enum {
+            VPLL270M = 0x0 { desc = "270 MHz VPLL clock"; };
+            APLL266M = 0x1 { desc = "266 MHz APLL clock"; };
+        };
+
         field {
             name = "tde_clk_sel";
+            desc = "TDE clock select.";
+            encode = PERIPHCTRL9_tde_clk_sel_enum;
             reset = 0x0;
         } tde_clk_sel[0:0];
 `endif
@@ -3979,98 +5095,229 @@ regfile eSYS_CTRL {
         } media0_port0_pri[2:0];
 `endif
 `ifdef SYS_CTRL_PERIPHCTRL9_VAR3
+        enum PERIPHCTRL9_ethtclk_sel_enum {
+            INTERNAL = 0x0 { desc = "txclk generated internally and driven to the PHY"; };
+            PHY = 0x1 { desc = "txclk supplied by the external PHY"; };
+        };
+
         field {
             name = "ethtclk_sel";
+            desc = "ETH txclk source. The clock chapter (table 3-15) also lists ethtioclk_sel (txioclk phase) at bit 30, but the bit table marks [31:30] reserved, keep default; not modelled.";
+            encode = PERIPHCTRL9_ethtclk_sel_enum;
             reset = 0x0;
         } ethtclk_sel[29:29];
 
+        enum PERIPHCTRL9_ethmac_mode_enum {
+            MII_10M = 0x0 { desc = "MII 10 Mbit/s"; };
+            MII_100M = 0x1 { desc = "MII 100 Mbit/s"; };
+            GMII = 0x2 { desc = "GMII"; };
+            RGMII_10M = 0x3 { desc = "RGMII 10 Mbit/s"; };
+            RGMII_100M = 0x4 { desc = "RGMII 100 Mbit/s"; };
+            RGMII_1000M = 0x5 { desc = "RGMII 1000 Mbit/s"; };
+            RSVD6 = 0x6 { desc = "reserved"; };
+            RSVD7 = 0x7 { desc = "reserved"; };
+        };
+
         field {
             name = "ethmac_mode";
+            desc = "GMAC clock (interface) mode.";
+            encode = PERIPHCTRL9_ethmac_mode_enum;
             reset = 0x0;
         } ethmac_mode[28:26];
 
+        enum PERIPHCTRL9_aclkout_sel_enum {
+            SIO0 = 0x0 { desc = "SIO0 system clock"; };
+            SIO1 = 0x1 { desc = "SIO1 system clock"; };
+        };
+
         field {
             name = "aclkout_sel";
+            desc = "ACKOUT output clock select.";
+            encode = PERIPHCTRL9_aclkout_sel_enum;
             reset = 0x0;
         } aclkout_sel[25:25];
 
+        enum PERIPHCTRL9_pciclk_sel_enum {
+            F62M5 = 0x0 { desc = "62.5 MHz"; };
+            F31M25 = 0x1 { desc = "31.25 MHz"; };
+            F50M = 0x2 { desc = "50 MHz"; };
+            F41M5 = 0x3 { desc = "41.5 MHz"; };
+        };
+
         field {
             name = "pciclk_sel";
+            desc = "PCI module working clock.";
+            encode = PERIPHCTRL9_pciclk_sel_enum;
             reset = 0x0;
         } pciclk_sel[24:23];
 
+        enum PERIPHCTRL9_mmcsap_sel_enum {
+            NORMAL = 0x0 { desc = "sample with the normal-phase clock"; };
+            INVERTED = 0x1 { desc = "sample with the inverted clock"; };
+        };
+
         field {
             name = "mmcsap_sel";
+            desc = "MMC card-data sampling clock phase.";
+            encode = PERIPHCTRL9_mmcsap_sel_enum;
             reset = 0x0;
         } mmcsap_sel[22:22];
 
+        enum PERIPHCTRL9_mmcclk_enum {
+            F25M = 0x0 { desc = "25 MHz"; };
+            F50M = 0x1 { desc = "50 MHz"; };
+            RSVD = 0x2 { desc = "reserved"; };
+            F19M23 = 0x3 { desc = "19.23 MHz"; };
+        };
+
         field {
             name = "mmcclk_sel";
+            desc = "MMC working clock frequency.";
+            encode = PERIPHCTRL9_mmcclk_enum;
             reset = 0x0;
         } mmcclk_sel[21:20];
 
+        enum PERIPHCTRL9_phase0_enum {
+            INVERTED = 0x0 { desc = "inverted-phase clock"; };
+            NORMAL = 0x1 { desc = "normal-phase clock"; };
+        };
+
         field {
             name = "vo1out_sel";
+            desc = "VO1 interface output clock phase (BT.1120).";
+            encode = PERIPHCTRL9_phase0_enum;
             reset = 0x0;
         } vo1out_sel[19:19];
 
         field {
             name = "vo0out_sel";
+            desc = "VO0 interface output clock phase (BT.656).";
+            encode = PERIPHCTRL9_phase0_enum;
             reset = 0x0;
         } vo0out_sel[18:18];
 
+        enum PERIPHCTRL9_vohd_sel_enum {
+            RATIO_1_1 = 0x0 { desc = "DATE:VO = 1:1"; };
+            RATIO_2_1 = 0x1 { desc = "DATE:VO = 2:1"; };
+            RATIO_4_1 = 0x2 { desc = "DATE:VO = 4:1"; };
+            RSVD = 0x3 { desc = "reserved"; };
+        };
+
         field {
             name = "vohd_sel";
+            desc = "VO HD part: DATE clock to VO clock ratio.";
+            encode = PERIPHCTRL9_vohd_sel_enum;
             reset = 0x0;
         } vohd_sel[17:16];
 
+        enum PERIPHCTRL9_vosd_sel_enum {
+            RATIO_1_1 = 0x0 { desc = "DATE:VO = 1:1"; };
+            RATIO_2_1 = 0x1 { desc = "DATE:VO = 2:1"; };
+            RATIO_4_1 = 0x2 { desc = "DATE:VO = 4:1"; };
+            RSVD = 0x3 { desc = "reserved"; };
+        };
+
         field {
             name = "vosd_sel";
+            desc = "VO SD/AD part: DATE clock to VO clock ratio.";
+            encode = PERIPHCTRL9_vosd_sel_enum;
             reset = 0x0;
         } vosd_sel[15:14];
 
+        enum PERIPHCTRL9_vidiv_enum {
+            DIV2 = 0x0 { desc = "port clock divided by 2"; };
+            DIV4 = 0x1 { desc = "port clock divided by 4"; };
+            DIV1 = 0x2 { desc = "port clock (not divided)"; };
+            RSVD = 0x3 { desc = "reserved"; };
+        };
+
         field {
             name = "vi3div_sel";
+            desc = "VI3 port clock divider.";
+            encode = PERIPHCTRL9_vidiv_enum;
             reset = 0x0;
         } vi3div_sel[13:12];
 
         field {
             name = "vi2div_sel";
+            desc = "VI2 port clock divider.";
+            encode = PERIPHCTRL9_vidiv_enum;
             reset = 0x0;
         } vi2div_sel[11:10];
 
         field {
             name = "vi1div_sel";
+            desc = "VI1 port clock divider.";
+            encode = PERIPHCTRL9_vidiv_enum;
             reset = 0x0;
         } vi1div_sel[9:8];
 
         field {
             name = "vi0div_sel";
+            desc = "VI0 port clock divider.";
+            encode = PERIPHCTRL9_vidiv_enum;
             reset = 0x0;
         } vi0div_sel[7:6];
 
+        enum PERIPHCTRL9_vi3_vi2_sel_enum {
+            VI3 = 0x0 { desc = "input clock of the VI3 interface"; };
+            VI2 = 0x1 { desc = "input clock of the VI2 interface"; };
+        };
+
         field {
             name = "vi3_vi2_sel";
+            desc = "VI3 interface clock select.";
+            encode = PERIPHCTRL9_vi3_vi2_sel_enum;
             reset = 0x0;
         } vi3_vi2_sel[5:5];
 
+        enum PERIPHCTRL9_vi1_vi0_sel_enum {
+            VI1 = 0x0 { desc = "input clock of the VI1 interface"; };
+            VI0 = 0x1 { desc = "input clock of the VI0 interface"; };
+        };
+
         field {
             name = "vi1_vi0_sel";
+            desc = "VI1 interface clock select.";
+            encode = PERIPHCTRL9_vi1_vi0_sel_enum;
             reset = 0x0;
         } vi1_vi0_sel[4:4];
 
+        enum PERIPHCTRL9_ssmcclk_sel_enum {
+            RATIO_1_1 = 0x0 { desc = "SSMC:HCLK = 1:1"; };
+            RATIO_1_2 = 0x1 { desc = "SSMC:HCLK = 1:2"; };
+        };
+
         field {
             name = "ssmcclk_sel";
+            desc = "SSMC (SMI) clock to bus clock ratio.";
+            encode = PERIPHCTRL9_ssmcclk_sel_enum;
             reset = 0x0;
         } ssmcclk_sel[3:3];
 
+        enum PERIPHCTRL9_arm1freq_sel_enum {
+            RATIO_2_1 = 0x0 { desc = "ARM9:HCLK = 2:1"; };
+            RATIO_1_1 = 0x1 { desc = "ARM9:HCLK = 1:1"; };
+        };
+
         field {
             name = "arm1freq_sel";
+            desc = "ARM926 clock to bus clock ratio.";
+            encode = PERIPHCTRL9_arm1freq_sel_enum;
             reset = 0x0;
         } arm1freq_sel[2:2];
 
+        enum PERIPHCTRL9_arm0freq_sel_enum {
+            RATIO_2_1 = 0x0 { desc = "ARM11:HCLK = 2:1"; };
+            RATIO_3_1 = 0x1 { desc = "ARM11:HCLK = 3:1"; };
+            RATIO_1_1_A = 0x2 { desc = "ARM11:HCLK = 1:1"; };
+            RATIO_1_1_B = 0x3 { desc = "ARM11:HCLK = 1:1"; };
+        };
+
         field {
             name = "arm0freq_sel";
+            desc = "ARM1176 clock to bus clock ratio (clock chapter table 3-8: ARM1176 frequency mode).";
+            encode = PERIPHCTRL9_arm0freq_sel_enum;
             reset = 0x0;
         } arm0freq_sel[1:0];
 `endif
@@ -4103,78 +5350,117 @@ regfile eSYS_CTRL {
         name = "Peripheral control register 10";
         desc = "System bus master port timeout control register 0";
 `ifdef SYS_CTRL_PERIPHCTRL10_VAR1
+        enum PERIPHCTRL10_srst_act0_enum {
+            RESET = 0x0 { desc = "soft reset asserted"; };
+            RELEASE = 0x1 { desc = "soft reset released (module runs)"; };
+        };
+
         field {
             name = "sata_alive_rst";
+            desc = "SATA controller alive clock-domain soft reset. Polarity per the data sheet: 0 = soft reset, 1 = reset released. The reset value 0 therefore reads as reset asserted after power-on [inferred: the sheet does not comment on it]; write 1 before using the module.";
+            encode = PERIPHCTRL10_srst_act0_enum;
             reset = 0x0;
         } sata_alive_rst[24:24];
 
         field {
             name = "sata_rx1_rst";
+            desc = "SATA controller rx1 clock-domain soft reset. Polarity per the data sheet: 0 = soft reset, 1 = reset released. The reset value 0 therefore reads as reset asserted after power-on [inferred: the sheet does not comment on it]; write 1 before using the module.";
+            encode = PERIPHCTRL10_srst_act0_enum;
             reset = 0x0;
         } sata_rx1_rst[23:23];
 
         field {
             name = "sata_rx0_rst";
+            desc = "SATA controller rx0 clock-domain soft reset. Polarity per the data sheet: 0 = soft reset, 1 = reset released. The reset value 0 therefore reads as reset asserted after power-on [inferred: the sheet does not comment on it]; write 1 before using the module.";
+            encode = PERIPHCTRL10_srst_act0_enum;
             reset = 0x0;
         } sata_rx0_rst[22:22];
 
         field {
             name = "sata_tx1_rst";
+            desc = "SATA controller tx1 clock-domain soft reset. Polarity per the data sheet: 0 = soft reset, 1 = reset released. The reset value 0 therefore reads as reset asserted after power-on [inferred: the sheet does not comment on it]; write 1 before using the module.";
+            encode = PERIPHCTRL10_srst_act0_enum;
             reset = 0x0;
         } sata_tx1_rst[21:21];
 
         field {
             name = "sata_tx0_rst";
+            desc = "SATA controller tx0 clock-domain soft reset. Polarity per the data sheet: 0 = soft reset, 1 = reset released. The reset value 0 therefore reads as reset asserted after power-on [inferred: the sheet does not comment on it]; write 1 before using the module.";
+            encode = PERIPHCTRL10_srst_act0_enum;
             reset = 0x0;
         } sata_tx0_rst[20:20];
 
         field {
             name = "sata_phyrst";
+            desc = "SATA PHY soft reset. Polarity per the data sheet: 0 = soft reset, 1 = reset released. The reset value 0 therefore reads as reset asserted after power-on [inferred: the sheet does not comment on it]; write 1 before using the module.";
+            encode = PERIPHCTRL10_srst_act0_enum;
             reset = 0x0;
         } sata_phyrst[19:19];
 
         field {
             name = "sata_hrst";
+            desc = "SATA controller bus soft reset. Polarity per the data sheet: 0 = soft reset, 1 = reset released. The reset value 0 therefore reads as reset asserted after power-on [inferred: the sheet does not comment on it]; write 1 before using the module.";
+            encode = PERIPHCTRL10_srst_act0_enum;
             reset = 0x0;
         } sata_hrst[18:18];
 
         field {
             name = "sata_rst";
+            desc = "SATA controller interface soft reset. Polarity per the data sheet: 0 = soft reset, 1 = reset released. The reset value 0 therefore reads as reset asserted after power-on [inferred: the sheet does not comment on it]; write 1 before using the module.";
+            encode = PERIPHCTRL10_srst_act0_enum;
             reset = 0x0;
         } sata_rst[17:17];
 
         field {
             name = "vedu0_stdmod_p1";
+            desc = "Reserved (RW) in the data sheet; the bit-row names (vedu0_stdmod_p1, vedu0_power_mode, vedu0_mdu_en, vedu0_vpp_en, vedu0_vedsel, vedu0_stdmod) suggest VEDU mode bits.";
             reset = 0x0;
         } vedu0_stdmod_p1[16:11];
 
+        enum PERIPHCTRL10_srst_act1_enum {
+            RELEASE = 0x0 { desc = "soft reset released (module runs)"; };
+            RESET = 0x1 { desc = "soft reset asserted"; };
+        };
+
         field {
             name = "dma_hrst";
+            desc = "DMA bus soft reset. Polarity per the data sheet: 1 = soft reset, 0 = reset released. A module soft reset is write 1 then write 0.";
+            encode = PERIPHCTRL10_srst_act1_enum;
             reset = 0x0;
         } dma_hrst[6:6];
 
         field {
             name = "ddr_hrst";
+            desc = "DDR bus soft reset. Polarity per the data sheet: 1 = soft reset, 0 = reset released. A module soft reset is write 1 then write 0.";
+            encode = PERIPHCTRL10_srst_act1_enum;
             reset = 0x0;
         } ddr_hrst[5:5];
 
         field {
             name = "spi_hrst";
+            desc = "SPI bus soft reset. Polarity per the data sheet: 1 = soft reset, 0 = reset released. A module soft reset is write 1 then write 0.";
+            encode = PERIPHCTRL10_srst_act1_enum;
             reset = 0x0;
         } spi_hrst[4:4];
 
         field {
             name = "nadc_hrst";
+            desc = "NANDC bus soft reset. Polarity per the data sheet: 1 = soft reset, 0 = reset released. A module soft reset is write 1 then write 0.";
+            encode = PERIPHCTRL10_srst_act1_enum;
             reset = 0x0;
         } nadc_hrst[2:2];
 
         field {
             name = "tde_srst";
+            desc = "TDE soft reset. Polarity per the data sheet: 1 = soft reset, 0 = reset released. A module soft reset is write 1 then write 0.";
+            encode = PERIPHCTRL10_srst_act1_enum;
             reset = 0x0;
         } tde_srst[1:1];
 
         field {
             name = "tde_hrst";
+            desc = "TDE bus soft reset. Polarity per the data sheet: 1 = soft reset, 0 = reset released. A module soft reset is write 1 then write 0.";
+            encode = PERIPHCTRL10_srst_act1_enum;
             reset = 0x0;
         } tde_hrst[0:0];
 `endif
@@ -4221,38 +5507,57 @@ regfile eSYS_CTRL {
         } over_value_port0[14:0];
 `endif
 `ifdef SYS_CTRL_PERIPHCTRL10_VAR4
+        enum PERIPHCTRL10_srst_act1_enum {
+            RELEASE = 0x0 { desc = "soft reset released (module runs)"; };
+            RESET = 0x1 { desc = "soft reset asserted"; };
+        };
+
         field {
             name = "dma_srst";
+            desc = "DMA soft reset. Polarity per the data sheet: 1 = soft reset, 0 = reset released. A module soft reset is write 1 then write 0.";
+            encode = PERIPHCTRL10_srst_act1_enum;
             reset = 0x0;
         } dma_srst[6:6];
 
         field {
             name = "ddrphy_srst";
+            desc = "DDR PHY soft reset. Polarity per the data sheet: 1 = soft reset, 0 = reset released. A module soft reset is write 1 then write 0.";
+            encode = PERIPHCTRL10_srst_act1_enum;
             reset = 0x0;
         } ddrphy_srst[5:5];
 
         field {
             name = "spi_srst";
+            desc = "SPI soft reset. Polarity per the data sheet: 1 = soft reset, 0 = reset released. A module soft reset is write 1 then write 0.";
+            encode = PERIPHCTRL10_srst_act1_enum;
             reset = 0x0;
         } spi_srst[4:4];
 
         field {
             name = "ipcm_srst";
+            desc = "IPCM soft reset. Polarity per the data sheet: 1 = soft reset, 0 = reset released. A module soft reset is write 1 then write 0.";
+            encode = PERIPHCTRL10_srst_act1_enum;
             reset = 0x0;
         } ipcm_srst[3:3];
 
         field {
             name = "nadc_srst";
+            desc = "NANDC soft reset. Polarity per the data sheet: 1 = soft reset, 0 = reset released. A module soft reset is write 1 then write 0.";
+            encode = PERIPHCTRL10_srst_act1_enum;
             reset = 0x0;
         } nadc_srst[2:2];
 
         field {
             name = "tde_rst";
+            desc = "TDE working-clock domain soft reset. Polarity per the data sheet: 1 = soft reset, 0 = reset released. A module soft reset is write 1 then write 0.";
+            encode = PERIPHCTRL10_srst_act1_enum;
             reset = 0x0;
         } tde_rst[1:1];
 
         field {
             name = "tde_srst";
+            desc = "TDE bus-side soft reset. Polarity per the data sheet: 1 = soft reset, 0 = reset released. A module soft reset is write 1 then write 0.";
+            encode = PERIPHCTRL10_srst_act1_enum;
             reset = 0x0;
         } tde_srst[0:0];
 `endif
@@ -4666,18 +5971,50 @@ regfile eSYS_CTRL {
         name = "Peripheral control register 13";
         desc = "System bus master port timeout control register 1";
 `ifdef SYS_CTRL_PERIPHCTRL13_VAR1
+        enum PERIPHCTRL13_lrclk_enum {
+            DIV2 = 0x0 { desc = "/2"; };
+            DIV4 = 0x1 { desc = "/4"; };
+            DIV8 = 0x2 { desc = "/8"; };
+            DIV16 = 0x3 { desc = "/16"; };
+            DIV32 = 0x4 { desc = "/32"; };
+            DIV48 = 0x5 { desc = "/48"; };
+            DIV64 = 0x6 { desc = "/64"; };
+            DIV128 = 0x7 { desc = "/128"; };
+            DIV256 = 0x8 { desc = "/256"; };
+        };
+
         field {
             name = "sio0_lrclk_sel";
+            desc = "SIO0 sampling-rate clock (SIO_RFS/SIO_XFS, FSCLK) in master mode: divider of the SIO0 bit-stream clock.";
+            encode = PERIPHCTRL13_lrclk_enum;
             reset = 0x0;
         } sio0_lrclk_sel[31:28];
 
+        enum PERIPHCTRL13_bclk_enum {
+            DIV1 = 0x0 { desc = "/1"; };
+            DIV3 = 0x1 { desc = "/3"; };
+            DIV2 = 0x2 { desc = "/2"; };
+            DIV4 = 0x3 { desc = "/4"; };
+            DIV6 = 0x4 { desc = "/6"; };
+            DIV8 = 0x5 { desc = "/8"; };
+            DIV12 = 0x6 { desc = "/12"; };
+            DIV16 = 0x7 { desc = "/16"; };
+            DIV24 = 0x8 { desc = "/24"; };
+            DIV48 = 0x9 { desc = "/48"; };
+            DIV64 = 0xa { desc = "/64 (the sheet prints this code as 0x10; with a 4-bit field it can only be 0xA) [inferred]"; };
+            DIV128 = 0xb { desc = "/128 (the sheet prints this code as 0x11; with a 4-bit field it can only be 0xB) [inferred]"; };
+        };
+
         field {
             name = "sio0_bclk_sel";
+            desc = "SIO0 bit-stream clock (SIO_XCK, BCLK) in master mode: divider of the SIO0 system clock.";
+            encode = PERIPHCTRL13_bclk_enum;
             reset = 0x0;
         } sio0_bclk_sel[27:24];
 
         field {
             name = "sio0clk_sel";
+            desc = "SIO0 SIO system (master) clock SIO_MCLK: arbitrary divider of the EPLL output clock (500 MHz), `Fsio = sel x Fepll / 2^27`.";
             reset = 0x0;
         } sio0clk_sel[23:0];
 `endif
@@ -4757,13 +6094,31 @@ regfile eSYS_CTRL {
         name = "Peripheral control register 14";
         desc = "System bus slave end port priority control register Hardware (Hi3520D V100 board, read on hardware 2026-11-08, stock U-Boot prompt after a cold boot): reads 0x00000123, the data sheet total reset is 0x00123456 (modelled fields 0x00003456). Left at the data sheet value: 0x123 looks like a value written by the boot table; open question.";
 `ifdef SYS_CTRL_PERIPHCTRL14_VAR1
+        enum PERIPHCTRL14_bclk_enum {
+            DIV1 = 0x0 { desc = "/1"; };
+            DIV3 = 0x1 { desc = "/3"; };
+            DIV2 = 0x2 { desc = "/2"; };
+            DIV4 = 0x3 { desc = "/4"; };
+            DIV6 = 0x4 { desc = "/6"; };
+            DIV8 = 0x5 { desc = "/8"; };
+            DIV12 = 0x6 { desc = "/12"; };
+            DIV16 = 0x7 { desc = "/16"; };
+            DIV24 = 0x8 { desc = "/24"; };
+            DIV48 = 0x9 { desc = "/48"; };
+            DIV64 = 0xa { desc = "/64 (the sheet prints this code as 0x10; with a 4-bit field it can only be 0xA) [inferred]"; };
+            DIV128 = 0xb { desc = "/128 (the sheet prints this code as 0x11; with a 4-bit field it can only be 0xB) [inferred]"; };
+        };
+
         field {
             name = "sio1_bclk_sel";
+            desc = "SIO1 bit-stream clock (SIO_XCK, BCLK) in master mode: divider of the SIO1 system clock.";
+            encode = PERIPHCTRL14_bclk_enum;
             reset = 0x0;
         } sio1_bclk_sel[27:24];
 
         field {
             name = "sio12clk_sel";
+            desc = "SIO1/SIO2 SIO system (master) clock SIO_MCLK: arbitrary divider of the EPLL output clock (500 MHz), `Fsio = sel x Fepll / 2^27`.";
             reset = 0x0;
         } sio12clk_sel[23:0];
 `endif
@@ -4920,18 +6275,50 @@ regfile eSYS_CTRL {
         } clk_delay_sel[0:0];
 `endif
 `ifdef SYS_CTRL_PERIPHCTRL14_VAR4
+        enum PERIPHCTRL14_lrclk_enum {
+            DIV2 = 0x0 { desc = "/2"; };
+            DIV4 = 0x1 { desc = "/4"; };
+            DIV8 = 0x2 { desc = "/8"; };
+            DIV16 = 0x3 { desc = "/16"; };
+            DIV32 = 0x4 { desc = "/32"; };
+            DIV48 = 0x5 { desc = "/48"; };
+            DIV64 = 0x6 { desc = "/64"; };
+            DIV128 = 0x7 { desc = "/128"; };
+            DIV256 = 0x8 { desc = "/256"; };
+        };
+
         field {
             name = "sio1_lrclk_sel";
+            desc = "SIO1 sampling-rate clock (SIO_RFS/SIO_XFS, FSCLK) in master mode: divider of the SIO1 bit-stream clock.";
+            encode = PERIPHCTRL14_lrclk_enum;
             reset = 0x0;
         } sio1_lrclk_sel[31:28];
 
+        enum PERIPHCTRL14_bclk_enum {
+            DIV1 = 0x0 { desc = "/1"; };
+            DIV3 = 0x1 { desc = "/3"; };
+            DIV2 = 0x2 { desc = "/2"; };
+            DIV4 = 0x3 { desc = "/4"; };
+            DIV6 = 0x4 { desc = "/6"; };
+            DIV8 = 0x5 { desc = "/8"; };
+            DIV12 = 0x6 { desc = "/12"; };
+            DIV16 = 0x7 { desc = "/16"; };
+            DIV24 = 0x8 { desc = "/24"; };
+            DIV48 = 0x9 { desc = "/48"; };
+            DIV64 = 0xa { desc = "/64 (the sheet prints this code as 0x10; with a 4-bit field it can only be 0xA) [inferred]"; };
+            DIV128 = 0xb { desc = "/128 (the sheet prints this code as 0x11; with a 4-bit field it can only be 0xB) [inferred]"; };
+        };
+
         field {
             name = "sio1_bclk_sel";
+            desc = "SIO1 bit-stream clock (SIO_XCK, BCLK) in master mode: divider of the SIO1 system clock.";
+            encode = PERIPHCTRL14_bclk_enum;
             reset = 0x0;
         } sio1_bclk_sel[27:24];
 
         field {
             name = "sio12clk_sel";
+            desc = "SIO1/SIO2 SIO system (master) clock SIO_MCLK: arbitrary divider of the EPLL output clock (500 MHz), `Fsio = sel x Fepll / 2^27`.";
             reset = 0x0;
         } sio12clk_sel[23:0];
 `endif
@@ -5094,13 +6481,22 @@ regfile eSYS_CTRL {
         name = "Peripheral control register 16";
         desc = "MEDIA1 bus master port timeout control register 0";
 `ifdef SYS_CTRL_PERIPHCTRL16_VAR1
+        enum PERIPHCTRL16_edge_enum {
+            NORMAL = 0x0 { desc = "normal edge (normal-phase clock)"; };
+            INVERTED = 0x1 { desc = "inverted edge (inverted clock)"; };
+        };
+
         field {
             name = "sio1_bclk_edge";
+            desc = "SIO1BCLK output edge select.";
+            encode = PERIPHCTRL16_edge_enum;
             reset = 0x0;
         } sio1_bclk_edge[9:9];
 
         field {
             name = "sio0_bclk_edge";
+            desc = "SIO0BCLK output edge select.";
+            encode = PERIPHCTRL16_edge_enum;
             reset = 0x0;
         } sio0_bclk_edge[8:8];
 `endif
@@ -5192,33 +6588,82 @@ regfile eSYS_CTRL {
         } dacr_lrsel[0:0];
 `endif
 `ifdef SYS_CTRL_PERIPHCTRL16_VAR4
+        enum PERIPHCTRL16_mddrc1_gate_enum {
+            ON = 0x0 { desc = "clock on"; };
+            OFF = 0x1 { desc = "clock off"; };
+        };
+
         field {
             name = "mddrc1_gate";
+            desc = "MDDRC1 module clock gate.";
+            encode = PERIPHCTRL16_mddrc1_gate_enum;
             reset = 0x0;
         } mddrc1_gate[31:31];
 
+        enum PERIPHCTRL16_edge_enum {
+            NORMAL = 0x0 { desc = "normal edge (normal-phase clock)"; };
+            INVERTED = 0x1 { desc = "inverted edge (inverted clock)"; };
+        };
+
         field {
             name = "sio2_blk_edge";
+            desc = "SIO2 bit-stream clock phase.";
+            encode = PERIPHCTRL16_edge_enum;
             reset = 0x0;
         } sio2_blk_edge[10:10];
 
         field {
             name = "sio1_blk_edge";
+            desc = "SIO1 bit-stream clock phase.";
+            encode = PERIPHCTRL16_edge_enum;
             reset = 0x0;
         } sio1_blk_edge[9:9];
 
         field {
             name = "sio0_blk_edge";
+            desc = "SIO0 bit-stream clock phase.";
+            encode = PERIPHCTRL16_edge_enum;
             reset = 0x0;
         } sio0_blk_edge[8:8];
 
+        enum PERIPHCTRL16_lrclk_enum {
+            DIV2 = 0x0 { desc = "/2"; };
+            DIV4 = 0x1 { desc = "/4"; };
+            DIV8 = 0x2 { desc = "/8"; };
+            DIV16 = 0x3 { desc = "/16"; };
+            DIV32 = 0x4 { desc = "/32"; };
+            DIV48 = 0x5 { desc = "/48"; };
+            DIV64 = 0x6 { desc = "/64"; };
+            DIV128 = 0x7 { desc = "/128"; };
+            DIV256 = 0x8 { desc = "/256"; };
+        };
+
         field {
             name = "sio2_lrclk_sel";
+            desc = "SIO2 sampling-rate clock (SIO_RFS/SIO_XFS, FSCLK) in master mode: divider of the SIO2 bit-stream clock.";
+            encode = PERIPHCTRL16_lrclk_enum;
             reset = 0x0;
         } sio2_lrclk_sel[7:4];
 
+        enum PERIPHCTRL16_bclk_enum {
+            DIV1 = 0x0 { desc = "/1"; };
+            DIV3 = 0x1 { desc = "/3"; };
+            DIV2 = 0x2 { desc = "/2"; };
+            DIV4 = 0x3 { desc = "/4"; };
+            DIV6 = 0x4 { desc = "/6"; };
+            DIV8 = 0x5 { desc = "/8"; };
+            DIV12 = 0x6 { desc = "/12"; };
+            DIV16 = 0x7 { desc = "/16"; };
+            DIV24 = 0x8 { desc = "/24"; };
+            DIV48 = 0x9 { desc = "/48"; };
+            DIV64 = 0xa { desc = "/64 (the sheet prints this code as 0x10; with a 4-bit field it can only be 0xA) [inferred]"; };
+            DIV128 = 0xb { desc = "/128 (the sheet prints this code as 0x11; with a 4-bit field it can only be 0xB) [inferred]"; };
+        };
+
         field {
             name = "sio2_bclk_sel";
+            desc = "SIO2 bit-stream clock (SIO_XCK, BCLK) in master mode: divider of the SIO2 system clock.";
+            encode = PERIPHCTRL16_bclk_enum;
             reset = 0x0;
         } sio2_bclk_sel[3:0];
 `endif
@@ -6991,68 +8436,122 @@ regfile eSYS_CTRL {
 `ifdef SYS_CTRL_PERIPHCTRL23_0x8C_REG
     reg {
         name = "Peripheral control register 23";
-        desc = "MDDRC out-of-order configuration outtodr_ctrl register";
+        desc = "Chip operating mode status and PLL status register (Hi3515, Hi3520 V100, read-only): NAND boot configuration pins, ARM debug mode, boot mode and the lock status of the four PLLs (bit 0 APLL, 1 VPLL0, 2 VPLL1, 3 EPLL; 1 = locked). Poll the lock bits after programming SC_PERCTRL0-7.";
 `ifdef SYS_CTRL_PERIPHCTRL23_VAR1
+        enum PERIPHCTRL23_nfecc_enum {
+            NONE = 0x0 { desc = "ECC disabled"; };
+            ECC1 = 0x1 { desc = "1-bit ECC"; };
+            ECC4 = 0x2 { desc = "4-bit ECC"; };
+            ECC8 = 0x3 { desc = "8-bit ECC"; };
+        };
+
         field {
             name = "nf_ecc_type";
+            desc = "ECC mode when booting from NAND flash (pins NFECC0/NFECC1). Reflects the power-on state of the multiplexed NAND configuration pins.";
             sw = r;
             hw = w;
+            encode = PERIPHCTRL23_nfecc_enum;
             reset = 0x0;
         } nf_ecc_type[14:13];
 
+        enum PERIPHCTRL23_nfaddr_enum {
+            CYC3 = 0x0 { desc = "3 address cycles"; };
+            CYC4 = 0x1 { desc = "4 address cycles"; };
+            CYC5 = 0x2 { desc = "5 address cycles"; };
+            CYC6 = 0x3 { desc = "6 address cycles"; };
+        };
+
         field {
             name = "nf_addr_num";
+            desc = "Number of address cycles when booting from NAND flash (pins NFNUM0/NFNUM1). Reflects the power-on state of the multiplexed NAND configuration pins.";
             sw = r;
             hw = w;
+            encode = PERIPHCTRL23_nfaddr_enum;
             reset = 0x0;
         } nf_addr_num[12:11];
 
+        enum PERIPHCTRL23_nfpage_enum {
+            RSVD0 = 0x0 { desc = "reserved"; };
+            KB2 = 0x1 { desc = "2 KB page"; };
+            KB4 = 0x2 { desc = "4 KB page"; };
+            RSVD3 = 0x3 { desc = "reserved"; };
+        };
+
         field {
             name = "nf_page_size";
+            desc = "Page size when booting from NAND flash (pins NFPAGE0/NFPAGE1). Reflects the power-on state of the multiplexed NAND configuration pins.";
             sw = r;
             hw = w;
+            encode = PERIPHCTRL23_nfpage_enum;
             reset = 0x0;
         } nf_page_size[10:9];
 
+        enum PERIPHCTRL23_debug_sel_enum {
+            ARM926 = 0x0 { desc = "debug ARM926"; };
+            SATA_PHY = 0x1 { desc = "debug SATA PHY"; };
+        };
+
         field {
             name = "debug_sel";
+            desc = "Selected ARM debug mode.";
             sw = r;
             hw = w;
+            encode = PERIPHCTRL23_debug_sel_enum;
             reset = 0x0;
         } debug_sel[8:8];
 
+        enum PERIPHCTRL23_boot_mode_enum {
+            NOR = 0x0 { desc = "boot from NOR flash"; };
+            NAND = 0x1 { desc = "boot from NAND flash"; };
+        };
+
         field {
             name = "boot_mode";
+            desc = "Selected boot mode. The sheet prints both codes as 00; 0 = NOR flash, 1 = NAND flash [inferred from the row order and the Hi3520 table].";
             sw = r;
             hw = w;
+            encode = PERIPHCTRL23_boot_mode_enum;
             reset = 0x0;
         } boot_mode[6:6];
 
+        enum PERIPHCTRL23_lock_enum {
+            UNLOCKED = 0x0 { desc = "unlocked"; };
+            LOCKED = 0x1 { desc = "locked"; };
+        };
+
         field {
             name = "epll_lock";
+            desc = "Ethernet PLL (SC_PERCTRL6/7) lock status. The Hi3515 sheet prints both codes as 0; 1 = locked per the Hi3520 sheet.";
             sw = r;
             hw = w;
+            encode = PERIPHCTRL23_lock_enum;
             reset = 0x0;
         } epll_lock[3:3];
 
         field {
             name = "vpll1_lock";
+            desc = "Video PLL1 (SC_PERCTRL4/5) lock status. The Hi3515 sheet prints both codes as 0; 1 = locked per the Hi3520 sheet.";
             sw = r;
             hw = w;
+            encode = PERIPHCTRL23_lock_enum;
             reset = 0x0;
         } vpll1_lock[2:2];
 
         field {
             name = "vpll0_lock";
+            desc = "Video PLL0 (SC_PERCTRL2/3) lock status. The Hi3515 sheet prints both codes as 0; 1 = locked per the Hi3520 sheet.";
             sw = r;
             hw = w;
+            encode = PERIPHCTRL23_lock_enum;
             reset = 0x0;
         } vpll0_lock[1:1];
 
         field {
             name = "apll_lock";
+            desc = "ARM PLL (SC_PERCTRL0/1) lock status. The Hi3515 sheet prints both codes as 0; 1 = locked per the Hi3520 sheet.";
             sw = r;
             hw = w;
+            encode = PERIPHCTRL23_lock_enum;
             reset = 0x0;
         } apll_lock[0:0];
 `endif
@@ -7070,73 +8569,138 @@ regfile eSYS_CTRL {
         } pcie0_slv_awmisc_info[21:0];
 `endif
 `ifdef SYS_CTRL_PERIPHCTRL23_VAR3
+        enum PERIPHCTRL23_nfecc_enum {
+            NONE = 0x0 { desc = "ECC disabled"; };
+            ECC1 = 0x1 { desc = "1-bit ECC"; };
+            ECC4 = 0x2 { desc = "4-bit ECC"; };
+            ECC8 = 0x3 { desc = "8-bit ECC"; };
+        };
+
         field {
             name = "nf_ecc_type";
+            desc = "ECC mode when booting from NAND flash (pins NFECC0/NFECC1). Reflects the power-on state of the multiplexed NAND configuration pins.";
             sw = r;
             hw = w;
+            encode = PERIPHCTRL23_nfecc_enum;
             reset = 0x0;
         } nf_ecc_type[14:13];
 
+        enum PERIPHCTRL23_nfaddr_enum {
+            CYC3 = 0x0 { desc = "3 address cycles"; };
+            CYC4 = 0x1 { desc = "4 address cycles"; };
+            CYC5 = 0x2 { desc = "5 address cycles"; };
+            CYC6 = 0x3 { desc = "6 address cycles"; };
+        };
+
         field {
             name = "nf_addr_num";
+            desc = "Number of address cycles when booting from NAND flash (pins NFNUM0/NFNUM1). Reflects the power-on state of the multiplexed NAND configuration pins.";
             sw = r;
             hw = w;
+            encode = PERIPHCTRL23_nfaddr_enum;
             reset = 0x0;
         } nf_addr_num[12:11];
 
+        enum PERIPHCTRL23_nfpage_enum {
+            RSVD0 = 0x0 { desc = "reserved"; };
+            KB2 = 0x1 { desc = "2 KB page"; };
+            KB4 = 0x2 { desc = "4 KB page"; };
+            RSVD3 = 0x3 { desc = "reserved"; };
+        };
+
         field {
             name = "nf_page_size";
+            desc = "Page size when booting from NAND flash (pins NFPAGE0/NFPAGE1). Reflects the power-on state of the multiplexed NAND configuration pins.";
             sw = r;
             hw = w;
+            encode = PERIPHCTRL23_nfpage_enum;
             reset = 0x0;
         } nf_page_size[10:9];
 
+        enum PERIPHCTRL23_debug_sel_enum {
+            ARM1176 = 0x0 { desc = "debug ARM1176"; };
+            BOTH = 0x1 { desc = "debug ARM1176 + ARM926"; };
+            ARM926 = 0x2 { desc = "debug ARM926"; };
+            RSVD = 0x3 { desc = "reserved"; };
+        };
+
         field {
             name = "debug_sel";
+            desc = "Selected ARM debug mode.";
             sw = r;
             hw = w;
+            encode = PERIPHCTRL23_debug_sel_enum;
             reset = 0x0;
         } debug_sel[8:7];
 
+        enum PERIPHCTRL23_boot_mode_enum {
+            NOR = 0x0 { desc = "boot from NOR flash"; };
+            DDR_A = 0x1 { desc = "boot from DDR (x1)"; };
+            NAND = 0x2 { desc = "boot from NAND flash"; };
+            DDR_B = 0x3 { desc = "boot from DDR (x1)"; };
+        };
+
         field {
             name = "boot_mode";
+            desc = "Selected boot mode.";
             sw = r;
             hw = w;
+            encode = PERIPHCTRL23_boot_mode_enum;
             reset = 0x0;
         } boot_mode[6:5];
 
+        enum PERIPHCTRL23_arm0_pmuirq_enum {
+            ACTIVE = 0x0 { desc = "PMU event occurred"; };
+            INACTIVE = 0x1 { desc = "no PMU event"; };
+        };
+
         field {
             name = "arm0_pmuirq";
+            desc = "ARM1176 PMU interrupt status.";
             sw = r;
             hw = w;
+            encode = PERIPHCTRL23_arm0_pmuirq_enum;
             reset = 0x0;
         } arm0_pmuirq[4:4];
 
+        enum PERIPHCTRL23_lock_enum {
+            UNLOCKED = 0x0 { desc = "unlocked"; };
+            LOCKED = 0x1 { desc = "locked"; };
+        };
+
         field {
             name = "epll_lock";
+            desc = "GMAC PLL (EPLL, SC_PERCTRL6/7) lock status.";
             sw = r;
             hw = w;
+            encode = PERIPHCTRL23_lock_enum;
             reset = 0x0;
         } epll_lock[3:3];
 
         field {
             name = "vpll1_lock";
+            desc = "Video PLL1 (SC_PERCTRL4/5) lock status.";
             sw = r;
             hw = w;
+            encode = PERIPHCTRL23_lock_enum;
             reset = 0x0;
         } vpll1_lock[2:2];
 
         field {
             name = "vpll0_lock";
+            desc = "Video PLL0 (SC_PERCTRL2/3) lock status.";
             sw = r;
             hw = w;
+            encode = PERIPHCTRL23_lock_enum;
             reset = 0x0;
         } vpll0_lock[1:1];
 
         field {
             name = "apll_lock";
+            desc = "ARM PLL (SC_PERCTRL0/1) lock status.";
             sw = r;
             hw = w;
+            encode = PERIPHCTRL23_lock_enum;
             reset = 0x0;
         } apll_lock[0:0];
 `endif
