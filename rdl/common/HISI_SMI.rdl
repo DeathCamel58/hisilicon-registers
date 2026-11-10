@@ -1,0 +1,155 @@
+`ifndef HISI_SMI_RDL
+`define HISI_SMI_RDL
+
+regfile eHISI_SMI {
+    name = "Static memory interface controller (SMI, PL172-style)";
+    desc = "
+    Static memory interface (SMI) controller of the Hi3511/Hi3512, Hi3515 and Hi3520 V100: an ARM PrimeCell PL172-style asynchronous memory controller for 8-bit SRAM, NOR flash or peripheral devices on two chip selects (banks), with per-bank idle, read / write wait, output-enable and write-enable delays, burst read / write modes and an external wait input. Timing fields count cycles of the SMI working clock (the system bus clock or half of it, SMI_CR[memclkratio]). The boot ROM boots from SMI CS 0 (parallel NOR flash) when the boot pins select it; CS 0 is then also aliased at 0x00000000.
+    Register base: Hi3511/Hi3512 0x10100000 (Chinese data sheet Table 4-12 and memory map; SMI CS0 window 0x34000000, CS1 0x30000000, 32 MB each), Hi3520 V100 0x10010000 (Chinese data sheet Table 4-12 and memory map; 0x10100000 is the VIU there), Hi3515 0x10010000 by its memory map (Figure in 1.3, which puts the SPI/other registers at 0x10100000) although its register summary Table 4-12 prints 0x1010_0000, copied from the Hi3511 sheet.
+    Bank 1 registers start at 0x000, bank 0 registers at 0x0E0 (the data sheets list them in that order); the two sets are identical. Registers, bit layouts and resets from the Hi3515 data sheet 4.2 (`Hi3515-Datasheet.txt` lines 18011-19330); the Hi3511 (Chinese) and Hi3520 V100 data sheets give the same 18 registers and resets. No interrupt. No vendor Linux driver (the boot loader sets the timings; U-Boot's CFI flash driver only uses the CS 0 window). Not hardware verified.
+";
+
+    enum SMI_BCR_burstlenwrite_enum {
+        BURST_4 = 0 { name = "Burst 4"; desc = "burst 4"; };
+        BURST_8 = 1 { name = "Burst 8"; desc = "burst 8; 2 and 3 reserved"; };
+    };
+
+    enum SMI_BCR_burstlenread_enum {
+        BURST_4 = 0 { name = "Burst 4"; desc = "burst 4"; };
+        BURST_8 = 1 { name = "Burst 8"; desc = "burst 8"; };
+        BURST_16 = 2 { name = "Burst 16"; desc = "burst 16; 3 reserved"; };
+    };
+
+    reg {
+        name = "Bank 1 idle cycle control register";
+        desc = "SMI_BIDCYR1: bus turnaround (idle) cycles between a read and a write access of bank 1; T_WSTIDLY = idcy / f_SMICLK (reset 0xF).";
+        field { name = "idcy"; desc = "Idle cycles between read and write, in SMI working-clock cycles."; sw = rw; hw = r; reset = 0xF; } idcy[3:0];
+    } SMI_BIDCYR1 @ 0x0;
+
+    reg {
+        name = "Bank 1 read wait cycle control register";
+        desc = "SMI_BWSTRDR1: read wait cycles of bank 1 (non-burst reads, and the first access of a burst read; the following accesses use SMI_BWSTBRDR1); T_WSTRD = wstrd / f_SMICLK (reset 0x1F).";
+        field { name = "wstrd"; desc = "Read wait cycles, in SMI working-clock cycles."; sw = rw; hw = r; reset = 0x1F; } wstrd[4:0];
+    } SMI_BWSTRDR1 @ 0x4;
+
+    reg {
+        name = "Bank 1 write wait cycle control register";
+        desc = "SMI_BWSTWRR1: write wait cycles of bank 1; T_WSTWR = wstwr / f_SMICLK (reset 0x1F).";
+        field { name = "wstwr"; desc = "Write wait cycles, in SMI working-clock cycles."; sw = rw; hw = r; reset = 0x1F; } wstwr[4:0];
+    } SMI_BWSTWRR1 @ 0x8;
+
+    reg {
+        name = "Bank 1 read enable assertion delay control register";
+        desc = "SMI_BWSTOENR1: delay from chip select valid to read enable (OE) valid on bank 1; T_WSTOEN = wstoen / f_SMICLK (reset 0xF).";
+        field { name = "wstoen"; desc = "CS-to-OE delay, in SMI working-clock cycles."; sw = rw; hw = r; reset = 0xF; } wstoen[3:0];
+    } SMI_BWSTOENR1 @ 0xC;
+
+    reg {
+        name = "Bank 1 write enable assertion delay control register";
+        desc = "SMI_BWSTWENR1: delay from chip select valid to write enable (WE) valid on bank 1; T_WSTWEN = wstwen / f_SMICLK (reset 0xF).";
+        field { name = "wstwen"; desc = "CS-to-WE delay, in SMI working-clock cycles."; sw = rw; hw = r; reset = 0xF; } wstwen[3:0];
+    } SMI_BWSTWENR1 @ 0x10;
+
+    reg {
+        name = "Bank 1 control register";
+        desc = "SMI_BCR1: transfer parameters of bank 1 (reset 0x303020: the fixed-1 reserved bits 21:20 and 13:12 set, and bit 5 set, which puts the mw field at 2 although the data sheet only defines mw 00 = 8 bits). Bits 17, 14, 9, 6 and 0 are reserved and must be written 0.";
+        field { name = "reserved_21_20"; desc = "Reserved; must be written 1 (reset 1)."; sw = rw; hw = r; reset = 0x3; } reserved_21_20[21:20];
+        field { name = "burstlenwrite"; desc = "Number of data transferred per burst write in burst mode."; sw = rw; hw = r; encode = SMI_BCR_burstlenwrite_enum; reset = 0x0; } burstlenwrite[19:18];
+        field { name = "bmwrite"; desc = "Write mode: 0 = non-burst, 1 = burst writes to the external device."; sw = rw; hw = r; reset = 0x0; } bmwrite[16:16];
+        field { name = "reserved_13_12"; desc = "Reserved; must be written 1 (reset 1)."; sw = rw; hw = r; reset = 0x3; } reserved_13_12[13:12];
+        field { name = "burstlenread"; desc = "Number of data transferred per subsequent burst read in burst mode."; sw = rw; hw = r; encode = SMI_BCR_burstlenread_enum; reset = 0x0; } burstlenread[11:10];
+        field { name = "bmread"; desc = "Read mode: 0 = non-burst, 1 = burst reads from the external device."; sw = rw; hw = r; reset = 0x0; } bmread[8:8];
+        field { name = "mw"; desc = "Data width of the external device: 0 = 8 bits; other values reserved (the reset value of SMI_BCR1 nevertheless has bit 5 set: 0x303020)."; sw = rw; hw = r; reset = 0x2; } mw[5:4];
+        field { name = "wp"; desc = "Write protect: 0 = the external device is writable (SRAM), 1 = write-protected (ROM)."; sw = rw; hw = r; reset = 0x0; } wp[3:3];
+        field { name = "waiten"; desc = "External wait signal enable: 0 = transfers follow the internal timing registers only, 1 = transfers are paced by the external wait input."; sw = rw; hw = r; reset = 0x0; } waiten[2:2];
+        field { name = "waitpol"; desc = "Polarity of the external wait input: 0 = active low, 1 = active high."; sw = rw; hw = r; reset = 0x0; } waitpol[1:1];
+    } SMI_BCR1 @ 0x14;
+
+    reg {
+        name = "Bank 1 status register";
+        desc = "SMI_BSR1: external wait timeout error flag of bank 1; writing 1 clears it.";
+        field { name = "waittouterr"; desc = "External wait timeout error: read 1 = an external wait timeout occurred; write 1 = clear the flag."; sw = rw; hw = w; onwrite = woclr; reset = 0x0; } waittouterr[0:0];
+    } SMI_BSR1 @ 0x18;
+
+    reg {
+        name = "Bank 1 burst read wait delay control register";
+        desc = "SMI_BWSTBRDR1: wait cycles of the subsequent accesses of a burst read on bank 1 (the first access uses SMI_BWSTRDR1; unused for non-burst reads); T_WSTBURSTRD = wstbrd / f_SMICLK (reset 0x1F).";
+        field { name = "wstbrd"; desc = "Burst read wait cycles, in SMI working-clock cycles."; sw = rw; hw = r; reset = 0x1F; } wstbrd[4:0];
+    } SMI_BWSTBRDR1 @ 0x1C;
+
+    reg {
+        name = "Bank 0 idle cycle control register";
+        desc = "SMI_BIDCYR0: bus turnaround (idle) cycles between a read and a write access of bank 0; T_WSTIDLY = idcy / f_SMICLK (reset 0xF).";
+        field { name = "idcy"; desc = "Idle cycles between read and write, in SMI working-clock cycles."; sw = rw; hw = r; reset = 0xF; } idcy[3:0];
+    } SMI_BIDCYR0 @ 0xE0;
+
+    reg {
+        name = "Bank 0 read wait cycle control register";
+        desc = "SMI_BWSTRDR0: read wait cycles of bank 0 (non-burst reads and the first access of a burst read); T_WSTRD = wstrd / f_SMICLK (reset 0x1F).";
+        field { name = "wstrd"; desc = "Read wait cycles, in SMI working-clock cycles."; sw = rw; hw = r; reset = 0x1F; } wstrd[4:0];
+    } SMI_BWSTRDR0 @ 0xE4;
+
+    reg {
+        name = "Bank 0 write wait cycle control register";
+        desc = "SMI_BWSTWRR0: write wait cycles of bank 0; T_WSTWR = wstwr / f_SMICLK (reset 0x1F).";
+        field { name = "wstwr"; desc = "Write wait cycles, in SMI working-clock cycles."; sw = rw; hw = r; reset = 0x1F; } wstwr[4:0];
+    } SMI_BWSTWRR0 @ 0xE8;
+
+    reg {
+        name = "Bank 0 read enable assertion delay control register";
+        desc = "SMI_BWSTOENR0: delay from chip select valid to read enable valid on bank 0; T_WSTOEN = wstoen / f_SMICLK (reset 0xF).";
+        field { name = "wstoen"; desc = "CS-to-OE delay, in SMI working-clock cycles."; sw = rw; hw = r; reset = 0xF; } wstoen[3:0];
+    } SMI_BWSTOENR0 @ 0xEC;
+
+    reg {
+        name = "Bank 0 write enable assertion delay control register";
+        desc = "SMI_BWSTWENR0: delay from chip select valid to write enable valid on bank 0; T_WSTWEN = wstwen / f_SMICLK (reset 0xF).";
+        field { name = "wstwen"; desc = "CS-to-WE delay, in SMI working-clock cycles."; sw = rw; hw = r; reset = 0xF; } wstwen[3:0];
+    } SMI_BWSTWENR0 @ 0xF0;
+
+    reg {
+        name = "Bank 0 control register";
+        desc = "SMI_BCR0: transfer parameters of bank 0 (reset 0x303000: the fixed-1 reserved bits 21:20 and 13:12 set, mw = 0 = 8 bits). Bits 17, 14, 9, 6 and 0 are reserved and must be written 0.";
+        field { name = "reserved_21_20"; desc = "Reserved; must be written 1 (reset 1)."; sw = rw; hw = r; reset = 0x3; } reserved_21_20[21:20];
+        field { name = "burstlenwrite"; desc = "Number of data transferred per burst write in burst mode."; sw = rw; hw = r; encode = SMI_BCR_burstlenwrite_enum; reset = 0x0; } burstlenwrite[19:18];
+        field { name = "bmwrite"; desc = "Write mode: 0 = non-burst, 1 = burst writes to the external device."; sw = rw; hw = r; reset = 0x0; } bmwrite[16:16];
+        field { name = "reserved_13_12"; desc = "Reserved; must be written 1 (reset 1)."; sw = rw; hw = r; reset = 0x3; } reserved_13_12[13:12];
+        field { name = "burstlenread"; desc = "Number of data transferred per subsequent burst read in burst mode."; sw = rw; hw = r; encode = SMI_BCR_burstlenread_enum; reset = 0x0; } burstlenread[11:10];
+        field { name = "bmread"; desc = "Read mode: 0 = non-burst, 1 = burst reads from the external device."; sw = rw; hw = r; reset = 0x0; } bmread[8:8];
+        field { name = "mw"; desc = "Data width of the external device: 0 = 8 bits; other values reserved."; sw = rw; hw = r; reset = 0x0; } mw[5:4];
+        field { name = "wp"; desc = "Write protect: 0 = the external device is writable (SRAM), 1 = write-protected (ROM)."; sw = rw; hw = r; reset = 0x0; } wp[3:3];
+        field { name = "waiten"; desc = "External wait signal enable: 0 = transfers follow the internal timing registers only, 1 = transfers are paced by the external wait input."; sw = rw; hw = r; reset = 0x0; } waiten[2:2];
+        field { name = "waitpol"; desc = "Polarity of the external wait input: 0 = active low, 1 = active high."; sw = rw; hw = r; reset = 0x0; } waitpol[1:1];
+    } SMI_BCR0 @ 0xF4;
+
+    reg {
+        name = "Bank 0 status register";
+        desc = "SMI_BSR0: external wait timeout error flag of bank 0; writing 1 clears it.";
+        field { name = "waittouterr"; desc = "External wait timeout error: read 1 = an external wait timeout occurred; write 1 = clear the flag."; sw = rw; hw = w; onwrite = woclr; reset = 0x0; } waittouterr[0:0];
+    } SMI_BSR0 @ 0xF8;
+
+    reg {
+        name = "Bank 0 burst read wait delay control register";
+        desc = "SMI_BWSTBRDR0: wait cycles of the subsequent accesses of a burst read on bank 0 (the first access uses SMI_BWSTRDR0); T_WSTBURSTRD = wstbrd / f_SMICLK (reset 0x1F).";
+        field { name = "wstbrd"; desc = "Burst read wait cycles, in SMI working-clock cycles."; sw = rw; hw = r; reset = 0x1F; } wstbrd[4:0];
+    } SMI_BWSTBRDR0 @ 0xFC;
+
+    reg {
+        name = "SMI asynchronous wait status register";
+        desc = "SMI_SR: state of the external wait input (asynchronous wait mode only).";
+        field { name = "waitstatus"; desc = "Asynchronous wait status: 0 = the wait signal is inactive, 1 = active."; sw = r; hw = w; reset = 0x0; } waitstatus[0:0];
+    } SMI_SR @ 0x200;
+
+    reg {
+        name = "SMI working clock configuration register";
+        desc = "SMI_CR: ratio between the SMI working clock and the system bus clock (reset 0x1: bit 0 is a reserved bit that must stay 1).";
+        enum SMI_CR_memclkratio_enum {
+            DIV_1 = 0 { name = "Bus clock"; desc = "SMI working clock = system bus clock"; };
+            DIV_2 = 1 { name = "Bus clock / 2"; desc = "SMI working clock = system bus clock / 2; 2 and 3 reserved"; };
+        };
+        field { name = "memclkratio"; desc = "SMI working clock select."; sw = rw; hw = r; encode = SMI_CR_memclkratio_enum; reset = 0x0; } memclkratio[2:1];
+        field { name = "reserved_0"; desc = "Reserved; must be written 1 (reset 1)."; sw = rw; hw = r; reset = 0x1; } reserved_0[0:0];
+    } SMI_CR @ 0x204;
+};
+
+`endif

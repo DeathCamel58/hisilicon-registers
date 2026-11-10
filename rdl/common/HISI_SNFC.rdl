@@ -1,0 +1,245 @@
+`ifndef HISI_SNFC_RDL
+`define HISI_SNFC_RDL
+
+regfile eHISI_SNFC {
+    name = "HiSilicon SPI NAND flash controller (hisnfc100)";
+    desc = "
+    SPI NAND flash controller of the Hi3516A/D V100 (vendor driver `hisnfc100`, VERSION register 0x400) at 0x10040000: one AHB slave for the registers, one for the flash window (the SPI NAND is only reachable through register / DMA operations, there is no linear bus mode) and an AHB master for DMA page transfers, with a 4 KB + OOB on-chip buffer and 8-bit or 24-bit BCH ECC per 1 KB (or the on-die ECC of the flash, SFC_CFG[dev_internal_ecc_cr]). Standard, dual and quad SPI, 2 KB and 4 KB pages, one or two chip selects. The controller boots the SoC from the SPI NAND when the boot pins select it (SFC_CFG[op_mode] = 0, SFC_CFG[boot_4_wire_cr]).
+    Register mode: SFC_OPCODE + SFC_OP_ADDR / SFC_ADDRH / SFC_ADDRL + SFC_DATA_NUM + SFC_OP_CFG, start with SFC_OP[op_start], wait for SFC_INT[op_done_int]. DMA mode: SFC_OP_CTRL (rd/wr opcodes, cs, dma_op, rw_op, op_ready) with SFC_DMA_SADDR_D / SFC_DMA_SADDR_OOB / SFC_DMA_LEN. The register layout is the ancestor of the FMC (eHISI_FMC) of the Hi3518E V20X generation (same SFC_CFG / GLOBAL_CFG / TIMING_CFG / INT / OP / OP_CFG / OP_CTRL / DMA naming with different offsets).
+    Registers and resets from the Hi3516A/D V100 data sheet 4.4 (`Hi3516A-Hi3516D-Datasheet.txt` lines 49380-50400; summary Table 4-14 base 0x1004_0000). Interrupt: SPI NAND flash controller interrupt 11 (shared with the NANDC/SFC). Not hardware verified.
+";
+
+    reg {
+        name = "SFC configuration register";
+        desc = "SFC_CFG: flash type, page size, ECC mode and boot options (reset 0x1DC2; the ecc_type and page_size resets follow the boot pins).";
+        field { name = "boot_4_wire_cr"; desc = "Boot interface: 0 = standard SPI (one line), 1 = quad-input / dual-output SPI (four lines)."; sw = rw; hw = r; reset = 0x0; } boot_4_wire_cr[17:17];
+        field { name = "dev_internal_ecc_cr"; desc = "ECC management: 0 = the controller's BCH ECC, 1 = the on-die ECC of the flash."; sw = rw; hw = r; reset = 0x1; } dev_internal_ecc_cr[16:16];
+        enum SFC_CFG_spi_nand_sel_enum {
+            OTHER = 0 { name = "Other vendor"; desc = "other vendors"; };
+            WINBOND = 1 { name = "Winbond"; desc = "Winbond"; };
+            ESMT = 2 { name = "ESMT"; desc = "ESMT"; };
+            OTHER_3 = 3 { name = "Other vendor (3)"; desc = "other vendors"; };
+        };
+        field { name = "spi_nand_sel"; desc = "Vendor (status-register layout) of the SPI NAND flash."; sw = rw; hw = r; encode = SFC_CFG_spi_nand_sel_enum; reset = 0x0; } spi_nand_sel[15:14];
+        field { name = "reserved_13_5"; desc = "Reserved RO in the data sheet ([13:10], [9:6], [5]); the total reset value 0x1DC2 has bits 12:10 and 8:6 set."; sw = r; hw = na; reset = 0xEE; } reserved_13_5[13:5];
+        enum SFC_CFG_ecc_type_enum {
+            ECC_8BIT = 1 { name = "8-bit/1 KB"; desc = "4-bit ECC in the data sheet wording: 8 bits per 1024 bytes"; };
+            ECC_24BIT = 3 { name = "24-bit/1 KB"; desc = "24 bits per 1024 bytes; 0 and 2 reserved"; };
+        };
+        field { name = "ecc_type"; desc = "ECC type of the controller. The reset value follows the boot pin."; sw = rw; hw = r; encode = SFC_CFG_ecc_type_enum; reset = 0x0; } ecc_type[4:3];
+        field { name = "page_size"; desc = "Page size of the SPI NAND flash: 0 = 2 KB, 1 = 4 KB. The reset value follows the boot pin."; sw = rw; hw = r; reset = 0x0; } page_size[2:2];
+        field { name = "flash_sel"; desc = "Flash type: 1 = SPI NAND flash (0 reserved)."; sw = rw; hw = r; reset = 0x1; } flash_sel[1:1];
+        field { name = "op_mode"; desc = "SFC operation mode: 0 = boot mode, 1 = normal mode."; sw = rw; hw = r; reset = 0x0; } op_mode[0:0];
+    } SFC_CFG @ 0x0;
+
+    reg {
+        name = "Global configuration register";
+        desc = "GLOBAL_CFG: CS forcing, WP pin, WIP bit position and read sampling delay (reset 0x20: wp_en set).";
+        field { name = "force_cs_en"; desc = "Force the chip select active: 0 = disabled, 1 = enabled."; sw = rw; hw = r; reset = 0x0; } force_cs_en[6:6];
+        field { name = "wp_en"; desc = "Write protection enable for the WP pin: when 1 the chip drives WP low."; sw = rw; hw = r; reset = 0x1; } wp_en[5:5];
+        field { name = "wip_locate"; desc = "Bit position of the write-in-progress (WIP / OIP) bit in the flash status register."; sw = rw; hw = r; reset = 0x0; } wip_locate[4:2];
+        field { name = "rd_delay"; desc = "Read data sampling delay in clock cycles: 0 = none (default), 1 = one, 2 = two, 3 = three."; sw = rw; hw = r; reset = 0x0; } rd_delay[1:0];
+    } GLOBAL_CFG @ 0x4;
+
+    reg {
+        name = "Timing configuration register";
+        desc = "TIMING_CFG: chip-select timing in interface clock cycles, each field (n + 1) cycles (reset 0x66F).";
+        field { name = "tcsh"; desc = "CS hold time: (n + 1) clock cycles."; sw = rw; hw = r; reset = 0x6; } tcsh[11:8];
+        field { name = "tcss"; desc = "CS setup time: (n + 1) clock cycles."; sw = rw; hw = r; reset = 0x6; } tcss[7:4];
+        field { name = "tshsl"; desc = "CS deselect time (interval between two flash operations): (n + 1) clock cycles."; sw = rw; hw = r; reset = 0xF; } tshsl[3:0];
+    } TIMING_CFG @ 0x8;
+
+    reg {
+        name = "Interrupt status register";
+        desc = "SFC_INT: raw interrupt status (read-only; cleared through SFC_INT_CLR). Uncorrectable: 8 or more (8-bit mode) / 24 or more (24-bit mode) error bits per 1024 bytes; correctable: 1-8 / 1-24.";
+        field { name = "ahb_op_err_int"; desc = "AHB operation error interrupt (buffer accessed while the controller is busy)."; sw = r; hw = w; reset = 0x0; } ahb_op_err_int[6:6];
+        field { name = "dma_err_int"; desc = "DMA transfer bus error interrupt."; sw = r; hw = w; reset = 0x0; } dma_err_int[5:5];
+        field { name = "err_inval_int"; desc = "Uncorrectable ECC error interrupt."; sw = r; hw = w; reset = 0x0; } err_inval_int[4:4];
+        field { name = "err_val_int"; desc = "Correctable ECC error interrupt."; sw = r; hw = w; reset = 0x0; } err_val_int[3:3];
+        field { name = "op_fail_int"; desc = "Program operation failure interrupt."; sw = r; hw = w; reset = 0x0; } op_fail_int[2:2];
+        field { name = "op_done_int"; desc = "Current operation completion interrupt; cleared automatically when SFC_OP[op_start] is set."; sw = r; hw = w; reset = 0x0; } op_done_int[0:0];
+    } SFC_INT @ 0xC;
+
+    reg {
+        name = "Interrupt enable register";
+        desc = "SFC_INT_EN: enables of the SFC_INT interrupts (0 = disabled, 1 = enabled).";
+        field { name = "ahb_op_err_int_en"; desc = "AHB operation error interrupt enable."; sw = rw; hw = r; reset = 0x0; } ahb_op_err_int_en[6:6];
+        field { name = "dma_err_int_en"; desc = "DMA transfer bus error interrupt enable."; sw = rw; hw = r; reset = 0x0; } dma_err_int_en[5:5];
+        field { name = "err_inval_int_en"; desc = "Uncorrectable ECC error interrupt enable."; sw = rw; hw = r; reset = 0x0; } err_inval_int_en[4:4];
+        field { name = "err_val_int_en"; desc = "Correctable ECC error interrupt enable."; sw = rw; hw = r; reset = 0x0; } err_val_int_en[3:3];
+        field { name = "op_fail_int_en"; desc = "Program operation failure interrupt enable."; sw = rw; hw = r; reset = 0x0; } op_fail_int_en[2:2];
+        field { name = "op_done_int_en"; desc = "Operation completion interrupt enable."; sw = rw; hw = r; reset = 0x0; } op_done_int_en[0:0];
+    } SFC_INT_EN @ 0x10;
+
+    reg {
+        name = "Interrupt clear register";
+        desc = "SFC_INT_CLR: writing 1 clears the corresponding SFC_INT bit (data sheet access RWS).";
+        field { name = "ahb_op_err_int_clr"; desc = "Writing 1 clears ahb_op_err_int."; sw = rw; hw = w; onwrite = woclr; reset = 0x0; } ahb_op_err_int_clr[6:6];
+        field { name = "dma_err_int_clr"; desc = "Writing 1 clears dma_err_int."; sw = rw; hw = w; onwrite = woclr; reset = 0x0; } dma_err_int_clr[5:5];
+        field { name = "err_inval_int_clr"; desc = "Writing 1 clears err_inval_int."; sw = rw; hw = w; onwrite = woclr; reset = 0x0; } err_inval_int_clr[4:4];
+        field { name = "err_val_int_clr"; desc = "Writing 1 clears err_val_int."; sw = rw; hw = w; onwrite = woclr; reset = 0x0; } err_val_int_clr[3:3];
+        field { name = "op_fail_int_clr"; desc = "Writing 1 clears op_fail_int."; sw = rw; hw = w; onwrite = woclr; reset = 0x0; } op_fail_int_clr[2:2];
+        field { name = "op_done_int_clr"; desc = "Writing 1 clears op_done_int."; sw = rw; hw = w; onwrite = woclr; reset = 0x0; } op_done_int_clr[0:0];
+    } SFC_INT_CLR @ 0x14;
+
+    reg {
+        name = "Command word configuration register";
+        desc = "SFC_OPCODE: the command byte of a register-mode operation (reset 0x03 = READ).";
+        field { name = "opcode"; desc = "Command issued to the flash by the controller."; sw = rw; hw = r; reset = 0x3; } opcode[7:0];
+    } SFC_OPCODE @ 0x18;
+
+    reg {
+        name = "Operation address configuration register";
+        desc = "SFC_OP_ADDR: address bytes of a register-mode operation (SFC_OP[addr_num] of them are sent).";
+        field { name = "op_addr"; desc = "Operation address of the flash."; sw = rw; hw = r; reset = 0x0; } op_addr[31:0];
+    } SFC_OP_ADDR @ 0x1C;
+
+    reg {
+        name = "Operation register";
+        desc = "SFC_OP: composes and starts a register-mode (single-step) operation: opcode, address bytes, dummy bytes, data phase, read-status.";
+        field { name = "sf_cs"; desc = "Chip select of the flash to operate: 0 = CS0, 1 = CS1."; sw = rw; hw = r; reset = 0x0; } sf_cs[11:11];
+        field { name = "addr_num"; desc = "Number of address bytes sent to the flash."; sw = rw; hw = r; reset = 0x0; } addr_num[10:8];
+        field { name = "dummy1_en"; desc = "Dummy byte transfer after the command phase enable."; sw = rw; hw = r; reset = 0x0; } dummy1_en[7:7];
+        field { name = "dummy0_en"; desc = "Dummy byte transfer after the address phase enable."; sw = rw; hw = r; reset = 0x0; } dummy0_en[6:6];
+        field { name = "opcode_en"; desc = "Opcode (command) transfer enable."; sw = rw; hw = r; reset = 0x0; } opcode_en[5:5];
+        field { name = "addr_en"; desc = "Address transfer enable."; sw = rw; hw = r; reset = 0x0; } addr_en[4:4];
+        field { name = "write_data_en"; desc = "Data write (buffer to flash) enable; not together with read_data_en."; sw = rw; hw = r; reset = 0x0; } write_data_en[3:3];
+        field { name = "read_data_en"; desc = "Data read (flash to buffer) enable; not together with write_data_en."; sw = rw; hw = r; reset = 0x0; } read_data_en[2:2];
+        field { name = "read_status_en"; desc = "Read the flash status and store it in SF_STATUS instead of the buffer."; sw = rw; hw = r; reset = 0x0; } read_status_en[1:1];
+        field { name = "op_start"; desc = "Start the operation; cleared by hardware when the operation completes."; sw = rw; hw = rw; reset = 0x0; } op_start[0:0];
+    } SFC_OP @ 0x20;
+
+    reg {
+        name = "Data length register";
+        desc = "SFC_DATA_NUM: byte count of the data phase of a register-mode operation (not needed for DMA operations).";
+        field { name = "data_num"; desc = "Number of data bytes of one operation."; sw = rw; hw = r; reset = 0x0; } data_num[12:0];
+    } SFC_DATA_NUM @ 0x24;
+
+    reg {
+        name = "Operation configuration register";
+        desc = "SFC_OP_CFG: transparent (register) access, read scope, SPI interface width and dummy byte counts.";
+        field { name = "dir_trans_en"; desc = "Transparent transfer: 1 = the controller only moves bytes (no page structure / ECC); must be 1 to access flash registers."; sw = rw; hw = r; reset = 0x0; } dir_trans_en[11:11];
+        enum SFC_OP_CFG_rd_op_sel_enum {
+            WHOLE_PAGE = 0 { name = "Whole page"; desc = "entire page"; };
+            DATA_ONLY = 1 { name = "Data only"; desc = "data area only"; };
+            OOB_ONLY = 2 { name = "OOB only"; desc = "OOB only; 3 reserved"; };
+        };
+        field { name = "rd_op_sel"; desc = "Area read by a read operation."; sw = rw; hw = r; encode = SFC_OP_CFG_rd_op_sel_enum; reset = 0x0; } rd_op_sel[10:9];
+        enum SFC_OP_CFG_mem_if_type_enum {
+            STD_SPI = 0 { name = "Standard SPI"; desc = "standard SPI"; };
+            DUAL_IN_DUAL_OUT = 1 { name = "Dual-in / dual-out"; desc = "dual-input / dual-output SPI (data sheet prints 101)"; };
+            DUAL_IO = 2 { name = "Dual I/O"; desc = "dual-I/O SPI"; };
+            QUAD_IN_DUAL_OUT = 3 { name = "Quad-in / dual-out"; desc = "quad-input / dual-output SPI"; };
+            QUAD_IO = 4 { name = "Quad I/O"; desc = "quad-I/O SPI; 5-7 reserved"; };
+        };
+        field { name = "mem_if_type"; desc = "SPI interface type of the data phase."; sw = rw; hw = r; encode = SFC_OP_CFG_mem_if_type_enum; reset = 0x0; } mem_if_type[8:6];
+        field { name = "dummy1_num"; desc = "Bytes of dummy1 (after the command) in single-step mode; in DMA mode set from the timing of the rd_opcode / wr_opcode commands."; sw = rw; hw = r; reset = 0x0; } dummy1_num[5:3];
+        field { name = "dummy0_num"; desc = "Bytes of dummy0 (after the address) in single-step mode; in DMA mode set from the timing of the rd_opcode / wr_opcode commands."; sw = rw; hw = r; reset = 0x0; } dummy0_num[2:0];
+    } SFC_OP_CFG @ 0x28;
+
+    reg {
+        name = "Upper-bit flash address configuration register";
+        desc = "SFC_ADDRH: upper byte of the page address of a DMA operation.";
+        field { name = "page_addr_h"; desc = "Page address, upper byte."; sw = rw; hw = r; reset = 0x0; } page_addr_h[7:0];
+    } SFC_ADDRH @ 0x2C;
+
+    reg {
+        name = "Lower-bit flash address configuration register";
+        desc = "SFC_ADDRL: lower two bytes of the page address of a DMA operation (bits 15:0 reserved).";
+        field { name = "page_addr_l"; desc = "Page address, lower two bytes."; sw = rw; hw = r; reset = 0x0; } page_addr_l[31:16];
+    } SFC_ADDRL @ 0x30;
+
+    reg {
+        name = "Operation control register";
+        desc = "SFC_OP_CTRL: page read / write commands and the start bit of DMA (or buffer) page operations (reset 0x30200: rd_opcode 0x03, wr_opcode 0x02).";
+        field { name = "rd_opcode"; desc = "Read command of non-bus (page) operations."; sw = rw; hw = r; reset = 0x3; } rd_opcode[23:16];
+        field { name = "wr_opcode"; desc = "Write command of non-bus (page) operations."; sw = rw; hw = r; reset = 0x2; } wr_opcode[15:8];
+        field { name = "cs_op"; desc = "Chip select of the flash to operate: 0 = CS0, 1 = CS1."; sw = rw; hw = r; reset = 0x0; } cs_op[3:3];
+        field { name = "dma_op"; desc = "Operation mode: 0 = register (buffer) access, 1 = DMA access."; sw = rw; hw = r; reset = 0x0; } dma_op[2:2];
+        field { name = "rw_op"; desc = "Operation type: 0 = read, 1 = write."; sw = rw; hw = r; reset = 0x0; } rw_op[1:1];
+        field { name = "op_ready"; desc = "Start the page operation; cleared by hardware when it completes."; sw = rw; hw = rw; reset = 0x0; } op_ready[0:0];
+    } SFC_OP_CTRL @ 0x34;
+
+    reg {
+        name = "DMA operation control register";
+        desc = "SFC_DMA_CTRL: AHB burst sizes allowed for DMA transfers (reset 0x7: all).";
+        field { name = "burst16_en"; desc = "Burst-16 enable."; sw = rw; hw = r; reset = 0x1; } burst16_en[2:2];
+        field { name = "burst8_en"; desc = "Burst-8 enable."; sw = rw; hw = r; reset = 0x1; } burst8_en[1:1];
+        field { name = "burst4_en"; desc = "Burst-4 enable."; sw = rw; hw = r; reset = 0x1; } burst4_en[0:0];
+    } SFC_DMA_CTRL @ 0x3C;
+
+    reg {
+        name = "DMA data start address register";
+        desc = "SFC_DMA_SADDR_D: DDR base address of the page data of a DMA operation.";
+        field { name = "dma_mem_saddr"; desc = "DDR base address of the data."; sw = rw; hw = r; reset = 0x0; } dma_mem_saddr[31:0];
+    } SFC_DMA_SADDR_D @ 0x40;
+
+    reg {
+        name = "DMA OOB start address register";
+        desc = "SFC_DMA_SADDR_OOB: DDR base address of the OOB data of a DMA operation.";
+        field { name = "dma_mem_saddr_oob"; desc = "DDR base address of the OOB data."; sw = rw; hw = r; reset = 0x0; } dma_mem_saddr_oob[31:0];
+    } SFC_DMA_SADDR_OOB @ 0x44;
+
+    reg {
+        name = "DMA data transfer length register";
+        desc = "SFC_DMA_LEN: length of the spare area moved by a DMA operation; only used in transparent transfers (dev_internal_ecc_cr and dir_trans_en both 1).";
+        field { name = "dma_len"; desc = "DMA transfer length (spare area)."; sw = rw; hw = r; reset = 0x0; } dma_len[27:0];
+    } SFC_DMA_LEN @ 0x48;
+
+    reg {
+        name = "Write operation timeout register";
+        desc = "SFC_TIMEOUT_WR: maximum busy-wait time of a program operation (reset 0xFFFFFF).";
+        field { name = "sfc_timeout_wr"; desc = "Program busy-wait timeout."; sw = rw; hw = r; reset = 0xFFFFFF; } sfc_timeout_wr[23:0];
+    } SFC_TIMEOUT_WR @ 0x4C;
+
+    reg {
+        name = "Data segment ID register";
+        desc = "SFC_SEGMENT_ID: the internal buffer holds 2 KB, so single-step operations on 4 KB pages are done in two segments; this bit marks the last one.";
+        field { name = "last_segment"; desc = "0 = the 2 KB segment being read / written is not the last of the page, 1 = it is the last one. Only for 4 KB pages in single-step mode."; sw = rw; hw = r; reset = 0x0; } last_segment[0:0];
+    } SFC_SEGMENT_ID @ 0x50;
+
+    reg {
+        name = "Flash status register";
+        desc = "SF_STATUS: the status byte returned by a read-status operation (SFC_OP[read_status_en]).";
+        field { name = "sf_status"; desc = "Flash status register value."; sw = r; hw = w; reset = 0x0; } sf_status[7:0];
+    } SF_STATUS @ 0x54;
+
+    reg {
+        name = "Command issuing count register";
+        desc = "SFC_OP_CNT: number of operations issued by the controller (debug only; cleared by SFC_OP_CNT_CLR).";
+        field { name = "op_cnt"; desc = "Operation count."; sw = r; hw = w; reset = 0x0; } op_cnt[15:0];
+    } SFC_OP_CNT @ 0x58;
+
+    reg {
+        name = "Command issuing count clear register";
+        desc = "SFC_OP_CNT_CLR: writing 1 clears SFC_OP_CNT.";
+        field { name = "op_cnt_clr"; desc = "Clear the operation count."; sw = rw; hw = r; reset = 0x0; } op_cnt_clr[0:0];
+    } SFC_OP_CNT_CLR @ 0x5C;
+
+    reg {
+        name = "Clock domain crossing AFIFO debug register";
+        desc = "AFIFO_DEBUG: empty flags of the clock-domain-crossing FIFOs.";
+        field { name = "rx_fifo_empty"; desc = "RX FIFO empty."; sw = r; hw = w; reset = 0x0; } rx_fifo_empty[1:1];
+        field { name = "tx_fifo_empty"; desc = "TX FIFO empty."; sw = r; hw = w; reset = 0x0; } tx_fifo_empty[0:0];
+    } AFIFO_DEBUG @ 0x60;
+
+    reg {
+        name = "Boot status indicator register";
+        desc = "BB_ERR: result of the boot-ROM page read from the SPI NAND.";
+        field { name = "bb_err"; desc = "Boot status: 0 = success, 1 = failure (bad block)."; sw = r; hw = w; reset = 0x0; } bb_err[0:0];
+    } BB_ERR @ 0x64;
+
+    reg {
+        name = "Version register";
+        desc = "VERSION: 0x400 (SFC V400, vendor `HISNFC100`).";
+        field { name = "version"; desc = "SFC version V400."; sw = r; hw = w; reset = 0x400; } version[31:0];
+    } VERSION @ 0x68;
+
+    reg {
+        name = "Error correction count register";
+        desc = "SFC_ERR_NUM: corrected error bits of the last page read, one byte per 1 KB ECC block.";
+        field { name = "ecc_err_num"; desc = "bit[31:24] fourth 1 KB and [23:16] third 1 KB (4 KB pages), [15:8] second 1 KB, [7:0] first 1 KB (2 KB and 4 KB pages)."; sw = r; hw = w; reset = 0x0; } ecc_err_num[31:0];
+    } SFC_ERR_NUM @ 0x6C;
+};
+
+`endif

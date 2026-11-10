@@ -1,0 +1,34 @@
+`ifndef HISI_SPI_3WIRE_RDL
+`define HISI_SPI_3WIRE_RDL
+
+regfile eHISI_SPI_3WIRE {
+    name = "3-wire SPI master (sensor control, spi_3wire)";
+    desc = "
+    Small 3-wire SPI master (SCK, SDA, CS) for sensors such as the Panasonic MN34120 that use a 16-bit address / 16-bit data register protocol: one read or write of one register per operation. The APB clock is divided by SPI_3WIRE_COEF0[spi_clk_div]; a transfer is set up in SPI_3WIRE_COEF1 (read/write, 15-bit address, 16-bit write data), started with SPI_3WIRE_COEF2[start] and finished when SPI_3WIRE_COEF2[spi_busy] clears (read data in SPI_3WIRE_COEF2[spi_rdata]).
+    Instances: Hi3516A V200 and Hi3519 V101 3-wire SPI 0 at 0x12124000 and 3-wire SPI 1 at 0x12125000 (data sheet 12.4, `Hi3516AV200-Datasheet.txt` lines 94139-94270); Hi3516C V300 / Hi3516E V100 one instance at 0x12122000 (data sheet 12.4, Table 12-10); Hi3516A V300 at 0x120C3000 (Chinese data sheet 12.x, Table 12-12). Three identical registers everywhere (the Hi3516C V300 revision history says the SPI_3WIRE_COEF2 offset was corrected to 0x8). No interrupt (polling). Not hardware verified.
+";
+
+    reg {
+        name = "3-wire SPI configuration register 0";
+        desc = "SPI_3WIRE_COEF0: SPI clock divider. spi_clk_div = (f_APB / f_SPICLK) / 2 - 1, range 1-255 (e.g. 50 MHz APB and 1 MHz SPI: 24).";
+        field { name = "spi_clk_div"; desc = "SPI clock ratio, 1-255: f_SPICLK = f_APB / (2 x (spi_clk_div + 1))."; sw = rw; hw = r; reset = 0x0; } spi_clk_div[7:0];
+    } SPI_3WIRE_COEF0 @ 0x0;
+
+    reg {
+        name = "3-wire SPI configuration register 1";
+        desc = "SPI_3WIRE_COEF1: direction, register address and write data of the next operation.";
+        field { name = "spi_rw"; desc = "Operation: 0 = write, 1 = read."; sw = rw; hw = r; reset = 0x0; } spi_rw[31:31];
+        field { name = "spi_add"; desc = "SPI register address (15 bits)."; sw = rw; hw = r; reset = 0x0; } spi_add[30:16];
+        field { name = "spi_wdata"; desc = "SPI write data."; sw = rw; hw = r; reset = 0x0; } spi_wdata[15:0];
+    } SPI_3WIRE_COEF1 @ 0x4;
+
+    reg {
+        name = "3-wire SPI configuration register 2";
+        desc = "SPI_3WIRE_COEF2: start bit, busy flag and read data.";
+        field { name = "spi_busy"; desc = "SPI bus status: 1 = busy, 0 = idle."; sw = r; hw = w; reset = 0x0; } spi_busy[17:17];
+        field { name = "start"; desc = "Start the read / write operation (only when spi_busy is 0); reads back 0."; sw = rw; hw = r; reset = 0x0; } start[16:16];
+        field { name = "spi_rdata"; desc = "SPI read data of the last read operation."; sw = r; hw = w; reset = 0x0; } spi_rdata[15:0];
+    } SPI_3WIRE_COEF2 @ 0x8;
+};
+
+`endif
