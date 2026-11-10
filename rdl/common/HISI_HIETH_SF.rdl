@@ -963,6 +963,7 @@ regfile eHISI_HIETH_SF_PORT {
 
         } GLB_FC_DROPCTRL @ 0x378;
 
+`ifndef HISI_HIETH_SF_NO_EEE
         reg {
             name = "EEE raw interrupt register";
             desc = "
@@ -1198,6 +1199,7 @@ regfile eHISI_HIETH_SF_PORT {
             } eee_clk_cnt[31:0];
 
         } MAC_EEE_CLK_CNT @ 0x494;
+`endif
 
         reg {
             name = "Port status counter";
@@ -1674,6 +1676,69 @@ regfile eHISI_HIETH_SF_PORT {
             } flux_drop_cnt[31:0];
 
         } FLUX_TOL_DPKTS @ 0x63C;
+
+`ifdef HISI_HIETH_SF_VLAN_CNT
+        reg {
+            name = "Register for the number of packets not forwarded to another port due to VLAN limit";
+            desc = "
+                UD_VN2OTH_PKTS is a register for the number of packets not forwarded to another port due to VLAN limit. The register does not support soft reset.
+
+                DS name UD_VN2OTH_PKTS; the same register exists in the up port and in the down port at +0x2000. Only in the Hi3515 data sheet (the Hi3520D/Hi3515A/Hi3515C data sheet does not list 0x640-0x648); enabled by `define HISI_HIETH_SF_VLAN_CNT.
+
+                Hi3515 data sheet (issue 02, 2010-04-20) 5.6 UD_VN2OTH_PKTS (offset 0X640, printed page 5-67, `Hi3515-Datasheet.txt` line 25392).
+            ";
+
+            field {
+                name = "vlan_not2oth_pkts";
+                desc = "A register for the number of packets not forwarded to another port due to VLAN limit.";
+                sw = r;
+                hw = w;
+                reset = 0x00000000;
+            } vlan_not2oth_pkts[31:0];
+
+        } VN2OTH_PKTS @ 0X640;
+
+        reg {
+            name = "Register for the number of packets not forwarded to the CPU port due to VLAN limit";
+            desc = "
+                UD_VN2CPU_PKTS is a register for the number of packets not forwarded to the CPU port due to VLAN limit. The register does not support soft reset.
+
+                DS name UD_VN2CPU_PKTS; the same register exists in the up port and in the down port at +0x2000. Only in the Hi3515 data sheet (the Hi3520D/Hi3515A/Hi3515C data sheet does not list 0x640-0x648); enabled by `define HISI_HIETH_SF_VLAN_CNT.
+
+                Hi3515 data sheet (issue 02, 2010-04-20) 5.6 UD_VN2CPU_PKTS (offset 0X644, printed page 5-67, `Hi3515-Datasheet.txt` line 25414).
+            ";
+
+            field {
+                name = "vlan_not2cpu_pkts";
+                desc = "A register for the number of packets not forwarded to the CPU port due to VLAN limit.";
+                sw = r;
+                hw = w;
+                reset = 0x00000000;
+            } vlan_not2cpu_pkts[31:0];
+
+        } VN2CPU_PKTS @ 0X644;
+
+        reg {
+            name = "Register for the number of packets not forwarded to another port due to MAC limit";
+            desc = "
+                UD_MN2OTH_PKTS is a register for the number of packets not forwarded to another port due to MAC limit. The register does not support soft reset.
+
+                DS name UD_MN2OTH_PKTS; the same register exists in the up port and in the down port at +0x2000. Only in the Hi3515 data sheet (the Hi3520D/Hi3515A/Hi3515C data sheet does not list 0x640-0x648); enabled by `define HISI_HIETH_SF_VLAN_CNT.
+
+                Hi3515 data sheet (issue 02, 2010-04-20) 5.6 UD_MN2OTH_PKTS (offset 0X648, printed page 5-67, `Hi3515-Datasheet.txt` line 25436).
+            ";
+
+            field {
+                name = "mac_not2oth_pkts";
+                desc = "A register for the number of packets not forwarded to another port due to MAC limit.";
+                sw = r;
+                hw = w;
+                reset = 0x00000000;
+            } mac_not2oth_pkts[31:0];
+
+        } MN2OTH_PKTS @ 0X648;
+
+`endif
 
         reg {
             name = "Register for the number of packets not forwarded to the CPU port due to MAC limit";
@@ -3408,6 +3473,8 @@ regfile eHISI_HIETH_SF {
     name = "ETH Registers";
     desc = "
     The Ethernet (ETH) module of the Hi3520D/Hi3515A/Hi3515C (vendor name HISFV300, Linux/U-Boot driver `hieth`, a switch-fabric style Fast Ethernet MAC) receives and transmits frames at 10 or 100 Mbit/s, half or full duplex, over an MII interface to the embedded FE PHY or an external RMII PHY. It has an MDIO master with a configurable frequency, 64 frame management queues for RX and TX each, eight configurable destination MAC filter table entries, traffic limit/flow control, statistics counters and 802.3az EEE support for the embedded PHY. Frames are exchanged with memory through frame descriptors (header address and length) queued in the RX/TX queues; there is no DMA descriptor ring in memory.
+
+    The Hi3515 (ETH at 0x10090000, VIC interrupt 14; English data sheet issue 02 (2010-04-20), register summary at `Hi3515-Datasheet.txt` line 22220; audit 2026-11-09) has the same two-port switch fabric (its summary table lists every port register at 0x0200 and 0x2200): the register set and bit layouts match this file, except that its data sheet has no EEE registers (`define HISI_HIETH_SF_NO_EEE removes MAC_EEE_INT..MAC_EEE_CLK_CNT) and adds the VLAN/MAC-limit counters VN2OTH_PKTS, VN2CPU_PKTS and MN2OTH_PKTS at 0x640-0x648 (`define HISI_HIETH_SF_VLAN_CNT adds them). Not modelled from that data sheet: MAC_SET bits 31:30 printed as a read-only field named reversed (reserved), GLB_IRQN_SET.int_frm_cnt reset printed as 0 (this file: 8, the Hi3520D value), the write-1-to-clear bits marked WC (same behaviour), and the vendor-only MAC_RX_IPGCTRL/MAC_TX_IPGCTRL which it does not document.
 
     ## Layout
 

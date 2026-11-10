@@ -8,6 +8,7 @@ regfile eHISI_FEMAC {
     HiSilicon \"femac\" Fast Ethernet MAC, version 2 (Linux compatible `hisilicon,hisi-femac-v2` / `hisilicon,hi3518ev20x-femac`, driver `hisi_femac.c`; vendor U-Boot driver `hisfv300`, the same family as the \"hieth\" switch-fabric MAC of the Hi3520D, `eHISI_HIETH_SF`): one port with RMII (10/100 Mbit/s, full or half duplex), an MDIO master, eight DMAC address filter entries, 64-entry RX and TX frame queues managed through the registers below (the frame descriptors are written to / read from UD_GLB_* registers, no DMA descriptor rings in memory), traffic limiting and EEE. New compared to the Hi3520D variant: TSO/UFO/SG and TX/RX checksum offload (RX_COE_EN register, TX controlled through bits of the frame descriptor), a single port (no down port) and the 12-bit RX frame length. The register layout (port registers +0x0000..0x0FFF, MDIO +0x1100, global +0x1300) matches `HISI_HIETH_SF.rdl` (that file's up port) except for the additions above and the missing down port, so this is a separate regfile `eHISI_FEMAC` (names without the data sheet's `UD_` prefix).
     The block sits at 0x10090000 (64 KB window; the Linux device tree maps the port registers at 0x10090000 and the MDIO and global registers as two separate windows at 0x10091100 and 0x10091300). Interrupt: VIC interrupt 12. Clock and reset: PERI_CRG59 (0x20030000 + 0xEC): the vendor U-Boot (`drivers/net/hisfv300/sys.c`) uses soft-reset bit 0 (`ETH_SOFT_RESET`, hrst_eth_s), clock enable bit 1 (`ETH_CLK_ENABLE`), external-PHY reset bit 3 (`ETH_EXTERNAL_PHY_RESET`), core clock select bit 7 (`ETH_CORE_CLK_SELECT_54M`, ethcore_cksel), the DS also lists ethphy_cksel bits 5:4 and eth_rmiick_sel bit 2; the Linux device tree runs the ETH clock at 54 MHz and resets the MAC through CRG 0xEC bit 0 and the PHY through bit 3. The default \"main clock\" for the traffic-limit timer is 100 MHz (DS 5.4.4); at 54 MHz flux_timer_inter must be 54000 for a 1 ms granularity.
     Registers, resets and descriptions are from the Hi3518E V20X/Hi3516C V200 data sheet issue 02 (2017-06-12), chapter 5 (`datasheet` text lines 44289-48515). The data sheet repeats the register block under the name prefix `UD_` (\"up/down port\"; only the up port exists here). Link/speed/duplex are taken from the PHY via MDIO scanning (UD_MDIO_*) or from the CPU through UD_MAC_PORTSET when UD_MAC_PORTSEL[stat_ctrl] = 1. Cross-checked against the Linux `hisi_femac.c` offsets and bit masks (all agree except the RMII bit, see UD_MAC_PORTSEL) and the vendor U-Boot hisfv300 headers. Not hardware verified.
+    Other chips with the same IP (audit 2026-11-09, each data sheet compared register by register against this file): Hi3516C V300 / Hi3516E V100 (ETH at 0x10050000, VIC interrupt 12; Linux `hisilicon,hi3516cv300-femac`; identical register set and layouts, including the MDIO_PHYADDR..MDIO_IRQENA and EEE registers that its summary table omits) and Hi3516A V300 (ETH at 0x10010000; Chinese data sheet, identical register set). Hi3516C V100 and Hi3518A/C V100 (ETH at 0x10090000, VIC interrupt 12) have the first femac generation: no GLB_RX_COE_EN (`define HISI_FEMAC_NO_RX_COE removes it), and the Hi3516C V100 data sheet adds the VLAN/MAC-limit counters VN2OTH_PKTS, VN2CPU_PKTS and MN2OTH_PKTS at 0x640-0x648 (`define HISI_FEMAC_VLAN_CNT adds them; the Hi3518 V100 data sheet lists only MN2CPU_PKTS at 0x64C). Documentation-only differences not modelled: those data sheets mark the write-1-to-clear bits of MAC_STAT_CHANGE and GLB_IRQ_RAW as WC (same behaviour), the Hi3516A V300 sheet prints GLB_IRQN_SET.int_frm_cnt and MAC_EEE_ENA.eee_ls_timer with a reset of 0 (the other sheets and this file: 8 and 1,000,000) and GLB_ADDRQ_STAT.eq_in_rdy with 0 (here 1), and every sheet prints the GLB_FC_LEVEL total reset as 0x30180508 (reserved bits 29:28 and 20:19 set).
 ";
 
     reg {
@@ -2353,6 +2354,7 @@ Data sheet 5.6 UD_GLB_FC_DROPCTRL (offset 0x378, printed page 5-57, `Hi3518EV20X
         } flux_broad[0:0];
     } GLB_FC_DROPCTRL @ 0x378;
 
+`ifndef HISI_FEMAC_NO_RX_COE
     reg {
         name = "RX COE enable register";
         desc = "UD_GLB_RX_COE_EN is an RX COE enable register. The register does not support soft reset.
@@ -2411,6 +2413,7 @@ Data sheet 5.6 UD_GLB_RX_COE_EN (offset 0x380, printed page 5-58, `Hi3518EV20X-H
             reset = 0x1;
         } i6udp_drop[13:13];
     } GLB_RX_COE_EN @ 0x380;
+`endif
 
     reg {
         name = "Port status counter";
@@ -2782,6 +2785,60 @@ Data sheet 5.6 UD_flux_TOL_DPKTS (offset 0x63C, printed page 5-67, `Hi3518EV20X-
             reset = 0x0;
         } flux_drop_cnt[31:0];
     } FLUX_TOL_DPKTS @ 0x63C;
+
+`ifdef HISI_FEMAC_VLAN_CNT
+    reg {
+        name = "Register for the number of packets not forwarded to another port due to VLAN limit";
+        desc = "UD_VN2OTH_PKTS is a register for the number of packets not forwarded to another port due to VLAN limit. The register does not support soft reset.
+
+Only in the Hi3516C V100 data sheet (the Hi3518E V20X, Hi3516C V300 and Hi3516A V300 data sheets do not list 0x640-0x648); enabled by `define HISI_FEMAC_VLAN_CNT.
+
+Hi3516C V100 data sheet 5.6 UD_VN2OTH_PKTS (offset 0X640, printed page 5-66, `Hi3516C-Datasheet.txt` line 33146).";
+
+        field {
+            name = "vlan_not2oth_pkts";
+            desc = "A register for the number of packets not forwarded to another port due to VLAN limit.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } vlan_not2oth_pkts[31:0];
+    } VN2OTH_PKTS @ 0X640;
+
+    reg {
+        name = "Register for the number of packets not forwarded to the CPU port due to VLAN limit";
+        desc = "UD_VN2CPU_PKTS is a register for the number of packets not forwarded to the CPU port due to VLAN limit. The register does not support soft reset.
+
+Only in the Hi3516C V100 data sheet (the Hi3518E V20X, Hi3516C V300 and Hi3516A V300 data sheets do not list 0x640-0x648); enabled by `define HISI_FEMAC_VLAN_CNT.
+
+Hi3516C V100 data sheet 5.6 UD_VN2CPU_PKTS (offset 0X644, printed page 5-67, `Hi3516C-Datasheet.txt` line 33177).";
+
+        field {
+            name = "vlan_not2cpu_pkts";
+            desc = "A register for the number of packets not forwarded to the CPU port due to VLAN limit.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } vlan_not2cpu_pkts[31:0];
+    } VN2CPU_PKTS @ 0X644;
+
+    reg {
+        name = "Register for the number of packets not forwarded to another port due to MAC limit";
+        desc = "UD_MN2OTH_PKTS is a register for the number of packets not forwarded to another port due to MAC limit. The register does not support soft reset.
+
+Only in the Hi3516C V100 data sheet (the Hi3518E V20X, Hi3516C V300 and Hi3516A V300 data sheets do not list 0x640-0x648); enabled by `define HISI_FEMAC_VLAN_CNT.
+
+Hi3516C V100 data sheet 5.6 UD_MN2OTH_PKTS (offset 0X648, printed page 5-67, `Hi3516C-Datasheet.txt` line 33198).";
+
+        field {
+            name = "mac_not2oth_pkts";
+            desc = "A register for the number of packets not forwarded to another port due to MAC limit.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } mac_not2oth_pkts[31:0];
+    } MN2OTH_PKTS @ 0X648;
+
+`endif
 
     reg {
         name = "Register for the number of packets not forwarded to the CPU port due to MAC limit";

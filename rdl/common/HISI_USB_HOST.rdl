@@ -12,6 +12,8 @@ regfile eHISI_USB_EHCI {
     (AHB burst, UTMI/ULPI, port power and over-current polarity) and PERIPHCTRL21 / PERIPHCTRL22 (PHY0 / PHY1 tuning).
 
     Vendor driver start sequence (`hiusb-hi3520d.c`): PERI_CRG46 set usb_cken and clear all reset bits, wait 100 us; PERIPHCTRL20 set ulpi_bypass_en, clear wordinterface, ss_ena_incr16_i and usbovr_p_ctrl.
+
+    Other chips with this controller (audit 2026-11-09; every data sheet documents only the vendor INTNREG/INSNREG registers, most of them only INTNREG00 and INTNREG04..07): Hi3515 (EHCI 0x100B0000 / OHCI 0x100A0000, VIC 23 / 22), Hi3516C V100 and Hi3518A/C V100 (0x100B0000 / 0x100A0000, VIC 15 / 16), Hi3516 V100 (0x100B0000 / 0x100A0000, VIC 68 / 69), Hi3520 V100 (0x100B0000 / 0x100A0000), Hi3516A/D V100 (0x100B0000 / 0x100A0000, GIC 53 / 54; USB device 0x10080000, GIC 55), Hi3516A V200 and Hi3519 V101 (EHCI 0x10120000 / OHCI 0x10110000, GIC 51 / 52; device 0x10130000, GIC 53; USB 3.0 0x10180000, GIC 54), Hi3516C V300 / Hi3516E V100 (EHCI 0x10120000 / OHCI 0x10110000, VIC 15 / 16; device 0x10130000, VIC 10; USB 2.0 PHY registers 0x120D0000). Per-chip macros (set in rdl/<chip>/defines.rdl): USB_HOST_INSNREG_DS where the data sheet documents INTNREG01..03 (Hi3515, Hi3520 V100, Hi3516A V100, Hi3516A V200, Hi3519 V101, Hi3516C V300; the Hi3515/Hi3520 sheets document only brk_en of INTNREG03 and call INTNREG02.pbuf_depth fifo_depth), USB_HOST_INTNREG05_RESET1 for every data sheet (all of them print vcontrol_loadm = 1; only the Hi3520D hardware read gives 0), USB_HOST_ONE_PORT where the data sheet gives one root-hub port (Hi3516C V300: HCSPARAMS 0x1111 and a single PORTSC; Hi3511/Hi3512 USB 1.1 host, OHCI only), USB_HOST_INSNREG00_FRAME_CORRECTION for the Hi3516C V300 field in bits 19:14. The Hi3516C V300 data sheet is the only one that describes the standard EHCI/OHCI registers: it agrees with this file except for the resets USBCMD 0x00080000 (no asynchronous park: aspme 0, aspmc 0), HcRevision 0x10 (no legacy-support bit) and HcRhDescriptorA/B printed as 0; those chip-specific resets are not modelled.
     ";
 
     reg {
@@ -72,7 +74,11 @@ EHCI 1.0 specification section 2.2.3; reset values are the specification's, not 
             desc = "Number of ports per companion controller.";
             sw = r;
             hw = w;
+`ifdef USB_HOST_ONE_PORT
+            reset = 0x1;
+`else
             reset = 0x2;
+`endif
         } n_pcc[11:8];
 
         field {
@@ -96,7 +102,11 @@ EHCI 1.0 specification section 2.2.3; reset values are the specification's, not 
             desc = "Number of physical downstream ports (the data sheet lists two USB host ports).";
             sw = r;
             hw = w;
+`ifdef USB_HOST_ONE_PORT
+            reset = 0x1;
+`else
             reset = 0x2;
+`endif
         } n_ports[3:0];
     } HCSPARAMS @ 0x4;
 
@@ -589,7 +599,11 @@ EHCI 1.0 specification section 2.3.9; reset values are the specification's, not 
             hw = w;
             reset = 0x0;
         } ccs[0:0];
+`ifdef USB_HOST_ONE_PORT
+    } PORTSC[1] @ 0x54 += 0x4;
+`else
     } PORTSC[2] @ 0x54 += 0x4;
+`endif
 
     reg {
         name = "Micro-frame length configuration register";
@@ -597,6 +611,16 @@ EHCI 1.0 specification section 2.3.9; reset values are the specification's, not 
 
 Data sheet 14.6.5 INTNREG00 (EHCI offset 0x90, printed page 14-89, `datasheet.txt` line 56771). Vendor-defined register (Synopsys-style INSNREG).";
 
+`ifdef USB_HOST_INSNREG00_FRAME_CORRECTION
+        field {
+            name = "frame_correction";
+            desc = "Micro-frame count correction, only for debugging. Only the Hi3516C V300/Hi3516E V100 data sheet documents this field (12.8.7.1 INSNREG00, printed page 12-177, `Hi3516CV300-Hi3516EV100-Datasheet.txt` line 78214); the other data sheets show bits 31:14 as reserved.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } frame_correction[19:14];
+
+`endif
         field {
             name = "val";
             desc = "Value of the micro-frame counter. This register is used only for emulation. In normal mode, the micro-frame length is 125 us defined by the protocol. During emulation, you can change the micro-frame length by configuring this register as required to reduce the emulation time.";
@@ -869,7 +893,7 @@ Data sheet 14.6.5 INTNREG04 (EHCI offset 0xA0, printed page 14-90, `datasheet.tx
         name = "PHY control and status register Hardware read 2026-11-08: 0x00000000 after reset, but the data sheet total reset has vcontrol_loadm = 1 (0x00001000); the hardware value is modelled and the data sheet value is a mismatch (vcontrol_loadm enum 0 = enabled, so the load strobe is enabled after reset).";
         desc = "INTNREG05 is a control and status register. It is used to read or write to the PHY.
 
-Data sheet 14.6.5 INTNREG05 (EHCI offset 0xA4, printed page 14-91, `datasheet.txt` line 56866). Vendor-defined register (Synopsys-style INSNREG).";
+Data sheet 14.6.5 INTNREG05 (EHCI offset 0xA4, printed page 14-91, `datasheet.txt` line 56866). Vendor-defined register (Synopsys-style INSNREG). The Hi3515 and Hi3520 V100 data sheets print this register twice, the second time with a UTMI vendor-control layout (bit 31 vendor control start, 27:24 vport, 23:22 access, 21:16 immediate address, 15:8 extend address, 7:0 value) that the later data sheets dropped; that layout is not modelled.";
 
         field {
             name = "vbusy";
@@ -984,6 +1008,8 @@ regfile eHISI_USB_OHCI {
     Standard OpenHCI 1.0a register set for the full-speed/low-speed companion of the EHCI controller (data sheet 14.6: complies with OHCI V1.0a; the OHCI registers are not described in the
     data sheet, only the base address 0x100A0000, Table 1-1). Written from the OpenHCI specification 1.0a; HcRevision, HcFmInterval, HcLSThreshold, HcRhDescriptorA and HcRhDescriptorB resets were read on hardware 2026-11-08 (others are the specification's). Two root-hub ports. Interrupt: GIC ID 54
     (SPI 22, DS Table 3-16). Clock and reset are shared with the EHCI controller (PERI_CRG46); PERIPHCTRL20 `app_start_clk_i` / `ohci_susp_lgcy_i` control the OHCI suspend clocking.
+
+    The Hi3511/Hi3512 USB 1.1 host (0xA0000000, VIC 10; Chinese data sheet 10.1, register summary at `Hi3511-Datasheet.txt` line 32403) is a stand-alone OHCI controller with one root-hub port and the same register set (`define USB_HOST_ONE_PORT; its data sheet prints HcRevision as 0x10, without the legacy-support bit). The companion OHCI bases and interrupts of the other chips are listed in the EHCI description.
     ";
 
     reg {
@@ -1625,7 +1651,11 @@ OHCI 1.0a specification section 7.4.1; reset values are the specification's, not
             desc = "Number of downstream ports (two).";
             sw = r;
             hw = w;
+`ifdef USB_HOST_ONE_PORT
+            reset = 0x1;
+`else
             reset = 0x2;
+`endif
         } ndp[7:0];
     } HcRhDescriptorA @ 0x48;
 
@@ -1640,7 +1670,11 @@ OHCI 1.0a specification section 7.4.2; reset values are the specification's, not
             desc = "Port power control mask.";
             sw = rw;
             hw = r;
+`ifdef USB_HOST_ONE_PORT
+            reset = 0x2;
+`else
             reset = 0x6;
+`endif
         } ppcm[31:16];
 
         field {
@@ -1804,7 +1838,11 @@ OHCI 1.0a specification section 7.4.4; reset values are the specification's, not
             hw = r;
             reset = 0x0;
         } ccs[0:0];
+`ifdef USB_HOST_ONE_PORT
+    } HcRhPortStatus[1] @ 0x54 += 0x4;
+`else
     } HcRhPortStatus[2] @ 0x54 += 0x4;
+`endif
 
 };
 
