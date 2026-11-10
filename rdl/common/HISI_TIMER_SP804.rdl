@@ -3,7 +3,37 @@
 
 regfile eHISI_TIMER_SP804 {
     name = "Timer Registers";
-    desc = "The timer is based on the [`ARM SP804`](https://developer.arm.com/documentation/ddi0271/latest/) device.";
+    desc = "
+    The timer is based on the [`ARM SP804`](https://developer.arm.com/documentation/ddi0271/latest/) device. Each SP804 is a dual timer: the two timers of a pair
+    share one 4 KB window and one interrupt line, timer 0 of the pair at +0x000 and timer 1 at +0x020 (this file is instantiated once per timer, so an SP804 pair is two
+    instances 0x20 apart). Timer control: the clock is a TIMCLK enabled by TIMCLKENx (the bus clock or the 3 MHz / 24 MHz reference selected by the system controller
+    SC_CTRL `timeren0sel ..` / CRG bits, see the chip's SYS_CTRL / CRG), optionally prescaled by 16 or 256; 16- or 32-bit, free-running / periodic / one-shot.
+
+    The register map (TIMERx_LOAD .. TIMERx_BGLOAD) is identical in every data sheet checked; only the documented reset values differ, selected by macros in each chip's
+    `defines.rdl`: `TIMER_SP804_RESET_G1` (TIMERx_CONTROL `intenable` resets to 0: Hi3515, Hi3516 V100, Hi3516A/D V100, Hi3520/Hi3520D V100, Hi3518E V20X, Hi3516A V200,
+    Hi3519 V101, Hi3516C V300, Hi3516A V300), `TIMER_SP804_RESET_G2` (`intenable` resets to 1, total 0x20: Hi3511/Hi3512, Hi3516C V100, Hi3518 V100) and
+    `TIMER_SP804_RESET_G3` (TIMERx_INTCLR has a documented reset 0: Hi3516A V300 only; the other data sheets give it none). The SP804 TRM reset of TimerXControl is 0x20
+    (interrupt enabled), so the G1 value is what the HiSilicon data sheets print, not necessarily what the hardware does. The SP804 TRM also has the ITCR/ITOP integration
+    test registers and the PeriphID/PCellID registers (0xF00.., 0xFE0..); no data sheet lists them and they are not modelled.
+
+    ## Instances per SoC
+
+    | SoC | Timers | Base addresses | Interrupt |
+    |-----|--------|----------------|-----------|
+    | Hi3511 / Hi3512 | Timer0-3 | 0x101E2000 (Timer0/1), 0x101E3000 (Timer2/3) | VIC 4 (Timer0/1), 5 (Timer2/3) |
+    | Hi3515 | Timer0-3 | 0x20000000 (Timer0/1), 0x20010000 (Timer2/3) | VIC 4, 5 |
+    | Hi3520 V100 | Timer0-7 | 0x20000000, 0x20010000, 0x20020000, 0x20030000 (one pair each) | ARM11 VIC 4 (Timer0/1), 5 (Timer2/3); the second VIC 4 (Timer4/5), 5 (Timer6/7) |
+    | Hi3516C V100 / Hi3518 V100 / Hi3518E V20X / Hi3516C V200 | Timer0-3 | 0x20000000, 0x20010000 | VIC 3, 4 |
+    | Hi3516 V100 | Timer0-3 | 0x20000000, 0x20010000 | GIC 35, 36 |
+    | Hi3516A / Hi3516D V100 | Timer0-3 | 0x20000000, 0x20010000 | GIC 35, 36 |
+    | Hi3520D V100 | Timer0-7 | 0x20000000, 0x20010000, 0x20130000, 0x20140000 | GIC 35-38 (the table names them Timer0-3 and has no entries for Timer4-7; each pair shares one line, see the chip's interrupt notes) |
+    | Hi3516A V200 / Hi3519 V101 | Timer0-5 | 0x12000000, 0x12001000, 0x12002000 | GIC 96-101 (one line per timer) |
+    | Hi3516C V300 / Hi3516E V100 | Timer0-3 | 0x12000000, 0x12001000 | VIC 3, 4 |
+    | Hi3516A V300 | Timer0-7 | 0x12000000, 0x12001000, 0x12002000, 0x12003000 | GIC 33-36 (one line per pair) |
+
+    The address maps of the Hi3515, Hi3520 and Hi3520D data sheets call the windows `Timer0 register`, `Timer1 register` .. (one name per SP804 pair); the timer chapters
+    number the timers Timer0..Timer7 as in the table above.
+    ";
 
     /* Fields */
 
@@ -22,7 +52,7 @@ regfile eHISI_TIMER_SP804 {
                 If values are written to TIMERx_BGLOAD and TIMERx_LOAD before the rising edge of TIMCLK enabled by TIMCLKENx reaches, the count value of the next rising edge of TIMCLK is changed to the value written to TIMERx_LOAD. As the value of TIMERx_BGLOAD changes when data is written to TIMERx_LOAD, the value returned after TIMERx_BGLOAD is read is the latest value that is written to TIMERx_LOAD and TIMERx_BGLOAD. When the timer works in periodic mode and the count value decreases to 0, the initial value is loaded from TIMERx_BGLOAD to continue counting.
             ";
             reset = 0x0;
-        } timerx_load[0:31];
+        } timerx_load[31:0];
 
     } TIMERx_LOAD @ 0x000;
 
@@ -43,7 +73,7 @@ regfile eHISI_TIMER_SP804 {
             sw = r;
             hw = w;
             reset = 0xFFFFFFFF;
-        } timerx_value[0:31];
+        } timerx_value[31:0];
 
     } TIMERx_VALUE @ 0x04;
 
@@ -80,9 +110,9 @@ regfile eHISI_TIMER_SP804 {
 
         enum timerpre_enum {
             PRESCALE_NONE      = 0x0 { desc = "The clock frequency of the timer isn't divided."; };
-            PRESCALE_4         = 0x1 { desc = "The clock frequency of the timer is divided by 16."; };
-            PRESCALE_8         = 0x2 { desc = "The clock frequency of the timer is divided by 256."; };
-            PRESCALE_UNDEFINED = 0x3 { desc = "The clock frequency of the timer is divided by 256."; };
+            PRESCALE_16        = 0x1 { desc = "The clock frequency of the timer is divided by 16 (4 bits of prescale)."; };
+            PRESCALE_256       = 0x2 { desc = "The clock frequency of the timer is divided by 256 (8 bits of prescale)."; };
+            PRESCALE_UNDEFINED = 0x3 { desc = "Undefined; the data sheets say it behaves like divide by 256."; };
         };
 
         field {
@@ -90,7 +120,7 @@ regfile eHISI_TIMER_SP804 {
             desc = "Prescaling factor configuration.";
             encode = timerpre_enum;
             reset = 0x0;
-        } timerpre[2:3];
+        } timerpre[3:2];
 
         enum intenable_enum {
             MASKED     = 0x0 { desc = "Masked"; };
@@ -147,7 +177,7 @@ regfile eHISI_TIMER_SP804 {
 `ifdef TIMER_SP804_RESET_G3
             reset = 0x0;
 `endif
-        } timerx_intclr[0:31];
+        } timerx_intclr[31:0];
 
     } TIMERx_INTCLR @ 0x0C;
 
@@ -207,7 +237,7 @@ regfile eHISI_TIMER_SP804 {
                 Note: This register differs from TIMERx_LOAD. For details, see the descriptions of TIMERx_LOAD.
             ";
             reset = 0x0;
-        } timerx_bgload[0:31];
+        } timerx_bgload[31:0];
 
     } TIMERx_BGLOAD @ 0x18;
 

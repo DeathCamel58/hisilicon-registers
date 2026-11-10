@@ -21,6 +21,26 @@ regfile eARM_PL061 {
 
         * ARM documentation can be found [here](https://developer.arm.com/documentation/ddi0190/b)
         * Datasheet of ARM PL061 can be found [here](https://documentation-service.arm.com/static/5e8e38e9fd977155116a9267)
+
+    ## Instances per SoC
+
+    The register map (GPIO_DATA .. GPIO_IC, 8-bit registers on a 4-byte stride, GPIO_DATA address-masked through PADDR[9:2]) is identical in every data sheet
+    checked (Hi3511/Hi3512, Hi3515, Hi3516/Hi3516C/Hi3518 V100, Hi3516A/D V100, Hi3520/Hi3520D V100, Hi3518E V20X/Hi3516C V200, Hi3516A V200, Hi3519 V101,
+    Hi3516C V300/Hi3516E V100, Hi3516A V300). The Hi3511 and Hi3515 data sheets also list a reserved register at 0x420 (no fields); it is not modelled.
+    The PL061 PeriphID/PCellID registers (0xFE0..0xFFC) are not in any data sheet and are not modelled. Each bank has 8 pins unless noted.
+
+    | SoC | Banks | Base addresses (4 KB each unless noted) | Interrupt |
+    |-----|-------|------------------------------------------|-----------|
+    | Hi3511 / Hi3512 | GPIO0-7 | 0x101E4000-0x101E7000 (GPIO0-3), 0x101F7000-0x101FA000 (GPIO4-7) | VIC 6 (GPIO0), 7 (GPIO1), 8 (GPIO2-7 combined) |
+    | Hi3515 / Hi3520 V100 | GPIO0-7 | 0x20150000 + n x 0x10000 (64 KB windows) | VIC 6 (GPIO0), 7 (GPIO1), 8 (GPIO2-7 combined) |
+    | Hi3516C V100 / Hi3518 V100 | GPIO0-11 | 0x20140000 + n x 0x10000 | VIC 29 (GPIO0/1/2/11), 30 (GPIO3/4/5/10), 31 (GPIO6/7/8/9) |
+    | Hi3516 V100 | GPIO1-7, GPIO8-10 | 0x20160000-0x201C0000, 0x20200000-0x20220000 (0x20140000/0x20150000 are reserved: no GPIO0) | GIC 37-44 (GPIO0-7 as numbered by the data sheet), 87-89 (GPIO8-10) |
+    | Hi3516A / Hi3516D V100 | GPIO0-15 | 0x20140000 + n x 0x10000 (GPIO0-14), 0x20260000 (GPIO15) | GIC 79-87 (GPIO0 .. GPIO8; GPIO15..GPIO9 share 81..87 pairwise) |
+    | Hi3520D V100 | GPIO0-8 | 0x20150000 + n x 0x10000 | GIC 79-87 |
+    | Hi3518E V20X / Hi3516C V200 | GPIO0-8 | 0x20140000 + n x 0x10000 | VIC 31 (all banks combined) |
+    | Hi3516A V200 / Hi3519 V101 | GPIO0-14, GPIO16 | 0x12140000 + n x 0x1000 (GPIO0-14), 0x12150000 (GPIO16; no GPIO15) | GIC 75 (GPIO0-7), 76 (GPIO8-14, GPIO16) |
+    | Hi3516C V300 / Hi3516E V100 | GPIO0-8 | 0x12140000 + n x 0x1000 | VIC 31 (all banks combined) |
+    | Hi3516A V300 | GPIO0-11 (GPIO11 has 4 pins) | 0x120D0000 + n x 0x1000 | GIC 48-58 (GPIO0-10), 112 (GPIO11) |
     ";
 
     // All GPIO registers are 8 bits wide in every data sheet (Hi3511 ... Hi3519, Hi3516Axxx). They keep the 4-byte
@@ -47,7 +67,7 @@ regfile eARM_PL061 {
             name = "gpio_data";
             desc = "Indicates the GPIO input data when the GPIO is configured as input; indicates the GPIO output data when the GPIO is configured as output. Each bit can be controlled separately. The register is used together with GPIO_DIR.";
             reset = 0x0;
-        } gpio_data[0:7];
+        } gpio_data[7:0];
 
     } GPIO_DATA[0x100] @ 0x000 += 0x4;
 
@@ -65,7 +85,7 @@ regfile eARM_PL061 {
             desc = "GPIO direction control register. Bit[7:0] correspond to GPIO_DATA [7:0] respectively. Each bit can be controlled separately.";
             encode = GPIO_DIR_enum;
             reset = 0x0;
-        } gpio_dir[0:7];
+        } gpio_dir[7:0];
 
     } GPIO_DIR @ 0x400;
 
@@ -83,7 +103,7 @@ regfile eARM_PL061 {
             desc = "GPIO interrupt trigger control register. Bit[7:0] correspond to GPIO_DATA [7:0]. Each bit is controlled separately.";
             encode = GPIO_IS_enum;
             reset = 0x0;
-        } gpio_is[0:7];
+        } gpio_is[7:0];
 
     } GPIO_IS @ 0x404;
 
@@ -101,7 +121,7 @@ regfile eARM_PL061 {
             desc = "GPIO interrupt edge control register. Bit[7:0] correspond to GPIO_DATA [7:0] respectively. Each bit is controlled independently.";
             encode = GPIO_IBE_enum;
             reset = 0x0;
-        } gpio_ibe[0:7];
+        } gpio_ibe[7:0];
 
     } GPIO_IBE @ 0x408;
 
@@ -119,7 +139,7 @@ regfile eARM_PL061 {
             desc = "GPIO interrupt trigger event register. Bit[7:0] correspond to GPIO_DATA [7:0]. Each bit is controlled separately.";
             encode = GPIO_IEV_enum;
             reset = 0x0;
-        } gpio_iev[0:7];
+        } gpio_iev[7:0];
 
     } GPIO_IEV @ 0x40C;
 
@@ -137,7 +157,7 @@ regfile eARM_PL061 {
             desc = "GPIO interrupt mask register. Bit[7:0] correspond to GPIO_DATA [7:0]. Each bit is controlled separately.";
             encode = GPIO_IE_enum;
             reset = 0x0;
-        } gpio_ie[0:7];
+        } gpio_ie[7:0];
 
     } GPIO_IE @ 0x410;
 
@@ -157,7 +177,7 @@ regfile eARM_PL061 {
             sw = r;
             hw = w;
             reset = 0x0;
-        } gpio_ris[0:7];
+        } gpio_ris[7:0];
 
     } GPIO_RIS @ 0x414;
 
@@ -177,7 +197,7 @@ regfile eARM_PL061 {
             sw = r;
             hw = w;
             reset = 0x0;
-        } gpio_mis[0:7];
+        } gpio_mis[7:0];
 
     } GPIO_MIS @ 0x418;
 
@@ -198,7 +218,7 @@ regfile eARM_PL061 {
             onwrite = woclr;
             hw = r;
             reset = 0x0;
-        } gpio_ic[0:7];
+        } gpio_ic[7:0];
 
     } GPIO_IC @ 0x41C;
 };
