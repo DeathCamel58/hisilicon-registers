@@ -1,0 +1,614 @@
+`ifndef HISI_OTP_USER_RDL
+`define HISI_OTP_USER_RDL
+
+// OTP Ctrl user interface of the Hi3516A V300 (Chinese data sheet section 13.4 'OTP Ctrl', base 0x100B0000, address map entry 'OTP_USER 寄存器 64KB').
+// Successor of the OTP key control (key ladder) block of the Hi3516A V200 generation (HISI_OTP_KEY_CTRL.rdl, 0x12070800): the same jobs (read the lock status,
+// burn a key, load a key into the cipher key ladder) are now started by writing a mode to OTP_USER_WORK_MODE and the magic word 0x1ACCE551 to OTP_USER_OP_START,
+// the key slots grew to 256 bits (nine data words with a CRC16) and the block also burns the JTAG password / ID, the secure boot / DDR / JTAG enable flags
+// and an 8 Kbit user reserved area. No register of it is shared with the older block.
+// The register overview (table 13-5) lists 19 entries numbered 'OTP 用户接口寄存器 0..19' but skips offset 0x48 (register 18): the data sheet documents 18 registers,
+// nothing is said about 0x48.
+regfile eHISI_OTP_USER {
+    name = "OTP Ctrl user interface";
+    desc = "
+    The OTP (One Time Programmable) Ctrl programs and reads the OTP memory of the chip. Seven operating modes (data sheet 13.4.1), all run the same way: poll
+    OTP_USER_CTRL_STA.otp_op_busy until 0, write the operands, write the mode to OTP_USER_WORK_MODE, write 0x1ACCE551 to OTP_USER_OP_START, then poll
+    OTP_USER_CTRL_STA.otp_user_cmd_finish until 1 and read the result. No interrupt.
+
+    * Read the lock status (mode 0x0): result in OTP_USER_LOCK_STA0.
+    * Load an OTP key to the cipher module (mode 0x1): OTP_USER_KEY_INDEX selects key0..key3 (other values load key0); the key goes straight to the key ladder, it never passes through software.
+    * Burn a key, the JTAG ID or the JTAG password (mode 0x2): check the lock status first (a locked slot cannot be burnt), write OTP_USER_KEY_INDEX and OTP_USER_KEY_DATA0..8.
+      The OTP bits are 0 before burning. Slot contents (table in 13.4.1.3): key0..key3 256-bit (key0 holds the AES key of an encrypted U-Boot image when that feature is used, key1..key3
+      are free; without image encryption all four are free; key0 is also called the root key used to derive keys), jtag_pw_id 64-bit (ID of the JTAG password key), jtag_pw 256-bit
+      (the JTAG unlock password; the comparison uses DATA[127:0], the CRC covers DATA[255:0]), rootkey 256-bit (hash of the RSA public key), hmackey 128-bit (hardware HMAC key).
+      Data word fill: 64-bit data = DATA0 [31:0], DATA1 [63:32], DATA2 {16'h0, CRC16}, DATA3..8 0; 128-bit data = DATA0..3, DATA4 {16'h0, CRC16}, DATA5..8 0;
+      256-bit data = DATA0..7, DATA8 {16'h0, CRC16}. CRC16 polynomial 0x8005 (x^16 + x^15 + x^2 + 1), initial value 0xFFFF, final XOR 0, computed from OTP_USER_KEY_DATA0 on;
+      example jtag_pw_id = 0x0102030405060708 gives DATA0 0x05060708, DATA1 0x01020304, DATA2 0x2158.
+    * CRC check of a key / JTAG ID / password (mode 0x3): OTP_USER_KEY_INDEX, result in OTP_USER_CTRL_STA.key_crc_check_ok_flag. A key whose CRC fails is still sent to the key ladder
+      (a key burnt without its CRC fails the check but works).
+    * Burn the enable flags (mode 0x4): OTP_USER_FLAG_INDEX selects the flag, OTP_USER_FLAG_VALUE holds the bit values. Every flag locks after its first burn, except jtag_prt_mode, which locks only
+      when burnt together with jtag_prt_mode_lock_en = 1; while unlocked it can be raised to a stricter mode (open -> password -> closed), never lowered.
+    * Burn the user reserved area (mode 0x5): 8 Kbit (256 words of 32 bits, address in OTP_USER_REV_ADDR, data in OTP_USER_REV_WDATA); every address locks after burning,
+      OTP_USER_CTRL_STA.otp_user_lock_err = 1 reports a write to a locked address.
+    * Read the user reserved area (mode 0x6): OTP_USER_REV_ADDR, result in OTP_USER_REV_RDATA.
+
+    Register table: Hi3516A V300 Chinese data sheet 13.4.2 / 13.4.3 (`hi3516av300--Hi3516AV300-Datasheet.txt` lines 73705-74350), base 0x100B0000. Not hardware verified; no vendor source
+    for this block in the workspace.
+    ";
+
+    reg {
+        name = "OTP user interface register 0 (work mode)";
+        desc = "OTP_USER_WORK_MODE selects the operation that the next write of 0x1ACCE551 to OTP_USER_OP_START starts.
+
+Data sheet 13.4.3 OTP_USER_WORK_MODE (offset 0x0, printed page 13-59, `hi3516av300--Hi3516AV300-Datasheet.txt` line 73768).";
+
+        enum OTP_USER_WORK_MODE_enum {
+            READ_LOCK_STATUS = 0 { name = "Read Lock Status"; desc = "Read the OTP lock status into OTP_USER_LOCK_STA0."; };
+            LOAD_CIPHER_KEY = 1 { name = "Load Cipher Key"; desc = "Load the key selected by OTP_USER_KEY_INDEX (key0..key3) into the cipher key ladder."; };
+            BURN_KEY = 2 { name = "Burn Key"; desc = "Burn OTP_USER_KEY_DATA0..8 into the key / JTAG ID / JTAG password slot selected by OTP_USER_KEY_INDEX."; };
+            CRC_CHECK = 3 { name = "Crc Check"; desc = "CRC16 check of the slot selected by OTP_USER_KEY_INDEX; result in OTP_USER_CTRL_STA.key_crc_check_ok_flag."; };
+            BURN_FLAG = 4 { name = "Burn Flag"; desc = "Burn the enable flag selected by OTP_USER_FLAG_INDEX with the value in OTP_USER_FLAG_VALUE."; };
+            BURN_USER_AREA = 5 { name = "Burn User Area"; desc = "Burn OTP_USER_REV_WDATA into the user reserved area word OTP_USER_REV_ADDR."; };
+            READ_USER_AREA = 6 { name = "Read User Area"; desc = "Read the user reserved area word OTP_USER_REV_ADDR into OTP_USER_REV_RDATA."; };
+        };
+
+        field {
+            name = "otp_user_work_mode";
+            desc = "Operating mode. Other values: reserved.";
+            sw = rw;
+            hw = r;
+            encode = OTP_USER_WORK_MODE_enum;
+            reset = 0x0;
+        } otp_user_work_mode[3:0];
+    } OTP_USER_WORK_MODE @ 0x0;
+
+    reg {
+        name = "OTP user interface register 1 (operation start)";
+        desc = "OTP_USER_OP_START starts the operation selected in OTP_USER_WORK_MODE.
+
+Data sheet 13.4.3 OTP_USER_OP_START (offset 0x4, printed page 13-60, `hi3516av300--Hi3516AV300-Datasheet.txt` line 73800).";
+
+        field {
+            name = "otp_user_op_start";
+            desc = "Writing 0x1ACCE551 starts the operation. Only valid while OTP_USER_CTRL_STA.otp_op_busy is 0.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } otp_user_op_start[31:0];
+    } OTP_USER_OP_START @ 0x4;
+
+    reg {
+        name = "OTP user interface register 2 (key index)";
+        desc = "OTP_USER_KEY_INDEX selects the OTP slot of the load, burn and CRC check modes.
+
+Data sheet 13.4.3 OTP_USER_KEY_INDEX (offset 0x8, printed page 13-60, `hi3516av300--Hi3516AV300-Datasheet.txt` line 73820).";
+
+        enum OTP_USER_KEY_INDEX_enum {
+            KEY0 = 0 { name = "Key0"; desc = "key0, 256 bits (root key; the AES key of an encrypted U-Boot image when that feature is used)."; };
+            KEY1 = 1 { name = "Key1"; desc = "key1, 256 bits (user defined)."; };
+            KEY2 = 2 { name = "Key2"; desc = "key2, 256 bits (user defined)."; };
+            KEY3 = 3 { name = "Key3"; desc = "key3, 256 bits (user defined)."; };
+            JTAG_PW_ID = 4 { name = "Jtag Pw Id"; desc = "jtag_pw_id, 64 bits: ID of the key used in the JTAG password mode."; };
+            JTAG_PW = 5 { name = "Jtag Pw"; desc = "jtag_pw, 256 bits: password that unlocks the JTAG interface (DATA[127:0] are compared, DATA[255:0] go into the CRC)."; };
+            ROOTKEY = 6 { name = "Rootkey"; desc = "rootkey, 256 bits: hash of the RSA public key (secure boot)."; };
+            HMACKEY = 7 { name = "Hmackey"; desc = "hmackey, 128 bits: hardware key of the HASH HMAC."; };
+        };
+
+        field {
+            name = "otp_index";
+            desc = "OTP slot. Other values: reserved (the load mode treats them as key0).";
+            sw = rw;
+            hw = r;
+            encode = OTP_USER_KEY_INDEX_enum;
+            reset = 0x0;
+        } otp_index[3:0];
+    } OTP_USER_KEY_INDEX @ 0x8;
+
+    reg {
+        name = "OTP user interface register 3 (key data 0)";
+        desc = "OTP_USER_KEY_DATA0 holds DATA[31:0] of the slot to burn.
+
+Data sheet 13.4.3 OTP_USER_KEY_DATA0 (offset 0xC, printed page 13-61, `hi3516av300--Hi3516AV300-Datasheet.txt` line 73860).";
+
+        field {
+            name = "otp_user_key_data0";
+            desc = "OTP configuration data 0: DATA[31:0].";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } otp_user_key_data0[31:0];
+    } OTP_USER_KEY_DATA0 @ 0xC;
+
+    reg {
+        name = "OTP user interface register 4 (key data 1)";
+        desc = "OTP_USER_KEY_DATA1 holds DATA[63:32] of the slot to burn.
+
+Data sheet 13.4.3 OTP_USER_KEY_DATA1 (offset 0x10, printed page 13-61).";
+
+        field {
+            name = "otp_user_key_data1";
+            desc = "OTP configuration data 1: DATA[63:32].";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } otp_user_key_data1[31:0];
+    } OTP_USER_KEY_DATA1 @ 0x10;
+
+    reg {
+        name = "OTP user interface register 5 (key data 2)";
+        desc = "OTP_USER_KEY_DATA2 holds DATA[95:64] of a 128- or 256-bit slot, or {16'h0, CRC16} of a 64-bit slot (jtag_pw_id).
+
+Data sheet 13.4.3 OTP_USER_KEY_DATA2 (offset 0x14, printed page 13-61).";
+
+        field {
+            name = "otp_user_key_data2";
+            desc = "OTP configuration data 2.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } otp_user_key_data2[31:0];
+    } OTP_USER_KEY_DATA2 @ 0x14;
+
+    reg {
+        name = "OTP user interface register 6 (key data 3)";
+        desc = "OTP_USER_KEY_DATA3 holds DATA[127:96] of a 128- or 256-bit slot, 0 for a 64-bit slot.
+
+Data sheet 13.4.3 OTP_USER_KEY_DATA3 (offset 0x18, printed page 13-62).";
+
+        field {
+            name = "otp_user_key_data3";
+            desc = "OTP configuration data 3.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } otp_user_key_data3[31:0];
+    } OTP_USER_KEY_DATA3 @ 0x18;
+
+    reg {
+        name = "OTP user interface register 7 (key data 4)";
+        desc = "OTP_USER_KEY_DATA4 holds DATA[159:128] of a 256-bit slot, {16'h0, CRC16} of a 128-bit slot (hmackey), 0 for a 64-bit slot.
+
+Data sheet 13.4.3 OTP_USER_KEY_DATA4 (offset 0x1C, printed page 13-62).";
+
+        field {
+            name = "otp_user_key_data4";
+            desc = "OTP configuration data 4.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } otp_user_key_data4[31:0];
+    } OTP_USER_KEY_DATA4 @ 0x1C;
+
+    reg {
+        name = "OTP user interface register 8 (key data 5)";
+        desc = "OTP_USER_KEY_DATA5 holds DATA[191:160] of a 256-bit slot, 0 otherwise.
+
+Data sheet 13.4.3 OTP_USER_KEY_DATA5 (offset 0x20, printed page 13-62).";
+
+        field {
+            name = "otp_user_key_data5";
+            desc = "OTP configuration data 5.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } otp_user_key_data5[31:0];
+    } OTP_USER_KEY_DATA5 @ 0x20;
+
+    reg {
+        name = "OTP user interface register 9 (key data 6)";
+        desc = "OTP_USER_KEY_DATA6 holds DATA[223:192] of a 256-bit slot, 0 otherwise.
+
+Data sheet 13.4.3 OTP_USER_KEY_DATA6 (offset 0x24, printed page 13-62).";
+
+        field {
+            name = "otp_user_key_data6";
+            desc = "OTP configuration data 6.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } otp_user_key_data6[31:0];
+    } OTP_USER_KEY_DATA6 @ 0x24;
+
+    reg {
+        name = "OTP user interface register 10 (key data 7)";
+        desc = "OTP_USER_KEY_DATA7 holds DATA[255:224] of a 256-bit slot, 0 otherwise.
+
+Data sheet 13.4.3 OTP_USER_KEY_DATA7 (offset 0x28, printed page 13-62).";
+
+        field {
+            name = "otp_user_key_data7";
+            desc = "OTP configuration data 7.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } otp_user_key_data7[31:0];
+    } OTP_USER_KEY_DATA7 @ 0x28;
+
+    reg {
+        name = "OTP user interface register 11 (key data 8)";
+        desc = "OTP_USER_KEY_DATA8 holds {16'h0, CRC16} of a 256-bit slot, 0 otherwise.
+
+Data sheet 13.4.3 OTP_USER_KEY_DATA8 (offset 0x2C, printed page 13-63).";
+
+        field {
+            name = "otp_user_key_data8";
+            desc = "OTP configuration data 8.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } otp_user_key_data8[31:0];
+    } OTP_USER_KEY_DATA8 @ 0x2C;
+
+    reg {
+        name = "OTP user interface register 12 (flag value)";
+        desc = "OTP_USER_FLAG_VALUE holds the values of the enable flags burnt in the burn-flag mode (OTP_USER_FLAG_INDEX selects which flag is burnt).
+
+Data sheet 13.4.3 OTP_USER_FLAG_VALUE (offset 0x30, printed page 13-63, `hi3516av300--Hi3516AV300-Datasheet.txt` line 74002).";
+
+        field {
+            name = "secure_iso_en";
+            desc = "Secure isolation enable write data: 0 disabled, 1 enabled.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } secure_iso_en[7:7];
+
+        field {
+            name = "jtag_prt_mode_lock_en";
+            desc = "Lock enable of the jtag_prt_mode area: 0 not locked, bits of jtag_prt_mode that are 0 can still be burnt to 1 (the mode can be raised: open -> password -> closed); 1 locked, jtag_prt_mode cannot change any more.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } jtag_prt_mode_lock_en[6:6];
+
+        enum OTP_USER_FLAG_VALUE_jtag_prt_mode_enum {
+            OPEN = 0 { name = "Open"; desc = "JTAG open."; };
+            PASSWORD = 1 { name = "Password"; desc = "JTAG password mode (unlocked with jtag_pw / jtag_pw_id)."; };
+            CLOSED = 2 { name = "Closed"; desc = "JTAG permanently closed (1x)."; };
+            CLOSED_3 = 3 { name = "Closed 3"; desc = "JTAG permanently closed (1x)."; };
+        };
+
+        field {
+            name = "jtag_prt_mode";
+            desc = "JTAG protection mode write data.";
+            sw = rw;
+            hw = r;
+            encode = OTP_USER_FLAG_VALUE_jtag_prt_mode_enum;
+            reset = 0x0;
+        } jtag_prt_mode[5:4];
+
+        field {
+            name = "jtag_ca_en";
+            desc = "JTAG secure mode enable write data: 0 disabled, 1 enabled.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } jtag_ca_en[2:2];
+
+        field {
+            name = "ddr_ca_en";
+            desc = "DDR secure mode enable write data: 0 disabled, 1 enabled.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ddr_ca_en[1:1];
+
+        field {
+            name = "secure_boot_en";
+            desc = "Secure boot enable write data: 0 disabled, 1 enabled.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } secure_boot_en[0:0];
+    } OTP_USER_FLAG_VALUE @ 0x30;
+
+    reg {
+        name = "OTP user interface register 13 (flag index)";
+        desc = "OTP_USER_FLAG_INDEX selects the enable flag burnt in the burn-flag mode.
+
+Data sheet 13.4.3 OTP_USER_FLAG_INDEX (offset 0x34, printed page 13-64, `hi3516av300--Hi3516AV300-Datasheet.txt` line 74065).";
+
+        enum OTP_USER_FLAG_INDEX_enum {
+            SECURE_BOOT_EN = 0 { name = "Secure Boot En"; desc = "Index of secure_boot_en."; };
+            DDR_CA_EN = 1 { name = "Ddr Ca En"; desc = "Index of ddr_ca_en."; };
+            JTAG_CA_EN = 2 { name = "Jtag Ca En"; desc = "Index of jtag_ca_en."; };
+            JTAG_PRT_MODE = 3 { name = "Jtag Prt Mode"; desc = "Index of jtag_prt_mode (burnt together with jtag_prt_mode_lock_en)."; };
+            SECURE_ISO_EN = 4 { name = "Secure Iso En"; desc = "Index of secure_iso_en."; };
+        };
+
+        field {
+            name = "flag_index";
+            desc = "Enable flag index. Other values: reserved.";
+            sw = rw;
+            hw = r;
+            encode = OTP_USER_FLAG_INDEX_enum;
+            reset = 0x0;
+        } flag_index[2:0];
+    } OTP_USER_FLAG_INDEX @ 0x34;
+
+    reg {
+        name = "OTP user interface register 14 (user reserved area address)";
+        desc = "OTP_USER_REV_ADDR addresses the 8 Kbit user reserved OTP area (256 words of 32 bits).
+
+Data sheet 13.4.3 OTP_USER_REV_ADDR (offset 0x38, printed page 13-64, `hi3516av300--Hi3516AV300-Datasheet.txt` line 74097).";
+
+        field {
+            name = "otp_user_reserved_addr";
+            desc = "User reserved area address; one address is one 32-bit word of OTP.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } otp_user_reserved_addr[7:0];
+    } OTP_USER_REV_ADDR @ 0x38;
+
+    reg {
+        name = "OTP user interface register 15 (user reserved area write data)";
+        desc = "OTP_USER_REV_WDATA is the word burnt into the user reserved area at OTP_USER_REV_ADDR.
+
+Data sheet 13.4.3 OTP_USER_REV_WDATA (offset 0x3C, printed page 13-65).";
+
+        field {
+            name = "otp_user_reserved_wdata";
+            desc = "User reserved area write data.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } otp_user_reserved_wdata[31:0];
+    } OTP_USER_REV_WDATA @ 0x3C;
+
+    reg {
+        name = "OTP user interface register 16 (user reserved area read data)";
+        desc = "OTP_USER_REV_RDATA returns the user reserved area word read in mode 0x6.
+
+Data sheet 13.4.3 OTP_USER_REV_RDATA (offset 0x40, printed page 13-65).";
+
+        field {
+            name = "otp_user_reserved_rdata";
+            desc = "User reserved area read data.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } otp_user_reserved_rdata[31:0];
+    } OTP_USER_REV_RDATA @ 0x40;
+
+    reg {
+        name = "OTP user interface register 17 (lock status 0)";
+        desc = "OTP_USER_LOCK_STA0 is the lock status read in mode 0x0: for every slot and flag, 0 = can still be burnt, 1 = burnt and locked.
+
+Data sheet 13.4.3 OTP_USER_LOCK_STA0 (offset 0x44, printed page 13-65, `hi3516av300--Hi3516AV300-Datasheet.txt` line 74146). The register overview numbers this 'register 17' and
+OTP_USER_CTRL_STA 'register 19'; register 18 (offset 0x48, presumably a LOCK_STA1) is not documented.";
+
+        field {
+            name = "hmac_key_lock";
+            desc = "hmackey lock status: 0 configurable, 1 burnt and locked.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } hmac_key_lock[15:15];
+
+        field {
+            name = "secure_iso_en_lock";
+            desc = "secure_iso_en lock status: 0 configurable, 1 burnt and locked.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } secure_iso_en_lock[11:11];
+
+        field {
+            name = "jtag_prt_mode_lock";
+            desc = "jtag_prt_mode lock status: 0 configurable, 1 burnt and locked.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } jtag_prt_mode_lock[10:10];
+
+        field {
+            name = "jtag_ca_en_lock";
+            desc = "jtag_ca_en lock status: 0 configurable, 1 burnt and locked.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } jtag_ca_en_lock[9:9];
+
+        field {
+            name = "key3_lock";
+            desc = "key3 lock status: 0 configurable, 1 burnt and locked.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } key3_lock[8:8];
+
+        field {
+            name = "key2_lock";
+            desc = "key2 lock status: 0 configurable, 1 burnt and locked.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } key2_lock[7:7];
+
+        field {
+            name = "key1_lock";
+            desc = "key1 lock status: 0 configurable, 1 burnt and locked.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } key1_lock[6:6];
+
+        field {
+            name = "key0_lock";
+            desc = "key0 lock status: 0 configurable, 1 burnt and locked.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } key0_lock[5:5];
+
+        field {
+            name = "root_key_lock";
+            desc = "rootkey lock status: 0 configurable, 1 burnt and locked.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } root_key_lock[4:4];
+
+        field {
+            name = "jtag_pw_lock";
+            desc = "jtag_pw lock status: 0 configurable, 1 burnt and locked.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } jtag_pw_lock[3:3];
+
+        field {
+            name = "jtag_pw_id_lock";
+            desc = "jtag_pw_id lock status: 0 configurable, 1 burnt and locked.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } jtag_pw_id_lock[2:2];
+
+        field {
+            name = "ddr_ca_en_lock";
+            desc = "ddr_ca_en lock status: 0 configurable, 1 burnt and locked.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } ddr_ca_en_lock[1:1];
+
+        field {
+            name = "secure_boot_en_lock";
+            desc = "secure_boot_en lock status: 0 configurable, 1 burnt and locked.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } secure_boot_en_lock[0:0];
+    } OTP_USER_LOCK_STA0 @ 0x44;
+
+    reg {
+        name = "OTP user interface register 19 (control status)";
+        desc = "OTP_USER_CTRL_STA reports the busy state of the controller, the completion of each mode and the result of the last command.
+
+Data sheet 13.4.3 OTP_USER_CTRL_STA (offset 0x4C, printed page 13-66, `hi3516av300--Hi3516AV300-Datasheet.txt` line 74248).";
+
+        field {
+            name = "flag_index_finish";
+            desc = "Flag index of the completed command.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } flag_index_finish[25:24];
+
+        field {
+            name = "user_rev_addr_finish";
+            desc = "User reserved area address of the completed command.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } user_rev_addr_finish[23:16];
+
+        field {
+            name = "key_index_finish";
+            desc = "Key index of the completed command.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } key_index_finish[15:12];
+
+        field {
+            name = "rd_lock_sta_finish";
+            desc = "Read-lock-status mode complete: 0 no, 1 yes.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } rd_lock_sta_finish[11:11];
+
+        field {
+            name = "key_load_finish";
+            desc = "Key load mode complete: 0 no, 1 yes.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } key_load_finish[10:10];
+
+        field {
+            name = "key_pgm_finish";
+            desc = "Key burn mode complete: 0 no, 1 yes.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } key_pgm_finish[9:9];
+
+        field {
+            name = "key_crc_check_finish";
+            desc = "CRC check mode complete: 0 no, 1 yes.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } key_crc_check_finish[8:8];
+
+        field {
+            name = "flag_pgm_finish";
+            desc = "Flag burn mode complete: 0 no, 1 yes.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } flag_pgm_finish[7:7];
+
+        field {
+            name = "user_rev_pgm_finish";
+            desc = "User reserved area burn mode complete: 0 no, 1 yes.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } user_rev_pgm_finish[6:6];
+
+        field {
+            name = "user_rev_rd_finish";
+            desc = "User reserved area read mode complete: 0 no, 1 yes.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } user_rev_rd_finish[5:5];
+
+        field {
+            name = "key_crc_check_ok_flag";
+            desc = "CRC check of the user key passed: 0 failed, 1 passed.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } key_crc_check_ok_flag[4:4];
+
+        field {
+            name = "key_rd_back_check_err";
+            desc = "Read-back check of the burnt key: 0 read back correctly, 1 read-back error.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } key_rd_back_check_err[3:3];
+
+        field {
+            name = "otp_user_lock_err";
+            desc = "OTP configuration error: 0 completed normally, 1 the command addressed an OTP area that is already locked.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } otp_user_lock_err[2:2];
+
+        field {
+            name = "otp_user_cmd_finish";
+            desc = "OTP controller operation complete: 0 not complete, 1 complete, the result of the command can be read.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } otp_user_cmd_finish[1:1];
+
+        field {
+            name = "otp_op_busy";
+            desc = "OTP controller busy: 0 idle, a new operation can be started; 1 busy, do not touch the controller.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } otp_op_busy[0:0];
+    } OTP_USER_CTRL_STA @ 0x4C;
+};
+
+`endif
