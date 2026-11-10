@@ -1,0 +1,552 @@
+`ifndef DW_APB_I2C_RDL
+`define DW_APB_I2C_RDL
+
+regfile eDW_APB_I2C {
+    name = "Synopsys DW_apb_i2c I2C Master/Slave Controller (16-bit, Hi3511/Hi3512/Hi3515/Hi3520 V100)";
+    desc = "
+    Plain Synopsys DesignWare DW_apb_i2c (1.x generation) as found in the Hi3511/Hi3512, Hi3515 and Hi3520 V100 data sheets (\"Other Peripheral Interfaces\" chapter 11.1).
+    Master and slave operation, 7-/10-bit addressing, standard (100 kbit/s) and fast (400 kbit/s) speed, 8-entry TX/RX FIFOs, DMA handshake. The data sheets print every register
+    16 bits wide; the registers sit on a 32-bit APB bus at 4-byte offsets, so they are modelled 32 bits wide with bits [31:16] reserved. One instance per SoC:
+
+    | SoC | Base | Interrupt | Soft reset | Pins |
+    |-----|------|-----------|------------|------|
+    | Hi3511 / Hi3512 | 0x101F6000 | VIC 19 | SC_PERCTRL (see the chip's SYS_CTRL) | SDA/SCL muxed with GPIO |
+    | Hi3515 | 0x200D0000 | VIC 16 | SC_PERCTRL8 `i2c_srst` | SDA = GPIO0_0 (IO_CONFIG reg63), SCL = GPIO0_1 (reg64) |
+    | Hi3520 V100 | 0x200D0000 | VIC 16 | SC_PERCTRL8 `i2c_srst` | SDA = GPIO0_0 (IO_CONFIG reg63 bit 0), SCL = GPIO0_1 (reg64 bit 0) |
+
+    The three data sheets (Hi3515 English `hi3515v100--Hi3515-Datasheet.txt` lines 45475-47276, Hi3520 Chinese original `hi3520v100--Hi3520-Datasheet.txt` lines 50886-52667,
+    Hi3511 Chinese `hi3511v100--Hi3511-Datasheet.txt` lines 36634-38349) list the same 32 registers with identical offsets, bit layouts and resets. Register names and
+    field names are the data sheet's (they match the Synopsys IC_* names without the prefix). Not the same IP as the later HiSilicon controllers: `eHISI_I2C` (Hi3520D / Hi3516 /
+    Hi3516C / Hi3518 V100 APB I2C), `eHISI_I2C_DW` (Hi3518E V20X / Hi3516A V100 / AV200 / Hi3519 DesignWare-like with HiSilicon extensions) and `eHISI_I2C_V2` (Hi3516C V300 /
+    Hi3516A V300 command-FIFO controller). The register map matches what the Linux `i2c-designware` driver expects (IC_CON .. IC_DMA_RDLR), with the 1.x limitations: no
+    IC_SDA_HOLD (0x7C), no IC_COMP_* ID registers (0xF4..0xFC are not documented), 8-entry FIFOs.
+
+    SCL timing (data sheet 11.1.5 \"Clock Configuration\"): the counts are in cycles of the I2C working clock F_I2C (the APB clock; the data sheet examples use 100 MHz):
+    `*_HCNT = T_scl_h x F_I2C - 8`, `*_LCNT = T_scl_l x F_I2C - 1`. Typical values at 100 MHz: SS_SCL_HCNT 400 (4 us), SS_SCL_LCNT 470 (4.7 us), FS_SCL_HCNT 60 (0.6 us),
+    FS_SCL_LCNT 130 (1.3 us). The registers I2C_CON, I2C_TAR, I2C_SAR and the four *_SCL_*CNT registers may only be written while I2C_ENABLE[enable] is 0.
+
+    The data sheets omit two registers that exist in the DW_apb_i2c map between the documented ones: I2C_CLR_RD_REQ (0x50) and I2C_CLR_RX_DONE (0x58). They are included here
+    (marked \"not in the data sheet\") because the RD_REQ and RX_DONE interrupts they clear are documented in I2C_INTR_STAT / I2C_INTR_MASK; the data sheet's I2C_CLR_INTR clears them as well.
+    Nothing in this block is cross-checked against vendor code or hardware (no vendor driver for these SoCs is in the source trees).
+    ";
+
+    reg {
+        name = "I2C control register";
+        desc = "I2C_CON is the I2C control register. It can be configured only when the I2C is disabled (I2C_ENABLE[enable] = 0).
+
+Total reset value 0x0075: master mode, fast speed, 10-bit master addressing and restart enabled; bit 6 is a reserved bit that must be written 1 (it is the DW_apb_i2c IC_SLAVE_DISABLE bit, so the slave interface is disabled by default; the Chinese data sheets say \"this bit can only be set to 1\").
+
+Data sheet 11.1.7 I2C_CON (offset 0x0000, printed page 11-9, `hi3515v100--Hi3515-Datasheet.txt` line 45971).";
+
+        field {
+            name = "reserved_b6";
+            desc = "Reserved. Must be written 1 (reset 1). This is the DW_apb_i2c IC_SLAVE_DISABLE bit: 1 = the slave interface is disabled, 0 = slave enabled (slave operation is otherwise documented through I2C_SAR, RD_REQ / RX_DONE / GEN_CALL).";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } reserved_b6[6:6];
+
+        enum I2C_CON_i2c_restart_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "The restart condition is disabled (the master cannot send a repeated START: no start byte, no high-speed mode, no 10-bit read, no combined format)."; };
+            ENABLED = 1 { name = "Enabled"; desc = "The restart condition is enabled."; };
+        };
+
+        field {
+            name = "i2c_restart_en";
+            desc = "Master repeated-START (restart) enable.";
+            sw = rw;
+            hw = r;
+            encode = I2C_CON_i2c_restart_en_enum;
+            reset = 0x1;
+        } i2c_restart_en[5:5];
+
+        enum I2C_CON_i2c_10bitaddr_master_enum {
+            ADDR_7BIT = 0 { name = "7-bit"; desc = "The 7-bit address is selected."; };
+            ADDR_10BIT = 1 { name = "10-bit"; desc = "The 10-bit address is selected."; };
+        };
+
+        field {
+            name = "i2c_10bitaddr_master";
+            desc = "7-bit or 10-bit address select for the master (the address transmitted from I2C_TAR).";
+            sw = rw;
+            hw = r;
+            encode = I2C_CON_i2c_10bitaddr_master_enum;
+            reset = 0x1;
+        } i2c_10bitaddr_master[4:4];
+
+        enum I2C_CON_speed_enum {
+            INVALID = 0 { name = "Invalid"; desc = "Invalid speed (treated as fast speed)."; };
+            STANDARD = 1 { name = "Standard"; desc = "Standard speed, 100 kbit/s (uses I2C_SS_SCL_HCNT / I2C_SS_SCL_LCNT)."; };
+            FAST = 2 { name = "Fast"; desc = "High (fast) speed, 400 kbit/s (uses I2C_FS_SCL_HCNT / I2C_FS_SCL_LCNT)."; };
+            RESERVED = 3 { name = "Reserved"; desc = "Reserved (treated as fast speed)."; };
+        };
+
+        field {
+            name = "speed";
+            desc = "I2C operation speed select. If set to 00 or 11 the controller behaves as if 10 (fast speed) were set.";
+            sw = rw;
+            hw = r;
+            encode = I2C_CON_speed_enum;
+            reset = 0x2;
+        } speed[2:1];
+
+        enum I2C_CON_master_mode_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "The master mode is disabled."; };
+            ENABLED = 1 { name = "Enabled"; desc = "The master mode is enabled."; };
+        };
+
+        field {
+            name = "master_mode";
+            desc = "Master mode enable.";
+            sw = rw;
+            hw = r;
+            encode = I2C_CON_master_mode_enum;
+            reset = 0x1;
+        } master_mode[0:0];
+    } I2C_CON @ 0x0;
+
+    reg {
+        name = "I2C access slave address register";
+        desc = "I2C_TAR holds the slave address the controller accesses as a master. It can be configured only when the I2C is disabled (I2C_ENABLE[enable] = 0).
+
+Data sheet 11.1.7 I2C_TAR (offset 0x0004, printed page 11-10, `hi3515v100--Hi3515-Datasheet.txt` line 46037). Reset 0x009C is the data sheet value (Synopsys IC_DEFAULT_TAR).";
+
+        enum I2C_TAR_special_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "General call / start byte functions are disabled; normal addressing with i2c_tar."; };
+            ENABLED = 1 { name = "Enabled"; desc = "The function selected by gc_or_start (general call or start byte) is performed instead of a normal address."; };
+        };
+
+        field {
+            name = "special";
+            desc = "Enables the general-call or start-byte function selected by gc_or_start.";
+            sw = rw;
+            hw = r;
+            encode = I2C_TAR_special_enum;
+            reset = 0x0;
+        } special[11:11];
+
+        enum I2C_TAR_gc_or_start_enum {
+            GENERAL_CALL = 0 { name = "General Call"; desc = "The function to be implemented is general call."; };
+            START_BYTE = 1 { name = "Start Byte"; desc = "The function to be implemented is start byte."; };
+        };
+
+        field {
+            name = "gc_or_start";
+            desc = "Determines whether the function performed when special = 1 is a general call or a start byte.";
+            sw = rw;
+            hw = r;
+            encode = I2C_TAR_gc_or_start_enum;
+            reset = 0x0;
+        } gc_or_start[10:10];
+
+        field {
+            name = "i2c_tar";
+            desc = "Slave address that is accessed by the I2C when it acts as a master (7 or 10 bits, see I2C_CON[i2c_10bitaddr_master]).";
+            sw = rw;
+            hw = r;
+            reset = 0x9C;
+        } i2c_tar[9:0];
+    } I2C_TAR @ 0x4;
+
+    reg {
+        name = "I2C slave address register";
+        desc = "I2C_SAR is the controller's own address in slave mode. It can be configured only when the I2C is disabled (I2C_ENABLE[enable] = 0).
+
+Data sheet 11.1.7 I2C_SAR (offset 0x0008, printed page 11-11, `hi3515v100--Hi3515-Datasheet.txt` line 46093).";
+
+        field {
+            name = "i2c_sar";
+            desc = "Address of the slave I2C (this controller when it acts as a slave).";
+            sw = rw;
+            hw = r;
+            reset = 0x55;
+        } i2c_sar[9:0];
+    } I2C_SAR @ 0x8;
+
+    reg {
+        name = "I2C data channel register";
+        desc = "I2C_DATA_CMD is the data channel (TX/RX FIFO access) register: a write pushes a byte plus read/write command into the TX FIFO, a read pops the RX FIFO.
+
+Data sheet 11.1.7 I2C_DATA_CMD (offset 0x0010, printed page 11-12, `hi3515v100--Hi3515-Datasheet.txt` line 46113).";
+
+        enum I2C_DATA_CMD_cmd_enum {
+            WRITE = 0 { name = "Write"; desc = "Write operation: the eight LSBs (dat) are transmitted to the I2C bus by the controller."; };
+            READ = 1 { name = "Read"; desc = "Read operation: the controller reads one byte from the I2C bus (dat is ignored)."; };
+        };
+
+        field {
+            name = "cmd";
+            desc = "Read or write command for the entry pushed into the TX FIFO (master mode only).";
+            sw = rw;
+            hw = r;
+            encode = I2C_DATA_CMD_cmd_enum;
+            reset = 0x0;
+        } cmd[8:8];
+
+        field {
+            name = "dat";
+            desc = "Data to be transmitted or received through the I2C bus: on read the eight bits are the data received (RX FIFO), on write the data to transmit (TX FIFO).";
+            sw = rw;
+            hw = rw;
+            reset = 0x0;
+        } dat[7:0];
+    } I2C_DATA_CMD @ 0x10;
+
+    reg {
+        name = "Standard-speed SCL high-level width register";
+        desc = "I2C_SS_SCL_HCNT is the SCL high-level width (in I2C working-clock cycles) at standard speed. Minimum value 6 (smaller written values are regarded as 6). Configurable only when the I2C is disabled.
+
+Data sheet 11.1.7 I2C_SS_SCL_HCNT (offset 0x0014, printed page 11-12, `hi3515v100--Hi3515-Datasheet.txt` line 46162).";
+
+        field {
+            name = "i2c_ss_scl_hcnt";
+            desc = "SCL high-level count at standard speed, see the block description (11.1.5 Clock Configuration: T_scl_h x F_I2C - 8; 400 at 100 MHz).";
+            sw = rw;
+            hw = r;
+            reset = 0x7A;
+        } i2c_ss_scl_hcnt[15:0];
+    } I2C_SS_SCL_HCNT @ 0x14;
+
+    reg {
+        name = "Standard-speed SCL low-level width register";
+        desc = "I2C_SS_SCL_LCNT is the SCL low-level width (in I2C working-clock cycles) at standard speed. Minimum value 8 (smaller written values are regarded as 8). Configurable only when the I2C is disabled.
+
+Data sheet 11.1.7 I2C_SS_SCL_LCNT (offset 0x0018, printed page 11-13, `hi3515v100--Hi3515-Datasheet.txt` line 46192).";
+
+        field {
+            name = "i2c_ss_scl_lcnt";
+            desc = "SCL low-level count at standard speed (T_scl_l x F_I2C - 1; 470 at 100 MHz).";
+            sw = rw;
+            hw = r;
+            reset = 0x8F;
+        } i2c_ss_scl_lcnt[15:0];
+    } I2C_SS_SCL_LCNT @ 0x18;
+
+    reg {
+        name = "Fast-speed SCL high-level width register";
+        desc = "I2C_FS_SCL_HCNT is the SCL high-level width (in I2C working-clock cycles) at fast (\"high\") speed. Minimum value 6. Configurable only when the I2C is disabled.
+
+Data sheet 11.1.7 I2C_FS_SCL_HCNT (offset 0x001C, printed page 11-13, `hi3515v100--Hi3515-Datasheet.txt` line 46231).";
+
+        field {
+            name = "i2c_fs_scl_hcnt";
+            desc = "SCL high-level count at fast speed (T_scl_h x F_I2C - 8; 60 at 100 MHz).";
+            sw = rw;
+            hw = r;
+            reset = 0x13;
+        } i2c_fs_scl_hcnt[15:0];
+    } I2C_FS_SCL_HCNT @ 0x1C;
+
+    reg {
+        name = "Fast-speed SCL low-level width register";
+        desc = "I2C_FS_SCL_LCNT is the SCL low-level width (in I2C working-clock cycles) at fast (\"high\") speed. Minimum value 8. Configurable only when the I2C is disabled.
+
+Data sheet 11.1.7 I2C_FS_SCL_LCNT (offset 0x0020, printed page 11-14, `hi3515v100--Hi3515-Datasheet.txt` line 46274).";
+
+        field {
+            name = "i2c_fs_scl_lcnt";
+            desc = "SCL low-level count at fast speed (T_scl_l x F_I2C - 1; 130 at 100 MHz).";
+            sw = rw;
+            hw = r;
+            reset = 0x28;
+        } i2c_fs_scl_lcnt[15:0];
+    } I2C_FS_SCL_LCNT @ 0x20;
+
+    reg {
+        name = "Interrupt status register";
+        desc = "I2C_INTR_STAT is the masked interrupt status (I2C_RAW_INTR_STAT AND I2C_INTR_MASK). Bits are cleared by reading the matching I2C_CLR_* register or I2C_CLR_INTR; TX_EMPTY, RX_FULL and the FIFO-related bits clear by themselves when the condition goes away.
+
+Data sheet 11.1.7 I2C_INTR_STAT (offset 0x002C, printed page 11-14, `hi3515v100--Hi3515-Datasheet.txt` line 46296).";
+
+        field { name = "gen_call"; desc = "GEN_CALL interrupt: a general call request is received (slave mode); the received data is stored in the RX buffer."; sw = r; hw = w; reset = 0x0; } gen_call[11:11];
+        field { name = "start_det"; desc = "START_DET interrupt: a START condition was detected on the I2C bus."; sw = r; hw = w; reset = 0x0; } start_det[10:10];
+        field { name = "stop_det"; desc = "STOP_DET interrupt: a STOP condition was detected on the I2C bus."; sw = r; hw = w; reset = 0x0; } stop_det[9:9];
+        field { name = "activity"; desc = "ACTIVITY interrupt: the I2C has been busy (0 = idle, 1 = busy since the last clear)."; sw = r; hw = w; reset = 0x0; } activity[8:8];
+        field { name = "rx_done"; desc = "RX_DONE interrupt (slave transmitter): the master did not acknowledge the transmitted byte, data transfer is complete."; sw = r; hw = w; reset = 0x0; } rx_done[7:7];
+        field { name = "tx_abrt"; desc = "TX_ABRT interrupt: the transfer was aborted; the cause is in I2C_TX_ABRT_SOURCE. The TX FIFO is flushed."; sw = r; hw = w; reset = 0x0; } tx_abrt[6:6];
+        field { name = "rd_req"; desc = "RD_REQ interrupt (slave mode): a master initiated a data read request from this slave; software must write the data to I2C_DATA_CMD."; sw = r; hw = w; reset = 0x0; } rd_req[5:5];
+        field { name = "tx_empty"; desc = "TX_EMPTY interrupt: the data in the TX FIFO reaches or is below the threshold I2C_TX_TL (0 = above the threshold)."; sw = r; hw = w; reset = 0x0; } tx_empty[4:4];
+        field { name = "tx_over"; desc = "TX_OVER interrupt: the TX FIFO overflowed (I2C_DATA_CMD written while the FIFO was full)."; sw = r; hw = w; reset = 0x0; } tx_over[3:3];
+        field { name = "rx_full"; desc = "RX_FULL interrupt: the data in the RX FIFO reaches or is above the threshold I2C_RX_TL (0 = below the threshold)."; sw = r; hw = w; reset = 0x0; } rx_full[2:2];
+        field { name = "rx_over"; desc = "RX_OVER interrupt: the RX FIFO overflowed (a byte was received while the FIFO was full)."; sw = r; hw = w; reset = 0x0; } rx_over[1:1];
+        field { name = "rx_under"; desc = "RX_UNDER interrupt: the CPU read I2C_DATA_CMD while the RX FIFO was empty."; sw = r; hw = w; reset = 0x0; } rx_under[0:0];
+    } I2C_INTR_STAT @ 0x2C;
+
+    reg {
+        name = "Interrupt mask register";
+        desc = "I2C_INTR_MASK enables (1 = not masked) the interrupts of I2C_INTR_STAT. Reset 0x08FF: everything except START_DET, STOP_DET and ACTIVITY is enabled.
+
+Data sheet 11.1.7 I2C_INTR_MASK (offset 0x0030, printed page 11-16, `hi3515v100--Hi3515-Datasheet.txt` line 46411).";
+
+        field { name = "m_gen_call"; desc = "GEN_CALL interrupt mask: 0 = masked, 1 = not masked."; sw = rw; hw = r; reset = 0x1; } m_gen_call[11:11];
+        field { name = "m_start_det"; desc = "START_DET interrupt mask: 0 = masked, 1 = not masked."; sw = rw; hw = r; reset = 0x0; } m_start_det[10:10];
+        field { name = "m_stop_det"; desc = "STOP_DET interrupt mask: 0 = masked, 1 = not masked."; sw = rw; hw = r; reset = 0x0; } m_stop_det[9:9];
+        field { name = "m_activity"; desc = "ACTIVITY interrupt mask: 0 = masked, 1 = not masked."; sw = rw; hw = r; reset = 0x0; } m_activity[8:8];
+        field { name = "m_rx_done"; desc = "RX_DONE interrupt mask: 0 = masked, 1 = not masked."; sw = rw; hw = r; reset = 0x1; } m_rx_done[7:7];
+        field { name = "m_tx_abrt"; desc = "TX_ABRT interrupt mask: 0 = masked, 1 = not masked."; sw = rw; hw = r; reset = 0x1; } m_tx_abrt[6:6];
+        field { name = "m_rd_req"; desc = "RD_REQ interrupt mask: 0 = masked, 1 = not masked."; sw = rw; hw = r; reset = 0x1; } m_rd_req[5:5];
+        field { name = "m_tx_empty"; desc = "TX_EMPTY interrupt mask: 0 = masked, 1 = not masked."; sw = rw; hw = r; reset = 0x1; } m_tx_empty[4:4];
+        field { name = "m_tx_over"; desc = "TX_OVER interrupt mask: 0 = masked, 1 = not masked."; sw = rw; hw = r; reset = 0x1; } m_tx_over[3:3];
+        field { name = "m_rx_full"; desc = "RX_FULL interrupt mask: 0 = masked, 1 = not masked."; sw = rw; hw = r; reset = 0x1; } m_rx_full[2:2];
+        field { name = "m_rx_over"; desc = "RX_OVER interrupt mask: 0 = masked, 1 = not masked."; sw = rw; hw = r; reset = 0x1; } m_rx_over[1:1];
+        field { name = "m_rx_under"; desc = "RX_UNDER interrupt mask: 0 = masked, 1 = not masked."; sw = rw; hw = r; reset = 0x1; } m_rx_under[0:0];
+    } I2C_INTR_MASK @ 0x30;
+
+    reg {
+        name = "Raw interrupt status register";
+        desc = "I2C_RAW_INTR_STAT is the interrupt status before masking (same bit layout as I2C_INTR_STAT; 0 = no interrupt, 1 = interrupt generated).
+
+Data sheet 11.1.7 I2C_RAW_INTR_STAT (offset 0x0034, printed page 11-18, `hi3515v100--Hi3515-Datasheet.txt` line 46484).";
+
+        field { name = "r_gen_call"; desc = "GEN_CALL raw interrupt status."; sw = r; hw = w; reset = 0x0; } r_gen_call[11:11];
+        field { name = "r_start_det"; desc = "START_DET raw interrupt status."; sw = r; hw = w; reset = 0x0; } r_start_det[10:10];
+        field { name = "r_stop_det"; desc = "STOP_DET raw interrupt status."; sw = r; hw = w; reset = 0x0; } r_stop_det[9:9];
+        field { name = "r_activity"; desc = "ACTIVITY raw interrupt status."; sw = r; hw = w; reset = 0x0; } r_activity[8:8];
+        field { name = "r_rx_done"; desc = "RX_DONE raw interrupt status."; sw = r; hw = w; reset = 0x0; } r_rx_done[7:7];
+        field { name = "r_tx_abrt"; desc = "TX_ABRT raw interrupt status."; sw = r; hw = w; reset = 0x0; } r_tx_abrt[6:6];
+        field { name = "r_rd_req"; desc = "RD_REQ raw interrupt status."; sw = r; hw = w; reset = 0x0; } r_rd_req[5:5];
+        field { name = "r_tx_empty"; desc = "TX_EMPTY raw interrupt status."; sw = r; hw = w; reset = 0x0; } r_tx_empty[4:4];
+        field { name = "r_tx_over"; desc = "TX_OVER raw interrupt status."; sw = r; hw = w; reset = 0x0; } r_tx_over[3:3];
+        field { name = "r_rx_full"; desc = "RX_FULL raw interrupt status."; sw = r; hw = w; reset = 0x0; } r_rx_full[2:2];
+        field { name = "r_rx_over"; desc = "RX_OVER raw interrupt status."; sw = r; hw = w; reset = 0x0; } r_rx_over[1:1];
+        field { name = "r_rx_under"; desc = "RX_UNDER raw interrupt status."; sw = r; hw = w; reset = 0x0; } r_rx_under[0:0];
+    } I2C_RAW_INTR_STAT @ 0x34;
+
+    reg {
+        name = "RX_FIFO threshold register";
+        desc = "I2C_RX_TL sets the RX FIFO threshold for the RX_FULL interrupt (raised when the entry count is above rx_tl). Any value greater than 8 is treated as 8 (8-entry FIFO).
+
+Data sheet 11.1.7 I2C_RX_TL (offset 0x0038, printed page 11-19, `hi3515v100--Hi3515-Datasheet.txt` line 46572).";
+
+        field {
+            name = "rx_tl";
+            desc = "RX FIFO threshold (values greater than 8 are considered 8).";
+            sw = rw;
+            hw = r;
+            reset = 0x3;
+        } rx_tl[7:0];
+    } I2C_RX_TL @ 0x38;
+
+    reg {
+        name = "TX_FIFO threshold register";
+        desc = "I2C_TX_TL sets the TX FIFO threshold for the TX_EMPTY interrupt (raised when the entry count is at or below tx_tl). Any value greater than 8 is treated as 8 (8-entry FIFO).
+
+Data sheet 11.1.7 I2C_TX_TL (offset 0x003C, printed page 11-20, `hi3515v100--Hi3515-Datasheet.txt` line 46595).";
+
+        field {
+            name = "tx_tl";
+            desc = "TX FIFO threshold (values greater than 8 are considered 8).";
+            sw = rw;
+            hw = r;
+            reset = 0x3;
+        } tx_tl[7:0];
+    } I2C_TX_TL @ 0x3C;
+
+    reg {
+        name = "Combined and independent interrupt clear register";
+        desc = "I2C_CLR_INTR: reading it clears the combined interrupt and all the individually clearable interrupts (RX_UNDER, RX_OVER, TX_OVER, RD_REQ, TX_ABRT, RX_DONE, ACTIVITY, STOP_DET, START_DET, GEN_CALL) and the I2C_TX_ABRT_SOURCE register. The read value is always 0. Note: the abrt_sbyte_norstrt bit of I2C_TX_ABRT_SOURCE cannot be cleared this way.
+
+Data sheet 11.1.7 I2C_CLR_INTR (offset 0x0040, printed page 11-20, `hi3515v100--Hi3515-Datasheet.txt` line 46629).";
+
+        field {
+            name = "clr_intr";
+            desc = "Reads as 0; the read access clears the combined and individual interrupts.";
+            sw = r;
+            hw = na;
+            onread = rclr;
+            reset = 0x0;
+        } clr_intr[0:0];
+    } I2C_CLR_INTR @ 0x40;
+
+    reg {
+        name = "RX_UNDER interrupt clear register";
+        desc = "I2C_CLR_RX_UNDER: reading it clears the RX_UNDER interrupt. Reads as 0.
+
+Data sheet 11.1.7 I2C_CLR_RX_UNDER (offset 0x0044, printed page 11-20, `hi3515v100--Hi3515-Datasheet.txt` line 46657).";
+
+        field { name = "clr_rx_under"; desc = "Reads as 0; the read access clears the RX_UNDER interrupt."; sw = r; hw = na; onread = rclr; reset = 0x0; } clr_rx_under[0:0];
+    } I2C_CLR_RX_UNDER @ 0x44;
+
+    reg {
+        name = "RX_OVER interrupt clear register";
+        desc = "I2C_CLR_RX_OVER: reading it clears the RX_OVER interrupt. Reads as 0.
+
+Data sheet 11.1.7 I2C_CLR_RX_OVER (offset 0x0048, printed page 11-21, `hi3515v100--Hi3515-Datasheet.txt` line 46696).";
+
+        field { name = "clr_rx_over"; desc = "Reads as 0; the read access clears the RX_OVER interrupt."; sw = r; hw = na; onread = rclr; reset = 0x0; } clr_rx_over[0:0];
+    } I2C_CLR_RX_OVER @ 0x48;
+
+    reg {
+        name = "TX_OVER interrupt clear register";
+        desc = "I2C_CLR_TX_OVER: reading it clears the TX_OVER interrupt. Reads as 0.
+
+Data sheet 11.1.7 I2C_CLR_TX_OVER (offset 0x004C, printed page 11-21, `hi3515v100--Hi3515-Datasheet.txt` line 46723).";
+
+        field { name = "clr_tx_over"; desc = "Reads as 0; the read access clears the TX_OVER interrupt."; sw = r; hw = na; onread = rclr; reset = 0x0; } clr_tx_over[0:0];
+    } I2C_CLR_TX_OVER @ 0x4C;
+
+    reg {
+        name = "RD_REQ interrupt clear register (not in the data sheet)";
+        desc = "I2C_CLR_RD_REQ: reading it clears the RD_REQ interrupt. Reads as 0.
+
+**Not documented** in the Hi3511/Hi3515/Hi3520 data sheets (they skip offset 0x0050); included from the Synopsys DW_apb_i2c register map (IC_CLR_RD_REQ) because the RD_REQ interrupt and its mask are documented. Unverified on these SoCs.";
+
+        field { name = "clr_rd_req"; desc = "Reads as 0; the read access clears the RD_REQ interrupt (DW_apb_i2c IC_CLR_RD_REQ, not in the data sheet)."; sw = r; hw = na; onread = rclr; reset = 0x0; } clr_rd_req[0:0];
+    } I2C_CLR_RD_REQ @ 0x50;
+
+    reg {
+        name = "TX_ABRT interrupt clear register";
+        desc = "I2C_CLR_TX_ABRT: reading it clears the TX_ABRT interrupt and the I2C_TX_ABRT_SOURCE register. Reads as 0.
+
+Data sheet 11.1.7 I2C_CLR_TX_ABRT (offset 0x0054, printed page 11-22, `hi3515v100--Hi3515-Datasheet.txt` line 46762).";
+
+        field { name = "clr_tx_abrt"; desc = "Reads as 0; the read access clears the TX_ABRT interrupt and I2C_TX_ABRT_SOURCE."; sw = r; hw = na; onread = rclr; reset = 0x0; } clr_tx_abrt[0:0];
+    } I2C_CLR_TX_ABRT @ 0x54;
+
+    reg {
+        name = "RX_DONE interrupt clear register (not in the data sheet)";
+        desc = "I2C_CLR_RX_DONE: reading it clears the RX_DONE interrupt. Reads as 0.
+
+**Not documented** in the Hi3511/Hi3515/Hi3520 data sheets (they skip offset 0x0058); included from the Synopsys DW_apb_i2c register map (IC_CLR_RX_DONE) because the RX_DONE interrupt and its mask are documented. Unverified on these SoCs.";
+
+        field { name = "clr_rx_done"; desc = "Reads as 0; the read access clears the RX_DONE interrupt (DW_apb_i2c IC_CLR_RX_DONE, not in the data sheet)."; sw = r; hw = na; onread = rclr; reset = 0x0; } clr_rx_done[0:0];
+    } I2C_CLR_RX_DONE @ 0x58;
+
+    reg {
+        name = "ACTIVITY interrupt clear register";
+        desc = "I2C_CLR_ACTIVITY: reading it clears the ACTIVITY interrupt. Reads as 0; the data sheet adds that the activity status can be queried and the bit is cleared by hardware automatically (DW_apb_i2c: the read returns the ACTIVITY status if the bus is still active).
+
+Data sheet 11.1.7 I2C_CLR_ACTIVITY (offset 0x005C, printed page 11-22, `hi3515v100--Hi3515-Datasheet.txt` line 46790).";
+
+        field { name = "clr_activity"; desc = "Reads as 0; the read access clears the ACTIVITY interrupt."; sw = r; hw = na; onread = rclr; reset = 0x0; } clr_activity[0:0];
+    } I2C_CLR_ACTIVITY @ 0x5C;
+
+    reg {
+        name = "STOP_DET interrupt clear register";
+        desc = "I2C_CLR_STOP_DET: reading it clears the STOP_DET interrupt. Reads as 0.
+
+Data sheet 11.1.7 I2C_CLR_STOP_DET (offset 0x0060, printed page 11-23, `hi3515v100--Hi3515-Datasheet.txt` line 46830).";
+
+        field { name = "clr_stop_det"; desc = "Reads as 0; the read access clears the STOP_DET interrupt."; sw = r; hw = na; onread = rclr; reset = 0x0; } clr_stop_det[0:0];
+    } I2C_CLR_STOP_DET @ 0x60;
+
+    reg {
+        name = "START_DET interrupt clear register";
+        desc = "I2C_CLR_START_DET: reading it clears the START_DET interrupt. Reads as 0.
+
+Data sheet 11.1.7 I2C_CLR_START_DET (offset 0x0064, printed page 11-23, `hi3515v100--Hi3515-Datasheet.txt` line 46857).";
+
+        field { name = "clr_start_det"; desc = "Reads as 0; the read access clears the START_DET interrupt."; sw = r; hw = na; onread = rclr; reset = 0x0; } clr_start_det[0:0];
+    } I2C_CLR_START_DET @ 0x64;
+
+    reg {
+        name = "GEN_CALL interrupt clear register";
+        desc = "I2C_CLR_GEN_CALL: reading it clears the GEN_CALL interrupt. Reads as 0.
+
+Data sheet 11.1.7 I2C_CLR_GEN_CALL (offset 0x0068, printed page 11-24, `hi3515v100--Hi3515-Datasheet.txt` line 46896).";
+
+        field { name = "clr_gen_call"; desc = "Reads as 0; the read access clears the GEN_CALL interrupt."; sw = r; hw = na; onread = rclr; reset = 0x0; } clr_gen_call[0:0];
+    } I2C_CLR_GEN_CALL @ 0x68;
+
+    reg {
+        name = "I2C enable register";
+        desc = "I2C_ENABLE enables or disables the controller. The controller may be disabled while I2C_STATUS[activity] is 1: when transmitting it stops after the current byte and the TX FIFO is cleared; when receiving it does not respond to the rest of the transfer after the current byte (NACK is sent). Software should poll I2C_STATUS[activity] = 0 before disabling (data sheet 11.1.5 initialisation steps).
+
+Data sheet 11.1.7 I2C_ENABLE (offset 0x006C, printed page 11-24, `hi3515v100--Hi3515-Datasheet.txt` line 46929).";
+
+        enum I2C_ENABLE_enable_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "The I2C is disabled."; };
+            ENABLED = 1 { name = "Enabled"; desc = "The I2C is enabled."; };
+        };
+
+        field {
+            name = "enable";
+            desc = "I2C controller enable.";
+            sw = rw;
+            hw = r;
+            encode = I2C_ENABLE_enable_enum;
+            reset = 0x0;
+        } enable[0:0];
+    } I2C_ENABLE @ 0x6C;
+
+    reg {
+        name = "I2C status register";
+        desc = "I2C_STATUS reports the FIFO and bus state. Reset 0x0006: TX FIFO empty and not full.
+
+Data sheet 11.1.7 I2C_STATUS (offset 0x0070, printed page 11-25, `hi3515v100--Hi3515-Datasheet.txt` line 46964).";
+
+        field { name = "rff"; desc = "RX FIFO full: 0 = not full, 1 = full."; sw = r; hw = w; reset = 0x0; } rff[4:4];
+        field { name = "rfne"; desc = "RX FIFO not empty: 0 = empty, 1 = not empty."; sw = r; hw = w; reset = 0x0; } rfne[3:3];
+        field { name = "tfe"; desc = "TX FIFO empty: 0 = not empty, 1 = empty."; sw = r; hw = w; reset = 0x1; } tfe[2:2];
+        field { name = "tfnf"; desc = "TX FIFO not full: 0 = full, 1 = not full."; sw = r; hw = w; reset = 0x1; } tfnf[1:1];
+        field { name = "activity"; desc = "I2C bus status: 0 = idle, 1 = busy (the controller is transferring)."; sw = r; hw = w; reset = 0x0; } activity[0:0];
+    } I2C_STATUS @ 0x70;
+
+    reg {
+        name = "TX_FIFO data count register";
+        desc = "I2C_TXFLR is the number of entries in the TX FIFO (0..8).
+
+Data sheet 11.1.7 I2C_TXFLR (offset 0x0074, printed page 11-26, `hi3515v100--Hi3515-Datasheet.txt` line 47004).";
+
+        field { name = "txflr"; desc = "Count of data entries in the TX FIFO."; sw = r; hw = w; reset = 0x0; } txflr[3:0];
+    } I2C_TXFLR @ 0x74;
+
+    reg {
+        name = "RX_FIFO data count register";
+        desc = "I2C_RXFLR is the number of entries in the RX FIFO (0..8).
+
+Data sheet 11.1.7 I2C_RXFLR (offset 0x0078, printed page 11-26, `hi3515v100--Hi3515-Datasheet.txt` line 47036).";
+
+        field { name = "rxflr"; desc = "Count of data entries in the RX FIFO."; sw = r; hw = w; reset = 0x0; } rxflr[3:0];
+    } I2C_RXFLR @ 0x78;
+
+    reg {
+        name = "TX_ABRT source register";
+        desc = "I2C_TX_ABRT_SOURCE records why the last transfer was aborted (TX_ABRT interrupt); every bit: 0 = no such error, 1 = this error occurred. Cleared by reading I2C_CLR_TX_ABRT or I2C_CLR_INTR (except abrt_sbyte_norstrt, which clears only once I2C_TAR[special]/[gc_or_start] and I2C_CON[i2c_restart_en] are configured consistently).
+
+Data sheet 11.1.7 I2C_TX_ABRT_SOURCE (offset 0x0080, printed page 11-26, `hi3515v100--Hi3515-Datasheet.txt` line 47057).";
+
+        field { name = "arb_master_dis"; desc = "The master attempted to initiate a transfer while the master function is disabled (I2C_CON[master_mode] = 0)."; sw = r; hw = w; reset = 0x0; } arb_master_dis[11:11];
+        field { name = "abrt_10b_rd_norstrt"; desc = "The restart function is disabled and the master sent a read command to a 10-bit slave address."; sw = r; hw = w; reset = 0x0; } abrt_10b_rd_norstrt[10:10];
+        field { name = "abrt_sbyte_norstrt"; desc = "The restart function is disabled and the master attempted to send a start byte."; sw = r; hw = w; reset = 0x0; } abrt_sbyte_norstrt[9:9];
+        field { name = "abrt_hs_norstrt"; desc = "The restart function is disabled and the master attempted a high-speed-mode operation."; sw = r; hw = w; reset = 0x0; } abrt_hs_norstrt[8:8];
+        field { name = "abrt_sbyte_ackdet"; desc = "The master sent a start byte and it was acknowledged (it must never be)."; sw = r; hw = w; reset = 0x0; } abrt_sbyte_ackdet[7:7];
+        field { name = "abrt_hs_ackdet"; desc = "The master attempted a high-speed-mode operation and the high-speed master code was acknowledged (it must never be)."; sw = r; hw = w; reset = 0x0; } abrt_hs_ackdet[6:6];
+        field { name = "abrt_gcall_read"; desc = "The master sent a general call but the CPU then issued a read command."; sw = r; hw = w; reset = 0x0; } abrt_gcall_read[5:5];
+        field { name = "abrt_gcall_noack"; desc = "The master sent a general call and no slave acknowledged it."; sw = r; hw = w; reset = 0x0; } abrt_gcall_noack[4:4];
+        field { name = "abrt_txdata_noack"; desc = "The address was acknowledged but the transmitted data was not (master transmitter)."; sw = r; hw = w; reset = 0x0; } abrt_txdata_noack[3:3];
+        field { name = "abrt_10addr2_noack"; desc = "The second byte of the 10-bit address was not acknowledged (master)."; sw = r; hw = w; reset = 0x0; } abrt_10addr2_noack[2:2];
+        field { name = "abrt_10addr1_noack"; desc = "The first byte of the 10-bit address was not acknowledged (master)."; sw = r; hw = w; reset = 0x0; } abrt_10addr1_noack[1:1];
+        field { name = "abrt_7b_addr_noack"; desc = "The 7-bit address was not acknowledged (master)."; sw = r; hw = w; reset = 0x0; } abrt_7b_addr_noack[0:0];
+    } I2C_TX_ABRT_SOURCE @ 0x80;
+
+    reg {
+        name = "DMA control register";
+        desc = "I2C_DMA_CR enables the DMA request channels of the TX and RX FIFOs.
+
+Data sheet 11.1.7 I2C_DMA_CR (offset 0x0088, printed page 11-28, `hi3515v100--Hi3515-Datasheet.txt` line 47186).";
+
+        field { name = "tdmae"; desc = "Transmit DMA enable: 0 = the DMA channel of the TX FIFO is disabled, 1 = enabled."; sw = rw; hw = r; reset = 0x0; } tdmae[1:1];
+        field { name = "rdmae"; desc = "Receive DMA enable: 0 = the DMA channel of the RX FIFO is disabled, 1 = enabled."; sw = rw; hw = r; reset = 0x0; } rdmae[0:0];
+    } I2C_DMA_CR @ 0x88;
+
+    reg {
+        name = "DMA transmit data level register";
+        desc = "I2C_DMA_TDLR is the TX FIFO threshold for the DMA request: a request is raised when the TX FIFO holds dmatdl entries or fewer.
+
+Data sheet 11.1.7 I2C_DMA_TDLR (offset 0x008C, printed page 11-29, `hi3515v100--Hi3515-Datasheet.txt` line 47228).";
+
+        field { name = "dmatdl"; desc = "TX FIFO DMA watermark."; sw = rw; hw = r; reset = 0x0; } dmatdl[2:0];
+    } I2C_DMA_TDLR @ 0x8C;
+
+    reg {
+        name = "DMA receive data level register";
+        desc = "I2C_DMA_RDLR is the RX FIFO threshold for the DMA request: a request is raised when the RX FIFO holds more than dmardl entries (the effective level is the configured value plus 1).
+
+Data sheet 11.1.7 I2C_DMA_RDLR (offset 0x0090, printed page 11-29, `hi3515v100--Hi3515-Datasheet.txt` line 47248).";
+
+        field { name = "dmardl"; desc = "RX FIFO DMA watermark (effective level = value + 1)."; sw = rw; hw = r; reset = 0x0; } dmardl[2:0];
+    } I2C_DMA_RDLR @ 0x90;
+};
+
+`endif
