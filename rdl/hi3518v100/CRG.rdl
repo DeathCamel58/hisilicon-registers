@@ -1,0 +1,2443 @@
+`ifndef HI3518V100_CRG_RDL
+`define HI3518V100_CRG_RDL
+
+regfile eCRG {
+    name = "Clock and reset generator (CRG), Hi3518A V100 / Hi3518C V100";
+    desc = "
+    PERI_CRGn clock/reset registers of the Hi3518A V100 and Hi3518C V100 at 0x20030000 (ARM926EJ-S generation: the PERI_CRG0..PERI_CRG62 map shared by the Hi3516C V100 and the Hi3518A/C V100). Four PLLs (APLL = ARM9 CPU, VPLL0 = video, BPLL = DDR/AXI/APB, EPLL = peripherals/encoders) fed by the 24 MHz XIN crystal;
+    each PLL has a configuration pair (Table 3-2: PERI_CRG0/1, PERI_CRG2/3, PERI_CRG4/5, PERI_CRG8/9). Every module has a clock gate and a soft reset request bit (1 = reset, the reset is NOT released automatically; a system soft reset deasserts after 360 system clocks).
+    Reset values come from the data sheet Total Reset Value header; where the printed bit row disagrees (PLL registers PERI_CRG0..5/8, PERI_CRG10, PERI_CRG51) the header is used and the register description says so. Register names, offsets, bit ranges and resets of all 34 registers were checked against the data sheet on 2026-11-09.
+
+    Reset PLL settings (header values): APLL 24 x 110 / 3 = 880 MHz VCO, /2 = 440 MHz (ARM9); BPLL the same 880 / 440 MHz (DDR clock 440 MHz, AXI = DDR/2 = 220 MHz, APB = DDR/4 = 110 MHz); VPLL0 24 x 99 / 2 = 1188 MHz VCO, /4 = 297 MHz POSTDIV, FOUT2 74.25 MHz (VDP HD);
+    EPLL 24 x 225 / 4 = 1350 MHz VCO, /9 = 150 MHz POSTDIV. VCO must be > 600 MHz and <= 1.6 GHz. Fixed module clocks: 198 MHz (VPSS, TDE) and 99 MHz (MDU, NFC, CIPHER) from the VPLL0 VCO; 225 MHz (VEDU, JPGE, VAPU/IVE), 112.5 MHz (SFC), 675 MHz (SIO MCLK source),
+    54/27 MHz (VDP SD, sensor clock) and 50 MHz (SDIO, ETH RMII, = POSTDIV/3) from the EPLL.
+
+    CPU/bus clock source (bring-up): there is no clock mux in the CRG. The clock source of the ARM9 and the buses is selected by the system controller: SYS_CTRL (0x20050000) SC_CTRL[modectrl] (bits 2:0): 001 = doze (46.875 kHz), 010 = slow (24 MHz crystal), 100 = normal (APLL for the CPU, BPLL for DDR/AXI/APB);
+    SC_CTRL resets to 0x212, i.e. slow mode: the whole chip runs from the 24 MHz crystal after power-on. Setting the MSB of modectrl enables the PLLs and, after the wait time programmed in SC_PLLCTRL[27:3] (the data sheet names SC_XTALCTRL[plltime]), switches the clocks to the PLLs (status in SC_CTRL[modestatus]; check PERI_CRG58 apll_lock first).
+    The key system controller registers (SC_CTRL, SC_SYSRES, SC_PLLCTRL, PERIPHCTRL0/1) are write protected until SC_LOCKEN (0x20050044) is written with 0x1ACCE551 (vendor U-Boot SC_LOCKEN_VALUE). The CPU can additionally be slowed by clock skipping (PERI_CRG10 cpuclk_skipcfg, 440 x (32 - N) / 32 MHz).
+    Timers: SP804 timers select 3 MHz or the APB clock per timer in SC_CTRL (timerenNov = 1: APB clock; timerenNsel = 0: 3 MHz); the vendor U-Boot uses AXI/2 = APB = 110 MHz.
+    UART: no mux, UARTCLK is the APB clock (1/2 of the 220 MHz AXI clock = 110 MHz at reset PLL settings; gates in PERI_CRG57). Flash/peripheral selects: SFC PERI_CRG48 bit 2 (24 MHz / 112.5 MHz), NFC PERI_CRG52 bit 2 (24 MHz / 99 MHz), SDIO PERI_CRG49 [3:2] (24 / 50 MHz), ETH PERI_CRG51 ([7:6] core, [5:4] PHY clock output, bit 2 RMII clock source).
+    USB reset sequence: see PERI_CRG46.
+
+    Source: HiSilicon's own English data sheet `Hi3518 HD IP Camera SoC Data Sheet`, issue 01 (2013-02-05), chapter 3.2 (Clock; register description in 3.2.5, Table 3-20); there is no Chinese original available locally, so disputed values were settled with the vendor U-Boot (`arch-hi3518/platform.h`, `hi3518a.h`/`hi3518c.h`, `start.S`, `hisfc350_3518.c`, `himciv100_3518.c`, `hiusb-3518.c`, `hisfv300/sys.c`). This CRG is register-for-register identical to the Hi3516C V100 one (hi3516cv100 folder, Hi3516C data sheet issue 00B02 of the same date): same 34 registers, offsets, bit tables and Total Reset Values; the data sheets differ only in the chip name and in the Hi3518C feature notes. The Hi3518E V100 data sheet (issue 03, 2015; SC_SYSID 0x3518_0100 as well) has the same table minus PERI_CRG52 (no NANDC) and prints the same PLL, PERI_CRG10 and PERI_CRG51 bit-row discrepancies; it is not one of the chips in this folder. Hi3518C-only differences from the data sheet notes (none of them changes a CRG register): the Hi3518C has no UART2, SSP0, SSP1, IR, NANDC, GPIO8 and GPIO9 (their CRG gate/reset bits still exist) and powers on only through the internal POR module (the Hi3518A can also use the RSTN pin, selected by POR_SEL).
+    Known data sheet errors, all recorded in the affected register descriptions: PLL, PERI_CRG10 and PERI_CRG51 bit rows disagree with the header; Table 3-3 lost the BPLL row label; Table 3-5 and 3-8 quote wrong register/bit numbers (PERI_CRG16 for cpuclk_skipcfg, PERI_CRG13 bit 12 for hd_sd_sel); PERI_CRG27 is called IVE in the summary and VAPU in the table; `urat2_cken`; copy-paste slips (veduclk_loaden in the CPU steps, `TDE` in JPGE); PERI_CRG12 reset row garbage;
+    the PERI_CRG4/5 tables are printed twice; the VOU HD/SD clock gate bits may be swapped.
+    ";
+
+    reg {
+        name = "APLL configuration register 0";
+        desc = "PERI_CRG0 is APLL configuration register 0.
+
+APLL (ARM926 CPU PLL; Table 3-2 lists the pair as PERI_CRG0 / PERI_CRG1). FOUTVCO = 24 MHz x (fbdiv + frac/2^24) / refdiv (must be > 600 MHz and <= 1.6 GHz); FOUTPOSTDIV = FOUTVCO / (postdiv1 x postdiv2); FOUT1ph0/2/3/4 = FOUTVCO / (postdiv1 x postdiv2 x 2/4/6/8). In the power-down fields 0 = power down / no output and 1 = normal. Reset (Total Reset Value 0x11000000 / 0x006C306E): postdiv2 = 2, postdiv1 = 1, refdiv = 3, fbdiv = 110 -> VCO 880 MHz, POSTDIV output 440 MHz, the 440 MHz default CPU clock of data sheet Table 3-3. LOW CONFIDENCE ON THE BIT ROW: the printed bit row of PERI_CRG0/1 (postdiv2 = 1, refdiv = 2, fbdiv = 155) disagrees with the Total Reset Value header and would give an impossible 1.6 GHz VCO; the header values reproduce every clock quoted in Table 3-3 and are used here (the vendor U-Boot platform.h `REG_CRG0_VALUE 0x09000000 / REG_CRG1_VALUE 0x006c309B`, labelled `reset value`, is unused and does not match either). The PLL output only reaches the CPU in normal mode: the system boots in slow mode from the 24 MHz crystal and SYS_CTRL SC_CTRL[modectrl] (bits 2:0; 001 doze 46.875 kHz, 010 slow 24 MHz, 100 normal = PLL) switches the ARM clock source, see the register file description. Reprogram the APLL only in slow mode (SC_PLLCTRL[27:3] = PLL stable time first), then wait for PERI_CRG58 apll_lock.
+
+Data sheet 3.2.5 PERI_CRG0 (offset 0x0, printed page 3-16, `hi3518v100--Hi3518-Datasheet.txt` line 15343).";
+
+        enum PERI_CRG0_apll_bypass_enum {
+            NO_BYPASS = 0 { name = "No Bypass"; desc = "no bypass"; };
+            BYPASS = 1 { name = "Bypass"; desc = "bypass"; };
+        };
+
+        field {
+            name = "apll_bypass";
+            desc = "APLL clock frequency-division bypass control.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG0_apll_bypass_enum;
+            reset = 0x0;
+        } apll_bypass[30:30];
+
+        field {
+            name = "apll_postdiv2";
+            desc = "Level-2 output divider of the APLL.";
+            sw = rw;
+            hw = r;
+            reset = 0x2;
+        } apll_postdiv2[29:27];
+
+        field {
+            name = "apll_postdiv1";
+            desc = "Level-1 output divider of the APLL.";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } apll_postdiv1[26:24];
+
+        field {
+            name = "apll_frac";
+            desc = "Decimal divider of the APLL.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } apll_frac[23:0];
+    } PERI_CRG0 @ 0x0;
+
+    reg {
+        name = "APLL configuration register 1";
+        desc = "PERI_CRG1 is APLL configuration register 1.
+
+APLL configuration register 1 (dividers and power-down). Reset 0x006C306E: refdiv = 3, fbdiv = 110, apll_dsmpd = 1 (integer mode), apll_pd = 1, apll_postdivpd = 1, apll_fout4phasepd = 1, apll_foutvcopd = 0. See PERI_CRG0 for the formula and the bit-row inconsistency (the bit row prints 0x006C209B).
+
+Data sheet 3.2.5 PERI_CRG1 (offset 0x4, printed page 3-17, `hi3518v100--Hi3518-Datasheet.txt` line 15384).";
+
+        enum PERI_CRG1_apll_dacpd_enum {
+            POWER_DOWN = 0 { name = "Power Down"; desc = "power down"; };
+            NORMAL = 1 { name = "Normal"; desc = "normal"; };
+        };
+
+        field {
+            name = "apll_dacpd";
+            desc = "APLL test signal control.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG1_apll_dacpd_enum;
+            reset = 0x0;
+        } apll_dacpd[23:23];
+
+        enum PERI_CRG1_apll_dsmpd_enum {
+            DECIMAL_FREQUENCY_DIVISION = 0 { name = "Decimal Frequency Division"; desc = "decimal frequency-division mode"; };
+            INTEGER_FREQUENCY_DIVISION = 1 { name = "Integer Frequency Division"; desc = "integer frequency-division mode"; };
+        };
+
+        field {
+            name = "apll_dsmpd";
+            desc = "APLL decimal frequency-division control.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG1_apll_dsmpd_enum;
+            reset = 0x1;
+        } apll_dsmpd[22:22];
+
+        enum PERI_CRG1_apll_pd_enum {
+            POWER_DOWN = 0 { name = "Power Down"; desc = "power down"; };
+            NORMAL = 1 { name = "Normal"; desc = "normal"; };
+        };
+
+        field {
+            name = "apll_pd";
+            desc = "APLL power down control.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG1_apll_pd_enum;
+            reset = 0x1;
+        } apll_pd[21:21];
+
+        enum PERI_CRG1_apll_foutvcopd_enum {
+            NO_OUTPUT_CLOCK = 0 { name = "No Output Clock"; desc = "no output clock"; };
+            NORMAL_OUTPUT_CLOCK = 1 { name = "Normal Output Clock"; desc = "normal output clock"; };
+        };
+
+        field {
+            name = "apll_foutvcopd";
+            desc = "Power down control for the APLL VCO output.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG1_apll_foutvcopd_enum;
+            reset = 0x0;
+        } apll_foutvcopd[20:20];
+
+        enum PERI_CRG1_apll_postdivpd_enum {
+            NO_OUTPUT_CLOCK = 0 { name = "No Output Clock"; desc = "no output clock"; };
+            NORMAL_OUTPUT_CLOCK = 1 { name = "Normal Output Clock"; desc = "normal output clock"; };
+        };
+
+        field {
+            name = "apll_postdivpd";
+            desc = "Power down control for the APLL POSTDIV output.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG1_apll_postdivpd_enum;
+            reset = 0x1;
+        } apll_postdivpd[19:19];
+
+        enum PERI_CRG1_apll_fout4phasepd_enum {
+            NO_OUTPUT_CLOCK = 0 { name = "No Output Clock"; desc = "no output clock"; };
+            NORMAL_OUTPUT_CLOCK = 1 { name = "Normal Output Clock"; desc = "normal output clock"; };
+        };
+
+        field {
+            name = "apll_fout4phasepd";
+            desc = "Power down control for the APLL FOUT output.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG1_apll_fout4phasepd_enum;
+            reset = 0x1;
+        } apll_fout4phasepd[18:18];
+
+        field {
+            name = "apll_refdiv";
+            desc = "Divider of the APLL reference clock.";
+            sw = rw;
+            hw = r;
+            reset = 0x3;
+        } apll_refdiv[17:12];
+
+        field {
+            name = "apll_fbdiv";
+            desc = "Integral multiplier of the APLL.";
+            sw = rw;
+            hw = r;
+            reset = 0x6E;
+        } apll_fbdiv[11:0];
+    } PERI_CRG1 @ 0x4;
+
+    reg {
+        name = "VPLL0 configuration register 0";
+        desc = "PERI_CRG2 is VPLL0 configuration register 0.
+
+VPLL0 (video PLL). FOUTVCO = 24 MHz x (fbdiv + frac/2^24) / refdiv (must be > 600 MHz and <= 1.6 GHz); FOUTPOSTDIV = FOUTVCO / (postdiv1 x postdiv2); FOUT1ph0/2/3/4 = FOUTVCO / (postdiv1 x postdiv2 x 2/4/6/8). In the power-down fields 0 = power down / no output and 1 = normal. Reset (Total Reset Value 0x12000000 / 0x007C2063): postdiv2 = 2, postdiv1 = 2, refdiv = 2, fbdiv = 99 -> VCO 1188 MHz (the data sheet's worked example), POSTDIV output 297 MHz. Derived clocks (Table 3-3): VCO/6 = 198 MHz (VPSS, TDE), VCO/12 = 99 MHz (MDU, NFC, CIPHER), FOUT2 = VCO/16 = 74.25 MHz (VDP HD). LOW CONFIDENCE ON THE BIT ROW: the printed bit row (postdiv1 = 4, refdiv = 4, fbdiv = 178) disagrees with the header; the header is used.
+
+Data sheet 3.2.5 PERI_CRG2 (offset 0x8, printed page 3-18, `hi3518v100--Hi3518-Datasheet.txt` line 15437).";
+
+        enum PERI_CRG2_vpll0_bypass_enum {
+            NO_BYPASS = 0 { name = "No Bypass"; desc = "no bypass"; };
+            BYPASS = 1 { name = "Bypass"; desc = "bypass"; };
+        };
+
+        field {
+            name = "vpll0_bypass";
+            desc = "VPLL0 clock frequency-division bypass control.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG2_vpll0_bypass_enum;
+            reset = 0x0;
+        } vpll0_bypass[30:30];
+
+        field {
+            name = "vpll0_postdiv2";
+            desc = "Level-2 output divider of VPLL0.";
+            sw = rw;
+            hw = r;
+            reset = 0x2;
+        } vpll0_postdiv2[29:27];
+
+        field {
+            name = "vpll0_postdiv1";
+            desc = "Level-1 output divider of VPLL0.";
+            sw = rw;
+            hw = r;
+            reset = 0x2;
+        } vpll0_postdiv1[26:24];
+
+        field {
+            name = "vpll0_frac";
+            desc = "Decimal divider of VPLL0.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } vpll0_frac[23:0];
+    } PERI_CRG2 @ 0x8;
+
+    reg {
+        name = "VPLL0 configuration register 1";
+        desc = "PERI_CRG3 is VPLL0 configuration register 1.
+
+VPLL0 configuration register 1. Reset 0x007C2063: refdiv = 2, fbdiv = 99, dsmpd = 1, pd = 1, foutvcopd = 1, postdivpd = 1, fout4phasepd = 1. The printed bit row (0x006C40B2) disagrees; the header is used (see PERI_CRG2).
+
+Data sheet 3.2.5 PERI_CRG3 (offset 0xC, printed page 3-18, `hi3518v100--Hi3518-Datasheet.txt` line 15470).";
+
+        enum PERI_CRG3_vpll0_dacpd_enum {
+            POWER_DOWN = 0 { name = "Power Down"; desc = "power down"; };
+            NORMAL = 1 { name = "Normal"; desc = "normal"; };
+        };
+
+        field {
+            name = "vpll0_dacpd";
+            desc = "VPLL0 test signal control.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG3_vpll0_dacpd_enum;
+            reset = 0x0;
+        } vpll0_dacpd[23:23];
+
+        enum PERI_CRG3_vpll0_dsmpd_enum {
+            DECIMAL_FREQUENCY_DIVISION = 0 { name = "Decimal Frequency Division"; desc = "decimal frequency-division mode"; };
+            INTEGER_FREQUENCY_DIVISION = 1 { name = "Integer Frequency Division"; desc = "integer frequency-division mode"; };
+        };
+
+        field {
+            name = "vpll0_dsmpd";
+            desc = "VPLL0 decimal frequency-division control.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG3_vpll0_dsmpd_enum;
+            reset = 0x1;
+        } vpll0_dsmpd[22:22];
+
+        enum PERI_CRG3_vpll0_pd_enum {
+            POWER_DOWN = 0 { name = "Power Down"; desc = "power down"; };
+            NORMAL = 1 { name = "Normal"; desc = "normal"; };
+        };
+
+        field {
+            name = "vpll0_pd";
+            desc = "VPLL0 power down control.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG3_vpll0_pd_enum;
+            reset = 0x1;
+        } vpll0_pd[21:21];
+
+        enum PERI_CRG3_vpll0_foutvcopd_enum {
+            NO_OUTPUT_CLOCK = 0 { name = "No Output Clock"; desc = "no output clock"; };
+            NORMAL_OUTPUT_CLOCK = 1 { name = "Normal Output Clock"; desc = "normal output clock"; };
+        };
+
+        field {
+            name = "vpll0_foutvcopd";
+            desc = "Power down control for the VPLL0 VCO output.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG3_vpll0_foutvcopd_enum;
+            reset = 0x1;
+        } vpll0_foutvcopd[20:20];
+
+        enum PERI_CRG3_vpll0_postdivpd_enum {
+            NO_OUTPUT_CLOCK = 0 { name = "No Output Clock"; desc = "no output clock"; };
+            NORMAL_OUTPUT_CLOCK = 1 { name = "Normal Output Clock"; desc = "normal output clock"; };
+        };
+
+        field {
+            name = "vpll0_postdivpd";
+            desc = "Power down control for the VPLL0 POSTDIV output.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG3_vpll0_postdivpd_enum;
+            reset = 0x1;
+        } vpll0_postdivpd[19:19];
+
+        enum PERI_CRG3_vpll0_fout4phasepd_enum {
+            NO_OUTPUT_CLOCK = 0 { name = "No Output Clock"; desc = "no output clock"; };
+            NORMAL_OUTPUT_CLOCK = 1 { name = "Normal Output Clock"; desc = "normal output clock"; };
+        };
+
+        field {
+            name = "vpll0_fout4phasepd";
+            desc = "Power down control for the VPLL0 FOUT output.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG3_vpll0_fout4phasepd_enum;
+            reset = 0x1;
+        } vpll0_fout4phasepd[18:18];
+
+        field {
+            name = "vpll0_refdiv";
+            desc = "Divider of the VPLL0 reference clock.";
+            sw = rw;
+            hw = r;
+            reset = 0x2;
+        } vpll0_refdiv[17:12];
+
+        field {
+            name = "vpll0_fbdiv";
+            desc = "Integral multiplier of VPLL0.";
+            sw = rw;
+            hw = r;
+            reset = 0x63;
+        } vpll0_fbdiv[11:0];
+    } PERI_CRG3 @ 0xC;
+
+    reg {
+        name = "BPLL configuration register 0";
+        desc = "PERI_CRG4 is BPLL configuration register 0.
+
+BPLL (DDR/AXI/APB PLL). FOUTVCO = 24 MHz x (fbdiv + frac/2^24) / refdiv (must be > 600 MHz and <= 1.6 GHz); FOUTPOSTDIV = FOUTVCO / (postdiv1 x postdiv2); FOUT1ph0/2/3/4 = FOUTVCO / (postdiv1 x postdiv2 x 2/4/6/8). In the power-down fields 0 = power down / no output and 1 = normal. Reset (Total Reset Value 0x11000000 / 0x006C306E): the same numbers as the APLL: VCO 880 MHz, POSTDIV 440 MHz = DDR clock; AXI = DDR / 2 = 220 MHz; APB = DDR / 4 = 110 MHz (Table 3-3, whose row label for this PLL is lost in the data sheet: it prints a second `APLL` row; the vendor U-Boot get_bus_clk() reads PERI_CRG4/5 to compute busclk = VCO / (2 x postdiv1 x postdiv2) = 220 MHz, which confirms BPLL). The data sheet describes this register twice (a page-break copy); the copies agree. LOW CONFIDENCE ON THE BIT ROW (prints postdiv2 = 1, postdiv1 = 1); the header is used.
+
+Data sheet 3.2.5 PERI_CRG4 (offset 0x10, printed page 3-19, `hi3518v100--Hi3518-Datasheet.txt` line 15527).";
+
+        enum PERI_CRG4_bpll_bypass_enum {
+            NO_BYPASS = 0 { name = "No Bypass"; desc = "no bypass"; };
+            BYPASS = 1 { name = "Bypass"; desc = "bypass"; };
+        };
+
+        field {
+            name = "bpll_bypass";
+            desc = "BPLL clock frequency-division bypass control.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG4_bpll_bypass_enum;
+            reset = 0x0;
+        } bpll_bypass[30:30];
+
+        field {
+            name = "bpll_postdiv2";
+            desc = "Level-2 output divider of the BPLL.";
+            sw = rw;
+            hw = r;
+            reset = 0x2;
+        } bpll_postdiv2[29:27];
+
+        field {
+            name = "bpll_postdiv1";
+            desc = "Level-1 output divider of the BPLL.";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } bpll_postdiv1[26:24];
+
+        field {
+            name = "bpll_frac";
+            desc = "Decimal divider of the BPLL.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } bpll_frac[23:0];
+    } PERI_CRG4 @ 0x10;
+
+    reg {
+        name = "BPLL configuration register 1";
+        desc = "PERI_CRG5 is BPLL configuration register 1.
+
+BPLL configuration register 1. Reset 0x006C306E: refdiv = 3, fbdiv = 110, dsmpd = 1, pd = 1, postdivpd = 1, fout4phasepd = 1, foutvcopd = 0. The printed bit row (0x007C2087) disagrees; the header is used (consistent with the vendor U-Boot get_bus_clk()). The register is described twice in the data sheet (page-break copy).
+
+Data sheet 3.2.5 PERI_CRG5 (offset 0x14, printed page 3-20, `hi3518v100--Hi3518-Datasheet.txt` line 15590).";
+
+        enum PERI_CRG5_bpll_dacpd_enum {
+            POWER_DOWN = 0 { name = "Power Down"; desc = "power down"; };
+            NORMAL = 1 { name = "Normal"; desc = "normal"; };
+        };
+
+        field {
+            name = "bpll_dacpd";
+            desc = "BPLL test signal control.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG5_bpll_dacpd_enum;
+            reset = 0x0;
+        } bpll_dacpd[23:23];
+
+        enum PERI_CRG5_bpll_dsmpd_enum {
+            DECIMAL_FREQUENCY_DIVISION = 0 { name = "Decimal Frequency Division"; desc = "decimal frequency-division mode"; };
+            INTEGER_FREQUENCY_DIVISION = 1 { name = "Integer Frequency Division"; desc = "integer frequency-division mode"; };
+        };
+
+        field {
+            name = "bpll_dsmpd";
+            desc = "BPLL decimal frequency-division control.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG5_bpll_dsmpd_enum;
+            reset = 0x1;
+        } bpll_dsmpd[22:22];
+
+        enum PERI_CRG5_bpll_pd_enum {
+            POWER_DOWN = 0 { name = "Power Down"; desc = "power down"; };
+            NORMAL = 1 { name = "Normal"; desc = "normal"; };
+        };
+
+        field {
+            name = "bpll_pd";
+            desc = "BPLL power down control.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG5_bpll_pd_enum;
+            reset = 0x1;
+        } bpll_pd[21:21];
+
+        enum PERI_CRG5_bpll_foutvcopd_enum {
+            NO_OUTPUT_CLOCK = 0 { name = "No Output Clock"; desc = "no output clock"; };
+            NORMAL_OUTPUT_CLOCK = 1 { name = "Normal Output Clock"; desc = "normal output clock"; };
+        };
+
+        field {
+            name = "bpll_foutvcopd";
+            desc = "Power down control for the BPLL VCO output.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG5_bpll_foutvcopd_enum;
+            reset = 0x0;
+        } bpll_foutvcopd[20:20];
+
+        enum PERI_CRG5_bpll_postdivpd_enum {
+            NO_OUTPUT_CLOCK = 0 { name = "No Output Clock"; desc = "no output clock"; };
+            NORMAL_OUTPUT_CLOCK = 1 { name = "Normal Output Clock"; desc = "normal output clock"; };
+        };
+
+        field {
+            name = "bpll_postdivpd";
+            desc = "Power down control for the BPLL POSTDIV output.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG5_bpll_postdivpd_enum;
+            reset = 0x1;
+        } bpll_postdivpd[19:19];
+
+        enum PERI_CRG5_bpll_fout4phasepd_enum {
+            NO_OUTPUT_CLOCK = 0 { name = "No Output Clock"; desc = "no output clock"; };
+            NORMAL_OUTPUT_CLOCK = 1 { name = "Normal Output Clock"; desc = "normal output clock"; };
+        };
+
+        field {
+            name = "bpll_fout4phasepd";
+            desc = "Power down control for the BPLL FOUT output.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG5_bpll_fout4phasepd_enum;
+            reset = 0x1;
+        } bpll_fout4phasepd[18:18];
+
+        field {
+            name = "bpll_refdiv";
+            desc = "Divider of the BPLL reference clock.";
+            sw = rw;
+            hw = r;
+            reset = 0x3;
+        } bpll_refdiv[17:12];
+
+        field {
+            name = "bpll_fbdiv";
+            desc = "Integral multiplier of the BPLL.";
+            sw = rw;
+            hw = r;
+            reset = 0x6E;
+        } bpll_fbdiv[11:0];
+    } PERI_CRG5 @ 0x14;
+
+    reg {
+        name = "EPLL configuration register 0";
+        desc = "PERI_CRG8 is EPLL configuration register 0.
+
+EPLL. FOUTVCO = 24 MHz x (fbdiv + frac/2^24) / refdiv (must be > 600 MHz and <= 1.6 GHz); FOUTPOSTDIV = FOUTVCO / (postdiv1 x postdiv2); FOUT1ph0/2/3/4 = FOUTVCO / (postdiv1 x postdiv2 x 2/4/6/8). In the power-down fields 0 = power down / no output and 1 = normal. Reset (Total Reset Value 0x1B000000 / 0x007C40E1): postdiv2 = 3, postdiv1 = 3, refdiv = 4, fbdiv = 225 -> VCO 1350 MHz, POSTDIV output 150 MHz. Derived clocks (Table 3-3): VCO/2 = 675 MHz (SIO MCLK source), VCO/6 = 225 MHz (VEDU, JPGE, VAPU/IVE), VCO/12 = 112.5 MHz (SFC), 54 MHz (VDP SD), 27 MHz (sensor clock), POSTDIV/3 = 50 MHz (SDIO, ETH RMII). The printed bit row of PERI_CRG8 (0x0B000000) disagrees with the header in bit 28; the header is used.
+
+Data sheet 3.2.5 PERI_CRG8 (offset 0x20, printed page 3-22, `hi3518v100--Hi3518-Datasheet.txt` line 15678).";
+
+        enum PERI_CRG8_epll_bypass_enum {
+            NO_BYPASS = 0 { name = "No Bypass"; desc = "no bypass"; };
+            BYPASS = 1 { name = "Bypass"; desc = "bypass"; };
+        };
+
+        field {
+            name = "epll_bypass";
+            desc = "EPLL clock frequency-division bypass control.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG8_epll_bypass_enum;
+            reset = 0x0;
+        } epll_bypass[30:30];
+
+        field {
+            name = "epll_postdiv2";
+            desc = "Level-2 output divider of the EPLL.";
+            sw = rw;
+            hw = r;
+            reset = 0x3;
+        } epll_postdiv2[29:27];
+
+        field {
+            name = "epll_postdiv1";
+            desc = "Level-1 output divider of the EPLL.";
+            sw = rw;
+            hw = r;
+            reset = 0x3;
+        } epll_postdiv1[26:24];
+
+        field {
+            name = "epll_frac";
+            desc = "Decimal divider of the EPLL.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } epll_frac[23:0];
+    } PERI_CRG8 @ 0x20;
+
+    reg {
+        name = "EPLL configuration register 1";
+        desc = "PERI_CRG9 is EPLL configuration register 1.
+
+EPLL configuration register 1. Reset 0x007C40E1: refdiv = 4, fbdiv = 225, dsmpd = 1, pd = 1, foutvcopd = 1, postdivpd = 1, fout4phasepd = 1 (bit row and header agree).
+
+Data sheet 3.2.5 PERI_CRG9 (offset 0x24, printed page 3-22, `hi3518v100--Hi3518-Datasheet.txt` line 15711).";
+
+        enum PERI_CRG9_epll_dacpd_enum {
+            POWER_DOWN = 0 { name = "Power Down"; desc = "power down"; };
+            NORMAL = 1 { name = "Normal"; desc = "normal"; };
+        };
+
+        field {
+            name = "epll_dacpd";
+            desc = "EPLL test signal control.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG9_epll_dacpd_enum;
+            reset = 0x0;
+        } epll_dacpd[23:23];
+
+        enum PERI_CRG9_epll_dsmpd_enum {
+            DECIMAL_FREQUENCY_DIVISION = 0 { name = "Decimal Frequency Division"; desc = "decimal frequency-division mode"; };
+            INTEGER_FREQUENCY_DIVISION = 1 { name = "Integer Frequency Division"; desc = "integer frequency-division mode"; };
+        };
+
+        field {
+            name = "epll_dsmpd";
+            desc = "EPLL decimal frequency-division control.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG9_epll_dsmpd_enum;
+            reset = 0x1;
+        } epll_dsmpd[22:22];
+
+        enum PERI_CRG9_epll_pd_enum {
+            POWER_DOWN = 0 { name = "Power Down"; desc = "power down"; };
+            NORMAL = 1 { name = "Normal"; desc = "normal"; };
+        };
+
+        field {
+            name = "epll_pd";
+            desc = "EPLL power down control.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG9_epll_pd_enum;
+            reset = 0x1;
+        } epll_pd[21:21];
+
+        enum PERI_CRG9_epll_foutvcopd_enum {
+            NO_OUTPUT_CLOCK = 0 { name = "No Output Clock"; desc = "no output clock"; };
+            NORMAL_OUTPUT_CLOCK = 1 { name = "Normal Output Clock"; desc = "normal output clock"; };
+        };
+
+        field {
+            name = "epll_foutvcopd";
+            desc = "Power down control for the EPLLVCO output.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG9_epll_foutvcopd_enum;
+            reset = 0x1;
+        } epll_foutvcopd[20:20];
+
+        enum PERI_CRG9_epll_postdivpd_enum {
+            NO_OUTPUT_CLOCK = 0 { name = "No Output Clock"; desc = "no output clock"; };
+            NORMAL_OUTPUT_CLOCK = 1 { name = "Normal Output Clock"; desc = "normal output clock"; };
+        };
+
+        field {
+            name = "epll_postdivpd";
+            desc = "Power down control for the EPLL POSTDIV output.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG9_epll_postdivpd_enum;
+            reset = 0x1;
+        } epll_postdivpd[19:19];
+
+        enum PERI_CRG9_epll_fout4phasepd_enum {
+            NO_OUTPUT_CLOCK = 0 { name = "No Output Clock"; desc = "no output clock"; };
+            NORMAL_OUTPUT_CLOCK = 1 { name = "Normal Output Clock"; desc = "normal output clock"; };
+        };
+
+        field {
+            name = "epll_fout4phasepd";
+            desc = "Power down control for the EPLL FOUT output.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG9_epll_fout4phasepd_enum;
+            reset = 0x1;
+        } epll_fout4phasepd[18:18];
+
+        field {
+            name = "epll_refdiv";
+            desc = "Divider of the EPLL reference clock.";
+            sw = rw;
+            hw = r;
+            reset = 0x4;
+        } epll_refdiv[17:12];
+
+        field {
+            name = "epll_fbdiv";
+            desc = "Integral multiplier of the EPLL.";
+            sw = rw;
+            hw = r;
+            reset = 0xE1;
+        } epll_fbdiv[11:0];
+    } PERI_CRG9 @ 0x24;
+
+    reg {
+        name = "ARM9/DDR frequency mode and reset configuration register";
+        desc = "PERI_CRG10 is an ARM9/DDR frequency mode and reset configuration register.
+
+ARM9/DDR frequency mode and reset configuration. The bit-row label `freqmode_a9_sys` has no entry in the bit table. The CPU clock skip: cpuclk_skipcfg = N disables N beats out of every 32 CPU clocks; write cpuclk_skipcfg, then cpuclk_loaden 0 -> 1 (the data sheet lists `write 0, write 1`). Table 3-5 attributes cpuclk_skipcfg to `PERI_CRG16 bit[9:5]`; that is a slip for PERI_CRG10. LOW CONFIDENCE ON THE RESET: the Total Reset Value header is 0x00000010 (cpu_srst_req = 1, skipcfg = 0) while the bit row prints skipcfg = 1 (0x20); the header is used (no vendor code reads it back). cpu_srst_req is valid only in slave loading mode; in normal (master) boot the bit has no effect on the running CPU.
+
+Data sheet 3.2.5 PERI_CRG10 (offset 0x28, printed page 3-23, `hi3518v100--Hi3518-Datasheet.txt` line 15768).";
+
+        field {
+            name = "cpuclk_loaden";
+            desc = "CPU clock DFS frequency division configuration enable. To change the frequency division configuration, perform the following steps: 1 Write a new frequency division configuration value. 2 Write 0 to cpuclk_loaden. 3 Write 1 to cpuclk_loaden. (The data sheet says `veduclk_loaden` in steps 2 and 3, a copy-paste slip.)";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } cpuclk_loaden[10:10];
+
+        field {
+            name = "cpuclk_skipcfg";
+            desc = "CPU clock DFS frequency division configuration. N: N-beat clocks are disabled every 32-beat CPU clocks (N = 0: full speed; N = 1: 440 x 31/32 = 426.25 MHz).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } cpuclk_skipcfg[9:5];
+
+        enum PERI_CRG10_cpu_srst_req_enum {
+            DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
+            ASSERT_RESET = 1 { name = "Assert Reset"; desc = "reset (the module is held in reset until the bit is cleared)"; };
+        };
+
+        field {
+            name = "cpu_srst_req";
+            desc = "CPU soft reset request. This bit is valid only in slave loading mode.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG10_cpu_srst_req_enum;
+            reset = 0x1;
+        } cpu_srst_req[4:4];
+    } PERI_CRG10 @ 0x28;
+
+    reg {
+        name = "VICAP clock and reset configuration register";
+        desc = "PERI_CRG11 is a VICAP clock and reset configuration register.
+
+VICAP clock and reset. The OpenIPC load script writes 0x2A (isp_cken, vi_cken, vi1_hcken, all resets released) or 0x6A (plus vi_pctrl reverse phase) here. Bits [31:8] are listed as RW reserved.
+
+Data sheet 3.2.5 PERI_CRG11 (offset 0x2C, printed page 3-24, `hi3518v100--Hi3518-Datasheet.txt` line 15823).";
+
+        enum PERI_CRG11_vi_selftest_enum {
+            NORMAL_MODE_I = 0 { name = "Normal Mode I"; desc = "normal mode. The I/O input clock is selected."; };
+            SELF_TEST_MODE = 1 { name = "Self Test Mode"; desc = "self-test mode. The on-chip 24 MHz test clock is selected."; };
+        };
+
+        field {
+            name = "vi_selftest";
+            desc = "VICAP self-test mode.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG11_vi_selftest_enum;
+            reset = 0x0;
+        } vi_selftest[7:7];
+
+        enum PERI_CRG11_vi_pctrl_enum {
+            NORMAL_PHASE_CLOCK = 0 { name = "Normal Phase Clock"; desc = "normal phase clock"; };
+            REVERSE_PHASE_CLOCK = 1 { name = "Reverse Phase Clock"; desc = "reverse phase clock"; };
+        };
+
+        field {
+            name = "vi_pctrl";
+            desc = "VI input associated clock phase control.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG11_vi_pctrl_enum;
+            reset = 0x0;
+        } vi_pctrl[6:6];
+
+        enum PERI_CRG11_isp_cken_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "isp_cken";
+            desc = "VI ISP clock gating.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG11_isp_cken_enum;
+            reset = 0x0;
+        } isp_cken[5:5];
+
+        enum PERI_CRG11_isp_rst_req_enum {
+            DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
+            ASSERT_RESET = 1 { name = "Assert Reset"; desc = "reset (the module is held in reset until the bit is cleared)"; };
+        };
+
+        field {
+            name = "isp_rst_req";
+            desc = "VI ISP soft reset request.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG11_isp_rst_req_enum;
+            reset = 0x0;
+        } isp_rst_req[4:4];
+
+        enum PERI_CRG11_vi_cken_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "vi_cken";
+            desc = "VI clock gating.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG11_vi_cken_enum;
+            reset = 0x0;
+        } vi_cken[3:3];
+
+        enum PERI_CRG11_vi_rst_req_enum {
+            DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
+            ASSERT_RESET = 1 { name = "Assert Reset"; desc = "reset (the module is held in reset until the bit is cleared)"; };
+        };
+
+        field {
+            name = "vi_rst_req";
+            desc = "VI soft reset request.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG11_vi_rst_req_enum;
+            reset = 0x0;
+        } vi_rst_req[2:2];
+
+        enum PERI_CRG11_vi1_hcken_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "vi1_hcken";
+            desc = "VI bus clock gating.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG11_vi1_hcken_enum;
+            reset = 0x0;
+        } vi1_hcken[1:1];
+
+        enum PERI_CRG11_vi_hrst_req_enum {
+            DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
+            ASSERT_RESET = 1 { name = "Assert Reset"; desc = "reset (the module is held in reset until the bit is cleared)"; };
+        };
+
+        field {
+            name = "vi_hrst_req";
+            desc = "VI bus soft reset request.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG11_vi_hrst_req_enum;
+            reset = 0x0;
+        } vi_hrst_req[0:0];
+    } PERI_CRG11 @ 0x2C;
+
+    reg {
+        name = "Sensor output clock configuration register";
+        desc = "PERI_CRG12 is a sensor output clock configuration register.
+
+Sensor output clock select (3-bit mux). The OpenIPC `load_hisilicon` script uses 0x1 (24 MHz), 0x5 (27 MHz) and 0x6 (37.125 MHz); the clock source is the 1350 MHz EPLL VCO (27 MHz, 54 MHz) or the VPLL0 (74.25 / 37.125 MHz). The printed Reset row of this register is garbage; the header 0x00000000 is used.
+
+Data sheet 3.2.5 PERI_CRG12 (offset 0x30, printed page 3-25, `hi3518v100--Hi3518-Datasheet.txt` line 15884).";
+
+        enum PERI_CRG12_sense_cksel_enum {
+            CLK_12M = 0 { name = "Clk 12M"; desc = "12 MHz"; };
+            CLK_24M = 1 { name = "Clk 24M"; desc = "24 MHz"; };
+            CLK_27M_A = 2 { name = "Clk 27M A"; desc = "27 MHz"; };
+            CLK_54M = 3 { name = "Clk 54M"; desc = "54 MHz"; };
+            CLK_13_5M = 4 { name = "Clk 13 5M"; desc = "13.5 MHz"; };
+            CLK_27M_B = 5 { name = "Clk 27M B"; desc = "27 MHz"; };
+            CLK_37_125M = 6 { name = "Clk 37 125M"; desc = "37.125 MHz"; };
+            CLK_74_25M = 7 { name = "Clk 74 25M"; desc = "74.25 MHz"; };
+        };
+
+        field {
+            name = "sense_cksel";
+            desc = "Sensor output clock (SNS_CLKO pin). Values 010 and 101 both read 27 MHz in the data sheet table; the OpenIPC load script uses 001 (24 MHz), 101 (27 MHz) and 110 (37.125 MHz).";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG12_sense_cksel_enum;
+            reset = 0x0;
+        } sense_cksel[2:0];
+    } PERI_CRG12 @ 0x30;
+
+    reg {
+        name = "VOU clock and reset control register";
+        desc = "PERI_CRG13 is a VOU clock and reset control register.
+
+VOU (VDP) clock and reset. Reset 0x17: vohd_out_pctrl = 1 and all three soft resets asserted, bus/HD/SD clocks gated. Data sheet Table 3-8 attributes hd_sd_sel to `PERI_CRG13 bit[12]` while the register table lists bit 11 (bit table used). The OpenIPC load script writes 0x510 and comments it `VDP unreset & HD clock enable`, which sets bits 10, 8 and 4 (vou_sd_cken, vou_hcken, vohd_out_pctrl) and not bit 9 (vou_hd_cken): the bit assignment of bits 9/10 may be swapped in the data sheet (open item, LOW CONFIDENCE).
+
+Data sheet 3.2.5 PERI_CRG13 (offset 0x34, printed page 3-26, `hi3518v100--Hi3518-Datasheet.txt` line 15917).";
+
+        enum PERI_CRG13_hd_sd_sel_enum {
+            SD = 0 { name = "Sd"; desc = "SD"; };
+            HD = 1 { name = "Hd"; desc = "HD"; };
+        };
+
+        field {
+            name = "hd_sd_sel";
+            desc = "VOU mode.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG13_hd_sd_sel_enum;
+            reset = 0x0;
+        } hd_sd_sel[11:11];
+
+        enum PERI_CRG13_vou_sd_cken_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "vou_sd_cken";
+            desc = "VOU SD DATE clock gating.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG13_vou_sd_cken_enum;
+            reset = 0x0;
+        } vou_sd_cken[10:10];
+
+        enum PERI_CRG13_vou_hd_cken_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "vou_hd_cken";
+            desc = "VOU HD clock gating.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG13_vou_hd_cken_enum;
+            reset = 0x0;
+        } vou_hd_cken[9:9];
+
+        enum PERI_CRG13_vou_hcken_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "vou_hcken";
+            desc = "VOU bus clock gating.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG13_vou_hcken_enum;
+            reset = 0x0;
+        } vou_hcken[8:8];
+
+        enum PERI_CRG13_ddac_pd_req_enum {
+            NORMAL_MODE = 0 { name = "Normal Mode"; desc = "normal mode"; };
+            POWER_DOWN = 1 { name = "Power Down"; desc = "power down"; };
+        };
+
+        field {
+            name = "ddac_pd_req";
+            desc = "VOU SD DAC power-down configuration.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG13_ddac_pd_req_enum;
+            reset = 0x0;
+        } ddac_pd_req[6:6];
+
+        enum PERI_CRG13_vohd_out_pctrl_enum {
+            NORMAL_PHASE_CLOCK = 0 { name = "Normal Phase Clock"; desc = "normal phase clock"; };
+            REVERSE_PHASE_CLOCK = 1 { name = "Reverse Phase Clock"; desc = "reverse phase clock"; };
+        };
+
+        field {
+            name = "vohd_out_pctrl";
+            desc = "VOU HD output associated clock phase control.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG13_vohd_out_pctrl_enum;
+            reset = 0x1;
+        } vohd_out_pctrl[4:4];
+
+        enum PERI_CRG13_vo_sd_srst_req_enum {
+            DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
+            ASSERT_RESET = 1 { name = "Assert Reset"; desc = "reset (the module is held in reset until the bit is cleared)"; };
+        };
+
+        field {
+            name = "vo_sd_srst_req";
+            desc = "VO SD soft reset request.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG13_vo_sd_srst_req_enum;
+            reset = 0x1;
+        } vo_sd_srst_req[2:2];
+
+        enum PERI_CRG13_vo_hd_srst_req_enum {
+            DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
+            ASSERT_RESET = 1 { name = "Assert Reset"; desc = "reset (the module is held in reset until the bit is cleared)"; };
+        };
+
+        field {
+            name = "vo_hd_srst_req";
+            desc = "VO HD soft reset request.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG13_vo_hd_srst_req_enum;
+            reset = 0x1;
+        } vo_hd_srst_req[1:1];
+
+        enum PERI_CRG13_vo_hrst_req_enum {
+            DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
+            ASSERT_RESET = 1 { name = "Assert Reset"; desc = "reset (the module is held in reset until the bit is cleared)"; };
+        };
+
+        field {
+            name = "vo_hrst_req";
+            desc = "VOU bus soft reset request.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG13_vo_hrst_req_enum;
+            reset = 0x1;
+        } vo_hrst_req[0:0];
+    } PERI_CRG13 @ 0x34;
+
+    reg {
+        name = "PWM clock and reset control register";
+        desc = "PERI_CRG14 is a PWM clock and reset control register.
+
+PWM clock and reset. The PWM has no clock select in this generation. The vendor U-Boot start.S (SVB voltage adjust) writes 0x2 (clock on, reset released) here before driving the core-voltage PWM.
+
+Data sheet 3.2.5 PERI_CRG14 (offset 0x38, printed page 3-27, `hi3518v100--Hi3518-Datasheet.txt` line 15983).";
+
+        enum PERI_CRG14_pwm_cken_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "pwm_cken";
+            desc = "PWM clock gating.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG14_pwm_cken_enum;
+            reset = 0x0;
+        } pwm_cken[1:1];
+
+        enum PERI_CRG14_pwm_srst_req_enum {
+            DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
+            ASSERT_RESET = 1 { name = "Assert Reset"; desc = "reset (the module is held in reset until the bit is cleared)"; };
+        };
+
+        field {
+            name = "pwm_srst_req";
+            desc = "PWM soft reset request.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG14_pwm_srst_req_enum;
+            reset = 0x0;
+        } pwm_srst_req[0:0];
+    } PERI_CRG14 @ 0x38;
+
+    reg {
+        name = "VEDU clock and soft reset control register";
+        desc = "PERI_CRG16 is a VEDU clock and soft reset control register.
+
+VEDU (H.264 encoder) clock and soft reset; source clock 225 MHz (EPLL VCO / 6); skip 1 gives 225 x 31/32 = 218 MHz. The bit row names the fields vedu0clk_loaden / vedu0clk_skipcfg / vedu0_srst_req; the bit table names are used.
+
+Data sheet 3.2.5 PERI_CRG16 (offset 0x40, printed page 3-28, `hi3518v100--Hi3518-Datasheet.txt` line 16025).";
+
+        enum PERI_CRG16_veduclk_loaden_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED_CHANGE_FREQUENCY = 1 { name = "Enabled Change Frequency"; desc = "enabled To change the frequency division configuration, perform the following steps: 1 Write a new frequency division configuration value. 2 Write 0 to veduclk_loaden. 3 Write 1 to veduclk_loaden."; };
+        };
+
+        field {
+            name = "veduclk_loaden";
+            desc = "VEDU clock frequency division configuration enable.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG16_veduclk_loaden_enum;
+            reset = 0x0;
+        } veduclk_loaden[9:9];
+
+        field {
+            name = "veduclk_skipcfg";
+            desc = "VEDU clock frequency division configuration. N: N-beat clocks are disabled every 32-beat VEDU clocks.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } veduclk_skipcfg[8:4];
+
+        enum PERI_CRG16_vedu0_cken_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "vedu0_cken";
+            desc = "VEDU clock gating.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG16_vedu0_cken_enum;
+            reset = 0x1;
+        } vedu0_cken[1:1];
+
+        enum PERI_CRG16_vedu_srst_req_enum {
+            DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
+            ASSERT_RESET = 1 { name = "Assert Reset"; desc = "reset (the module is held in reset until the bit is cleared)"; };
+        };
+
+        field {
+            name = "vedu_srst_req";
+            desc = "VEDU soft reset request.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG16_vedu_srst_req_enum;
+            reset = 0x1;
+        } vedu_srst_req[0:0];
+    } PERI_CRG16 @ 0x40;
+
+    reg {
+        name = "VPSS clock and reset control register";
+        desc = "PERI_CRG18 is a VPSS clock and reset control register.
+
+VPSS clock and soft reset; source clock 198 MHz (VPLL0 VCO / 6); skip 1 gives 192 MHz.
+
+Data sheet 3.2.5 PERI_CRG18 (offset 0x48, printed page 3-29, `hi3518v100--Hi3518-Datasheet.txt` line 16080).";
+
+        enum PERI_CRG18_vpsclk_loaden_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED_CHANGE_FREQUENCY = 1 { name = "Enabled Change Frequency"; desc = "enabled To change the frequency division configuration, perform the following steps: 1 Write a new frequency division configuration value. 2 Write 0 to vpsclk_loaden. 3 Write 1 to vpsclk_loaden."; };
+        };
+
+        field {
+            name = "vpsclk_loaden";
+            desc = "VPSS clock frequency division configuration enable.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG18_vpsclk_loaden_enum;
+            reset = 0x0;
+        } vpsclk_loaden[9:9];
+
+        field {
+            name = "vpsclk_skipcfg";
+            desc = "VPSS clock frequency division configuration. N: N-beat clocks are disabled every 32-beat VPSS clocks.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } vpsclk_skipcfg[8:4];
+
+        enum PERI_CRG18_vps_cken_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "vps_cken";
+            desc = "VPSS clock gating.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG18_vps_cken_enum;
+            reset = 0x1;
+        } vps_cken[1:1];
+
+        enum PERI_CRG18_vps_srst_req_enum {
+            DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
+            ASSERT_RESET = 1 { name = "Assert Reset"; desc = "reset (the module is held in reset until the bit is cleared)"; };
+        };
+
+        field {
+            name = "vps_srst_req";
+            desc = "VPSS soft reset request.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG18_vps_srst_req_enum;
+            reset = 0x1;
+        } vps_srst_req[0:0];
+    } PERI_CRG18 @ 0x48;
+
+    reg {
+        name = "TDE clock and soft reset control register";
+        desc = "PERI_CRG22 is a TDE clock and soft reset control register.
+
+TDE clock and soft reset; source clock 198 MHz (VPLL0 VCO / 6); skip 1 gives 192 MHz.
+
+Data sheet 3.2.5 PERI_CRG22 (offset 0x58, printed page 3-30, `hi3518v100--Hi3518-Datasheet.txt` line 16135).";
+
+        enum PERI_CRG22_tdeclk_loaden_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED_CHANGE_FREQUENCY = 1 { name = "Enabled Change Frequency"; desc = "enabled To change the frequency division configuration, perform the following steps: 1 Write a new frequency division configuration value. 2 Write 0 to tdeclk_loaden. 3 Write 1 to tdeclk_loaden."; };
+        };
+
+        field {
+            name = "tdeclk_loaden";
+            desc = "TDE clock frequency division configuration enable.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG22_tdeclk_loaden_enum;
+            reset = 0x0;
+        } tdeclk_loaden[9:9];
+
+        field {
+            name = "tdeclk_skipcfg";
+            desc = "TDE clock frequency division configuration. N: N-beat clocks are disabled every 32-beat TDE clocks.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } tdeclk_skipcfg[8:4];
+
+        enum PERI_CRG22_tde_cken_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "tde_cken";
+            desc = "TDE clock gating.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG22_tde_cken_enum;
+            reset = 0x1;
+        } tde_cken[1:1];
+
+        enum PERI_CRG22_tde_srst_req_enum {
+            DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
+            ASSERT_RESET = 1 { name = "Assert Reset"; desc = "reset (the module is held in reset until the bit is cleared)"; };
+        };
+
+        field {
+            name = "tde_srst_req";
+            desc = "TDE soft reset request.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG22_tde_srst_req_enum;
+            reset = 0x1;
+        } tde_srst_req[0:0];
+    } PERI_CRG22 @ 0x58;
+
+    reg {
+        name = "JPGE clock and soft reset control register";
+        desc = "PERI_CRG24 is a JPGE clock and soft reset control register.
+
+JPGE clock and soft reset; source clock 225 MHz (EPLL VCO / 6).
+
+Data sheet 3.2.5 PERI_CRG24 (offset 0x60, printed page 3-31, `hi3518v100--Hi3518-Datasheet.txt` line 16191).";
+
+        enum PERI_CRG24_jpgeclk_loaden_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED_CHANGE_FREQUENCY = 1 { name = "Enabled Change Frequency"; desc = "enabled To change the frequency division configuration, perform the following steps: 1 Write a new frequency division configuration value. 2 Write 0 to jpgeclk_loaden. 3 Write 1 to jpgeclk_loaden."; };
+        };
+
+        field {
+            name = "jpgeclk_loaden";
+            desc = "JPGE clock frequency division configuration enable.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG24_jpgeclk_loaden_enum;
+            reset = 0x0;
+        } jpgeclk_loaden[9:9];
+
+        field {
+            name = "jpgeclk_skipcfg";
+            desc = "JPGE clock frequency division configuration. N: N-beat clocks are disabled every 32-beat JPGE clocks (the data sheet says `TDE clocks`, a copy-paste slip).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } jpgeclk_skipcfg[8:4];
+
+        enum PERI_CRG24_jpge_cken_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "jpge_cken";
+            desc = "JPGE clock gating.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG24_jpge_cken_enum;
+            reset = 0x1;
+        } jpge_cken[1:1];
+
+        enum PERI_CRG24_jpge_srst_req_enum {
+            DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
+            ASSERT_RESET = 1 { name = "Assert Reset"; desc = "reset (the module is held in reset until the bit is cleared)"; };
+        };
+
+        field {
+            name = "jpge_srst_req";
+            desc = "JPGE soft reset request.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG24_jpge_srst_req_enum;
+            reset = 0x1;
+        } jpge_srst_req[0:0];
+    } PERI_CRG24 @ 0x60;
+
+    reg {
+        name = "MDU clock and soft reset control register";
+        desc = "PERI_CRG26 is an MDU clock and soft reset control register.
+
+MDU (motion detection unit) clock and soft reset; source clock 99 MHz (VPLL0 VCO / 12).
+
+Data sheet 3.2.5 PERI_CRG26 (offset 0x68, printed page 3-32, `hi3518v100--Hi3518-Datasheet.txt` line 16246).";
+
+        enum PERI_CRG26_mduclk_loaden_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED_CHANGE_FREQUENCY = 1 { name = "Enabled Change Frequency"; desc = "enabled To change the frequency division configuration, perform the following steps: 1 Write a new frequency division configuration value. 2 Write 0 to mduclk_loaden. 3 Write 1 to mduclk_loaden."; };
+        };
+
+        field {
+            name = "mduclk_loaden";
+            desc = "MDU clock frequency division configuration enable.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG26_mduclk_loaden_enum;
+            reset = 0x0;
+        } mduclk_loaden[9:9];
+
+        field {
+            name = "mduclk_skipcfg";
+            desc = "MDU clock frequency division configuration. N: N-beat clocks are disabled every 32-beat MDU clocks.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } mduclk_skipcfg[8:4];
+
+        enum PERI_CRG26_mdu_cken_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "mdu_cken";
+            desc = "MDU clock gating.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG26_mdu_cken_enum;
+            reset = 0x1;
+        } mdu_cken[1:1];
+
+        enum PERI_CRG26_mdu_srst_req_enum {
+            DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
+            ASSERT_RESET = 1 { name = "Assert Reset"; desc = "reset (the module is held in reset until the bit is cleared)"; };
+        };
+
+        field {
+            name = "mdu_srst_req";
+            desc = "MDU soft reset request.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG26_mdu_srst_req_enum;
+            reset = 0x1;
+        } mdu_srst_req[0:0];
+    } PERI_CRG26 @ 0x68;
+
+    reg {
+        name = "VAPU clock and soft reset control register";
+        desc = "PERI_CRG27 is a VAPU clock and soft reset control register.
+
+The summary table (and the bit row) call this the IVE clock and soft reset register; the register description and bit names call it VAPU (the video analytics unit that is the IVE). Source clock 225 MHz (EPLL VCO / 6). The OpenIPC load script leaves it commented out.
+
+Data sheet 3.2.5 PERI_CRG27 (offset 0x6C, printed page 3-33, `hi3518v100--Hi3518-Datasheet.txt` line 16302).";
+
+        enum PERI_CRG27_vapuclk_loaden_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED_CHANGE_FREQUENCY = 1 { name = "Enabled Change Frequency"; desc = "enabled To change the frequency division configuration, perform the following steps: 1 Write a new frequency division configuration value. 2 Write 0 to vapuclk_loaden. 3 Write 1 to vapuclk_loaden."; };
+        };
+
+        field {
+            name = "vapuclk_loaden";
+            desc = "VAPU clock frequency division configuration enable.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG27_vapuclk_loaden_enum;
+            reset = 0x0;
+        } vapuclk_loaden[9:9];
+
+        field {
+            name = "vapuclk_skipcfg";
+            desc = "VAPU clock frequency division configuration. N: N-beat clocks are disabled every 32-beat VAPU clocks.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } vapuclk_skipcfg[8:4];
+
+        enum PERI_CRG27_vapu_cken_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "vapu_cken";
+            desc = "VAPU clock gating.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG27_vapu_cken_enum;
+            reset = 0x1;
+        } vapu_cken[1:1];
+
+        enum PERI_CRG27_vapu_srst_req_enum {
+            DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
+            ASSERT_RESET = 1 { name = "Assert Reset"; desc = "reset (the module is held in reset until the bit is cleared)"; };
+        };
+
+        field {
+            name = "vapu_srst_req";
+            desc = "VAPU soft reset request.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG27_vapu_srst_req_enum;
+            reset = 0x1;
+        } vapu_srst_req[0:0];
+    } PERI_CRG27 @ 0x6C;
+
+    reg {
+        name = "CIPHER clock and soft reset control register";
+        desc = "PERI_CRG31 is a CIPHER clock and soft reset control register.
+
+CIPHER clock (99 MHz, VPLL0 VCO / 12) and soft reset.
+
+Data sheet 3.2.5 PERI_CRG31 (offset 0x7C, printed page 3-34, `hi3518v100--Hi3518-Datasheet.txt` line 16357).";
+
+        enum PERI_CRG31_cipher_cken_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "cipher_cken";
+            desc = "CIPHER clock gating.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG31_cipher_cken_enum;
+            reset = 0x0;
+        } cipher_cken[1:1];
+
+        enum PERI_CRG31_cipher_srst_req_enum {
+            DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
+            ASSERT_RESET = 1 { name = "Assert Reset"; desc = "reset (the module is held in reset until the bit is cleared)"; };
+        };
+
+        field {
+            name = "cipher_srst_req";
+            desc = "CIPHER soft reset request.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG31_cipher_srst_req_enum;
+            reset = 0x0;
+        } cipher_srst_req[0:0];
+    } PERI_CRG31 @ 0x7C;
+
+    reg {
+        name = "SAR ADC control register";
+        desc = "PERI_CRG32 is SAR ADC control register.
+
+SAR ADC clock gate and soft reset (the OpenIPC load script writes 0x1 = reset asserted, clock off, then lets the driver enable it).
+
+Data sheet 3.2.5 PERI_CRG32 (offset 0x80, printed page 3-34, `hi3518v100--Hi3518-Datasheet.txt` line 16389).";
+
+        enum PERI_CRG32_sar_adc_cken_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "sar_adc_cken";
+            desc = "SAR ADC clock gating.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG32_sar_adc_cken_enum;
+            reset = 0x0;
+        } sar_adc_cken[1:1];
+
+        enum PERI_CRG32_sar_adc_srst_req_enum {
+            DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
+            ASSERT_RESET = 1 { name = "Assert Reset"; desc = "reset (the module is held in reset until the bit is cleared)"; };
+        };
+
+        field {
+            name = "sar_adc_srst_req";
+            desc = "SAR ADC soft reset request.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG32_sar_adc_srst_req_enum;
+            reset = 0x0;
+        } sar_adc_srst_req[0:0];
+    } PERI_CRG32 @ 0x80;
+
+    reg {
+        name = "SIO MCLK control register";
+        desc = "PERI_CRG34 is SIO MCLK control register.
+
+SIO MCLK division: MCLK = sio_ckcfg x 675 MHz / 2^27 (source 675 MHz = EPLL VCO / 2, maximum MCLK 62.5 MHz).
+
+Data sheet 3.2.5 PERI_CRG34 (offset 0x88, printed page 3-35, `hi3518v100--Hi3518-Datasheet.txt` line 16431).";
+
+        field {
+            name = "sio_ckcfg";
+            desc = "Division clock of SIO MCLK. The configured value is calculated as follows: (MCLK/Frequency of the SIO clock source) x 2^27. The clock source frequency is 675 MHz, and the maximum value of the MCLK is 62.5 MHz.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } sio_ckcfg[23:0];
+    } PERI_CRG34 @ 0x88;
+
+    reg {
+        name = "SIO clock and soft reset control register";
+        desc = "PERI_CRG35 is SIO clock and soft reset control register.
+
+SIO (I2S) clock and soft reset, also holds the audio codec soft reset (adac_srst_req). Bit 5 is reserved.
+
+Data sheet 3.2.5 PERI_CRG35 (offset 0x8C, printed page 3-35, `hi3518v100--Hi3518-Datasheet.txt` line 16454).";
+
+        enum PERI_CRG35_adac_srst_req_enum {
+            DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
+            ASSERT_RESET = 1 { name = "Assert Reset"; desc = "reset (the module is held in reset until the bit is cleared)"; };
+        };
+
+        field {
+            name = "adac_srst_req";
+            desc = "Audio Codec soft reset request.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG35_adac_srst_req_enum;
+            reset = 0x0;
+        } adac_srst_req[15:15];
+
+        enum PERI_CRG35_sio_fsclk_div_enum {
+            DIV_16 = 0 { name = "Div 16"; desc = "FS is BCLK divided by 16"; };
+            DIV_32 = 1 { name = "Div 32"; desc = "FS is BCLK divided by 32"; };
+            DIV_48 = 2 { name = "Div 48"; desc = "FS is BCLK divided by 48"; };
+            DIV_64 = 3 { name = "Div 64"; desc = "FS is BCLK divided by 64"; };
+            DIV_128 = 4 { name = "Div 128"; desc = "FS is BCLK divided by 128"; };
+            DIV_256 = 5 { name = "Div 256"; desc = "FS is BCLK divided by 256"; };
+            DIV_8_A = 6 { name = "Div 8 A"; desc = "Other values: FS is BCLK divided by 8"; };
+            DIV_8_B = 7 { name = "Div 8 B"; desc = "Other values: FS is BCLK divided by 8"; };
+        };
+
+        field {
+            name = "sio_fsclk_div";
+            desc = "Division relationship between the bit clock BCLK and sampling clock FS (FS = BCLK / N).";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG35_sio_fsclk_div_enum;
+            reset = 0x0;
+        } sio_fsclk_div[14:12];
+
+        enum PERI_CRG35_sio_bclk_div_enum {
+            DIV_1 = 0 { name = "Div 1"; desc = "BCLK is MCLK divided by 1"; };
+            DIV_3 = 1 { name = "Div 3"; desc = "BCLK is MCLK divided by 3"; };
+            DIV_2 = 2 { name = "Div 2"; desc = "BCLK is MCLK divided by 2"; };
+            DIV_4 = 3 { name = "Div 4"; desc = "BCLK is MCLK divided by 4"; };
+            DIV_6 = 4 { name = "Div 6"; desc = "BCLK is MCLK divided by 6"; };
+            DIV_8 = 5 { name = "Div 8"; desc = "BCLK is MCLK divided by 8"; };
+            DIV_12 = 6 { name = "Div 12"; desc = "BCLK is MCLK divided by 12"; };
+            DIV_16 = 7 { name = "Div 16"; desc = "BCLK is MCLK divided by 16"; };
+            DIV_24 = 8 { name = "Div 24"; desc = "BCLK is MCLK divided by 24"; };
+            DIV_32 = 9 { name = "Div 32"; desc = "BCLK is MCLK divided by 32"; };
+            DIV_48 = 10 { name = "Div 48"; desc = "BCLK is MCLK divided by 48"; };
+            DIV_64 = 11 { name = "Div 64"; desc = "BCLK is MCLK divided by 64"; };
+            DIV_8_C = 12 { name = "Div 8 C"; desc = "Other values: BCLK is MCLK divided by 8"; };
+            DIV_8_D = 13 { name = "Div 8 D"; desc = "Other values: BCLK is MCLK divided by 8"; };
+            DIV_8_E = 14 { name = "Div 8 E"; desc = "Other values: BCLK is MCLK divided by 8"; };
+            DIV_8_F = 15 { name = "Div 8 F"; desc = "Other values: BCLK is MCLK divided by 8"; };
+        };
+
+        field {
+            name = "sio_bclk_div";
+            desc = "Division relationship between the main clock MCLK and bit clock BCLK (BCLK = MCLK / N). Note the data sheet order: 0001 = /3 and 0010 = /2.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG35_sio_bclk_div_enum;
+            reset = 0x0;
+        } sio_bclk_div[11:8];
+
+        enum PERI_CRG35_sio_fs_rxtx_sel_enum {
+            RX_FS_INDEPENDENT = 0 { name = "Rx Fs Independent"; desc = "The RX FS is independent of the TX FS."; };
+            TX_FS_MULTIPLEXES = 1 { name = "Tx Fs Multiplexes"; desc = "The TX FS multiplexes with the RX FS."; };
+        };
+
+        field {
+            name = "sio_fs_rxtx_sel";
+            desc = "Multiplexing relationship between the SIO TX FS and RX FS.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG35_sio_fs_rxtx_sel_enum;
+            reset = 0x0;
+        } sio_fs_rxtx_sel[7:7];
+
+        enum PERI_CRG35_sio_bclk_rxtx_sel_enum {
+            RX_BCLK_INDEPENDENT = 0 { name = "Rx Bclk Independent"; desc = "The RX BCLK is independent of the TX BCLK."; };
+            TX_BCLK_MULTIPLEXES = 1 { name = "Tx Bclk Multiplexes"; desc = "The TX BCLK multiplexes with the RX BCLK."; };
+        };
+
+        field {
+            name = "sio_bclk_rxtx_sel";
+            desc = "Multiplexing relationship between the SIO TX BCLK and RX BCLK.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG35_sio_bclk_rxtx_sel_enum;
+            reset = 0x0;
+        } sio_bclk_rxtx_sel[6:6];
+
+        enum PERI_CRG35_sio_bclk_sel_enum {
+            EXTERNAL_BCLK = 0 { name = "External Bclk"; desc = "external BCLK of the Hi3518"; };
+            INTERNAL_BCLK = 1 { name = "Internal Bclk"; desc = "internal BCLK of the Hi3518"; };
+        };
+
+        field {
+            name = "sio_bclk_sel";
+            desc = "SIO BCLK select.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG35_sio_bclk_sel_enum;
+            reset = 0x0;
+        } sio_bclk_sel[4:4];
+
+        enum PERI_CRG35_sio_bclkout_pctrl_enum {
+            NORMAL_PHASE = 0 { name = "Normal Phase"; desc = "normal phase"; };
+            REVERSE_PHASE = 1 { name = "Reverse Phase"; desc = "reverse phase"; };
+        };
+
+        field {
+            name = "sio_bclkout_pctrl";
+            desc = "Polarity of SIO BCLK output.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG35_sio_bclkout_pctrl_enum;
+            reset = 0x0;
+        } sio_bclkout_pctrl[3:3];
+
+        enum PERI_CRG35_sio_bclk_pctrl_enum {
+            NORMAL_PHASE = 0 { name = "Normal Phase"; desc = "normal phase"; };
+            REVERSE_PHASE = 1 { name = "Reverse Phase"; desc = "reverse phase"; };
+        };
+
+        field {
+            name = "sio_bclk_pctrl";
+            desc = "SIO BCLK polarity.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG35_sio_bclk_pctrl_enum;
+            reset = 0x1;
+        } sio_bclk_pctrl[2:2];
+
+        enum PERI_CRG35_sio_cken_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "sio_cken";
+            desc = "SIO clock gating.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG35_sio_cken_enum;
+            reset = 0x0;
+        } sio_cken[1:1];
+
+        enum PERI_CRG35_sio_srst_req_enum {
+            DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
+            ASSERT_RESET = 1 { name = "Assert Reset"; desc = "reset (the module is held in reset until the bit is cleared)"; };
+        };
+
+        field {
+            name = "sio_srst_req";
+            desc = "SIO soft reset request.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG35_sio_srst_req_enum;
+            reset = 0x0;
+        } sio_srst_req[0:0];
+    } PERI_CRG35 @ 0x8C;
+
+    reg {
+        name = "USB clock and soft reset control register";
+        desc = "PERI_CRG46 is a USB clock and soft reset control register.
+
+USB 2.0 host (EHCI/OHCI) clock and reset. Reset 0xB7: clock on, controller/hub/PHY/bus all in reset. Vendor U-Boot hiusb-3518.c bring-up order: (1) clear SYS_CTRL PERI1_USB (0x20050084, = PERIPHCTRL21) bit 22 usbphy_shutdown (the PHY is powered down by setting it, DS 3.10.4); (2) one write to PERI_CRG46 that sets usb_cken and clears usb_ctrl_utmi0_req, usb_ctrl_hub_req, usbphy_port0_treq, usbphy_req and usb_ahb_srst_req together; udelay(10); (3) SYS_CTRL PERI_USB (0x20050080, = PERIPHCTRL20): set ulpi_bypass_en (bit 3), clear wordinterface (bit 0), ss_burst16_en (bit 9) and usbovr_p_ctrl (bit 17); udelay(10). The OpenIPC script writes 0x000121A8 to PERI_USB. Bits 6 and 3 are RW reserved; the bit row also names usb_ctrl_utmi1_req / usbphy_port1_treq (port 1 does not exist on this chip).
+
+Data sheet 3.2.5 PERI_CRG46 (offset 0xB8, printed page 3-37, `hi3518v100--Hi3518-Datasheet.txt` line 16553).";
+
+        enum PERI_CRG46_usb_cken_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "usb_cken";
+            desc = "USB PHY reference clock gating.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG46_usb_cken_enum;
+            reset = 0x1;
+        } usb_cken[7:7];
+
+        enum PERI_CRG46_usb_ctrl_utmi0_req_enum {
+            DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
+            ASSERT_RESET = 1 { name = "Assert Reset"; desc = "reset (the module is held in reset until the bit is cleared)"; };
+        };
+
+        field {
+            name = "usb_ctrl_utmi0_req";
+            desc = "Soft reset request of USB controller port0.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG46_usb_ctrl_utmi0_req_enum;
+            reset = 0x1;
+        } usb_ctrl_utmi0_req[5:5];
+
+        enum PERI_CRG46_usb_ctrl_hub_req_enum {
+            DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
+            ASSERT_RESET = 1 { name = "Assert Reset"; desc = "reset (the module is held in reset until the bit is cleared)"; };
+        };
+
+        field {
+            name = "usb_ctrl_hub_req";
+            desc = "Soft reset request of the USB controller hub.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG46_usb_ctrl_hub_req_enum;
+            reset = 0x1;
+        } usb_ctrl_hub_req[4:4];
+
+        enum PERI_CRG46_usbphy_port0_treq_enum {
+            DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
+            ASSERT_RESET = 1 { name = "Assert Reset"; desc = "reset (the module is held in reset until the bit is cleared)"; };
+        };
+
+        field {
+            name = "usbphy_port0_treq";
+            desc = "Soft reset request of USB PHY port0.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG46_usbphy_port0_treq_enum;
+            reset = 0x1;
+        } usbphy_port0_treq[2:2];
+
+        enum PERI_CRG46_usbphy_req_enum {
+            DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
+            ASSERT_RESET = 1 { name = "Assert Reset"; desc = "reset (the module is held in reset until the bit is cleared)"; };
+        };
+
+        field {
+            name = "usbphy_req";
+            desc = "Soft reset request of the USB PHY.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG46_usbphy_req_enum;
+            reset = 0x1;
+        } usbphy_req[1:1];
+
+        enum PERI_CRG46_usb_ahb_srst_req_enum {
+            DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
+            ASSERT_RESET = 1 { name = "Assert Reset"; desc = "reset (the module is held in reset until the bit is cleared)"; };
+        };
+
+        field {
+            name = "usb_ahb_srst_req";
+            desc = "Soft reset request of the USB controller bus.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG46_usb_ahb_srst_req_enum;
+            reset = 0x1;
+        } usb_ahb_srst_req[0:0];
+    } PERI_CRG46 @ 0xB8;
+
+    reg {
+        name = "SFC clock and soft reset control register";
+        desc = "PERI_CRG48 is an SFC clock and soft reset control register.
+
+SFC (SPI NOR flash controller, HISFC350 at 0x10010000) clock and reset. Reset 0x2 = 24 MHz, clock on. The vendor U-Boot (hisfc350_3518.c, `HISFC350_CRG48_*`) uses bit 0 reset, bit 1 clock enable, bit 2 = 112.5 MHz, and programs the 24 MHz source for the slow (register) operations and 112 MHz for fast read.
+
+Data sheet 3.2.5 PERI_CRG48 (offset 0xC0, printed page 3-38, `hi3518v100--Hi3518-Datasheet.txt` line 16609).";
+
+        enum PERI_CRG48_sfc_cksel_enum {
+            CLK_24M = 0 { name = "Clk 24M"; desc = "24 MHz clock"; };
+            CLK_112_5M = 1 { name = "Clk 112 5M"; desc = "112.5 MHz clock (EPLL VCO 1350 MHz / 12)"; };
+        };
+
+        field {
+            name = "sfc_cksel";
+            desc = "SFC 2X clock source select. The 24 MHz clock is selected by default. The SFC itself runs at half the selected rate (vendor U-Boot hisfc350_3518.c CLK_2X()).";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG48_sfc_cksel_enum;
+            reset = 0x0;
+        } sfc_cksel[2:2];
+
+        enum PERI_CRG48_sfc_cken_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "sfc_cken";
+            desc = "SFC clock gating.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG48_sfc_cken_enum;
+            reset = 0x1;
+        } sfc_cken[1:1];
+
+        enum PERI_CRG48_sfc_srst_req_enum {
+            DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
+            ASSERT_RESET = 1 { name = "Assert Reset"; desc = "reset (the module is held in reset until the bit is cleared)"; };
+        };
+
+        field {
+            name = "sfc_srst_req";
+            desc = "SFC soft reset request.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG48_sfc_srst_req_enum;
+            reset = 0x0;
+        } sfc_srst_req[0:0];
+    } PERI_CRG48 @ 0xC0;
+
+    reg {
+        name = "SDIO clock and soft reset control register";
+        desc = "PERI_CRG49 is an SDIO clock and soft reset control register.
+
+SDIO clock and soft reset. Reset 0x2. The vendor U-Boot himciv100_3518.c clears `SDIO0CLK_PCTRL (1 << 3)` and sets `SDIO0CLK_SEL_50M (1 << 2)`: the effective value is sdioclk_sel = 01 (50 MHz); the vendor macro name for bit 3 does not match this data sheet, where bit 3 is the upper bit of sdioclk_sel and the sampling-phase bit is bit 4. Bits [31:5] are RW reserved.
+
+Data sheet 3.2.5 PERI_CRG49 (offset 0xC4, printed page 3-39, `hi3518v100--Hi3518-Datasheet.txt` line 16652).";
+
+        enum PERI_CRG49_sdioclk_pctrl_enum {
+            NORMAL_PHASE = 0 { name = "Normal Phase"; desc = "normal phase"; };
+            REVERSE_PHASE = 1 { name = "Reverse Phase"; desc = "reverse phase"; };
+        };
+
+        field {
+            name = "sdioclk_pctrl";
+            desc = "Polarity of the SDIO SAP clock.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG49_sdioclk_pctrl_enum;
+            reset = 0x0;
+        } sdioclk_pctrl[4:4];
+
+        enum PERI_CRG49_sdioclk_sel_enum {
+            CLK_24M = 0 { name = "Clk 24M"; desc = "24 MHz"; };
+            CLK_50M = 1 { name = "Clk 50M"; desc = "50 MHz (EPLL POSTDIV 150 MHz / 3)"; };
+            RESERVED_2 = 2 { name = "Reserved 2"; desc = "reserved"; };
+            RESERVED_3 = 3 { name = "Reserved 3"; desc = "reserved"; };
+        };
+
+        field {
+            name = "sdioclk_sel";
+            desc = "SDIO working clock select.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG49_sdioclk_sel_enum;
+            reset = 0x0;
+        } sdioclk_sel[3:2];
+
+        enum PERI_CRG49_sdio_cken_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "sdio_cken";
+            desc = "SDIO clock gating.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG49_sdio_cken_enum;
+            reset = 0x1;
+        } sdio_cken[1:1];
+
+        enum PERI_CRG49_sdio_srst_req_enum {
+            DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
+            ASSERT_RESET = 1 { name = "Assert Reset"; desc = "reset (the module is held in reset until the bit is cleared)"; };
+        };
+
+        field {
+            name = "sdio_srst_req";
+            desc = "SDIO soft reset request.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG49_sdio_srst_req_enum;
+            reset = 0x0;
+        } sdio_srst_req[0:0];
+    } PERI_CRG49 @ 0xC4;
+
+    reg {
+        name = "ETH interface clock and soft reset control register";
+        desc = "PERI_CRG51 is an ETH interface clock and soft reset control register.
+
+ETH (MAC/FEMAC) clock and reset. Vendor U-Boot hisfv300/sys.c: reset = bit 0, clock enable = bit 1 (agrees). LOW CONFIDENCE ON THE RESET: the Total Reset Value is 0x00000002 while the bit row prints mii_rmii_mode = 1 (0x0A); the header is used (MII mode at reset; the vendor U-Boot selects RMII from the MAC side, not here). The bit row also names `gmac0_if_srst_req`, `toe_cksel`, `toe_hcken`, `toe_hrst_req`, `toe_cken`, `toe_srst_req`, which are not in the bit table (leftovers of another SoC).
+
+Data sheet 3.2.5 PERI_CRG51 (offset 0xCC, printed page 3-40, `hi3518v100--Hi3518-Datasheet.txt` line 16702).";
+
+        enum PERI_CRG51_ethcore_cksel_enum {
+            CLK_54M = 0 { name = "Clk 54M"; desc = "54 MHz clock"; };
+            CLK_27M = 1 { name = "Clk 27M"; desc = "27 MHz clock"; };
+            CLK_99M_A = 2 { name = "Clk 99M A"; desc = "99 MHz clock (others)"; };
+            CLK_99M_B = 3 { name = "Clk 99M B"; desc = "99 MHz clock (others)"; };
+        };
+
+        field {
+            name = "ethcore_cksel";
+            desc = "ETH working clock select.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG51_ethcore_cksel_enum;
+            reset = 0x0;
+        } ethcore_cksel[7:6];
+
+        enum PERI_CRG51_ethphy_cksel_enum {
+            CLK_25M = 0 { name = "Clk 25M"; desc = "25 MHz clock"; };
+            CLK_24M = 1 { name = "Clk 24M"; desc = "24 MHz clock"; };
+            CLK_27M_A = 2 { name = "Clk 27M A"; desc = "27 MHz clock (others)"; };
+            CLK_27M_B = 3 { name = "Clk 27M B"; desc = "27 MHz clock (others)"; };
+        };
+
+        field {
+            name = "ethphy_cksel";
+            desc = "ETH PHY output clock select.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG51_ethphy_cksel_enum;
+            reset = 0x0;
+        } ethphy_cksel[5:4];
+
+        enum PERI_CRG51_mii_rmii_mode_enum {
+            MII_MODE = 0 { name = "Mii Mode"; desc = "MII mode"; };
+            RMII_MODE = 1 { name = "Rmii Mode"; desc = "RMII mode"; };
+        };
+
+        field {
+            name = "mii_rmii_mode";
+            desc = "ETH mode.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG51_mii_rmii_mode_enum;
+            reset = 0x0;
+        } mii_rmii_mode[3:3];
+
+        enum PERI_CRG51_eth_rmiick_sel_enum {
+            INTERNAL_CRG_CLOCK = 0 { name = "Internal Crg Clock"; desc = "internal CRG clock"; };
+            PAD_INPUT_CLOCK = 1 { name = "Pad Input Clock"; desc = "PAD input clock"; };
+        };
+
+        field {
+            name = "eth_rmiick_sel";
+            desc = "ETH RMII clock source select.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG51_eth_rmiick_sel_enum;
+            reset = 0x0;
+        } eth_rmiick_sel[2:2];
+
+        enum PERI_CRG51_eth_cken_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "eth_cken";
+            desc = "ETH clock gating.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG51_eth_cken_enum;
+            reset = 0x1;
+        } eth_cken[1:1];
+
+        enum PERI_CRG51_hrst_eth_s_enum {
+            DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
+            ASSERT_RESET = 1 { name = "Assert Reset"; desc = "reset (the module is held in reset until the bit is cleared)"; };
+        };
+
+        field {
+            name = "hrst_eth_s";
+            desc = "ETH soft reset request.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG51_hrst_eth_s_enum;
+            reset = 0x0;
+        } hrst_eth_s[0:0];
+    } PERI_CRG51 @ 0xCC;
+
+    reg {
+        name = "NANDC clock and soft reset control register";
+        desc = "PERI_CRG52 is a NANDC clock and soft reset control register.
+
+NANDC (NAND flash controller at 0x10000000) clock and reset. Reset 0x2 = 24 MHz, clock on. The OpenIPC load script writes 0x5 (99 MHz selected, reset asserted, clock gated) as part of its power-saving `sys_config`. The Hi3518C has no NANDC (data sheet note on the interrupt table); the register exists in the shared CRG.
+
+Data sheet 3.2.5 PERI_CRG52 (offset 0xD0, printed page 3-41, `hi3518v100--Hi3518-Datasheet.txt` line 16760).";
+
+        enum PERI_CRG52_nfc_cksel_enum {
+            CLK_24M = 0 { name = "Clk 24M"; desc = "24 MHz clock"; };
+            CLK_99M = 1 { name = "Clk 99M"; desc = "99 MHz clock (VPLL0 VCO 1188 MHz / 12)"; };
+        };
+
+        field {
+            name = "nfc_cksel";
+            desc = "NFC clock source select. The 24 MHz clock is selected by default.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG52_nfc_cksel_enum;
+            reset = 0x0;
+        } nfc_cksel[2:2];
+
+        enum PERI_CRG52_nfc_cken_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "nfc_cken";
+            desc = "NFC clock gating.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG52_nfc_cken_enum;
+            reset = 0x1;
+        } nfc_cken[1:1];
+
+        enum PERI_CRG52_nfc_srst_req_enum {
+            DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
+            ASSERT_RESET = 1 { name = "Assert Reset"; desc = "reset (the module is held in reset until the bit is cleared)"; };
+        };
+
+        field {
+            name = "nfc_srst_req";
+            desc = "NFC soft reset request.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG52_nfc_srst_req_enum;
+            reset = 0x0;
+        } nfc_srst_req[0:0];
+    } PERI_CRG52 @ 0xD0;
+
+    reg {
+        name = "DDRTEST clock and soft reset control register";
+        desc = "PERI_CRG54 is a DDRTEST clock and soft reset control register.
+
+DDRTEST clock and soft reset. The bit row also names `efuse_cken` / `efuse_srst_req` for bits [1:0], which the bit table lists as RW reserved; the Total Reset Value 0x2 sets bit 1, so that bit is kept as the reserved_nz field below.
+
+Data sheet 3.2.5 PERI_CRG54 (offset 0xD8, printed page 3-41, `hi3518v100--Hi3518-Datasheet.txt` line 16795).";
+
+        enum PERI_CRG54_ddrtest_cken_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "ddrtest_cken";
+            desc = "DDRTEST clock gating.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG54_ddrtest_cken_enum;
+            reset = 0x0;
+        } ddrtest_cken[3:3];
+
+        enum PERI_CRG54_ddrtest_srst_req_enum {
+            DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
+            ASSERT_RESET = 1 { name = "Assert Reset"; desc = "reset (the module is held in reset until the bit is cleared)"; };
+        };
+
+        field {
+            name = "ddrtest_srst_req";
+            desc = "DDRTEST soft reset request.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG54_ddrtest_srst_req_enum;
+            reset = 0x0;
+        } ddrtest_srst_req[2:2];
+
+        field {
+            name = "reserved_nz_1_0";
+            desc = "Reserved in the bit table, but the data sheet total reset value of this register has these bits set (reset 0x2).";
+            sw = r;
+            hw = w;
+            reset = 0x2;
+        } reserved_nz_1_0[1:0];
+    } PERI_CRG54 @ 0xD8;
+
+    reg {
+        name = "DMA clock and soft reset control register";
+        desc = "PERI_CRG56 is a DMA clock and soft reset control register.
+
+DMAC clock and soft reset. The Total Reset Value is 0x00000008 although the bit table only lists bits [1:0]: bit 3 is set at reset (kept as the reserved_nz field).
+
+Data sheet 3.2.5 PERI_CRG56 (offset 0xE0, printed page 3-42, `hi3518v100--Hi3518-Datasheet.txt` line 16840).";
+
+        field {
+            name = "reserved_nz_31_2";
+            desc = "Reserved in the bit table, but the data sheet total reset value of this register has these bits set (reset 0x2).";
+            sw = r;
+            hw = w;
+            reset = 0x2;
+        } reserved_nz_31_2[31:2];
+
+        enum PERI_CRG56_dma_cken_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "dma_cken";
+            desc = "DMA clock gating.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG56_dma_cken_enum;
+            reset = 0x0;
+        } dma_cken[1:1];
+
+        enum PERI_CRG56_dma_srst_req_enum {
+            DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
+            ASSERT_RESET = 1 { name = "Assert Reset"; desc = "reset (the module is held in reset until the bit is cleared)"; };
+        };
+
+        field {
+            name = "dma_srst_req";
+            desc = "DMA soft reset request.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG56_dma_srst_req_enum;
+            reset = 0x0;
+        } dma_srst_req[0:0];
+    } PERI_CRG56 @ 0xE0;
+
+    reg {
+        name = "Soft reset control register for other CRG interface modules";
+        desc = "PERI_CRG57 is a soft reset control register for other CRG interface modules.
+
+UART/SSP/IR/I2C/Temper_Cap clock gates and soft resets. There is NO UART clock-source mux on this generation: UARTCLK is the APB clock (data sheet UART chapter: `reference clock = 1/2 bus clock` = AXI/2 = DDR/4 = 110 MHz at the reset PLL settings; the vendor U-Boot CFG_TIMER_CLK uses the same bus/2). The gates reset to enabled (reset 0x0003F000). `urat2_cken` in the DS is a typo for uart2_cken. Bits [11:10] and [3] are RW reserved. On the Hi3518C UART2, SSP0, SSP1 and IR are absent (data sheet notes); their gate/reset bits exist but control nothing.
+
+Data sheet 3.2.5 PERI_CRG57 (offset 0xE4, printed page 3-43, `hi3518v100--Hi3518-Datasheet.txt` line 16882).";
+
+        enum PERI_CRG57_uart2_cken_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "uart2_cken";
+            desc = "UART2 clock gating.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG57_uart2_cken_enum;
+            reset = 0x1;
+        } uart2_cken[17:17];
+
+        enum PERI_CRG57_uart1_cken_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "uart1_cken";
+            desc = "UART1 clock gating.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG57_uart1_cken_enum;
+            reset = 0x1;
+        } uart1_cken[16:16];
+
+        enum PERI_CRG57_uart0_cken_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "uart0_cken";
+            desc = "UART0 clock gating.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG57_uart0_cken_enum;
+            reset = 0x1;
+        } uart0_cken[15:15];
+
+        enum PERI_CRG57_ssp1_cken_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "ssp1_cken";
+            desc = "SSP1 clock gating.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG57_ssp1_cken_enum;
+            reset = 0x1;
+        } ssp1_cken[14:14];
+
+        enum PERI_CRG57_ssp0_cken_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "ssp0_cken";
+            desc = "SSP0 clock gating.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG57_ssp0_cken_enum;
+            reset = 0x1;
+        } ssp0_cken[13:13];
+
+        enum PERI_CRG57_ir_cken_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "ir_cken";
+            desc = "IR clock gating.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG57_ir_cken_enum;
+            reset = 0x1;
+        } ir_cken[12:12];
+
+        enum PERI_CRG57_uart2_srst_req_enum {
+            DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
+            ASSERT_RESET = 1 { name = "Assert Reset"; desc = "reset (the module is held in reset until the bit is cleared)"; };
+        };
+
+        field {
+            name = "uart2_srst_req";
+            desc = "UART2 soft reset request.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG57_uart2_srst_req_enum;
+            reset = 0x0;
+        } uart2_srst_req[9:9];
+
+        enum PERI_CRG57_uart1_srst_req_enum {
+            DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
+            ASSERT_RESET = 1 { name = "Assert Reset"; desc = "reset (the module is held in reset until the bit is cleared)"; };
+        };
+
+        field {
+            name = "uart1_srst_req";
+            desc = "UART1 soft reset request.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG57_uart1_srst_req_enum;
+            reset = 0x0;
+        } uart1_srst_req[8:8];
+
+        enum PERI_CRG57_uart0_srst_req_enum {
+            DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
+            ASSERT_RESET = 1 { name = "Assert Reset"; desc = "reset (the module is held in reset until the bit is cleared)"; };
+        };
+
+        field {
+            name = "uart0_srst_req";
+            desc = "UART0 soft reset request.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG57_uart0_srst_req_enum;
+            reset = 0x0;
+        } uart0_srst_req[7:7];
+
+        enum PERI_CRG57_ssp1_srst_req_enum {
+            DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
+            ASSERT_RESET = 1 { name = "Assert Reset"; desc = "reset (the module is held in reset until the bit is cleared)"; };
+        };
+
+        field {
+            name = "ssp1_srst_req";
+            desc = "SSP1 soft reset request.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG57_ssp1_srst_req_enum;
+            reset = 0x0;
+        } ssp1_srst_req[6:6];
+
+        enum PERI_CRG57_ssp0_srst_req_enum {
+            DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
+            ASSERT_RESET = 1 { name = "Assert Reset"; desc = "reset (the module is held in reset until the bit is cleared)"; };
+        };
+
+        field {
+            name = "ssp0_srst_req";
+            desc = "SSP0 soft reset request.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG57_ssp0_srst_req_enum;
+            reset = 0x0;
+        } ssp0_srst_req[5:5];
+
+        enum PERI_CRG57_ir_srst_req_enum {
+            DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
+            ASSERT_RESET = 1 { name = "Assert Reset"; desc = "reset (the module is held in reset until the bit is cleared)"; };
+        };
+
+        field {
+            name = "ir_srst_req";
+            desc = "IR soft reset request.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG57_ir_srst_req_enum;
+            reset = 0x0;
+        } ir_srst_req[4:4];
+
+        enum PERI_CRG57_t_cap_srst_req_enum {
+            DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
+            ASSERT_RESET = 1 { name = "Assert Reset"; desc = "reset (the module is held in reset until the bit is cleared)"; };
+        };
+
+        field {
+            name = "t_cap_srst_req";
+            desc = "Temper_Cap (temperature capture, interrupt 10) soft reset request. The data sheet names this bit `t_cap_srst_req`.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG57_t_cap_srst_req_enum;
+            reset = 0x0;
+        } t_cap_srst_req[2:2];
+
+        enum PERI_CRG57_i2c_srst_req_enum {
+            DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
+            ASSERT_RESET = 1 { name = "Assert Reset"; desc = "reset (the module is held in reset until the bit is cleared)"; };
+        };
+
+        field {
+            name = "i2c_srst_req";
+            desc = "I2C soft reset request.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG57_i2c_srst_req_enum;
+            reset = 0x0;
+        } i2c_srst_req[1:1];
+
+        enum PERI_CRG57_test_clk_en_enum {
+            ALL_TEST_CLOCKS = 0 { name = "All Test Clocks"; desc = "All test clocks are disabled."; };
+            ALL_TEST_CLOCKS_2 = 1 { name = "All Test Clocks 2"; desc = "All test clocks are enabled."; };
+        };
+
+        field {
+            name = "test_clk_en";
+            desc = "Test clock enable.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG57_test_clk_en_enum;
+            reset = 0x0;
+        } test_clk_en[0:0];
+    } PERI_CRG57 @ 0xE4;
+
+    reg {
+        name = "CRG status register";
+        desc = "PERI_CRG58 is a CRG status register.
+
+PLL lock status. Wait for apll_lock (bit 0) before switching SYS_CTRL SC_CTRL[modectrl] to normal mode (100) and for the other PLLs before using their clocks.
+
+Data sheet 3.2.5 PERI_CRG58 (offset 0xE8, printed page 3-44, `hi3518v100--Hi3518-Datasheet.txt` line 16966).";
+
+        enum PERI_CRG58_epll_lock_enum {
+            UNLOCKED = 0 { name = "Unlocked"; desc = "unlocked"; };
+            LOCKED = 1 { name = "Locked"; desc = "locked"; };
+        };
+
+        field {
+            name = "epll_lock";
+            desc = "EPLL lock status.";
+            sw = r;
+            hw = w;
+            encode = PERI_CRG58_epll_lock_enum;
+            reset = 0x0;
+        } epll_lock[3:3];
+
+        enum PERI_CRG58_bpll_lock_enum {
+            UNLOCKED = 0 { name = "Unlocked"; desc = "unlocked"; };
+            LOCKED = 1 { name = "Locked"; desc = "locked"; };
+        };
+
+        field {
+            name = "bpll_lock";
+            desc = "BPLL lock status.";
+            sw = r;
+            hw = w;
+            encode = PERI_CRG58_bpll_lock_enum;
+            reset = 0x0;
+        } bpll_lock[2:2];
+
+        enum PERI_CRG58_vpll0_lock_enum {
+            UNLOCKED = 0 { name = "Unlocked"; desc = "unlocked"; };
+            LOCKED = 1 { name = "Locked"; desc = "locked"; };
+        };
+
+        field {
+            name = "vpll0_lock";
+            desc = "VPLL0 lock status.";
+            sw = r;
+            hw = w;
+            encode = PERI_CRG58_vpll0_lock_enum;
+            reset = 0x0;
+        } vpll0_lock[1:1];
+
+        enum PERI_CRG58_apll_lock_enum {
+            UNLOCKED = 0 { name = "Unlocked"; desc = "unlocked"; };
+            LOCKED = 1 { name = "Locked"; desc = "locked"; };
+        };
+
+        field {
+            name = "apll_lock";
+            desc = "APLL lock status.";
+            sw = r;
+            hw = w;
+            encode = PERI_CRG58_apll_lock_enum;
+            reset = 0x0;
+        } apll_lock[0:0];
+    } PERI_CRG58 @ 0xE8;
+
+    reg {
+        name = "Speed monitor control register";
+        desc = "PERI_CRG61 is a speed monitor control register.
+
+Speed monitor (silicon speed sensor) control. The vendor U-Boot start.S (svb_voltage_adjust) reads the sensor 8 times: write 0x3 then 0x7 to this register (osc_clk_en and osc_mode, then osc_en), poll PERI_CRG62 osc_valid (bit 9), read osc_value (bits 8:0), and averages.
+
+Data sheet 3.2.5 PERI_CRG61 (offset 0xF4, printed page 3-45, `hi3518v100--Hi3518-Datasheet.txt` line 17014).";
+
+        enum PERI_CRG61_osc_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "osc_en";
+            desc = "Speed monitor enable.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG61_osc_en_enum;
+            reset = 0x0;
+        } osc_en[2:2];
+
+        enum PERI_CRG61_osc_mode_enum {
+            STEP_150 = 0 { name = "Step 150"; desc = "150-step level"; };
+            STEP_200 = 1 { name = "Step 200"; desc = "200-step level"; };
+        };
+
+        field {
+            name = "osc_mode";
+            desc = "Speed monitor mode.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG61_osc_mode_enum;
+            reset = 0x0;
+        } osc_mode[1:1];
+
+        enum PERI_CRG61_osc_clk_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "osc_clk_en";
+            desc = "Speed monitor clock enable.";
+            sw = rw;
+            hw = r;
+            encode = PERI_CRG61_osc_clk_en_enum;
+            reset = 0x0;
+        } osc_clk_en[0:0];
+    } PERI_CRG61 @ 0xF4;
+
+    reg {
+        name = "Speed monitor status register 1";
+        desc = "PERI_CRG62 is speed monitor status register 1.
+
+Speed monitor status. Used by the vendor U-Boot SVB code (see PERI_CRG61) to pick the core voltage.
+
+Data sheet 3.2.5 PERI_CRG62 (offset 0xF8, printed page 3-46, `hi3518v100--Hi3518-Datasheet.txt` line 17053).";
+
+        enum PERI_CRG62_osc_valid_enum {
+            INVALID = 0 { name = "Invalid"; desc = "invalid;"; };
+            VALID = 1 { name = "Valid"; desc = "valid."; };
+        };
+
+        field {
+            name = "osc_valid";
+            desc = "Status of the SpeedMonitor.";
+            sw = r;
+            hw = w;
+            encode = PERI_CRG62_osc_valid_enum;
+            reset = 0x0;
+        } osc_valid[9:9];
+
+        field {
+            name = "osc_value";
+            desc = "Value of the SpeedMonitor.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } osc_value[8:0];
+    } PERI_CRG62 @ 0xF8;
+
+};
+
+`endif
