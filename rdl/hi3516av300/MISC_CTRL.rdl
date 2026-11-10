@@ -1,0 +1,4197 @@
+`ifndef HI3516AV300_MISC_CTRL_RDL
+`define HI3516AV300_MISC_CTRL_RDL
+
+regfile eMISC_CTRL {
+    name = "Miscellaneous control (MISC_CTRL), Hi3516A V300";
+    desc = "    MISC_CTRL miscellaneous control registers at 0x12030000. Names MISC_CTRLn with offset = n x 4. Data sheet: Hi3516AV300 Professional Smart IP Camera SoC User Guide, document version 01 (2019-09-15), original Chinese edition (watermarked), register overview 3.5.4 (Table 3-4) and descriptions 3.5.5 (printed pages 3-70..3-110). Only the 55 registers listed in the data sheet exist: MISC_CTRL0, 1, 3, 4, 6, 8, 10..12, 14..39 and 44..63 (the numbers skipped in Table 3-4 are not implemented). Offset = n x 4 holds up to MISC_CTRL56 (0xE0); MISC_CTRL57..63 sit at 0x100..0x118, i.e. at (n + 7) x 4 (data sheet naming anomaly, offsets as printed). Read from the PDF text (pdftotext -raw) and cross-checked with the layout dump `hi3516av300--Hi3516AV300-Datasheet.txt` lines 10618..13677. Checked on 2026-11-10.
+
+    Contents: function select (MISC_CTRL0/1: TEST_CLK select, JTAG on SDIO0, eMMC/SDIO bug-fix bypasses, SPI chip-select polarity, SDIO0 power switch), CPU status (MISC_CTRL3), RAM retention/power (MISC_CTRL4), video data path modes (MISC_CTRL6), USB 2.0 controller options (MISC_CTRL8), DDR scrambling (MISC_CTRL10..12), AXI bus timeout and priority control for the SYSCFG, SYSDATA, AHB1, MEDIA0, MEDIA1, MEDIA2 and VIVO buses (MISC_CTRL14..31), DDR controller QoS groups (MISC_CTRL32..39), SVB PWM (MISC_CTRL44), TSensor (MISC_CTRL45..50), upgrade mode (MISC_CTRL51), HPM/SHPM (MISC_CTRL52..56), DDRC register lock (MISC_CTRL57) and the secure-access/security-attribute registers (MISC_CTRL58..63). No clock or PLL registers live here (see CRG.rdl).
+
+    Data sheet quirks: the description of MISC_CTRL8 has no `MISC_CTRL8 is` sentence; the bit-priority register numbers in the titles skip 3 (MISC_CTRL17 is `register 4`); the layout dump has wrapped or watermark-damaged field names (for example `Comedia1_timeout_val`, `gojpgd_slv_sec_acc_di`, `cpu_hpm_pc_record` three times) that were rebuilt from the PDF text, and MISC_CTRL62 bits 9 and 8 have no name in the layout dump (names jpgd_mst_r_sec_acc and jpgd_mst_w_sec_acc from the PDF text); the extracted JSON header of MISC_CTRL44/MISC_CTRL51 shows `0x0000000c` because of watermark noise, the true total reset value is 0 (all field resets are 0). No vendor code for this block (the vendor Linux driver only uses the CRG, not the MISC block) was found for cross-checks.";
+
+    reg {
+        name = "MISC function select register 0";
+        desc = "MISC function select register 0.
+
+Reset 0x2000: vgs_bootram_mode = 1 (the VGS RAM is used as BOOTRAM). Contains the TEST_CLK source select, JTAG-on-SDIO0 pin mux, eMMC/SDIO bug-fix bypass bits, SDIO0 card-detect polarity and the SPI/3-wire chip-select polarity and SPI1 chip-select select bits.
+
+Data sheet 3.5.5 MISC_CTRL0 (offset 0x0, printed page 3-70, `hi3516av300--Hi3516AV300-Datasheet.txt` line 10785).";
+
+        enum MISC_CTRL0_test_clk_sel_enum {
+            PLL_TEST_OUT0 = 0 { name = "Pll Test Out0"; desc = "Pll_test_out[0]"; };
+            PLL_TEST_OUT1 = 1 { name = "Pll Test Out1"; desc = "Pll_test_out[1]"; };
+            PLL_TEST_OUT2 = 2 { name = "Pll Test Out2"; desc = "Pll_test_out[2]"; };
+            PLL_TEST_OUT3 = 3 { name = "Pll Test Out3"; desc = "Pll_test_out[3]"; };
+            CLK_24M = 4 { name = "Clk 24M"; desc = "Clk_24m"; };
+            AUDIOCODEC_MCLK = 5 { name = "Audiocodec Mclk"; desc = "Audiocodec_mclk"; };
+            USB_PHY_CLK = 6 { name = "Usb Phy Clk"; desc = "Usb_phy_clk"; };
+            MIPITX_PHY_LANEBYTE_CLK = 7 { name = "Mipitx Phy Lanebyte Clk"; desc = "Mipitx_phy_lanebyte_clk"; };
+            HDMITX_PHY_TMDS_CLK = 8 { name = "Hdmitx Phy Tmds Clk"; desc = "Hdmitx_phy_tmds_clk"; };
+            RTC_CLK_OUT = 9 { name = "Rtc Clk Out"; desc = "Rtc_clk_out"; };
+            RESERVED_10 = 10 { name = "Reserved 10"; desc = "Reserved"; };
+            RESERVED_11 = 11 { name = "Reserved 11"; desc = "Reserved"; };
+            RESERVED_12 = 12 { name = "Reserved 12"; desc = "Reserved"; };
+            RESERVED_13 = 13 { name = "Reserved 13"; desc = "Reserved"; };
+            RESERVED_14 = 14 { name = "Reserved 14"; desc = "Reserved"; };
+            RESERVED_15 = 15 { name = "Reserved 15"; desc = "Reserved"; };
+        };
+
+        field {
+            name = "test_clk_sel";
+            desc = "Source select of the TEST_CLK test clock. Other values are reserved.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL0_test_clk_sel_enum;
+            reset = 0x0;
+        } test_clk_sel[19:16];
+
+        enum MISC_CTRL0_jtag_on_sdio_enum {
+            JTAG_PINS = 0 { name = "Jtag Pins"; desc = "JTAG signals on the JTAG_* pins"; };
+            SDIO0_PINS = 1 { name = "Sdio0 Pins"; desc = "JTAG signals on the SDIO0_* pins"; };
+        };
+
+        field {
+            name = "jtag_on_sdio";
+            desc = "Multiplexes the JTAG signals onto the SDIO0 interface. 0: JTAG signals on the JTAG_* pins, 1: JTAG signals on the SDIO0_* pins.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL0_jtag_on_sdio_enum;
+            reset = 0x0;
+        } jtag_on_sdio[14:14];
+
+        enum MISC_CTRL0_vgs_bootram_mode_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "Disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "Enabled"; };
+        };
+
+        field {
+            name = "vgs_bootram_mode";
+            desc = "Use of the VGS RAM as BOOTRAM. Enable it when BOOTRAM is needed; set it to 0 when the VGS function is used. 0: disabled, 1: enabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL0_vgs_bootram_mode_enum;
+            reset = 0x1;
+        } vgs_bootram_mode[13:13];
+
+        enum MISC_CTRL0_emmc_fix_bypass_enum {
+            FIX_ENABLED = 0 { name = "Fix Enabled"; desc = "Fix logic enabled"; };
+            FIX_DISABLED = 1 { name = "Fix Disabled"; desc = "Fix logic disabled"; };
+        };
+
+        field {
+            name = "emmc_fix_bypass";
+            desc = "eMMC controller card-not-recognised bug fix logic enable control. 0: fix logic enabled, 1: fix logic disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL0_emmc_fix_bypass_enum;
+            reset = 0x0;
+        } emmc_fix_bypass[12:12];
+
+        enum MISC_CTRL0_sdio1_fix_bypass_enum {
+            FIX_ENABLED = 0 { name = "Fix Enabled"; desc = "Fix logic enabled"; };
+            FIX_DISABLED = 1 { name = "Fix Disabled"; desc = "Fix logic disabled"; };
+        };
+
+        field {
+            name = "sdio1_fix_bypass";
+            desc = "SDIO1 controller card-not-recognised bug fix logic enable control. 0: fix logic enabled, 1: fix logic disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL0_sdio1_fix_bypass_enum;
+            reset = 0x0;
+        } sdio1_fix_bypass[11:11];
+
+        enum MISC_CTRL0_sdio1_pd_mux_bypass_enum {
+            FIX_ENABLED = 0 { name = "Fix Enabled"; desc = "Fix logic enabled"; };
+            FIX_DISABLED = 1 { name = "Fix Disabled"; desc = "Fix logic disabled"; };
+        };
+
+        field {
+            name = "sdio1_pd_mux_bypass";
+            desc = "SDIO1 controller card power-down bug fix logic enable control. 0: fix logic enabled, 1: fix logic disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL0_sdio1_pd_mux_bypass_enum;
+            reset = 0x0;
+        } sdio1_pd_mux_bypass[10:10];
+
+        enum MISC_CTRL0_sdio0_carddetect_pol_enum {
+            ACTIVE_LOW = 0 { name = "Active Low"; desc = "Card-detect signal active low"; };
+            ACTIVE_HIGH = 1 { name = "Active High"; desc = "Card-detect signal active high"; };
+        };
+
+        field {
+            name = "sdio0_carddetect_pol";
+            desc = "SDIO0 card-detect signal polarity control. 0: card-detect signal active low, 1: card-detect signal active high.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL0_sdio0_carddetect_pol_enum;
+            reset = 0x0;
+        } sdio0_carddetect_pol[6:6];
+
+        enum MISC_CTRL0_spi2_cs_pctrl_enum {
+            ACTIVE_LOW = 0 { name = "Active Low"; desc = "SPI2_CSN active low"; };
+            ACTIVE_HIGH = 1 { name = "Active High"; desc = "SPI2_CSN active high"; };
+        };
+
+        field {
+            name = "spi2_cs_pctrl";
+            desc = "SPI2 chip-select polarity control. 0: SPI2_CSN active low, 1: SPI2_CSN active high.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL0_spi2_cs_pctrl_enum;
+            reset = 0x0;
+        } spi2_cs_pctrl[5:5];
+
+        enum MISC_CTRL0_spi1_cs1_pctrl_enum {
+            ACTIVE_LOW = 0 { name = "Active Low"; desc = "SPI1_CSN1 active low"; };
+            ACTIVE_HIGH = 1 { name = "Active High"; desc = "SPI1_CSN1 active high"; };
+        };
+
+        field {
+            name = "spi1_cs1_pctrl";
+            desc = "SPI1 chip-select 1 polarity control. 0: SPI1_CSN1 active low, 1: SPI1_CSN1 active high.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL0_spi1_cs1_pctrl_enum;
+            reset = 0x0;
+        } spi1_cs1_pctrl[4:4];
+
+        enum MISC_CTRL0_spi1_cs0_pctrl_enum {
+            ACTIVE_LOW = 0 { name = "Active Low"; desc = "SPI1_CSN0 active low"; };
+            ACTIVE_HIGH = 1 { name = "Active High"; desc = "SPI1_CSN0 active high"; };
+        };
+
+        field {
+            name = "spi1_cs0_pctrl";
+            desc = "SPI1 chip-select 0 polarity control. 0: SPI1_CSN0 active low, 1: SPI1_CSN0 active high.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL0_spi1_cs0_pctrl_enum;
+            reset = 0x0;
+        } spi1_cs0_pctrl[3:3];
+
+        enum MISC_CTRL0_ssp1_cs_sel_enum {
+            SPI1_CSN0 = 0 { name = "Spi1 Csn0"; desc = "SPI1_CSN0"; };
+            SPI1_CSN1 = 1 { name = "Spi1 Csn1"; desc = "SPI1_CSN1"; };
+        };
+
+        field {
+            name = "ssp1_cs_sel";
+            desc = "SPI1 output chip-select selection. 0: SPI1_CSN0, 1: SPI1_CSN1.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL0_ssp1_cs_sel_enum;
+            reset = 0x0;
+        } ssp1_cs_sel[2:2];
+
+        enum MISC_CTRL0_spi_3wire_cs_pctrl_enum {
+            ACTIVE_LOW = 0 { name = "Active Low"; desc = "SPI_3LINE_CSN active low"; };
+            ACTIVE_HIGH = 1 { name = "Active High"; desc = "SPI_3LINE_CSN active high"; };
+        };
+
+        field {
+            name = "spi_3wire_cs_pctrl";
+            desc = "3WIRE SPI chip-select polarity control. 0: SPI_3LINE_CSN active low, 1: SPI_3LINE_CSN active high.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL0_spi_3wire_cs_pctrl_enum;
+            reset = 0x0;
+        } spi_3wire_cs_pctrl[1:1];
+
+        enum MISC_CTRL0_spi0_cs_pctrl_enum {
+            ACTIVE_LOW = 0 { name = "Active Low"; desc = "SPI0_CSN active low"; };
+            ACTIVE_HIGH = 1 { name = "Active High"; desc = "SPI0_CSN active high"; };
+        };
+
+        field {
+            name = "spi0_cs_pctrl";
+            desc = "SPI0 chip-select polarity control. 0: SPI0_CSN active low, 1: SPI0_CSN active high.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL0_spi0_cs_pctrl_enum;
+            reset = 0x0;
+        } spi0_cs_pctrl[0:0];
+    } MISC_CTRL0 @ 0x0;
+
+    reg {
+        name = "MISC function select register 1";
+        desc = "MISC function select register 1.
+
+SDIO0 PowerSwitch control: when sdio0_pswitch_ctrl_sel = 1 the MISC register bits drive the voltage switch instead of the SDIO0 controller.
+
+Data sheet 3.5.5 MISC_CTRL1 (offset 0x4, printed page 3-72, `hi3516av300--Hi3516AV300-Datasheet.txt` line 10911).";
+
+        enum MISC_CTRL1_sdio0_pswitch_ctrl_sel_enum {
+            SDIO0_CONTROLLER = 0 { name = "Sdio0 Controller"; desc = "Controlled by the SDIO0 controller"; };
+            MISC_REGISTERS = 1 { name = "Misc Registers"; desc = "Controlled by the MISC registers"; };
+        };
+
+        field {
+            name = "sdio0_pswitch_ctrl_sel";
+            desc = "SDIO0 PowerSwitch control select. 0: controlled by the SDIO0 controller, 1: controlled by the MISC registers.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL1_sdio0_pswitch_ctrl_sel_enum;
+            reset = 0x0;
+        } sdio0_pswitch_ctrl_sel[2:2];
+
+        enum MISC_CTRL1_sdio0_pswitch_sel_enum {
+            V3P3 = 0 { name = "V3P3"; desc = "3.3 V"; };
+            V1P8 = 1 { name = "V1P8"; desc = "1.8 V"; };
+        };
+
+        field {
+            name = "sdio0_pswitch_sel";
+            desc = "SDIO0 PowerSwitch output voltage select. 0: 3.3 V, 1: 1.8 V.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL1_sdio0_pswitch_sel_enum;
+            reset = 0x0;
+        } sdio0_pswitch_sel[1:1];
+
+        enum MISC_CTRL1_sdio0_pswitch_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "SDIO0 PowerSwitch disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "SDIO0 PowerSwitch enabled"; };
+        };
+
+        field {
+            name = "sdio0_pswitch_en";
+            desc = "SDIO0 PowerSwitch enable. Only effective when sdio0_pswitch_ctrl_sel is 1. 0: SDIO0 PowerSwitch disabled, 1: SDIO0 PowerSwitch enabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL1_sdio0_pswitch_en_enum;
+            reset = 0x0;
+        } sdio0_pswitch_en[0:0];
+    } MISC_CTRL1 @ 0x4;
+
+    reg {
+        name = "CPU control register 1";
+        desc = "CPU control register 1.
+
+Read-only Cortex-A7 status: SMP/AMP mode and WFI/WFE state of the two cores and of L2.
+
+Data sheet 3.5.5 MISC_CTRL3 (offset 0xC, printed page 3-73, `hi3516av300--Hi3516AV300-Datasheet.txt` line 10945).";
+
+        field {
+            name = "a7_smpnamp";
+            desc = "Indicates whether A7 CORE0/CORE1 are in SMP (Symmetric MultiProcessing) or AMP (Asymmetric MultiProcessing) mode. Bit 0 (reg bit 5) is CORE0 and bit 1 (reg bit 6) is CORE1; high means SMP mode, low means AMP mode.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } a7_smpnamp[6:5];
+
+        enum MISC_CTRL3_a7_standbywfi_l2_enum {
+            NOT_IN_WFI = 0 { name = "Not In Wfi"; desc = "Not in WFI low-power state"; };
+            IN_WFI = 1 { name = "In Wfi"; desc = "In WFI low-power state"; };
+        };
+
+        field {
+            name = "a7_standbywfi_l2";
+            desc = "A7 L2 WFI low-power state indication. 0: not in WFI low-power state, 1: in WFI low-power state.";
+            sw = r;
+            hw = w;
+            encode = MISC_CTRL3_a7_standbywfi_l2_enum;
+            reset = 0x0;
+        } a7_standbywfi_l2[4:4];
+
+        field {
+            name = "a7_standbywfi";
+            desc = "A7 CORE0/CORE1 WFI low-power state indication. Bit 0 (reg bit 2) is CORE0 and bit 1 (reg bit 3) is CORE1; high means the core is in the WFI low-power state.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } a7_standbywfi[3:2];
+
+        field {
+            name = "a7_standbywfe";
+            desc = "A7 CORE0/CORE1 WFE low-power state indication. Bit 0 (reg bit 0) is CORE0 and bit 1 (reg bit 1) is CORE1; high means the core is in the WFE low-power state.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } a7_standbywfe[1:0];
+    } MISC_CTRL3 @ 0xC;
+
+    reg {
+        name = "RAM Retention control register 0";
+        desc = "RAM Retention control register 0.
+
+Reset 0xD: gzip_ram_clk_gate_en_bypass = 1, vedu_ret1n_bypass = 1, spacc_ret1n = 1, bootrom_pgen = 0 (BOOTROM powered).
+
+Data sheet 3.5.5 MISC_CTRL4 (offset 0x10, printed page 3-74, `hi3516av300--Hi3516AV300-Datasheet.txt` line 11001).";
+
+        enum MISC_CTRL4_gzip_ram_clk_gate_en_bypass_enum {
+            AUTO_GATING_ON = 0 { name = "Auto Gating On"; desc = "Automatic clock gating enabled"; };
+            AUTO_GATING_OFF = 1 { name = "Auto Gating Off"; desc = "Automatic clock gating disabled; the GZIP RAM clock is always on"; };
+        };
+
+        field {
+            name = "gzip_ram_clk_gate_en_bypass";
+            desc = "Automatic clock gating control of the RAM inside the GZIP module. 0: automatic clock gating enabled, 1: automatic clock gating disabled; the GZIP RAM clock is always on.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL4_gzip_ram_clk_gate_en_bypass_enum;
+            reset = 0x1;
+        } gzip_ram_clk_gate_en_bypass[3:3];
+
+        enum MISC_CTRL4_vedu_ret1n_bypass_enum {
+            AUTO_RETENTION_ON = 0 { name = "Auto Retention On"; desc = "VEDU RAM automatic Retention enabled"; };
+            AUTO_RETENTION_OFF = 1 { name = "Auto Retention Off"; desc = "VEDU RAM automatic Retention disabled"; };
+        };
+
+        field {
+            name = "vedu_ret1n_bypass";
+            desc = "Automatic RAM Retention function control of the VEDU module. 0: VEDU RAM automatic Retention enabled, 1: VEDU RAM automatic Retention disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL4_vedu_ret1n_bypass_enum;
+            reset = 0x1;
+        } vedu_ret1n_bypass[2:2];
+
+        enum MISC_CTRL4_bootrom_pgen_enum {
+            POWERED_ON = 0 { name = "Powered On"; desc = "BOOTROM powered on"; };
+            POWERED_OFF = 1 { name = "Powered Off"; desc = "BOOTROM powered off; it cannot work"; };
+        };
+
+        field {
+            name = "bootrom_pgen";
+            desc = "BOOTROM power supply control. 0: BOOTROM powered on, 1: BOOTROM powered off; it cannot work.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL4_bootrom_pgen_enum;
+            reset = 0x0;
+        } bootrom_pgen[1:1];
+
+        enum MISC_CTRL4_spacc_ret1n_enum {
+            RETENTION = 0 { name = "Retention"; desc = "SPACC RAM in Retention state"; };
+            ACTIVE = 1 { name = "Active"; desc = "SPACC RAM in Active state"; };
+        };
+
+        field {
+            name = "spacc_ret1n";
+            desc = "RAM Retention control of the SPACC. The bit can be set to 0 to save power while the SPACC controller is not enabled. 0: SPACC RAM in Retention state, 1: SPACC RAM in Active state.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL4_spacc_ret1n_enum;
+            reset = 0x1;
+        } spacc_ret1n[0:0];
+    } MISC_CTRL4 @ 0x10;
+
+    reg {
+        name = "VICAP/VDP mode control register 1";
+        desc = "VICAP/VDP mode control register 1.
+
+Data path mode selects of the video chain (VICAP -> VIPROC -> VPSS online/offline), the VDP parallel output mode and the MIPI RX channel work modes. Use together with PERI_CRG42/PERI_CRG63.
+
+Data sheet 3.5.5 MISC_CTRL6 (offset 0x18, printed page 3-74, `hi3516av300--Hi3516AV300-Datasheet.txt` line 11046).";
+
+        enum MISC_CTRL6_vo_pdata_reverse_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "Disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "Enabled"; };
+        };
+
+        field {
+            name = "vo_pdata_reverse";
+            desc = "VDP parallel output bit-reversal enable. 0: disabled, 1: enabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL6_vo_pdata_reverse_enum;
+            reset = 0x0;
+        } vo_pdata_reverse[11:11];
+
+        enum MISC_CTRL6_vo_pdata_mode_enum {
+            LCD_PARALLEL_24BIT_MODE = 0 { name = "Lcd Parallel 24Bit Mode"; desc = "LCD parallel 24-bit mode"; };
+            LCD_PARALLEL_18BIT_MODE = 1 { name = "Lcd Parallel 18Bit Mode"; desc = "LCD parallel 18-bit mode"; };
+            LCD_PARALLEL_16BIT_MODE = 2 { name = "Lcd Parallel 16Bit Mode"; desc = "LCD parallel 16-bit mode"; };
+            LCD_SERIAL_8BIT_MODE = 3 { name = "Lcd Serial 8Bit Mode"; desc = "LCD serial 8-bit mode"; };
+            LCD_SERIAL_6BIT_MODE = 4 { name = "Lcd Serial 6Bit Mode"; desc = "LCD serial 6-bit mode"; };
+            BT1120_MODE = 5 { name = "Bt1120 Mode"; desc = "BT.1120 mode"; };
+            BT656_MODE = 6 { name = "Bt656 Mode"; desc = "BT.656 mode"; };
+            RESERVED_7 = 7 { name = "Reserved 7"; desc = "Reserved"; };
+        };
+
+        field {
+            name = "vo_pdata_mode";
+            desc = "VDP parallel port output mode select. Other values are reserved.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL6_vo_pdata_mode_enum;
+            reset = 0x0;
+        } vo_pdata_mode[10:8];
+
+        enum MISC_CTRL6_viproc_vpss_online_mode_enum {
+            OFFLINE = 0 { name = "Offline"; desc = "Offline mode"; };
+            ONLINE = 1 { name = "Online"; desc = "Online mode"; };
+        };
+
+        field {
+            name = "viproc_vpss_online_mode";
+            desc = "Operating mode of the VIPROC to VPSS data path. 0: offline mode, 1: online mode.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL6_viproc_vpss_online_mode_enum;
+            reset = 0x0;
+        } viproc_vpss_online_mode[7:7];
+
+        enum MISC_CTRL6_vicap_viproc_online_mode_enum {
+            OFFLINE = 0 { name = "Offline"; desc = "Offline mode"; };
+            ONLINE = 1 { name = "Online"; desc = "Online mode"; };
+        };
+
+        field {
+            name = "vicap_viproc_online_mode";
+            desc = "Operating mode of the VICAP to VIPROC data path. 0: offline mode, 1: online mode.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL6_vicap_viproc_online_mode_enum;
+            reset = 0x0;
+        } vicap_viproc_online_mode[6:6];
+
+        enum MISC_CTRL6_vi_port1_input_sel_enum {
+            MIPI_CHANNEL1 = 0 { name = "Mipi Channel1"; desc = "MIPI channel 1"; };
+            CMOS_INPUT = 1 { name = "Cmos Input"; desc = "CMOS input"; };
+        };
+
+        field {
+            name = "vi_port1_input_sel";
+            desc = "VICAP Port1 video source select. 0: MIPI channel 1, 1: CMOS input.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL6_vi_port1_input_sel_enum;
+            reset = 0x0;
+        } vi_port1_input_sel[5:5];
+
+        enum MISC_CTRL6_mipirx1_work_mode_enum {
+            MIPI_MODE = 0 { name = "Mipi Mode"; desc = "MIPI mode"; };
+            LVDS_MODE = 1 { name = "Lvds Mode"; desc = "LVDS mode"; };
+        };
+
+        field {
+            name = "mipirx1_work_mode";
+            desc = "MIPI RX channel 1 mode select.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL6_mipirx1_work_mode_enum;
+            reset = 0x0;
+        } mipirx1_work_mode[3:2];
+
+        enum MISC_CTRL6_mipirx0_work_mode_enum {
+            MIPI_MODE = 0 { name = "Mipi Mode"; desc = "MIPI mode"; };
+            LVDS_MODE = 1 { name = "Lvds Mode"; desc = "LVDS mode"; };
+        };
+
+        field {
+            name = "mipirx0_work_mode";
+            desc = "MIPI RX channel 0 mode select.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL6_mipirx0_work_mode_enum;
+            reset = 0x0;
+        } mipirx0_work_mode[1:0];
+    } MISC_CTRL6 @ 0x18;
+
+    reg {
+        name = "USB 2.0 control register 0";
+        desc = "USB 2.0 control register 0.
+
+The summary and description of this register name it only `USB2.0 control register 0`. Reset 0x000400DF: usb2_fladj_30mhz_reg = 0x20, overcurrent and power-enable polarity active high, port power enabled by the controller, bus filter bypass 0xF (must stay 4'b1111).
+
+Data sheet 3.5.5 MISC_CTRL8 (offset 0x20, printed page 3-75, `hi3516av300--Hi3516AV300-Datasheet.txt` line 11125).";
+
+        field {
+            name = "usb2_fladj_30mhz_reg";
+            desc = "USB port HS clock jitter (frame length adjust) control.";
+            sw = rw;
+            hw = r;
+            reset = 0x20;
+        } usb2_fladj_30mhz_reg[18:13];
+
+        field {
+            name = "usb2_dbg_addr";
+            desc = "USB debug address.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } usb2_dbg_addr[12:9];
+
+        enum MISC_CTRL8_usb2_hub_port_perm_attach_enum {
+            REMOVABLE = 0 { name = "Removable"; desc = "The attached device is removable"; };
+            NON_REMOVABLE = 1 { name = "Non Removable"; desc = "The attached device is non-removable"; };
+        };
+
+        field {
+            name = "usb2_hub_port_perm_attach";
+            desc = "Mode of the externally attached USB device. 0: the attached device is removable, 1: the attached device is non-removable.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL8_usb2_hub_port_perm_attach_enum;
+            reset = 0x0;
+        } usb2_hub_port_perm_attach[8:8];
+
+        enum MISC_CTRL8_usb2_port_ovrcur_pol_enum {
+            ACTIVE_LOW = 0 { name = "Active Low"; desc = "Active low"; };
+            ACTIVE_HIGH = 1 { name = "Active High"; desc = "Active high"; };
+        };
+
+        field {
+            name = "usb2_port_ovrcur_pol";
+            desc = "USB overcurrent protection polarity control. 0: active low, 1: active high.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL8_usb2_port_ovrcur_pol_enum;
+            reset = 0x1;
+        } usb2_port_ovrcur_pol[7:7];
+
+        enum MISC_CTRL8_usb2_port_pwren_pol_enum {
+            ACTIVE_LOW = 0 { name = "Active Low"; desc = "Active low"; };
+            ACTIVE_HIGH = 1 { name = "Active High"; desc = "Active high"; };
+        };
+
+        field {
+            name = "usb2_port_pwren_pol";
+            desc = "USB power-enable polarity control. 0: active low, 1: active high.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL8_usb2_port_pwren_pol_enum;
+            reset = 0x1;
+        } usb2_port_pwren_pol[6:6];
+
+        enum MISC_CTRL8_usb2_port_ovrcur_ctrl_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "Disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "Enabled"; };
+        };
+
+        field {
+            name = "usb2_port_ovrcur_ctrl_en";
+            desc = "USB overcurrent protection enable. 0: disabled, 1: enabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL8_usb2_port_ovrcur_ctrl_en_enum;
+            reset = 0x0;
+        } usb2_port_ovrcur_ctrl_en[5:5];
+
+        enum MISC_CTRL8_usb2_port_pwr_ctrl_en_enum {
+            CONTROL_DISABLED = 0 { name = "Control Disabled"; desc = "USB 2.0 port power control disabled"; };
+            CONTROLLER_OUTPUT = 1 { name = "Controller Output"; desc = "USB 2.0 port power enable is output by the USB 2.0 controller"; };
+        };
+
+        field {
+            name = "usb2_port_pwr_ctrl_en";
+            desc = "USB power supply enable. 0: USB 2.0 port power control disabled, 1: USB 2.0 port power enable is output by the USB 2.0 controller.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL8_usb2_port_pwr_ctrl_en_enum;
+            reset = 0x1;
+        } usb2_port_pwr_ctrl_en[4:4];
+
+        field {
+            name = "usb2_bus_filter_bypass";
+            desc = "USB 2.0 bus filter bypass. Must be set to 4'b1111.";
+            sw = rw;
+            hw = r;
+            reset = 0xF;
+        } usb2_bus_filter_bypass[3:0];
+    } MISC_CTRL8 @ 0x20;
+
+    reg {
+        name = "DDR_CA control register 0";
+        desc = "DDR_CA control register 0.
+
+DDR scrambling (DDR_CA) random value, low word.
+
+Data sheet 3.5.5 MISC_CTRL10 (offset 0x28, printed page 3-76, `hi3516av300--Hi3516AV300-Datasheet.txt` line 11189).";
+
+        field {
+            name = "ddrca_random_l";
+            desc = "DDR CA (address/data scrambling) function random value, bits 31 to 0.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ddrca_random_l[31:0];
+    } MISC_CTRL10 @ 0x28;
+
+    reg {
+        name = "DDR_CA control register 1";
+        desc = "DDR_CA control register 1.
+
+DDR scrambling (DDR_CA) random value, high word.
+
+Data sheet 3.5.5 MISC_CTRL11 (offset 0x2C, printed page 3-76, `hi3516av300--Hi3516AV300-Datasheet.txt` line 11205).";
+
+        field {
+            name = "ddrca_random_h";
+            desc = "DDR CA (address/data scrambling) function random value, bits 63 to 32.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ddrca_random_h[31:0];
+    } MISC_CTRL11 @ 0x2C;
+
+    reg {
+        name = "DDR_CA control register 2";
+        desc = "DDR_CA control register 2.
+
+DDR scrambling mode and load. Reset 0x5: ddrca_en = 5 (MDDRCA bypassed).
+
+Data sheet 3.5.5 MISC_CTRL12 (offset 0x30, printed page 3-77, `hi3516av300--Hi3516AV300-Datasheet.txt` line 11224).";
+
+        field {
+            name = "ddrca_update";
+            desc = "DDR scrambling function load enable. When this bit changes from 0 to 1, the ddrca_en and ddrca_random parameters are loaded into the DDR controller.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ddrca_update[4:4];
+
+        enum MISC_CTRL12_ddrca_en_enum {
+            MDDRCA_ON = 0 { name = "Mddrca On"; desc = "MDDRCA function on"; };
+            OUTPUT_ALL0 = 1 { name = "Output All0"; desc = "Output all-0 data"; };
+            RESERVED_2 = 2 { name = "Reserved 2"; desc = "Reserved"; };
+            OUTPUT_ALL1 = 3 { name = "Output All1"; desc = "Output all-1 data"; };
+            RESERVED_4 = 4 { name = "Reserved 4"; desc = "Reserved"; };
+            MDDRCA_BYPASS = 5 { name = "Mddrca Bypass"; desc = "MDDRCA function bypassed"; };
+            RESERVED_6 = 6 { name = "Reserved 6"; desc = "Reserved"; };
+            RESERVED_7 = 7 { name = "Reserved 7"; desc = "Reserved"; };
+            RESERVED_8 = 8 { name = "Reserved 8"; desc = "Reserved"; };
+            RESERVED_9 = 9 { name = "Reserved 9"; desc = "Reserved"; };
+            RESERVED_10 = 10 { name = "Reserved 10"; desc = "Reserved"; };
+            RESERVED_11 = 11 { name = "Reserved 11"; desc = "Reserved"; };
+            RESERVED_12 = 12 { name = "Reserved 12"; desc = "Reserved"; };
+            OUTPUT_ALL1_ALT = 13 { name = "Output All1 Alt"; desc = "Output all-1 data (data sheet text; probably a typo for another pattern)"; };
+            RESERVED_14 = 14 { name = "Reserved 14"; desc = "Reserved"; };
+            RESERVED_15 = 15 { name = "Reserved 15"; desc = "Reserved"; };
+        };
+
+        field {
+            name = "ddrca_en";
+            desc = "DDR scrambling function mode. Other values are reserved. The data sheet lists output-all-1 for both 0x3 and 0xD.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL12_ddrca_en_enum;
+            reset = 0x5;
+        } ddrca_en[3:0];
+    } MISC_CTRL12 @ 0x30;
+
+    reg {
+        name = "Bus priority control register 0";
+        desc = "Bus priority control register 0.
+
+SYSCFG bus: timeout of ports M1/M2. There is no MISC_CTRL2, 5, 7, 9, 13 in this data sheet; the title numbering of the bus priority registers skips 3.
+
+Data sheet 3.5.5 MISC_CTRL14 (offset 0x38, printed page 3-77, `hi3516av300--Hi3516AV300-Datasheet.txt` line 11261).";
+
+        enum MISC_CTRL14_syscfg_timeout_en_m2_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "Disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "Enabled"; };
+        };
+
+        field {
+            name = "syscfg_timeout_en_m2";
+            desc = "SYSCFG bus M2 port timeout counter enable. 0: disabled, 1: enabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL14_syscfg_timeout_en_m2_enum;
+            reset = 0x0;
+        } syscfg_timeout_en_m2[31:31];
+
+        field {
+            name = "syscfg_timeout_value_m2";
+            desc = "SYSCFG bus M2 port timeout counter value. Counter value = syscfg_timeout_value_m2 x 2.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } syscfg_timeout_value_m2[30:16];
+
+        field {
+            name = "syscfg_timeout_en_m1";
+            desc = "SYSCFG bus M1 port timeout counter enable. 0: disabled;";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } syscfg_timeout_en_m1[15:15];
+
+        field {
+            name = "syscfg_timeout_value_m1";
+            desc = "SYSCFG bus M1 port timeout counter value. Counter value = syscfg_timeout_value_m1 x 2.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } syscfg_timeout_value_m1[14:0];
+    } MISC_CTRL14 @ 0x38;
+
+    reg {
+        name = "Bus priority control register 1";
+        desc = "Bus priority control register 1.
+
+SYSCFG bus: priorities of the two masters and of ports S1..S6 (7 is the highest). The data sheet describes the master priority fields (port0/port1_pri_in) as M1/M2.
+
+Data sheet 3.5.5 MISC_CTRL15 (offset 0x3C, printed page 3-78, `hi3516av300--Hi3516AV300-Datasheet.txt` line 11301).";
+
+        field {
+            name = "syscfg_priority_s6";
+            desc = "Bus access priority of port S6 of the SYSCFG bus (7 is the highest priority).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } syscfg_priority_s6[30:28];
+
+        field {
+            name = "syscfg_priority_s5";
+            desc = "Bus access priority of port S5 of the SYSCFG bus (7 is the highest priority).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } syscfg_priority_s5[26:24];
+
+        field {
+            name = "syscfg_priority_s4";
+            desc = "Bus access priority of port S4 of the SYSCFG bus (7 is the highest priority).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } syscfg_priority_s4[22:20];
+
+        field {
+            name = "syscfg_priority_s3";
+            desc = "Bus access priority of port S3 of the SYSCFG bus (7 is the highest priority).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } syscfg_priority_s3[18:16];
+
+        field {
+            name = "syscfg_priority_s2";
+            desc = "Bus access priority of port S2 of the SYSCFG bus (7 is the highest priority).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } syscfg_priority_s2[14:12];
+
+        field {
+            name = "syscfg_priority_s1";
+            desc = "Bus access priority of port S1 of the SYSCFG bus (7 is the highest priority).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } syscfg_priority_s1[10:8];
+
+        field {
+            name = "syscfg_port1_pri_in";
+            desc = "Priority of port M2 of the SYSCFG bus (7 is the highest priority).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } syscfg_port1_pri_in[6:4];
+
+        field {
+            name = "syscfg_port0_pri_in";
+            desc = "SYSCFG bus M1 port priority.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } syscfg_port0_pri_in[2:0];
+    } MISC_CTRL15 @ 0x3C;
+
+    reg {
+        name = "Bus priority control register 2";
+        desc = "Bus priority control register 2.
+
+Data sheet 3.5.5 MISC_CTRL16 (offset 0x40, printed page 3-79, `hi3516av300--Hi3516AV300-Datasheet.txt` line 11371).";
+
+        enum MISC_CTRL16_sysdata_timeout_en_m2_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "Disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "Enabled"; };
+        };
+
+        field {
+            name = "sysdata_timeout_en_m2";
+            desc = "SYSDATA bus M2 port timeout counter enable. 0: disabled, 1: enabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL16_sysdata_timeout_en_m2_enum;
+            reset = 0x0;
+        } sysdata_timeout_en_m2[31:31];
+
+        field {
+            name = "sysdata_timeout_value_m2";
+            desc = "SYSDATA bus M2 port timeout counter value. Counter value = sysdata_timeout_value_m2 x 2.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } sysdata_timeout_value_m2[30:16];
+
+        enum MISC_CTRL16_sysdata_timeout_en_m1_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "Disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "Enabled"; };
+        };
+
+        field {
+            name = "sysdata_timeout_en_m1";
+            desc = "SYSDATA bus M1 port timeout counter enable. 0: disabled, 1: enabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL16_sysdata_timeout_en_m1_enum;
+            reset = 0x0;
+        } sysdata_timeout_en_m1[15:15];
+
+        field {
+            name = "sysdata_timeout_value_m1";
+            desc = "SYSDATA bus M1 port timeout counter value. Counter value = sysdata_timeout_value_m1 x 2.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } sysdata_timeout_value_m1[14:0];
+    } MISC_CTRL16 @ 0x40;
+
+    reg {
+        name = "Bus priority control register 4";
+        desc = "Bus priority control register 4.
+
+SYSDATA bus priorities. The data sheet says `1 is the highest priority` for the S1/S2 priorities of this register, whereas the other ports say 7 (possible copy error, low confidence).
+
+Data sheet 3.5.5 MISC_CTRL17 (offset 0x44, printed page 3-79, `hi3516av300--Hi3516AV300-Datasheet.txt` line 11408).";
+
+        field {
+            name = "sysdata_priority_s2";
+            desc = "Bus access priority of port S2 of the SYSDATA bus (1 is the highest priority).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } sysdata_priority_s2[14:12];
+
+        field {
+            name = "sysdata_priority_s1";
+            desc = "Bus access priority of port S1 of the SYSDATA bus (1 is the highest priority).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } sysdata_priority_s1[10:8];
+
+        field {
+            name = "sysdata_port1_pri_in";
+            desc = "SYSDATA bus M2 port priority.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } sysdata_port1_pri_in[6:4];
+
+        field {
+            name = "sysdata_port0_pri_in";
+            desc = "Priority of port M1 of the SYSDATA bus (7 is the highest priority).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } sysdata_port0_pri_in[2:0];
+    } MISC_CTRL17 @ 0x44;
+
+    reg {
+        name = "Bus priority control register 5";
+        desc = "Bus priority control register 5.
+
+Data sheet 3.5.5 MISC_CTRL18 (offset 0x48, printed page 3-80, `hi3516av300--Hi3516AV300-Datasheet.txt` line 11449).";
+
+        enum MISC_CTRL18_ahb1_timeout_en_m2_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "Disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "Enabled"; };
+        };
+
+        field {
+            name = "ahb1_timeout_en_m2";
+            desc = "AHB1 bus M2 port timeout counter enable. 0: disabled, 1: enabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL18_ahb1_timeout_en_m2_enum;
+            reset = 0x0;
+        } ahb1_timeout_en_m2[31:31];
+
+        field {
+            name = "ahb1_timeout_value_m2";
+            desc = "AHB1 bus M2 port timeout counter value. Counter value = ahb1_timeout_value_m2 x 2.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ahb1_timeout_value_m2[30:16];
+
+        enum MISC_CTRL18_ahb1_timeout_en_m1_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "Disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "Enabled"; };
+        };
+
+        field {
+            name = "ahb1_timeout_en_m1";
+            desc = "AHB1 bus M1 port timeout counter enable. 0: disabled, 1: enabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL18_ahb1_timeout_en_m1_enum;
+            reset = 0x0;
+        } ahb1_timeout_en_m1[15:15];
+
+        field {
+            name = "ahb1_timeout_value_m1";
+            desc = "AHB1 bus M1 port timeout counter value. Counter value = ahb1_timeout_value_m1 x 2.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ahb1_timeout_value_m1[14:0];
+    } MISC_CTRL18 @ 0x48;
+
+    reg {
+        name = "Bus priority control register 6";
+        desc = "Bus priority control register 6.
+
+Data sheet 3.5.5 MISC_CTRL19 (offset 0x4C, printed page 3-80, `hi3516av300--Hi3516AV300-Datasheet.txt` line 11483).";
+
+        enum MISC_CTRL19_ahb1_timeout_en_m3_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "Disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "Enabled"; };
+        };
+
+        field {
+            name = "ahb1_timeout_en_m3";
+            desc = "AHB1 bus M3 port timeout counter enable. 0: disabled, 1: enabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL19_ahb1_timeout_en_m3_enum;
+            reset = 0x0;
+        } ahb1_timeout_en_m3[15:15];
+
+        field {
+            name = "ahb1_timeout_value_m3";
+            desc = "AHB1 bus M3 port timeout counter value. Counter value = ahb1_timeout_value_m3 x 2.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ahb1_timeout_value_m3[14:0];
+    } MISC_CTRL19 @ 0x4C;
+
+    reg {
+        name = "Bus priority control register 7";
+        desc = "Bus priority control register 7.
+
+AHB1 bus master priorities. Reset 0x234: M1 = 4, M2 = 3, M3 = 2.
+
+Data sheet 3.5.5 MISC_CTRL20 (offset 0x50, printed page 3-81, `hi3516av300--Hi3516AV300-Datasheet.txt` line 11516).";
+
+        field {
+            name = "ahb1_port2_pri_in";
+            desc = "Priority of port M3 of the AHB1 bus (7 is the highest priority).";
+            sw = rw;
+            hw = r;
+            reset = 0x2;
+        } ahb1_port2_pri_in[10:8];
+
+        field {
+            name = "ahb1_port1_pri_in";
+            desc = "Priority of port M2 of the AHB1 bus (7 is the highest priority).";
+            sw = rw;
+            hw = r;
+            reset = 0x3;
+        } ahb1_port1_pri_in[6:4];
+
+        field {
+            name = "ahb1_port0_pri_in";
+            desc = "Priority of port M1 of the AHB1 bus (7 is the highest priority).";
+            sw = rw;
+            hw = r;
+            reset = 0x4;
+        } ahb1_port0_pri_in[2:0];
+    } MISC_CTRL20 @ 0x50;
+
+    reg {
+        name = "Bus priority control register 8";
+        desc = "Bus priority control register 8.
+
+Data sheet 3.5.5 MISC_CTRL21 (offset 0x54, printed page 3-81, `hi3516av300--Hi3516AV300-Datasheet.txt` line 11545).";
+
+        enum MISC_CTRL21_media0_timeout_en_m2_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "Disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "Enabled"; };
+        };
+
+        field {
+            name = "media0_timeout_en_m2";
+            desc = "MEDIA0 bus M2 port timeout counter enable. 0: disabled, 1: enabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL21_media0_timeout_en_m2_enum;
+            reset = 0x0;
+        } media0_timeout_en_m2[31:31];
+
+        field {
+            name = "media0_timeout_value_m2";
+            desc = "MEDIA0 bus M2 port timeout counter value. Counter value = media0_timeout_value_m2 x 2.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } media0_timeout_value_m2[30:16];
+
+        enum MISC_CTRL21_media0_timeout_en_m1_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "Disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "Enabled"; };
+        };
+
+        field {
+            name = "media0_timeout_en_m1";
+            desc = "MEDIA0 bus M1 port timeout counter enable. 0: disabled, 1: enabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL21_media0_timeout_en_m1_enum;
+            reset = 0x0;
+        } media0_timeout_en_m1[15:15];
+
+        field {
+            name = "media0_timeout_value_m1";
+            desc = "MEDIA0 bus M1 port timeout counter value. Counter value = media0_timeout_value_m1 x 2.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } media0_timeout_value_m1[14:0];
+    } MISC_CTRL21 @ 0x54;
+
+    reg {
+        name = "Bus priority control register 9";
+        desc = "Bus priority control register 9.
+
+MEDIA0 bus master priorities. Reset 0x34: M1 = 4, M2 = 3.
+
+Data sheet 3.5.5 MISC_CTRL22 (offset 0x58, printed page 3-82, `hi3516av300--Hi3516AV300-Datasheet.txt` line 11587).";
+
+        field {
+            name = "media0_port1_pri_in";
+            desc = "Priority of port M2 of the MEDIA0 bus (7 is the highest priority).";
+            sw = rw;
+            hw = r;
+            reset = 0x3;
+        } media0_port1_pri_in[6:4];
+
+        field {
+            name = "media0_port0_pri_in";
+            desc = "Priority of port M1 of the MEDIA0 bus (7 is the highest priority).";
+            sw = rw;
+            hw = r;
+            reset = 0x4;
+        } media0_port0_pri_in[2:0];
+    } MISC_CTRL22 @ 0x58;
+
+    reg {
+        name = "Bus priority control register 10";
+        desc = "Bus priority control register 10.
+
+Data sheet 3.5.5 MISC_CTRL23 (offset 0x5C, printed page 3-82, `hi3516av300--Hi3516AV300-Datasheet.txt` line 11609).";
+
+        enum MISC_CTRL23_media1_timeout_en_m2_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "Disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "Enabled"; };
+        };
+
+        field {
+            name = "media1_timeout_en_m2";
+            desc = "MEDIA1 bus M2 port timeout counter enable. 0: disabled, 1: enabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL23_media1_timeout_en_m2_enum;
+            reset = 0x0;
+        } media1_timeout_en_m2[31:31];
+
+        field {
+            name = "media1_timeout_value_m2";
+            desc = "MEDIA1 bus M2 port timeout counter value. Counter value = media1_timeout_value_m2 x 2.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } media1_timeout_value_m2[30:16];
+
+        enum MISC_CTRL23_media1_timeout_en_m1_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "Disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "Enabled"; };
+        };
+
+        field {
+            name = "media1_timeout_en_m1";
+            desc = "MEDIA1 bus M1 port timeout counter enable. 0: disabled, 1: enabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL23_media1_timeout_en_m1_enum;
+            reset = 0x0;
+        } media1_timeout_en_m1[15:15];
+
+        field {
+            name = "media1_timeout_value_m1";
+            desc = "MEDIA1 bus M1 port timeout counter value. Counter value = media1_timeout_value_m1 x 2.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } media1_timeout_value_m1[14:0];
+    } MISC_CTRL23 @ 0x5C;
+
+    reg {
+        name = "Bus priority control register 11";
+        desc = "Bus priority control register 11.
+
+MEDIA1 bus master priorities. Reset 0x34: M1 = 4, M2 = 3.
+
+Data sheet 3.5.5 MISC_CTRL24 (offset 0x60, printed page 3-83, `hi3516av300--Hi3516AV300-Datasheet.txt` line 11651).";
+
+        field {
+            name = "media1_port1_pri_in";
+            desc = "Priority of port M2 of the MEDIA1 bus (7 is the highest priority).";
+            sw = rw;
+            hw = r;
+            reset = 0x3;
+        } media1_port1_pri_in[6:4];
+
+        field {
+            name = "media1_port0_pri_in";
+            desc = "Priority of port M1 of the MEDIA1 bus (7 is the highest priority).";
+            sw = rw;
+            hw = r;
+            reset = 0x4;
+        } media1_port0_pri_in[2:0];
+    } MISC_CTRL24 @ 0x60;
+
+    reg {
+        name = "Bus priority control register 12";
+        desc = "Bus priority control register 12.
+
+Data sheet 3.5.5 MISC_CTRL25 (offset 0x64, printed page 3-83, `hi3516av300--Hi3516AV300-Datasheet.txt` line 11672).";
+
+        enum MISC_CTRL25_media2_timeout_en_m2_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "Disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "Enabled"; };
+        };
+
+        field {
+            name = "media2_timeout_en_m2";
+            desc = "MEDIA2 bus M2 port timeout counter enable. 0: disabled, 1: enabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL25_media2_timeout_en_m2_enum;
+            reset = 0x0;
+        } media2_timeout_en_m2[31:31];
+
+        field {
+            name = "media2_timeout_value_m2";
+            desc = "MEDIA2 bus M2 port timeout counter value. Counter value = media2_timeout_value_m2 x 2.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } media2_timeout_value_m2[30:16];
+
+        enum MISC_CTRL25_media2_timeout_en_m1_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "Disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "Enabled"; };
+        };
+
+        field {
+            name = "media2_timeout_en_m1";
+            desc = "MEDIA2 bus M1 port timeout counter enable. 0: disabled, 1: enabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL25_media2_timeout_en_m1_enum;
+            reset = 0x0;
+        } media2_timeout_en_m1[15:15];
+
+        field {
+            name = "media2_timeout_value_m1";
+            desc = "MEDIA2 bus M1 port timeout counter value. Counter value = media2_timeout_value_m1 x 2.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } media2_timeout_value_m1[14:0];
+    } MISC_CTRL25 @ 0x64;
+
+    reg {
+        name = "Bus priority control register 13";
+        desc = "Bus priority control register 13.
+
+Data sheet 3.5.5 MISC_CTRL26 (offset 0x68, printed page 3-83, `hi3516av300--Hi3516AV300-Datasheet.txt` line 11713).";
+
+        enum MISC_CTRL26_media2_timeout_en_m4_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "Disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "Enabled"; };
+        };
+
+        field {
+            name = "media2_timeout_en_m4";
+            desc = "MEDIA2 bus M4 port timeout counter enable. 0: disabled, 1: enabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL26_media2_timeout_en_m4_enum;
+            reset = 0x0;
+        } media2_timeout_en_m4[31:31];
+
+        field {
+            name = "media2_timeout_value_m4";
+            desc = "MEDIA2 bus M4 port timeout counter value. Counter value = media2_timeout_value_m4 x 2.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } media2_timeout_value_m4[30:16];
+
+        enum MISC_CTRL26_media2_timeout_en_m3_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "Disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "Enabled"; };
+        };
+
+        field {
+            name = "media2_timeout_en_m3";
+            desc = "MEDIA2 bus M3 port timeout counter enable. 0: disabled, 1: enabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL26_media2_timeout_en_m3_enum;
+            reset = 0x0;
+        } media2_timeout_en_m3[15:15];
+
+        field {
+            name = "media2_timeout_value_m3";
+            desc = "MEDIA2 bus M3 port timeout counter value. Counter value = media2_timeout_value_m3 x 2.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } media2_timeout_value_m3[14:0];
+    } MISC_CTRL26 @ 0x68;
+
+    reg {
+        name = "Bus priority control register 14";
+        desc = "Bus priority control register 14.
+
+Data sheet 3.5.5 MISC_CTRL27 (offset 0x6C, printed page 3-84, `hi3516av300--Hi3516AV300-Datasheet.txt` line 11749).";
+
+        enum MISC_CTRL27_media2_timeout_en_m6_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "Disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "Enabled"; };
+        };
+
+        field {
+            name = "media2_timeout_en_m6";
+            desc = "MEDIA2 bus M6 port timeout counter enable. 0: disabled, 1: enabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL27_media2_timeout_en_m6_enum;
+            reset = 0x0;
+        } media2_timeout_en_m6[31:31];
+
+        field {
+            name = "media2_timeout_value_m6";
+            desc = "MEDIA2 bus M6 port timeout counter value. Counter value = media2_timeout_value_m6 x 2.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } media2_timeout_value_m6[30:16];
+
+        enum MISC_CTRL27_media2_timeout_en_m5_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "Disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "Enabled"; };
+        };
+
+        field {
+            name = "media2_timeout_en_m5";
+            desc = "MEDIA2 bus M5 port timeout counter enable. 0: disabled, 1: enabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL27_media2_timeout_en_m5_enum;
+            reset = 0x0;
+        } media2_timeout_en_m5[15:15];
+
+        field {
+            name = "media2_timeout_value_m5";
+            desc = "MEDIA2 bus M5 port timeout counter value. Counter value = media2_timeout_value_m5 x 2.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } media2_timeout_value_m5[14:0];
+    } MISC_CTRL27 @ 0x6C;
+
+    reg {
+        name = "Bus priority control register 15";
+        desc = "Bus priority control register 15.
+
+MEDIA2 bus master priorities (the field names media2_portN_pri_in count from 0 and describe master M(N+1)). Reset 0x1234: M1 = 4, M2 = 3, M3 = 2, M4 = 1.
+
+Data sheet 3.5.5 MISC_CTRL28 (offset 0x70, printed page 3-84, `hi3516av300--Hi3516AV300-Datasheet.txt` line 11788).";
+
+        field {
+            name = "media2_port6_pri_in";
+            desc = "Priority of port M7 of the MEDIA2 bus (7 is the highest priority).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } media2_port6_pri_in[26:24];
+
+        field {
+            name = "media2_port5_pri_in";
+            desc = "Priority of port M6 of the MEDIA2 bus (7 is the highest priority).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } media2_port5_pri_in[22:20];
+
+        field {
+            name = "media2_port4_pri_in";
+            desc = "Priority of port M5 of the MEDIA2 bus (7 is the highest priority).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } media2_port4_pri_in[18:16];
+
+        field {
+            name = "media2_port3_pri_in";
+            desc = "Priority of port M4 of the MEDIA2 bus (7 is the highest priority).";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } media2_port3_pri_in[14:12];
+
+        field {
+            name = "media2_port2_pri_in";
+            desc = "Priority of port M3 of the MEDIA2 bus (7 is the highest priority).";
+            sw = rw;
+            hw = r;
+            reset = 0x2;
+        } media2_port2_pri_in[10:8];
+
+        field {
+            name = "media2_port1_pri_in";
+            desc = "Priority of port M2 of the MEDIA2 bus (7 is the highest priority).";
+            sw = rw;
+            hw = r;
+            reset = 0x3;
+        } media2_port1_pri_in[6:4];
+
+        field {
+            name = "media2_port0_pri_in";
+            desc = "Priority of port M1 of the MEDIA2 bus (7 is the highest priority).";
+            sw = rw;
+            hw = r;
+            reset = 0x4;
+        } media2_port0_pri_in[2:0];
+    } MISC_CTRL28 @ 0x70;
+
+    reg {
+        name = "Bus priority control register 16";
+        desc = "Bus priority control register 16.
+
+Data sheet 3.5.5 MISC_CTRL29 (offset 0x74, printed page 3-85, `hi3516av300--Hi3516AV300-Datasheet.txt` line 11854).";
+
+        enum MISC_CTRL29_vivo_timeout_en_m2_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "Disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "Enabled"; };
+        };
+
+        field {
+            name = "vivo_timeout_en_m2";
+            desc = "VIVO bus M2 port timeout counter enable. 0: disabled, 1: enabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL29_vivo_timeout_en_m2_enum;
+            reset = 0x0;
+        } vivo_timeout_en_m2[31:31];
+
+        field {
+            name = "vivo_timeout_value_m2";
+            desc = "VIVO bus M2 port timeout counter value. Counter value = vivo_timeout_value_m2 x 2.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } vivo_timeout_value_m2[30:16];
+
+        enum MISC_CTRL29_vivo_timeout_en_m1_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "Disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "Enabled"; };
+        };
+
+        field {
+            name = "vivo_timeout_en_m1";
+            desc = "VIVO bus M1 port timeout counter enable. 0: disabled, 1: enabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL29_vivo_timeout_en_m1_enum;
+            reset = 0x0;
+        } vivo_timeout_en_m1[15:15];
+
+        field {
+            name = "vivo_timeout_value_m1";
+            desc = "VIVO bus M1 port timeout counter value. Counter value = vivo_timeout_value_m1 x 2.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } vivo_timeout_value_m1[14:0];
+    } MISC_CTRL29 @ 0x74;
+
+    reg {
+        name = "Bus priority control register 17";
+        desc = "Bus priority control register 17.
+
+Data sheet 3.5.5 MISC_CTRL30 (offset 0x78, printed page 3-86, `hi3516av300--Hi3516AV300-Datasheet.txt` line 11889).";
+
+        enum MISC_CTRL30_media2_timeout_en_m7_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "Disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "Enabled"; };
+        };
+
+        field {
+            name = "media2_timeout_en_m7";
+            desc = "MEDIA2 bus M7 port timeout counter enable. 0: disabled, 1: enabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL30_media2_timeout_en_m7_enum;
+            reset = 0x0;
+        } media2_timeout_en_m7[31:31];
+
+        field {
+            name = "media2_timeout_value_m7";
+            desc = "MEDIA2 bus M7 port timeout counter value. Counter value = media2_timeout_value_m7 x 2.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } media2_timeout_value_m7[30:16];
+
+        enum MISC_CTRL30_vivo_timeout_en_m3_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "Disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "Enabled"; };
+        };
+
+        field {
+            name = "vivo_timeout_en_m3";
+            desc = "VIVO bus M3 port timeout counter enable. 0: disabled, 1: enabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL30_vivo_timeout_en_m3_enum;
+            reset = 0x0;
+        } vivo_timeout_en_m3[15:15];
+
+        field {
+            name = "vivo_timeout_value_m3";
+            desc = "VIVO bus M3 port timeout counter value. Counter value = vivo_timeout_value_m3 x 2.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } vivo_timeout_value_m3[14:0];
+    } MISC_CTRL30 @ 0x78;
+
+    reg {
+        name = "Bus priority control register 18";
+        desc = "Bus priority control register 18.
+
+VIVO bus master priorities. Reset 0x234: M1 = 4, M2 = 3, M3 = 2.
+
+Data sheet 3.5.5 MISC_CTRL31 (offset 0x7C, printed page 3-86, `hi3516av300--Hi3516AV300-Datasheet.txt` line 11930).";
+
+        field {
+            name = "vivo_port2_pri_in";
+            desc = "Priority of port M3 of the VIVO bus (7 is the highest priority).";
+            sw = rw;
+            hw = r;
+            reset = 0x2;
+        } vivo_port2_pri_in[10:8];
+
+        field {
+            name = "vivo_port1_pri_in";
+            desc = "Priority of port M2 of the VIVO bus (7 is the highest priority).";
+            sw = rw;
+            hw = r;
+            reset = 0x3;
+        } vivo_port1_pri_in[6:4];
+
+        field {
+            name = "vivo_port0_pri_in";
+            desc = "Priority of port M1 of the VIVO bus (7 is the highest priority).";
+            sw = rw;
+            hw = r;
+            reset = 0x4;
+        } vivo_port0_pri_in[2:0];
+    } MISC_CTRL31 @ 0x7C;
+
+    reg {
+        name = "MDDRC W QOS register 0";
+        desc = "MDDRC W QOS register 0.
+
+DDR controller write QoS groups of the media/video masters, 3 bits per master.
+
+Data sheet 3.5.5 MISC_CTRL32 (offset 0x80, printed page 3-87, `hi3516av300--Hi3516AV300-Datasheet.txt` line 11963).";
+
+        field {
+            name = "nnie_l_w_qos";
+            desc = "NNIE L write-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } nnie_l_w_qos[30:28];
+
+        field {
+            name = "nnie_h_w_qos";
+            desc = "NNIE H write-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } nnie_h_w_qos[26:24];
+
+        field {
+            name = "gdc_w_qos";
+            desc = "GDC write-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } gdc_w_qos[22:20];
+
+        field {
+            name = "viproc_w_qos";
+            desc = "VIPROC write-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } viproc_w_qos[18:16];
+
+        field {
+            name = "vpss_w_qos";
+            desc = "VPSS write-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } vpss_w_qos[14:12];
+
+        field {
+            name = "aio_w_qos";
+            desc = "AIAO write-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } aio_w_qos[10:8];
+
+        field {
+            name = "vdp_w_qos";
+            desc = "VDP write-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } vdp_w_qos[6:4];
+
+        field {
+            name = "vicap_w_qos";
+            desc = "VICAP write-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } vicap_w_qos[2:0];
+    } MISC_CTRL32 @ 0x80;
+
+    reg {
+        name = "MDDRC W QOS register 1";
+        desc = "MDDRC W QOS register 1.
+
+DDR controller write QoS groups of the peripheral masters, 3 bits per master.
+
+Data sheet 3.5.5 MISC_CTRL33 (offset 0x84, printed page 3-88, `hi3516av300--Hi3516AV300-Datasheet.txt` line 12020).";
+
+        field {
+            name = "scd_w_qos";
+            desc = "SCD write-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } scd_w_qos[30:28];
+
+        field {
+            name = "spacc_w_qos";
+            desc = "SPACC write-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } spacc_w_qos[26:24];
+
+        field {
+            name = "fmc_w_qos";
+            desc = "FMC write-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } fmc_w_qos[22:20];
+
+        field {
+            name = "emmc_w_qos";
+            desc = "eMMC write-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } emmc_w_qos[18:16];
+
+        field {
+            name = "sdio0_w_qos";
+            desc = "SDIO0 write-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } sdio0_w_qos[14:12];
+
+        field {
+            name = "dmac_w_qos";
+            desc = "DMAC write-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } dmac_w_qos[10:8];
+
+        field {
+            name = "usb_w_qos";
+            desc = "USB write-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } usb_w_qos[6:4];
+
+        field {
+            name = "eth_w_qos";
+            desc = "ETH write-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } eth_w_qos[2:0];
+    } MISC_CTRL33 @ 0x84;
+
+    reg {
+        name = "MDDRC W QOS register 2";
+        desc = "MDDRC W QOS register 2.
+
+DDR controller write QoS groups of the codec masters and the CPU.
+
+Data sheet 3.5.5 MISC_CTRL34 (offset 0x88, printed page 3-88, `hi3516av300--Hi3516AV300-Datasheet.txt` line 12070).";
+
+        field {
+            name = "ddrt_w_qos";
+            desc = "DDRT write-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ddrt_w_qos[30:28];
+
+        field {
+            name = "gzip_w_qos";
+            desc = "GZIP write-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } gzip_w_qos[26:24];
+
+        field {
+            name = "tde_w_qos";
+            desc = "TDE write-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } tde_w_qos[22:20];
+
+        field {
+            name = "ive_w_qos";
+            desc = "IVE write-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ive_w_qos[18:16];
+
+        field {
+            name = "jpge_w_qos";
+            desc = "JPGE write-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } jpge_w_qos[14:12];
+
+        field {
+            name = "vgs_w_qos";
+            desc = "VGS write-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } vgs_w_qos[10:8];
+
+        field {
+            name = "vedu_w_qos";
+            desc = "VEDU write-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } vedu_w_qos[6:4];
+
+        field {
+            name = "cpu_w_qos";
+            desc = "CPU write-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } cpu_w_qos[2:0];
+    } MISC_CTRL34 @ 0x88;
+
+    reg {
+        name = "MDDRC W QOS register 3";
+        desc = "MDDRC W QOS register 3.
+
+DDR controller write QoS groups of SDIO1 and JPGD.
+
+Data sheet 3.5.5 MISC_CTRL35 (offset 0x8C, printed page 3-89, `hi3516av300--Hi3516AV300-Datasheet.txt` line 12122).";
+
+        field {
+            name = "sdio1_w_qos";
+            desc = "SDIO1 write-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } sdio1_w_qos[6:4];
+
+        field {
+            name = "jpgd_w_qos";
+            desc = "JPGD write-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } jpgd_w_qos[2:0];
+    } MISC_CTRL35 @ 0x8C;
+
+    reg {
+        name = "MDDRC R QOS register 0";
+        desc = "MDDRC R QOS register 0.
+
+DDR controller read QoS groups of the media/video masters.
+
+Data sheet 3.5.5 MISC_CTRL36 (offset 0x90, printed page 3-89, `hi3516av300--Hi3516AV300-Datasheet.txt` line 12148).";
+
+        field {
+            name = "nnie_l_r_qos";
+            desc = "NNIE L read-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } nnie_l_r_qos[30:28];
+
+        field {
+            name = "nnie_h_r_qos";
+            desc = "NNIE H read-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } nnie_h_r_qos[26:24];
+
+        field {
+            name = "gdc_r_qos";
+            desc = "GDC read-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } gdc_r_qos[22:20];
+
+        field {
+            name = "viproc_r_qos";
+            desc = "VIPROC read-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } viproc_r_qos[18:16];
+
+        field {
+            name = "vpss_r_qos";
+            desc = "VPSS read-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } vpss_r_qos[14:12];
+
+        field {
+            name = "aio_r_qos";
+            desc = "AIAO read-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } aio_r_qos[10:8];
+
+        field {
+            name = "vdp_r_qos";
+            desc = "VDP read-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } vdp_r_qos[6:4];
+
+        field {
+            name = "vicap_r_qos";
+            desc = "VICAP read-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } vicap_r_qos[2:0];
+    } MISC_CTRL36 @ 0x90;
+
+    reg {
+        name = "MDDRC R QOS register 1";
+        desc = "MDDRC R QOS register 1.
+
+DDR controller read QoS groups of the peripheral masters. Bit 31 is printed as a reserved row.
+
+Data sheet 3.5.5 MISC_CTRL37 (offset 0x94, printed page 3-90, `hi3516av300--Hi3516AV300-Datasheet.txt` line 12205).";
+
+        field {
+            name = "scd_r_qos";
+            desc = "SCD read-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } scd_r_qos[30:28];
+
+        field {
+            name = "fmc_r_qos";
+            desc = "FMC read-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } fmc_r_qos[22:20];
+
+        field {
+            name = "emmc_r_qos";
+            desc = "eMMC read-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } emmc_r_qos[18:16];
+
+        field {
+            name = "sdio0_r_qos";
+            desc = "SDIO0 read-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } sdio0_r_qos[14:12];
+
+        field {
+            name = "dmac_r_qos";
+            desc = "DMAC read-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } dmac_r_qos[10:8];
+
+        field {
+            name = "usb_r_qos";
+            desc = "USB read-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } usb_r_qos[6:4];
+
+        field {
+            name = "eth_r_qos";
+            desc = "ETH read-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } eth_r_qos[2:0];
+    } MISC_CTRL37 @ 0x94;
+
+    reg {
+        name = "MDDRC R QOS register 2";
+        desc = "MDDRC R QOS register 2.
+
+DDR controller read QoS groups of the codec masters and the CPU.
+
+Data sheet 3.5.5 MISC_CTRL38 (offset 0x98, printed page 3-91, `hi3516av300--Hi3516AV300-Datasheet.txt` line 12259).";
+
+        field {
+            name = "ddrt_r_qos";
+            desc = "DDRT read-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ddrt_r_qos[30:28];
+
+        field {
+            name = "gzip_r_qos";
+            desc = "GZIP read-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } gzip_r_qos[26:24];
+
+        field {
+            name = "tde_r_qos";
+            desc = "TDE read-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } tde_r_qos[22:20];
+
+        field {
+            name = "ive_r_qos";
+            desc = "IVE read-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ive_r_qos[18:16];
+
+        field {
+            name = "jpge_r_qos";
+            desc = "JPGE read-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } jpge_r_qos[14:12];
+
+        field {
+            name = "vgs_r_qos";
+            desc = "VGS read-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } vgs_r_qos[10:8];
+
+        field {
+            name = "vedu_r_qos";
+            desc = "VEDU read-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } vedu_r_qos[6:4];
+
+        field {
+            name = "cpu_r_qos";
+            desc = "CPU read-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } cpu_r_qos[2:0];
+    } MISC_CTRL38 @ 0x98;
+
+    reg {
+        name = "MDDRC R QOS register 3";
+        desc = "MDDRC R QOS register 3.
+
+DDR controller read QoS groups of SDIO1 and JPGD.
+
+Data sheet 3.5.5 MISC_CTRL39 (offset 0x9C, printed page 3-92, `hi3516av300--Hi3516AV300-Datasheet.txt` line 12316).";
+
+        field {
+            name = "sdio1_r_qos";
+            desc = "SDIO1 read-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } sdio1_r_qos[6:4];
+
+        field {
+            name = "jpgd_r_qos";
+            desc = "JPGD read-channel QoS group.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } jpgd_r_qos[2:0];
+    } MISC_CTRL39 @ 0x9C;
+
+    reg {
+        name = "SVB control register";
+        desc = "SVB control register.
+
+SVB (adaptive voltage scaling) PWM output. svb_pwm_load is write-only: write 1 to make the duty/period/inversion parameters take effect.
+
+Data sheet 3.5.5 MISC_CTRL44 (offset 0xB0, printed page 3-92, `hi3516av300--Hi3516AV300-Datasheet.txt` line 12332).";
+
+        field {
+            name = "svb_pwm_duty";
+            desc = "Number of high-level cycles of the SVB output; the actual number is this value plus 1.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } svb_pwm_duty[25:16];
+
+        field {
+            name = "svb_pwm_period";
+            desc = "Number of cycles of one SVB output period; the actual number is this value plus 1.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } svb_pwm_period[13:4];
+
+        field {
+            name = "svb_pwm_load";
+            desc = "SVB output parameter load control. Writing 1 makes the parameters take effect.";
+            sw = w;
+            hw = r;
+            reset = 0x0;
+        } svb_pwm_load[2:2];
+
+        enum MISC_CTRL44_svb_pwm_inv_enum {
+            NORMAL_PHASE = 0 { name = "Normal Phase"; desc = "Normal phase"; };
+            INVERTED_PHASE = 1 { name = "Inverted Phase"; desc = "Inverted phase"; };
+        };
+
+        field {
+            name = "svb_pwm_inv";
+            desc = "SVB output phase control. 0: normal phase, 1: inverted phase.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL44_svb_pwm_inv_enum;
+            reset = 0x0;
+        } svb_pwm_inv[1:1];
+
+        enum MISC_CTRL44_svb_pwm_enable_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "Disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "Enabled"; };
+        };
+
+        field {
+            name = "svb_pwm_enable";
+            desc = "SVB enable control. 0: disabled, 1: enabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL44_svb_pwm_enable_enum;
+            reset = 0x0;
+        } svb_pwm_enable[0:0];
+    } MISC_CTRL44 @ 0xB0;
+
+    reg {
+        name = "TSensor control register";
+        desc = "TSensor control register.
+
+TSensor temperature sensor control: enable, single/cyclic measurement, the cyclic period (2 ms time base) and the upper/lower alarm limits.
+
+Data sheet 3.5.5 MISC_CTRL45 (offset 0xB4, printed page 3-92, `hi3516av300--Hi3516AV300-Datasheet.txt` line 12376).";
+
+        enum MISC_CTRL45_tsensor_en_enum {
+            OFF = 0 { name = "Off"; desc = "Off"; };
+            ENABLED = 1 { name = "Enabled"; desc = "Enabled"; };
+        };
+
+        field {
+            name = "tsensor_en";
+            desc = "TSensor enable control. 0: off, 1: enabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL45_tsensor_en_enum;
+            reset = 0x0;
+        } tsensor_en[31:31];
+
+        enum MISC_CTRL45_tsensor_monitor_en_enum {
+            SINGLE = 0 { name = "Single"; desc = "Single measurement"; };
+            CYCLIC = 1 { name = "Cyclic"; desc = "Cyclic measurement"; };
+        };
+
+        field {
+            name = "tsensor_monitor_en";
+            desc = "TSensor cyclic temperature monitoring enable. 0: single measurement, 1: cyclic measurement.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL45_tsensor_monitor_en_enum;
+            reset = 0x0;
+        } tsensor_monitor_en[30:30];
+
+        field {
+            name = "tsensor_monitor_period";
+            desc = "TSensor cyclic monitoring period; the time base is 2 ms.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } tsensor_monitor_period[27:20];
+
+        field {
+            name = "tsensor_uplimit";
+            desc = "Temperature upper limit (overflow value).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } tsensor_uplimit[19:10];
+
+        field {
+            name = "tsensor_lowlimit";
+            desc = "Temperature lower limit (underflow value).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } tsensor_lowlimit[9:0];
+    } MISC_CTRL45 @ 0xB4;
+
+    reg {
+        name = "TSensor status register";
+        desc = "TSensor status register.
+
+TSensor configuration and alarms; titled `status register` in the data sheet but bits [5:2] are RW, bits [1:0] are the read-only alarms.
+
+Data sheet 3.5.5 MISC_CTRL46 (offset 0xB8, printed page 3-93, `hi3516av300--Hi3516AV300-Datasheet.txt` line 12412).";
+
+        enum MISC_CTRL46_tsensor_vcalib1_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "Disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "Enabled"; };
+        };
+
+        field {
+            name = "tsensor_vcalib1_en";
+            desc = "TSensor VCALIB1 enable signal. 0: disabled, 1: enabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL46_tsensor_vcalib1_en_enum;
+            reset = 0x0;
+        } tsensor_vcalib1_en[5:5];
+
+        enum MISC_CTRL46_tsensor_temp_calib_enum {
+            CALIBRATION_ON = 0 { name = "Calibration On"; desc = "Calibration algorithm on"; };
+            CALIBRATION_OFF = 1 { name = "Calibration Off"; desc = "Calibration algorithm off"; };
+        };
+
+        field {
+            name = "tsensor_temp_calib";
+            desc = "TSensor calibration algorithm select. 0: calibration algorithm on, 1: calibration algorithm off.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL46_tsensor_temp_calib_enum;
+            reset = 0x0;
+        } tsensor_temp_calib[4:4];
+
+        enum MISC_CTRL46_tsensor_temp_ct_sel_enum {
+            T_0P512MS = 0 { name = "T 0P512Ms"; desc = "0.512 ms"; };
+            T_1P024MS = 1 { name = "T 1P024Ms"; desc = "1.024 ms"; };
+            T_0P256MS = 2 { name = "T 0P256Ms"; desc = "0.256 ms"; };
+            T_2P048MS = 3 { name = "T 2P048Ms"; desc = "2.048 ms"; };
+        };
+
+        field {
+            name = "tsensor_temp_ct_sel";
+            desc = "TSensor conversion time of one temperature code.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL46_tsensor_temp_ct_sel_enum;
+            reset = 0x0;
+        } tsensor_temp_ct_sel[3:2];
+
+        field {
+            name = "tsensor_low_warning";
+            desc = "Temperature underflow warning, active high.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } tsensor_low_warning[1:1];
+
+        field {
+            name = "tsensor_up_warning";
+            desc = "Temperature overflow warning, active high.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } tsensor_up_warning[0:0];
+    } MISC_CTRL46 @ 0xB8;
+
+    reg {
+        name = "TSensor temperature record register 0";
+        desc = "TSensor temperature record register 0.
+
+TSensor recorded temperature values 0 and 1.
+
+Data sheet 3.5.5 MISC_CTRL47 (offset 0xBC, printed page 3-94, `hi3516av300--Hi3516AV300-Datasheet.txt` line 12457).";
+
+        field {
+            name = "tsensor_result1";
+            desc = "Recorded temperature value 1.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } tsensor_result1[25:16];
+
+        field {
+            name = "tsensor_result0";
+            desc = "Recorded temperature value 0.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } tsensor_result0[9:0];
+    } MISC_CTRL47 @ 0xBC;
+
+    reg {
+        name = "TSensor temperature record register 1";
+        desc = "TSensor temperature record register 1.
+
+TSensor recorded temperature values 2 and 3.
+
+Data sheet 3.5.5 MISC_CTRL48 (offset 0xC0, printed page 3-94, `hi3516av300--Hi3516AV300-Datasheet.txt` line 12474).";
+
+        field {
+            name = "tsensor_result3";
+            desc = "Recorded temperature value 3.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } tsensor_result3[25:16];
+
+        field {
+            name = "tsensor_result2";
+            desc = "Recorded temperature value 2.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } tsensor_result2[9:0];
+    } MISC_CTRL48 @ 0xC0;
+
+    reg {
+        name = "TSensor temperature record register 2";
+        desc = "TSensor temperature record register 2.
+
+TSensor recorded temperature values 4 and 5.
+
+Data sheet 3.5.5 MISC_CTRL49 (offset 0xC4, printed page 3-94, `hi3516av300--Hi3516AV300-Datasheet.txt` line 12500).";
+
+        field {
+            name = "tsensor_result5";
+            desc = "Recorded temperature value 5.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } tsensor_result5[25:16];
+
+        field {
+            name = "tsensor_result4";
+            desc = "Recorded temperature value 4.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } tsensor_result4[9:0];
+    } MISC_CTRL49 @ 0xC4;
+
+    reg {
+        name = "TSensor temperature record register 3";
+        desc = "TSensor temperature record register 3.
+
+TSensor recorded temperature values 6 and 7.
+
+Data sheet 3.5.5 MISC_CTRL50 (offset 0xC8, printed page 3-95, `hi3516av300--Hi3516AV300-Datasheet.txt` line 12523).";
+
+        field {
+            name = "tsensor_result7";
+            desc = "Recorded temperature value 7.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } tsensor_result7[25:16];
+
+        field {
+            name = "tsensor_result6";
+            desc = "Recorded temperature value 6.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } tsensor_result6[9:0];
+    } MISC_CTRL50 @ 0xC8;
+
+    reg {
+        name = "Upgrade mode clear register";
+        desc = "Upgrade mode clear register.
+
+Write 1 to leave the upgrade mode when an upgrade has completed (write-only).
+
+Data sheet 3.5.5 MISC_CTRL51 (offset 0xCC, printed page 3-95, `hi3516av300--Hi3516AV300-Datasheet.txt` line 12539).";
+
+        field {
+            name = "update_mode_clear";
+            desc = "Writing 1 clears the upgrade mode. Write it when the upgrade is complete.";
+            sw = w;
+            hw = r;
+            reset = 0x0;
+        } update_mode_clear[0:0];
+    } MISC_CTRL51 @ 0xCC;
+
+    reg {
+        name = "HPM control register 0";
+        desc = "HPM control register 0.
+
+CPU HPM (hardware performance monitor) control: reset, single/cyclic monitoring, enable, monitoring period (x 2.048 ms) and the reference clock divider.
+
+Data sheet 3.5.5 MISC_CTRL52 (offset 0xD0, printed page 3-95, `hi3516av300--Hi3516AV300-Datasheet.txt` line 12561).";
+
+        enum MISC_CTRL52_cpu_hpm_srst_req_enum {
+            DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "Deassert reset"; };
+            ASSERT_RESET = 1 { name = "Assert Reset"; desc = "Reset"; };
+        };
+
+        field {
+            name = "cpu_hpm_srst_req";
+            desc = "CPU HPM (hardware performance monitor) reset request, active high. 0: deassert reset, 1: reset.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL52_cpu_hpm_srst_req_enum;
+            reset = 0x0;
+        } cpu_hpm_srst_req[31:31];
+
+        enum MISC_CTRL52_cpu_hpm_monitor_en_enum {
+            SINGLE = 0 { name = "Single"; desc = "Single monitoring"; };
+            CYCLIC = 1 { name = "Cyclic"; desc = "Cyclic monitoring"; };
+        };
+
+        field {
+            name = "cpu_hpm_monitor_en";
+            desc = "CPU HPM cyclic monitoring enable. 0: single monitoring, 1: cyclic monitoring.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL52_cpu_hpm_monitor_en_enum;
+            reset = 0x0;
+        } cpu_hpm_monitor_en[30:30];
+
+        enum MISC_CTRL52_cpu_hpm_en_enum {
+            HPM_MEASUREMENT_OFF = 0 { name = "Hpm Measurement Off"; desc = "HPM measurement off"; };
+            HPM_MEASUREMENT_STARTED = 1 { name = "Hpm Measurement Started"; desc = "HPM measurement started"; };
+        };
+
+        field {
+            name = "cpu_hpm_en";
+            desc = "CPU HPM measurement enable. 0: HPM measurement off, 1: HPM measurement started.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL52_cpu_hpm_en_enum;
+            reset = 0x0;
+        } cpu_hpm_en[29:29];
+
+        field {
+            name = "cpu_hpm_monitor_period";
+            desc = "CPU HPM cyclic monitoring period = cpu_hpm_monitor_period x 2.048 ms.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } cpu_hpm_monitor_period[15:8];
+
+        field {
+            name = "cpu_hpm_div";
+            desc = "CPU HPM reference clock divider; the actual divide ratio is this value plus 1.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } cpu_hpm_div[5:0];
+    } MISC_CTRL52 @ 0xD0;
+
+    reg {
+        name = "HPM control register 1";
+        desc = "HPM control register 1.
+
+CPU HPM offset, shift and the upper/lower limits.
+
+Data sheet 3.5.5 MISC_CTRL53 (offset 0xD4, printed page 3-96, `hi3516av300--Hi3516AV300-Datasheet.txt` line 12610).";
+
+        field {
+            name = "cpu_hpm_offset";
+            desc = "CPU HPM OFFSET value.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } cpu_hpm_offset[23:22];
+
+        field {
+            name = "cpu_hpm_shift";
+            desc = "CPU HPM SHIFT value.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } cpu_hpm_shift[21:20];
+
+        field {
+            name = "cpu_hpm_lowlimit";
+            desc = "CPU HPM lower limit.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } cpu_hpm_lowlimit[19:10];
+
+        field {
+            name = "cpu_hpm_uplimit";
+            desc = "CPU HPM upper limit.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } cpu_hpm_uplimit[9:0];
+    } MISC_CTRL53 @ 0xD4;
+
+    reg {
+        name = "HPM status register 0";
+        desc = "HPM status register 0.
+
+CPU HPM status and raw patterns 0/1 (the data sheet prints the name of [25:16] wrapped as `cpu_hpm_pc_record` + `1`).
+
+Data sheet 3.5.5 MISC_CTRL54 (offset 0xD8, printed page 3-96, `hi3516av300--Hi3516AV300-Datasheet.txt` line 12639).";
+
+        field {
+            name = "cpu_hpm_up_warning";
+            desc = "CPU HPM overflow warning, active high.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } cpu_hpm_up_warning[31:31];
+
+        field {
+            name = "cpu_hpm_low_warning";
+            desc = "CPU HPM underflow warning, active high.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } cpu_hpm_low_warning[30:30];
+
+        enum MISC_CTRL54_cpu_hpm_pc_valid_enum {
+            INVALID = 0 { name = "Invalid"; desc = "Invalid"; };
+            VALID = 1 { name = "Valid"; desc = "Valid"; };
+        };
+
+        field {
+            name = "cpu_hpm_pc_valid";
+            desc = "CPU HPM output valid indication. 0: invalid, 1: valid.";
+            sw = r;
+            hw = w;
+            encode = MISC_CTRL54_cpu_hpm_pc_valid_enum;
+            reset = 0x0;
+        } cpu_hpm_pc_valid[29:29];
+
+        field {
+            name = "cpu_hpm_pc_record1";
+            desc = "CPU HPM raw pattern 1.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } cpu_hpm_pc_record1[25:16];
+
+        field {
+            name = "cpu_hpm_pc_record0";
+            desc = "CPU HPM raw pattern 0.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } cpu_hpm_pc_record0[9:0];
+    } MISC_CTRL54 @ 0xD8;
+
+    reg {
+        name = "HPM status register 1";
+        desc = "HPM status register 1.
+
+CPU HPM RCC code and raw patterns 2/3.
+
+Data sheet 3.5.5 MISC_CTRL55 (offset 0xDC, printed page 3-97, `hi3516av300--Hi3516AV300-Datasheet.txt` line 12679).";
+
+        field {
+            name = "cpu_hpm_rcc";
+            desc = "CPU HPM output RCC code.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } cpu_hpm_rcc[31:27];
+
+        field {
+            name = "cpu_hpm_pc_record3";
+            desc = "CPU HPM raw pattern 3.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } cpu_hpm_pc_record3[25:16];
+
+        field {
+            name = "cpu_hpm_pc_record2";
+            desc = "CPU HPM raw pattern 2.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } cpu_hpm_pc_record2[9:0];
+    } MISC_CTRL55 @ 0xDC;
+
+    reg {
+        name = "SHPM control register";
+        desc = "SHPM control register.
+
+SHPM status (read-only) and configuration of the VIPROC SHPM.
+
+Data sheet 3.5.5 MISC_CTRL56 (offset 0xE0, printed page 3-97, `hi3516av300--Hi3516AV300-Datasheet.txt` line 12706).";
+
+        field {
+            name = "viproc_shpm_stat";
+            desc = "SHPM status.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } viproc_shpm_stat[31:16];
+
+        field {
+            name = "viproc_shpm_cfg";
+            desc = "SHPM configuration.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } viproc_shpm_cfg[15:0];
+    } MISC_CTRL56 @ 0xE0;
+
+    reg {
+        name = "DDRC LOCK register";
+        desc = "DDRC LOCK register.
+
+Lock bits of the DDR controller register groups: 1 = the group can no longer be written. Whether the bits are write-once is not stated.
+
+Data sheet 3.5.5 MISC_CTRL57 (offset 0x100, printed page 3-97, `hi3516av300--Hi3516AV300-Datasheet.txt` line 12726).";
+
+        enum MISC_CTRL57_ddr_phy_write_lock_enum {
+            WRITABLE = 0 { name = "Writable"; desc = "DDR PHY registers can be written"; };
+            LOCKED = 1 { name = "Locked"; desc = "DDR PHY registers cannot be written"; };
+        };
+
+        field {
+            name = "ddr_phy_write_lock";
+            desc = "DDR PHY register lock control. 0: DDR PHY registers can be written, 1: DDR PHY registers cannot be written.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL57_ddr_phy_write_lock_enum;
+            reset = 0x0;
+        } ddr_phy_write_lock[5:5];
+
+        enum MISC_CTRL57_ddr_qosbuf_write_lock_enum {
+            WRITABLE = 0 { name = "Writable"; desc = "DDR QOSBUF registers can be written"; };
+            LOCKED = 1 { name = "Locked"; desc = "DDR QOSBUF registers cannot be written"; };
+        };
+
+        field {
+            name = "ddr_qosbuf_write_lock";
+            desc = "DDR QOSBUF register lock control. 0: DDR QOSBUF registers can be written, 1: DDR QOSBUF registers cannot be written.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL57_ddr_qosbuf_write_lock_enum;
+            reset = 0x0;
+        } ddr_qosbuf_write_lock[4:4];
+
+        enum MISC_CTRL57_ddr_addr_atrb_write_lock_enum {
+            WRITABLE = 0 { name = "Writable"; desc = "DDR ADDR ATRB registers can be written"; };
+            LOCKED = 1 { name = "Locked"; desc = "DDR ADDR ATRB registers cannot be written"; };
+        };
+
+        field {
+            name = "ddr_addr_atrb_write_lock";
+            desc = "DDR ADDR ATRB register lock control. 0: DDR ADDR ATRB registers can be written, 1: DDR ADDR ATRB registers cannot be written.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL57_ddr_addr_atrb_write_lock_enum;
+            reset = 0x0;
+        } ddr_addr_atrb_write_lock[3:3];
+
+        enum MISC_CTRL57_ddr_dmc_write_lock_enum {
+            WRITABLE = 0 { name = "Writable"; desc = "DDR DMC registers can be written"; };
+            LOCKED = 1 { name = "Locked"; desc = "DDR DMC registers cannot be written"; };
+        };
+
+        field {
+            name = "ddr_dmc_write_lock";
+            desc = "DDR DMC register lock control. 0: DDR DMC registers can be written, 1: DDR DMC registers cannot be written.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL57_ddr_dmc_write_lock_enum;
+            reset = 0x0;
+        } ddr_dmc_write_lock[2:2];
+
+        enum MISC_CTRL57_ddr_axiif_write_lock_enum {
+            WRITABLE = 0 { name = "Writable"; desc = "DDR AXIIF registers can be written"; };
+            LOCKED = 1 { name = "Locked"; desc = "DDR AXIIF registers cannot be written"; };
+        };
+
+        field {
+            name = "ddr_axiif_write_lock";
+            desc = "DDR AXIIF register lock control. 0: DDR AXIIF registers can be written, 1: DDR AXIIF registers cannot be written.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL57_ddr_axiif_write_lock_enum;
+            reset = 0x0;
+        } ddr_axiif_write_lock[1:1];
+
+        enum MISC_CTRL57_ddr_secure_boot_lock_enum {
+            WRITABLE = 0 { name = "Writable"; desc = "DDR SECURE registers can be written"; };
+            LOCKED = 1 { name = "Locked"; desc = "DDR SECURE registers cannot be written"; };
+        };
+
+        field {
+            name = "ddr_secure_boot_lock";
+            desc = "DDR SECURE register lock control. 0: DDR SECURE registers can be written, 1: DDR SECURE registers cannot be written.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL57_ddr_secure_boot_lock_enum;
+            reset = 0x0;
+        } ddr_secure_boot_lock[0:0];
+    } MISC_CTRL57 @ 0x100;
+
+    reg {
+        name = "Secure access control register 0";
+        desc = "Secure access control register 0.
+
+Secure-access switches of the slave register blocks, part 0: 1 = secure-access control disabled. The description of sdio1_slv_sec_acc_disable (bit 24) says `SDIO0` (data sheet copy error; the field name is kept).
+
+Data sheet 3.5.5 MISC_CTRL58 (offset 0x104, printed page 3-98, `hi3516av300--Hi3516AV300-Datasheet.txt` line 12785).";
+
+        enum MISC_CTRL58_fmc_mem_slv_sec_acc_disable_enum {
+            SECURE_ACCESS_ON = 0 { name = "Secure Access On"; desc = "Secure-access control enabled"; };
+            SECURE_ACCESS_OFF = 1 { name = "Secure Access Off"; desc = "Secure-access control disabled"; };
+        };
+
+        field {
+            name = "fmc_mem_slv_sec_acc_disable";
+            desc = "FMC MEM secure-access switch. 0: secure-access control enabled, 1: secure-access control disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL58_fmc_mem_slv_sec_acc_disable_enum;
+            reset = 0x0;
+        } fmc_mem_slv_sec_acc_disable[31:31];
+
+        enum MISC_CTRL58_fmc_reg_slv_sec_acc_disable_enum {
+            SECURE_ACCESS_ON = 0 { name = "Secure Access On"; desc = "Secure-access control enabled"; };
+            SECURE_ACCESS_OFF = 1 { name = "Secure Access Off"; desc = "Secure-access control disabled"; };
+        };
+
+        field {
+            name = "fmc_reg_slv_sec_acc_disable";
+            desc = "FMC register secure-access switch. 0: secure-access control enabled, 1: secure-access control disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL58_fmc_reg_slv_sec_acc_disable_enum;
+            reset = 0x0;
+        } fmc_reg_slv_sec_acc_disable[30:30];
+
+        enum MISC_CTRL58_emmc_slv_sec_acc_disable_enum {
+            SECURE_ACCESS_ON = 0 { name = "Secure Access On"; desc = "Secure-access control enabled"; };
+            SECURE_ACCESS_OFF = 1 { name = "Secure Access Off"; desc = "Secure-access control disabled"; };
+        };
+
+        field {
+            name = "emmc_slv_sec_acc_disable";
+            desc = "eMMC register secure-access switch. 0: secure-access control enabled, 1: secure-access control disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL58_emmc_slv_sec_acc_disable_enum;
+            reset = 0x0;
+        } emmc_slv_sec_acc_disable[29:29];
+
+        enum MISC_CTRL58_sdio0_slv_sec_acc_disable_enum {
+            SECURE_ACCESS_ON = 0 { name = "Secure Access On"; desc = "Secure-access control enabled"; };
+            SECURE_ACCESS_OFF = 1 { name = "Secure Access Off"; desc = "Secure-access control disabled"; };
+        };
+
+        field {
+            name = "sdio0_slv_sec_acc_disable";
+            desc = "SDIO0 register secure-access switch. 0: secure-access control enabled, 1: secure-access control disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL58_sdio0_slv_sec_acc_disable_enum;
+            reset = 0x0;
+        } sdio0_slv_sec_acc_disable[28:28];
+
+        enum MISC_CTRL58_usb2_slv_sec_acc_disable_enum {
+            SECURE_ACCESS_ON = 0 { name = "Secure Access On"; desc = "Secure-access control enabled"; };
+            SECURE_ACCESS_OFF = 1 { name = "Secure Access Off"; desc = "Secure-access control disabled"; };
+        };
+
+        field {
+            name = "usb2_slv_sec_acc_disable";
+            desc = "USB2 register secure-access switch. 0: secure-access control enabled, 1: secure-access control disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL58_usb2_slv_sec_acc_disable_enum;
+            reset = 0x0;
+        } usb2_slv_sec_acc_disable[27:27];
+
+        enum MISC_CTRL58_bootram_slv_sec_acc_disable_enum {
+            SECURE_ACCESS_ON = 0 { name = "Secure Access On"; desc = "Secure-access control enabled"; };
+            SECURE_ACCESS_OFF = 1 { name = "Secure Access Off"; desc = "Secure-access control disabled"; };
+        };
+
+        field {
+            name = "bootram_slv_sec_acc_disable";
+            desc = "BOOTROM/BOOTRAM secure-access switch. 0: secure-access control enabled, 1: secure-access control disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL58_bootram_slv_sec_acc_disable_enum;
+            reset = 0x0;
+        } bootram_slv_sec_acc_disable[26:26];
+
+        enum MISC_CTRL58_scd_slv_sec_acc_disable_enum {
+            SECURE_ACCESS_ON = 0 { name = "Secure Access On"; desc = "Secure-access control enabled"; };
+            SECURE_ACCESS_OFF = 1 { name = "Secure Access Off"; desc = "Secure-access control disabled"; };
+        };
+
+        field {
+            name = "scd_slv_sec_acc_disable";
+            desc = "SCD register secure-access switch. 0: secure-access control enabled, 1: secure-access control disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL58_scd_slv_sec_acc_disable_enum;
+            reset = 0x0;
+        } scd_slv_sec_acc_disable[25:25];
+
+        enum MISC_CTRL58_sdio1_slv_sec_acc_disable_enum {
+            SECURE_ACCESS_ON = 0 { name = "Secure Access On"; desc = "Secure-access control enabled"; };
+            SECURE_ACCESS_OFF = 1 { name = "Secure Access Off"; desc = "Secure-access control disabled"; };
+        };
+
+        field {
+            name = "sdio1_slv_sec_acc_disable";
+            desc = "SDIO0 register secure-access switch. 0: secure-access control enabled, 1: secure-access control disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL58_sdio1_slv_sec_acc_disable_enum;
+            reset = 0x0;
+        } sdio1_slv_sec_acc_disable[24:24];
+
+        enum MISC_CTRL58_eth_slv_sec_acc_disable_enum {
+            SECURE_ACCESS_ON = 0 { name = "Secure Access On"; desc = "Secure-access control enabled"; };
+            SECURE_ACCESS_OFF = 1 { name = "Secure Access Off"; desc = "Secure-access control disabled"; };
+        };
+
+        field {
+            name = "eth_slv_sec_acc_disable";
+            desc = "ETH register secure-access switch. 0: secure-access control enabled, 1: secure-access control disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL58_eth_slv_sec_acc_disable_enum;
+            reset = 0x0;
+        } eth_slv_sec_acc_disable[23:23];
+
+        enum MISC_CTRL58_mipitx_slv_sec_acc_disable_enum {
+            SECURE_ACCESS_ON = 0 { name = "Secure Access On"; desc = "Secure-access control enabled"; };
+            SECURE_ACCESS_OFF = 1 { name = "Secure Access Off"; desc = "Secure-access control disabled"; };
+        };
+
+        field {
+            name = "mipitx_slv_sec_acc_disable";
+            desc = "MIPITX register secure-access switch. 0: secure-access control enabled, 1: secure-access control disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL58_mipitx_slv_sec_acc_disable_enum;
+            reset = 0x0;
+        } mipitx_slv_sec_acc_disable[22:22];
+
+        enum MISC_CTRL58_jpgd_slv_sec_acc_disable_enum {
+            SECURE_ACCESS_ON = 0 { name = "Secure Access On"; desc = "Secure-access control enabled"; };
+            SECURE_ACCESS_OFF = 1 { name = "Secure Access Off"; desc = "Secure-access control disabled"; };
+        };
+
+        field {
+            name = "jpgd_slv_sec_acc_disable";
+            desc = "JPGD register secure-access switch. 0: secure-access control enabled, 1: secure-access control disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL58_jpgd_slv_sec_acc_disable_enum;
+            reset = 0x0;
+        } jpgd_slv_sec_acc_disable[21:21];
+
+        enum MISC_CTRL58_ddrt_slv_sec_acc_disable_enum {
+            SECURE_ACCESS_ON = 0 { name = "Secure Access On"; desc = "Secure-access control enabled"; };
+            SECURE_ACCESS_OFF = 1 { name = "Secure Access Off"; desc = "Secure-access control disabled"; };
+        };
+
+        field {
+            name = "ddrt_slv_sec_acc_disable";
+            desc = "DDRT register secure-access switch. 0: secure-access control enabled, 1: secure-access control disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL58_ddrt_slv_sec_acc_disable_enum;
+            reset = 0x0;
+        } ddrt_slv_sec_acc_disable[20:20];
+
+        enum MISC_CTRL58_gzip_slv_sec_acc_disable_enum {
+            SECURE_ACCESS_ON = 0 { name = "Secure Access On"; desc = "Secure-access control enabled"; };
+            SECURE_ACCESS_OFF = 1 { name = "Secure Access Off"; desc = "Secure-access control disabled"; };
+        };
+
+        field {
+            name = "gzip_slv_sec_acc_disable";
+            desc = "GZIP register secure-access switch. 0: secure-access control enabled, 1: secure-access control disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL58_gzip_slv_sec_acc_disable_enum;
+            reset = 0x0;
+        } gzip_slv_sec_acc_disable[19:19];
+
+        enum MISC_CTRL58_tde_slv_sec_acc_disable_enum {
+            SECURE_ACCESS_ON = 0 { name = "Secure Access On"; desc = "Secure-access control enabled"; };
+            SECURE_ACCESS_OFF = 1 { name = "Secure Access Off"; desc = "Secure-access control disabled"; };
+        };
+
+        field {
+            name = "tde_slv_sec_acc_disable";
+            desc = "TDE register secure-access switch. 0: secure-access control enabled, 1: secure-access control disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL58_tde_slv_sec_acc_disable_enum;
+            reset = 0x0;
+        } tde_slv_sec_acc_disable[18:18];
+
+        enum MISC_CTRL58_ive_slv_sec_acc_disable_enum {
+            SECURE_ACCESS_ON = 0 { name = "Secure Access On"; desc = "Secure-access control enabled"; };
+            SECURE_ACCESS_OFF = 1 { name = "Secure Access Off"; desc = "Secure-access control disabled"; };
+        };
+
+        field {
+            name = "ive_slv_sec_acc_disable";
+            desc = "IVE register secure-access switch. 0: secure-access control enabled, 1: secure-access control disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL58_ive_slv_sec_acc_disable_enum;
+            reset = 0x0;
+        } ive_slv_sec_acc_disable[17:17];
+
+        enum MISC_CTRL58_jpge_slv_sec_acc_disable_enum {
+            SECURE_ACCESS_ON = 0 { name = "Secure Access On"; desc = "Secure-access control enabled"; };
+            SECURE_ACCESS_OFF = 1 { name = "Secure Access Off"; desc = "Secure-access control disabled"; };
+        };
+
+        field {
+            name = "jpge_slv_sec_acc_disable";
+            desc = "JPGE register secure-access switch. 0: secure-access control enabled, 1: secure-access control disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL58_jpge_slv_sec_acc_disable_enum;
+            reset = 0x0;
+        } jpge_slv_sec_acc_disable[16:16];
+
+        enum MISC_CTRL58_vgs_slv_sec_acc_disable_enum {
+            SECURE_ACCESS_ON = 0 { name = "Secure Access On"; desc = "Secure-access control enabled"; };
+            SECURE_ACCESS_OFF = 1 { name = "Secure Access Off"; desc = "Secure-access control disabled"; };
+        };
+
+        field {
+            name = "vgs_slv_sec_acc_disable";
+            desc = "VGS register secure-access switch. 0: secure-access control enabled, 1: secure-access control disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL58_vgs_slv_sec_acc_disable_enum;
+            reset = 0x0;
+        } vgs_slv_sec_acc_disable[15:15];
+
+        enum MISC_CTRL58_powerctrl_slv_sec_acc_disable_enum {
+            SECURE_ACCESS_ON = 0 { name = "Secure Access On"; desc = "Secure-access control enabled"; };
+            SECURE_ACCESS_OFF = 1 { name = "Secure Access Off"; desc = "Secure-access control disabled"; };
+        };
+
+        field {
+            name = "powerctrl_slv_sec_acc_disable";
+            desc = "PowerControl register secure-access switch. 0: secure-access control enabled, 1: secure-access control disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL58_powerctrl_slv_sec_acc_disable_enum;
+            reset = 0x0;
+        } powerctrl_slv_sec_acc_disable[14:14];
+
+        enum MISC_CTRL58_rtc_slv_sec_acc_disable_enum {
+            SECURE_ACCESS_ON = 0 { name = "Secure Access On"; desc = "Secure-access control enabled"; };
+            SECURE_ACCESS_OFF = 1 { name = "Secure Access Off"; desc = "Secure-access control disabled"; };
+        };
+
+        field {
+            name = "rtc_slv_sec_acc_disable";
+            desc = "RTC register secure-access switch. 0: secure-access control enabled, 1: secure-access control disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL58_rtc_slv_sec_acc_disable_enum;
+            reset = 0x0;
+        } rtc_slv_sec_acc_disable[13:13];
+
+        enum MISC_CTRL58_ddrsubsys_slv_sec_acc_disable_enum {
+            SECURE_ACCESS_ON = 0 { name = "Secure Access On"; desc = "Secure-access control enabled"; };
+            SECURE_ACCESS_OFF = 1 { name = "Secure Access Off"; desc = "Secure-access control disabled"; };
+        };
+
+        field {
+            name = "ddrsubsys_slv_sec_acc_disable";
+            desc = "MDDRC register secure-access switch. 0: secure-access control enabled, 1: secure-access control disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL58_ddrsubsys_slv_sec_acc_disable_enum;
+            reset = 0x0;
+        } ddrsubsys_slv_sec_acc_disable[12:12];
+
+        enum MISC_CTRL58_crg_slv_sec_acc_disable_enum {
+            SECURE_ACCESS_ON = 0 { name = "Secure Access On"; desc = "Secure-access control enabled"; };
+            SECURE_ACCESS_OFF = 1 { name = "Secure Access Off"; desc = "Secure-access control disabled"; };
+        };
+
+        field {
+            name = "crg_slv_sec_acc_disable";
+            desc = "CRG register secure-access switch. 0: secure-access control enabled, 1: secure-access control disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL58_crg_slv_sec_acc_disable_enum;
+            reset = 0x0;
+        } crg_slv_sec_acc_disable[11:11];
+
+        enum MISC_CTRL58_wdg1_slv_sec_acc_disable_enum {
+            SECURE_ACCESS_ON = 0 { name = "Secure Access On"; desc = "Secure-access control enabled"; };
+            SECURE_ACCESS_OFF = 1 { name = "Secure Access Off"; desc = "Secure-access control disabled"; };
+        };
+
+        field {
+            name = "wdg1_slv_sec_acc_disable";
+            desc = "WDG1 register secure-access switch. 0: secure-access control enabled, 1: secure-access control disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL58_wdg1_slv_sec_acc_disable_enum;
+            reset = 0x0;
+        } wdg1_slv_sec_acc_disable[10:10];
+
+        enum MISC_CTRL58_wdg0_slv_sec_acc_disable_enum {
+            SECURE_ACCESS_ON = 0 { name = "Secure Access On"; desc = "Secure-access control enabled"; };
+            SECURE_ACCESS_OFF = 1 { name = "Secure Access Off"; desc = "Secure-access control disabled"; };
+        };
+
+        field {
+            name = "wdg0_slv_sec_acc_disable";
+            desc = "WDG0 register secure-access switch. 0: secure-access control enabled, 1: secure-access control disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL58_wdg0_slv_sec_acc_disable_enum;
+            reset = 0x0;
+        } wdg0_slv_sec_acc_disable[9:9];
+
+        enum MISC_CTRL58_uart4_slv_sec_acc_disable_enum {
+            SECURE_ACCESS_ON = 0 { name = "Secure Access On"; desc = "Secure-access control enabled"; };
+            SECURE_ACCESS_OFF = 1 { name = "Secure Access Off"; desc = "Secure-access control disabled"; };
+        };
+
+        field {
+            name = "uart4_slv_sec_acc_disable";
+            desc = "UART4 register secure-access switch. 0: secure-access control enabled, 1: secure-access control disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL58_uart4_slv_sec_acc_disable_enum;
+            reset = 0x0;
+        } uart4_slv_sec_acc_disable[8:8];
+
+        enum MISC_CTRL58_uart3_slv_sec_acc_disable_enum {
+            SECURE_ACCESS_ON = 0 { name = "Secure Access On"; desc = "Secure-access control enabled"; };
+            SECURE_ACCESS_OFF = 1 { name = "Secure Access Off"; desc = "Secure-access control disabled"; };
+        };
+
+        field {
+            name = "uart3_slv_sec_acc_disable";
+            desc = "UART3 register secure-access switch. 0: secure-access control enabled, 1: secure-access control disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL58_uart3_slv_sec_acc_disable_enum;
+            reset = 0x0;
+        } uart3_slv_sec_acc_disable[7:7];
+
+        enum MISC_CTRL58_uart2_slv_sec_acc_disable_enum {
+            SECURE_ACCESS_ON = 0 { name = "Secure Access On"; desc = "Secure-access control enabled"; };
+            SECURE_ACCESS_OFF = 1 { name = "Secure Access Off"; desc = "Secure-access control disabled"; };
+        };
+
+        field {
+            name = "uart2_slv_sec_acc_disable";
+            desc = "UART2 register secure-access switch. 0: secure-access control enabled, 1: secure-access control disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL58_uart2_slv_sec_acc_disable_enum;
+            reset = 0x0;
+        } uart2_slv_sec_acc_disable[6:6];
+
+        enum MISC_CTRL58_uart1_slv_sec_acc_disable_enum {
+            SECURE_ACCESS_ON = 0 { name = "Secure Access On"; desc = "Secure-access control enabled"; };
+            SECURE_ACCESS_OFF = 1 { name = "Secure Access Off"; desc = "Secure-access control disabled"; };
+        };
+
+        field {
+            name = "uart1_slv_sec_acc_disable";
+            desc = "UART1 register secure-access switch. 0: secure-access control enabled, 1: secure-access control disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL58_uart1_slv_sec_acc_disable_enum;
+            reset = 0x0;
+        } uart1_slv_sec_acc_disable[5:5];
+
+        enum MISC_CTRL58_uart0_slv_sec_acc_disable_enum {
+            SECURE_ACCESS_ON = 0 { name = "Secure Access On"; desc = "Secure-access control enabled"; };
+            SECURE_ACCESS_OFF = 1 { name = "Secure Access Off"; desc = "Secure-access control disabled"; };
+        };
+
+        field {
+            name = "uart0_slv_sec_acc_disable";
+            desc = "UART0 register secure-access switch. 0: secure-access control enabled, 1: secure-access control disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL58_uart0_slv_sec_acc_disable_enum;
+            reset = 0x0;
+        } uart0_slv_sec_acc_disable[4:4];
+
+        enum MISC_CTRL58_timer67_slv_sec_acc_disable_enum {
+            SECURE_ACCESS_ON = 0 { name = "Secure Access On"; desc = "Secure-access control enabled"; };
+            SECURE_ACCESS_OFF = 1 { name = "Secure Access Off"; desc = "Secure-access control disabled"; };
+        };
+
+        field {
+            name = "timer67_slv_sec_acc_disable";
+            desc = "Timer6/Timer7 register secure-access switch. 0: secure-access control enabled, 1: secure-access control disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL58_timer67_slv_sec_acc_disable_enum;
+            reset = 0x0;
+        } timer67_slv_sec_acc_disable[3:3];
+
+        enum MISC_CTRL58_timer45_slv_sec_acc_disable_enum {
+            SECURE_ACCESS_ON = 0 { name = "Secure Access On"; desc = "Secure-access control enabled"; };
+            SECURE_ACCESS_OFF = 1 { name = "Secure Access Off"; desc = "Secure-access control disabled"; };
+        };
+
+        field {
+            name = "timer45_slv_sec_acc_disable";
+            desc = "Timer4/Timer5 register secure-access switch. 0: secure-access control enabled, 1: secure-access control disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL58_timer45_slv_sec_acc_disable_enum;
+            reset = 0x0;
+        } timer45_slv_sec_acc_disable[2:2];
+
+        enum MISC_CTRL58_timer23_slv_sec_acc_disable_enum {
+            SECURE_ACCESS_ON = 0 { name = "Secure Access On"; desc = "Secure-access control enabled"; };
+            SECURE_ACCESS_OFF = 1 { name = "Secure Access Off"; desc = "Secure-access control disabled"; };
+        };
+
+        field {
+            name = "timer23_slv_sec_acc_disable";
+            desc = "Timer2/Timer3 register secure-access switch. 0: secure-access control enabled, 1: secure-access control disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL58_timer23_slv_sec_acc_disable_enum;
+            reset = 0x0;
+        } timer23_slv_sec_acc_disable[1:1];
+
+        enum MISC_CTRL58_timer01_slv_sec_acc_disable_enum {
+            SECURE_ACCESS_ON = 0 { name = "Secure Access On"; desc = "Secure-access control enabled"; };
+            SECURE_ACCESS_OFF = 1 { name = "Secure Access Off"; desc = "Secure-access control disabled"; };
+        };
+
+        field {
+            name = "timer01_slv_sec_acc_disable";
+            desc = "Timer0/Timer1 register secure-access switch. 0: secure-access control enabled, 1: secure-access control disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL58_timer01_slv_sec_acc_disable_enum;
+            reset = 0x0;
+        } timer01_slv_sec_acc_disable[0:0];
+    } MISC_CTRL58 @ 0x104;
+
+    reg {
+        name = "Secure access control register 1";
+        desc = "Secure access control register 1.
+
+Secure-access switches of the slave register blocks, part 1.
+
+Data sheet 3.5.5 MISC_CTRL59 (offset 0x108, printed page 3-101, `hi3516av300--Hi3516AV300-Datasheet.txt` line 13025).";
+
+        enum MISC_CTRL59_vedu_slv_sec_acc_disable_enum {
+            SECURE_ACCESS_ON = 0 { name = "Secure Access On"; desc = "Secure-access control enabled"; };
+            SECURE_ACCESS_OFF = 1 { name = "Secure Access Off"; desc = "Secure-access control disabled"; };
+        };
+
+        field {
+            name = "vedu_slv_sec_acc_disable";
+            desc = "VEDU register secure-access switch. 0: secure-access control enabled, 1: secure-access control disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL59_vedu_slv_sec_acc_disable_enum;
+            reset = 0x0;
+        } vedu_slv_sec_acc_disable[17:17];
+
+        enum MISC_CTRL59_gdc_slv_sec_acc_disable_enum {
+            SECURE_ACCESS_ON = 0 { name = "Secure Access On"; desc = "Secure-access control enabled"; };
+            SECURE_ACCESS_OFF = 1 { name = "Secure Access Off"; desc = "Secure-access control disabled"; };
+        };
+
+        field {
+            name = "gdc_slv_sec_acc_disable";
+            desc = "GDC register secure-access switch. 0: secure-access control enabled, 1: secure-access control disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL59_gdc_slv_sec_acc_disable_enum;
+            reset = 0x0;
+        } gdc_slv_sec_acc_disable[16:16];
+
+        enum MISC_CTRL59_nnie_slv_sec_acc_disable_enum {
+            SECURE_ACCESS_ON = 0 { name = "Secure Access On"; desc = "Secure-access control enabled"; };
+            SECURE_ACCESS_OFF = 1 { name = "Secure Access Off"; desc = "Secure-access control disabled"; };
+        };
+
+        field {
+            name = "nnie_slv_sec_acc_disable";
+            desc = "NNIE register secure-access switch. 0: secure-access control enabled, 1: secure-access control disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL59_nnie_slv_sec_acc_disable_enum;
+            reset = 0x0;
+        } nnie_slv_sec_acc_disable[15:15];
+
+        enum MISC_CTRL59_vpss_slv_sec_acc_disable_enum {
+            SECURE_ACCESS_ON = 0 { name = "Secure Access On"; desc = "Secure-access control enabled"; };
+            SECURE_ACCESS_OFF = 1 { name = "Secure Access Off"; desc = "Secure-access control disabled"; };
+        };
+
+        field {
+            name = "vpss_slv_sec_acc_disable";
+            desc = "VPSS register secure-access switch. 0: secure-access control enabled, 1: secure-access control disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL59_vpss_slv_sec_acc_disable_enum;
+            reset = 0x0;
+        } vpss_slv_sec_acc_disable[14:14];
+
+        enum MISC_CTRL59_viproc_slv_sec_acc_disable_enum {
+            SECURE_ACCESS_ON = 0 { name = "Secure Access On"; desc = "Secure-access control enabled"; };
+            SECURE_ACCESS_OFF = 1 { name = "Secure Access Off"; desc = "Secure-access control disabled"; };
+        };
+
+        field {
+            name = "viproc_slv_sec_acc_disable";
+            desc = "VIPROC register secure-access switch. 0: secure-access control enabled, 1: secure-access control disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL59_viproc_slv_sec_acc_disable_enum;
+            reset = 0x0;
+        } viproc_slv_sec_acc_disable[13:13];
+
+        enum MISC_CTRL59_audiocodec_slv_sec_acc_disable_enum {
+            SECURE_ACCESS_ON = 0 { name = "Secure Access On"; desc = "Secure-access control enabled"; };
+            SECURE_ACCESS_OFF = 1 { name = "Secure Access Off"; desc = "Secure-access control disabled"; };
+        };
+
+        field {
+            name = "audiocodec_slv_sec_acc_disable";
+            desc = "AudioCodec register secure-access switch. 0: secure-access control enabled, 1: secure-access control disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL59_audiocodec_slv_sec_acc_disable_enum;
+            reset = 0x0;
+        } audiocodec_slv_sec_acc_disable[12:12];
+
+        enum MISC_CTRL59_aio_slv_sec_acc_disable_enum {
+            SECURE_ACCESS_ON = 0 { name = "Secure Access On"; desc = "Secure-access control enabled"; };
+            SECURE_ACCESS_OFF = 1 { name = "Secure Access Off"; desc = "Secure-access control disabled"; };
+        };
+
+        field {
+            name = "aio_slv_sec_acc_disable";
+            desc = "AIAO register secure-access switch. 0: secure-access control enabled, 1: secure-access control disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL59_aio_slv_sec_acc_disable_enum;
+            reset = 0x0;
+        } aio_slv_sec_acc_disable[11:11];
+
+        enum MISC_CTRL59_hdmitx_slv_sec_acc_disable_enum {
+            SECURE_ACCESS_ON = 0 { name = "Secure Access On"; desc = "Secure-access control enabled"; };
+            SECURE_ACCESS_OFF = 1 { name = "Secure Access Off"; desc = "Secure-access control disabled"; };
+        };
+
+        field {
+            name = "hdmitx_slv_sec_acc_disable";
+            desc = "HDMITX register secure-access switch. 0: secure-access control enabled, 1: secure-access control disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL59_hdmitx_slv_sec_acc_disable_enum;
+            reset = 0x0;
+        } hdmitx_slv_sec_acc_disable[10:10];
+
+        enum MISC_CTRL59_vdp_slv_sec_acc_disable_enum {
+            SECURE_ACCESS_ON = 0 { name = "Secure Access On"; desc = "Secure-access control enabled"; };
+            SECURE_ACCESS_OFF = 1 { name = "Secure Access Off"; desc = "Secure-access control disabled"; };
+        };
+
+        field {
+            name = "vdp_slv_sec_acc_disable";
+            desc = "VDP register secure-access switch. 0: secure-access control enabled, 1: secure-access control disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL59_vdp_slv_sec_acc_disable_enum;
+            reset = 0x0;
+        } vdp_slv_sec_acc_disable[9:9];
+
+        enum MISC_CTRL59_mipirx_slv_sec_acc_disable_enum {
+            SECURE_ACCESS_ON = 0 { name = "Secure Access On"; desc = "Secure-access control enabled"; };
+            SECURE_ACCESS_OFF = 1 { name = "Secure Access Off"; desc = "Secure-access control disabled"; };
+        };
+
+        field {
+            name = "mipirx_slv_sec_acc_disable";
+            desc = "MIPIRX register secure-access switch. 0: secure-access control enabled, 1: secure-access control disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL59_mipirx_slv_sec_acc_disable_enum;
+            reset = 0x0;
+        } mipirx_slv_sec_acc_disable[8:8];
+
+        enum MISC_CTRL59_vicap_slv_sec_acc_disable_enum {
+            SECURE_ACCESS_ON = 0 { name = "Secure Access On"; desc = "Secure-access control enabled"; };
+            SECURE_ACCESS_OFF = 1 { name = "Secure Access Off"; desc = "Secure-access control disabled"; };
+        };
+
+        field {
+            name = "vicap_slv_sec_acc_disable";
+            desc = "VICAP register secure-access switch. 0: secure-access control enabled, 1: secure-access control disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL59_vicap_slv_sec_acc_disable_enum;
+            reset = 0x0;
+        } vicap_slv_sec_acc_disable[7:7];
+
+        enum MISC_CTRL59_klad_slv_sec_acc_disable_enum {
+            SECURE_ACCESS_ON = 0 { name = "Secure Access On"; desc = "Secure-access control enabled"; };
+            SECURE_ACCESS_OFF = 1 { name = "Secure Access Off"; desc = "Secure-access control disabled"; };
+        };
+
+        field {
+            name = "klad_slv_sec_acc_disable";
+            desc = "KLAD register secure-access switch. 0: secure-access control enabled, 1: secure-access control disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL59_klad_slv_sec_acc_disable_enum;
+            reset = 0x0;
+        } klad_slv_sec_acc_disable[6:6];
+
+        enum MISC_CTRL59_dmac_slv_sec_acc_disable_enum {
+            SECURE_ACCESS_ON = 0 { name = "Secure Access On"; desc = "Secure-access control enabled"; };
+            SECURE_ACCESS_OFF = 1 { name = "Secure Access Off"; desc = "Secure-access control disabled"; };
+        };
+
+        field {
+            name = "dmac_slv_sec_acc_disable";
+            desc = "DMAC register secure-access switch. 0: secure-access control enabled, 1: secure-access control disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL59_dmac_slv_sec_acc_disable_enum;
+            reset = 0x0;
+        } dmac_slv_sec_acc_disable[5:5];
+
+        enum MISC_CTRL59_otp_slv_sec_acc_disable_enum {
+            SECURE_ACCESS_ON = 0 { name = "Secure Access On"; desc = "Secure-access control enabled"; };
+            SECURE_ACCESS_OFF = 1 { name = "Secure Access Off"; desc = "Secure-access control disabled"; };
+        };
+
+        field {
+            name = "otp_slv_sec_acc_disable";
+            desc = "OTP register secure-access switch. 0: secure-access control enabled, 1: secure-access control disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL59_otp_slv_sec_acc_disable_enum;
+            reset = 0x0;
+        } otp_slv_sec_acc_disable[4:4];
+
+        enum MISC_CTRL59_trng_slv_sec_acc_disable_enum {
+            SECURE_ACCESS_ON = 0 { name = "Secure Access On"; desc = "Secure-access control enabled"; };
+            SECURE_ACCESS_OFF = 1 { name = "Secure Access Off"; desc = "Secure-access control disabled"; };
+        };
+
+        field {
+            name = "trng_slv_sec_acc_disable";
+            desc = "TRNG register secure-access switch. 0: secure-access control enabled, 1: secure-access control disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL59_trng_slv_sec_acc_disable_enum;
+            reset = 0x0;
+        } trng_slv_sec_acc_disable[3:3];
+
+        enum MISC_CTRL59_rsa1_slv_sec_acc_disable_enum {
+            SECURE_ACCESS_ON = 0 { name = "Secure Access On"; desc = "Secure-access control enabled"; };
+            SECURE_ACCESS_OFF = 1 { name = "Secure Access Off"; desc = "Secure-access control disabled"; };
+        };
+
+        field {
+            name = "rsa1_slv_sec_acc_disable";
+            desc = "RSA1 register secure-access switch. 0: secure-access control enabled, 1: secure-access control disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL59_rsa1_slv_sec_acc_disable_enum;
+            reset = 0x0;
+        } rsa1_slv_sec_acc_disable[2:2];
+
+        enum MISC_CTRL59_rsa0_slv_sec_acc_disable_enum {
+            SECURE_ACCESS_ON = 0 { name = "Secure Access On"; desc = "Secure-access control enabled"; };
+            SECURE_ACCESS_OFF = 1 { name = "Secure Access Off"; desc = "Secure-access control disabled"; };
+        };
+
+        field {
+            name = "rsa0_slv_sec_acc_disable";
+            desc = "RSA0 register secure-access switch. 0: secure-access control enabled, 1: secure-access control disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL59_rsa0_slv_sec_acc_disable_enum;
+            reset = 0x0;
+        } rsa0_slv_sec_acc_disable[1:1];
+
+        enum MISC_CTRL59_spacc_slv_sec_acc_disable_enum {
+            SECURE_ACCESS_ON = 0 { name = "Secure Access On"; desc = "Secure-access control enabled"; };
+            SECURE_ACCESS_OFF = 1 { name = "Secure Access Off"; desc = "Secure-access control disabled"; };
+        };
+
+        field {
+            name = "spacc_slv_sec_acc_disable";
+            desc = "SPACC register secure-access switch. 0: secure-access control enabled, 1: secure-access control disabled.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL59_spacc_slv_sec_acc_disable_enum;
+            reset = 0x0;
+        } spacc_slv_sec_acc_disable[0:0];
+    } MISC_CTRL59 @ 0x108;
+
+    reg {
+        name = "Secure access control register 2";
+        desc = "Secure access control register 2.
+
+Secure-access control modes of the slave register blocks, part 0: 1 = a non-secure CPU is forced not to write the block's registers.
+
+Data sheet 3.5.5 MISC_CTRL60 (offset 0x10C, printed page 3-103, `hi3516av300--Hi3516AV300-Datasheet.txt` line 13167).";
+
+        enum MISC_CTRL60_mipitx_slv_acc_ctrl_enum {
+            NORMAL_CONTROL = 0 { name = "Normal Control"; desc = "Normal secure-access control"; };
+            NONSECURE_READONLY = 1 { name = "Nonsecure Readonly"; desc = "Non-secure CPU is forced not to write the MIPI TX registers"; };
+        };
+
+        field {
+            name = "mipitx_slv_acc_ctrl";
+            desc = "MIPI TX register secure-access control mode. 0: normal secure-access control, 1: non-secure CPU is forced not to write the MIPI TX registers.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL60_mipitx_slv_acc_ctrl_enum;
+            reset = 0x0;
+        } mipitx_slv_acc_ctrl[22:22];
+
+        enum MISC_CTRL60_jpgd_slv_acc_ctrl_enum {
+            NORMAL_CONTROL = 0 { name = "Normal Control"; desc = "Normal secure-access control"; };
+            NONSECURE_READONLY = 1 { name = "Nonsecure Readonly"; desc = "Non-secure CPU is forced not to write the JPGD registers"; };
+        };
+
+        field {
+            name = "jpgd_slv_acc_ctrl";
+            desc = "JPGD register secure-access control mode. 0: normal secure-access control, 1: non-secure CPU is forced not to write the JPGD registers.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL60_jpgd_slv_acc_ctrl_enum;
+            reset = 0x0;
+        } jpgd_slv_acc_ctrl[21:21];
+
+        enum MISC_CTRL60_ddrt_slv_acc_ctrl_enum {
+            NORMAL_CONTROL = 0 { name = "Normal Control"; desc = "Normal secure-access control"; };
+            NONSECURE_READONLY = 1 { name = "Nonsecure Readonly"; desc = "Non-secure CPU is forced not to write the DDRT registers"; };
+        };
+
+        field {
+            name = "ddrt_slv_acc_ctrl";
+            desc = "DDRT register secure-access control mode. 0: normal secure-access control, 1: non-secure CPU is forced not to write the DDRT registers.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL60_ddrt_slv_acc_ctrl_enum;
+            reset = 0x0;
+        } ddrt_slv_acc_ctrl[20:20];
+
+        enum MISC_CTRL60_gzip_slv_acc_ctrl_enum {
+            NORMAL_CONTROL = 0 { name = "Normal Control"; desc = "Normal secure-access control"; };
+            NONSECURE_READONLY = 1 { name = "Nonsecure Readonly"; desc = "Non-secure CPU is forced not to write the GZIP registers"; };
+        };
+
+        field {
+            name = "gzip_slv_acc_ctrl";
+            desc = "GZIP register secure-access control mode. 0: normal secure-access control, 1: non-secure CPU is forced not to write the GZIP registers.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL60_gzip_slv_acc_ctrl_enum;
+            reset = 0x0;
+        } gzip_slv_acc_ctrl[19:19];
+
+        enum MISC_CTRL60_tde_slv_acc_ctrl_enum {
+            NORMAL_CONTROL = 0 { name = "Normal Control"; desc = "Normal secure-access control"; };
+            NONSECURE_READONLY = 1 { name = "Nonsecure Readonly"; desc = "Non-secure CPU is forced not to write the TDE registers"; };
+        };
+
+        field {
+            name = "tde_slv_acc_ctrl";
+            desc = "TDE register secure-access control mode. 0: normal secure-access control, 1: non-secure CPU is forced not to write the TDE registers.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL60_tde_slv_acc_ctrl_enum;
+            reset = 0x0;
+        } tde_slv_acc_ctrl[18:18];
+
+        enum MISC_CTRL60_ive_slv_acc_ctrl_enum {
+            NORMAL_CONTROL = 0 { name = "Normal Control"; desc = "Normal secure-access control"; };
+            NONSECURE_READONLY = 1 { name = "Nonsecure Readonly"; desc = "Non-secure CPU is forced not to write the IVE registers"; };
+        };
+
+        field {
+            name = "ive_slv_acc_ctrl";
+            desc = "IVE register secure-access control mode. 0: normal secure-access control, 1: non-secure CPU is forced not to write the IVE registers.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL60_ive_slv_acc_ctrl_enum;
+            reset = 0x0;
+        } ive_slv_acc_ctrl[17:17];
+
+        enum MISC_CTRL60_jpge_slv_acc_ctrl_enum {
+            NORMAL_CONTROL = 0 { name = "Normal Control"; desc = "Normal secure-access control"; };
+            NONSECURE_READONLY = 1 { name = "Nonsecure Readonly"; desc = "Non-secure CPU is forced not to write the JPGE registers"; };
+        };
+
+        field {
+            name = "jpge_slv_acc_ctrl";
+            desc = "JPGE register secure-access control mode. 0: normal secure-access control, 1: non-secure CPU is forced not to write the JPGE registers.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL60_jpge_slv_acc_ctrl_enum;
+            reset = 0x0;
+        } jpge_slv_acc_ctrl[16:16];
+
+        enum MISC_CTRL60_vgs_slv_acc_ctrl_enum {
+            NORMAL_CONTROL = 0 { name = "Normal Control"; desc = "Normal secure-access control"; };
+            NONSECURE_READONLY = 1 { name = "Nonsecure Readonly"; desc = "Non-secure CPU is forced not to write the VGS registers"; };
+        };
+
+        field {
+            name = "vgs_slv_acc_ctrl";
+            desc = "VGS register secure-access control mode. 0: normal secure-access control, 1: non-secure CPU is forced not to write the VGS registers.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL60_vgs_slv_acc_ctrl_enum;
+            reset = 0x0;
+        } vgs_slv_acc_ctrl[15:15];
+
+        enum MISC_CTRL60_powerctrl_slv_acc_ctrl_enum {
+            NORMAL_CONTROL = 0 { name = "Normal Control"; desc = "Normal secure-access control"; };
+            NONSECURE_READONLY = 1 { name = "Nonsecure Readonly"; desc = "Non-secure CPU is forced not to write the PowerControl registers"; };
+        };
+
+        field {
+            name = "powerctrl_slv_acc_ctrl";
+            desc = "PowerControl register secure-access control mode. 0: normal secure-access control, 1: non-secure CPU is forced not to write the PowerControl registers.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL60_powerctrl_slv_acc_ctrl_enum;
+            reset = 0x0;
+        } powerctrl_slv_acc_ctrl[14:14];
+
+        enum MISC_CTRL60_rtc_slv_acc_ctrl_enum {
+            NORMAL_CONTROL = 0 { name = "Normal Control"; desc = "Normal secure-access control"; };
+            NONSECURE_READONLY = 1 { name = "Nonsecure Readonly"; desc = "Non-secure CPU is forced not to write the RTC registers"; };
+        };
+
+        field {
+            name = "rtc_slv_acc_ctrl";
+            desc = "RTC register secure-access control mode. 0: normal secure-access control, 1: non-secure CPU is forced not to write the RTC registers.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL60_rtc_slv_acc_ctrl_enum;
+            reset = 0x0;
+        } rtc_slv_acc_ctrl[13:13];
+
+        enum MISC_CTRL60_ddrsubsys_slv_acc_ctrl_enum {
+            NORMAL_CONTROL = 0 { name = "Normal Control"; desc = "Normal secure-access control"; };
+            NONSECURE_READONLY = 1 { name = "Nonsecure Readonly"; desc = "Non-secure CPU is forced not to write the MDDRC/DDRPHY registers"; };
+        };
+
+        field {
+            name = "ddrsubsys_slv_acc_ctrl";
+            desc = "MDDRC/DDRPHY register secure-access control mode. 0: normal secure-access control, 1: non-secure CPU is forced not to write the MDDRC/DDRPHY registers.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL60_ddrsubsys_slv_acc_ctrl_enum;
+            reset = 0x0;
+        } ddrsubsys_slv_acc_ctrl[12:12];
+
+        enum MISC_CTRL60_crg_slv_acc_ctrl_enum {
+            NORMAL_CONTROL = 0 { name = "Normal Control"; desc = "Normal secure-access control"; };
+            NONSECURE_READONLY = 1 { name = "Nonsecure Readonly"; desc = "Non-secure CPU is forced not to write the CRG registers"; };
+        };
+
+        field {
+            name = "crg_slv_acc_ctrl";
+            desc = "CRG register secure-access control mode. 0: normal secure-access control, 1: non-secure CPU is forced not to write the CRG registers.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL60_crg_slv_acc_ctrl_enum;
+            reset = 0x0;
+        } crg_slv_acc_ctrl[11:11];
+
+        enum MISC_CTRL60_wdg1_slv_acc_ctrl_enum {
+            NORMAL_CONTROL = 0 { name = "Normal Control"; desc = "Normal secure-access control"; };
+            NONSECURE_READONLY = 1 { name = "Nonsecure Readonly"; desc = "Non-secure CPU is forced not to write the WDG1 registers"; };
+        };
+
+        field {
+            name = "wdg1_slv_acc_ctrl";
+            desc = "WDG1 register secure-access control mode. 0: normal secure-access control, 1: non-secure CPU is forced not to write the WDG1 registers.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL60_wdg1_slv_acc_ctrl_enum;
+            reset = 0x0;
+        } wdg1_slv_acc_ctrl[10:10];
+
+        enum MISC_CTRL60_wdg0_slv_acc_ctrl_enum {
+            NORMAL_CONTROL = 0 { name = "Normal Control"; desc = "Normal secure-access control"; };
+            NONSECURE_READONLY = 1 { name = "Nonsecure Readonly"; desc = "Non-secure CPU is forced not to write the WDG0 registers"; };
+        };
+
+        field {
+            name = "wdg0_slv_acc_ctrl";
+            desc = "WDG0 register secure-access control mode. 0: normal secure-access control, 1: non-secure CPU is forced not to write the WDG0 registers.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL60_wdg0_slv_acc_ctrl_enum;
+            reset = 0x0;
+        } wdg0_slv_acc_ctrl[9:9];
+
+        enum MISC_CTRL60_uart4_slv_acc_ctrl_enum {
+            NORMAL_CONTROL = 0 { name = "Normal Control"; desc = "Normal secure-access control"; };
+            NONSECURE_READONLY = 1 { name = "Nonsecure Readonly"; desc = "Non-secure CPU is forced not to write the UART4 registers"; };
+        };
+
+        field {
+            name = "uart4_slv_acc_ctrl";
+            desc = "UART4 register secure-access control mode. 0: normal secure-access control, 1: non-secure CPU is forced not to write the UART4 registers.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL60_uart4_slv_acc_ctrl_enum;
+            reset = 0x0;
+        } uart4_slv_acc_ctrl[8:8];
+
+        enum MISC_CTRL60_uart3_slv_acc_ctrl_enum {
+            NORMAL_CONTROL = 0 { name = "Normal Control"; desc = "Normal secure-access control"; };
+            NONSECURE_READONLY = 1 { name = "Nonsecure Readonly"; desc = "Non-secure CPU is forced not to write the UART3 registers"; };
+        };
+
+        field {
+            name = "uart3_slv_acc_ctrl";
+            desc = "UART3 register secure-access control mode. 0: normal secure-access control, 1: non-secure CPU is forced not to write the UART3 registers.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL60_uart3_slv_acc_ctrl_enum;
+            reset = 0x0;
+        } uart3_slv_acc_ctrl[7:7];
+
+        enum MISC_CTRL60_uart2_slv_acc_ctrl_enum {
+            NORMAL_CONTROL = 0 { name = "Normal Control"; desc = "Normal secure-access control"; };
+            NONSECURE_READONLY = 1 { name = "Nonsecure Readonly"; desc = "Non-secure CPU is forced not to write the UART2 registers"; };
+        };
+
+        field {
+            name = "uart2_slv_acc_ctrl";
+            desc = "UART2 register secure-access control mode. 0: normal secure-access control, 1: non-secure CPU is forced not to write the UART2 registers.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL60_uart2_slv_acc_ctrl_enum;
+            reset = 0x0;
+        } uart2_slv_acc_ctrl[6:6];
+
+        enum MISC_CTRL60_uart1_slv_acc_ctrl_enum {
+            NORMAL_CONTROL = 0 { name = "Normal Control"; desc = "Normal secure-access control"; };
+            NONSECURE_READONLY = 1 { name = "Nonsecure Readonly"; desc = "Non-secure CPU is forced not to write the UART1 registers"; };
+        };
+
+        field {
+            name = "uart1_slv_acc_ctrl";
+            desc = "UART1 register secure-access control mode. 0: normal secure-access control, 1: non-secure CPU is forced not to write the UART1 registers.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL60_uart1_slv_acc_ctrl_enum;
+            reset = 0x0;
+        } uart1_slv_acc_ctrl[5:5];
+
+        enum MISC_CTRL60_uart0_slv_acc_ctrl_enum {
+            NORMAL_CONTROL = 0 { name = "Normal Control"; desc = "Normal secure-access control"; };
+            NONSECURE_READONLY = 1 { name = "Nonsecure Readonly"; desc = "Non-secure CPU is forced not to write the UART0 registers"; };
+        };
+
+        field {
+            name = "uart0_slv_acc_ctrl";
+            desc = "UART0 register secure-access control mode. 0: normal secure-access control, 1: non-secure CPU is forced not to write the UART0 registers.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL60_uart0_slv_acc_ctrl_enum;
+            reset = 0x0;
+        } uart0_slv_acc_ctrl[4:4];
+
+        enum MISC_CTRL60_timer67_slv_acc_ctrl_enum {
+            NORMAL_CONTROL = 0 { name = "Normal Control"; desc = "Normal secure-access control"; };
+            NONSECURE_READONLY = 1 { name = "Nonsecure Readonly"; desc = "Non-secure CPU is forced not to write the Timer6/Timer7 registers"; };
+        };
+
+        field {
+            name = "timer67_slv_acc_ctrl";
+            desc = "Timer6/Timer7 register secure-access control mode. 0: normal secure-access control, 1: non-secure CPU is forced not to write the Timer6/Timer7 registers.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL60_timer67_slv_acc_ctrl_enum;
+            reset = 0x0;
+        } timer67_slv_acc_ctrl[3:3];
+
+        enum MISC_CTRL60_timer45_slv_acc_ctrl_enum {
+            NORMAL_CONTROL = 0 { name = "Normal Control"; desc = "Normal secure-access control"; };
+            NONSECURE_READONLY = 1 { name = "Nonsecure Readonly"; desc = "Non-secure CPU is forced not to write the Timer4/Timer5 registers"; };
+        };
+
+        field {
+            name = "timer45_slv_acc_ctrl";
+            desc = "Timer4/Timer5 register secure-access control mode. 0: normal secure-access control, 1: non-secure CPU is forced not to write the Timer4/Timer5 registers.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL60_timer45_slv_acc_ctrl_enum;
+            reset = 0x0;
+        } timer45_slv_acc_ctrl[2:2];
+
+        enum MISC_CTRL60_timer23_slv_acc_ctrl_enum {
+            NORMAL_CONTROL = 0 { name = "Normal Control"; desc = "Normal secure-access control"; };
+            NONSECURE_READONLY = 1 { name = "Nonsecure Readonly"; desc = "Non-secure CPU is forced not to write the Timer2/Timer3 registers"; };
+        };
+
+        field {
+            name = "timer23_slv_acc_ctrl";
+            desc = "Timer2/Timer3 register secure-access control mode. 0: normal secure-access control, 1: non-secure CPU is forced not to write the Timer2/Timer3 registers.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL60_timer23_slv_acc_ctrl_enum;
+            reset = 0x0;
+        } timer23_slv_acc_ctrl[1:1];
+
+        enum MISC_CTRL60_timer01_slv_acc_ctrl_enum {
+            NORMAL_CONTROL = 0 { name = "Normal Control"; desc = "Normal secure-access control"; };
+            NONSECURE_READONLY = 1 { name = "Nonsecure Readonly"; desc = "Non-secure CPU is forced not to write the Timer0/Timer1 registers"; };
+        };
+
+        field {
+            name = "timer01_slv_acc_ctrl";
+            desc = "Timer0/Timer1 register secure-access control mode. 0: normal secure-access control, 1: non-secure CPU is forced not to write the Timer0/Timer1 registers.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL60_timer01_slv_acc_ctrl_enum;
+            reset = 0x0;
+        } timer01_slv_acc_ctrl[0:0];
+    } MISC_CTRL60 @ 0x10C;
+
+    reg {
+        name = "Secure access control register 3";
+        desc = "Secure access control register 3.
+
+Secure-access control modes of the slave register blocks, part 1.
+
+Data sheet 3.5.5 MISC_CTRL61 (offset 0x110, printed page 3-106, `hi3516av300--Hi3516AV300-Datasheet.txt` line 13366).";
+
+        enum MISC_CTRL61_vedu_slv_acc_ctrl_enum {
+            NORMAL_CONTROL = 0 { name = "Normal Control"; desc = "Normal secure-access control"; };
+            NONSECURE_READONLY = 1 { name = "Nonsecure Readonly"; desc = "Non-secure CPU is forced not to write the VEDU registers"; };
+        };
+
+        field {
+            name = "vedu_slv_acc_ctrl";
+            desc = "VEDU register secure-access control mode. 0: normal secure-access control, 1: non-secure CPU is forced not to write the VEDU registers.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL61_vedu_slv_acc_ctrl_enum;
+            reset = 0x0;
+        } vedu_slv_acc_ctrl[17:17];
+
+        enum MISC_CTRL61_gdc_slv_acc_ctrl_enum {
+            NORMAL_CONTROL = 0 { name = "Normal Control"; desc = "Normal secure-access control"; };
+            NONSECURE_READONLY = 1 { name = "Nonsecure Readonly"; desc = "Non-secure CPU is forced not to write the GDC registers"; };
+        };
+
+        field {
+            name = "gdc_slv_acc_ctrl";
+            desc = "GDC register secure-access control mode. 0: normal secure-access control, 1: non-secure CPU is forced not to write the GDC registers.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL61_gdc_slv_acc_ctrl_enum;
+            reset = 0x0;
+        } gdc_slv_acc_ctrl[16:16];
+
+        enum MISC_CTRL61_nnie_slv_acc_ctrl_enum {
+            NORMAL_CONTROL = 0 { name = "Normal Control"; desc = "Normal secure-access control"; };
+            NONSECURE_READONLY = 1 { name = "Nonsecure Readonly"; desc = "Non-secure CPU is forced not to write the NNIE registers"; };
+        };
+
+        field {
+            name = "nnie_slv_acc_ctrl";
+            desc = "NNIE register secure-access control mode. 0: normal secure-access control, 1: non-secure CPU is forced not to write the NNIE registers.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL61_nnie_slv_acc_ctrl_enum;
+            reset = 0x0;
+        } nnie_slv_acc_ctrl[15:15];
+
+        enum MISC_CTRL61_vpss_slv_acc_ctrl_enum {
+            NORMAL_CONTROL = 0 { name = "Normal Control"; desc = "Normal secure-access control"; };
+            NONSECURE_READONLY = 1 { name = "Nonsecure Readonly"; desc = "Non-secure CPU is forced not to write the VPSS registers"; };
+        };
+
+        field {
+            name = "vpss_slv_acc_ctrl";
+            desc = "VPSS register secure-access control mode. 0: normal secure-access control, 1: non-secure CPU is forced not to write the VPSS registers.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL61_vpss_slv_acc_ctrl_enum;
+            reset = 0x0;
+        } vpss_slv_acc_ctrl[14:14];
+
+        enum MISC_CTRL61_viproc_slv_acc_ctrl_enum {
+            NORMAL_CONTROL = 0 { name = "Normal Control"; desc = "Normal secure-access control"; };
+            NONSECURE_READONLY = 1 { name = "Nonsecure Readonly"; desc = "Non-secure CPU is forced not to write the VIPROC registers"; };
+        };
+
+        field {
+            name = "viproc_slv_acc_ctrl";
+            desc = "VIPROC register secure-access control mode. 0: normal secure-access control, 1: non-secure CPU is forced not to write the VIPROC registers.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL61_viproc_slv_acc_ctrl_enum;
+            reset = 0x0;
+        } viproc_slv_acc_ctrl[13:13];
+
+        enum MISC_CTRL61_audiocodec_slv_acc_ctrl_enum {
+            NORMAL_CONTROL = 0 { name = "Normal Control"; desc = "Normal secure-access control"; };
+            NONSECURE_READONLY = 1 { name = "Nonsecure Readonly"; desc = "Non-secure CPU is forced not to write the AudioCodec registers"; };
+        };
+
+        field {
+            name = "audiocodec_slv_acc_ctrl";
+            desc = "AudioCodec register secure-access control mode. 0: normal secure-access control, 1: non-secure CPU is forced not to write the AudioCodec registers.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL61_audiocodec_slv_acc_ctrl_enum;
+            reset = 0x0;
+        } audiocodec_slv_acc_ctrl[12:12];
+
+        enum MISC_CTRL61_aio_slv_acc_ctrl_enum {
+            NORMAL_CONTROL = 0 { name = "Normal Control"; desc = "Normal secure-access control"; };
+            NONSECURE_READONLY = 1 { name = "Nonsecure Readonly"; desc = "Non-secure CPU is forced not to write the AIAO registers"; };
+        };
+
+        field {
+            name = "aio_slv_acc_ctrl";
+            desc = "AIAO register secure-access control mode. 0: normal secure-access control, 1: non-secure CPU is forced not to write the AIAO registers.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL61_aio_slv_acc_ctrl_enum;
+            reset = 0x0;
+        } aio_slv_acc_ctrl[11:11];
+
+        enum MISC_CTRL61_hdmitx_slv_acc_ctrl_enum {
+            NORMAL_CONTROL = 0 { name = "Normal Control"; desc = "Normal secure-access control"; };
+            NONSECURE_READONLY = 1 { name = "Nonsecure Readonly"; desc = "Non-secure CPU is forced not to write the HDMITX registers"; };
+        };
+
+        field {
+            name = "hdmitx_slv_acc_ctrl";
+            desc = "HDMITX register secure-access control mode. 0: normal secure-access control, 1: non-secure CPU is forced not to write the HDMITX registers.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL61_hdmitx_slv_acc_ctrl_enum;
+            reset = 0x0;
+        } hdmitx_slv_acc_ctrl[10:10];
+
+        enum MISC_CTRL61_vdp_slv_acc_ctrl_enum {
+            NORMAL_CONTROL = 0 { name = "Normal Control"; desc = "Normal secure-access control"; };
+            NONSECURE_READONLY = 1 { name = "Nonsecure Readonly"; desc = "Non-secure CPU is forced not to write the VDP registers"; };
+        };
+
+        field {
+            name = "vdp_slv_acc_ctrl";
+            desc = "VDP register secure-access control mode. 0: normal secure-access control, 1: non-secure CPU is forced not to write the VDP registers.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL61_vdp_slv_acc_ctrl_enum;
+            reset = 0x0;
+        } vdp_slv_acc_ctrl[9:9];
+
+        enum MISC_CTRL61_mipirx_slv_acc_ctrl_enum {
+            NORMAL_CONTROL = 0 { name = "Normal Control"; desc = "Normal secure-access control"; };
+            NONSECURE_READONLY = 1 { name = "Nonsecure Readonly"; desc = "Non-secure CPU is forced not to write the MIPIRX registers"; };
+        };
+
+        field {
+            name = "mipirx_slv_acc_ctrl";
+            desc = "MIPIRX register secure-access control mode. 0: normal secure-access control, 1: non-secure CPU is forced not to write the MIPIRX registers.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL61_mipirx_slv_acc_ctrl_enum;
+            reset = 0x0;
+        } mipirx_slv_acc_ctrl[8:8];
+
+        enum MISC_CTRL61_vicap_slv_acc_ctrl_enum {
+            NORMAL_CONTROL = 0 { name = "Normal Control"; desc = "Normal secure-access control"; };
+            NONSECURE_READONLY = 1 { name = "Nonsecure Readonly"; desc = "Non-secure CPU is forced not to write the VICAP registers"; };
+        };
+
+        field {
+            name = "vicap_slv_acc_ctrl";
+            desc = "VICAP register secure-access control mode. 0: normal secure-access control, 1: non-secure CPU is forced not to write the VICAP registers.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL61_vicap_slv_acc_ctrl_enum;
+            reset = 0x0;
+        } vicap_slv_acc_ctrl[7:7];
+
+        enum MISC_CTRL61_klad_slv_acc_ctrl_enum {
+            NORMAL_CONTROL = 0 { name = "Normal Control"; desc = "Normal secure-access control"; };
+            NONSECURE_READONLY = 1 { name = "Nonsecure Readonly"; desc = "Non-secure CPU is forced not to write the KLAD registers"; };
+        };
+
+        field {
+            name = "klad_slv_acc_ctrl";
+            desc = "KLAD register secure-access control mode. 0: normal secure-access control, 1: non-secure CPU is forced not to write the KLAD registers.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL61_klad_slv_acc_ctrl_enum;
+            reset = 0x0;
+        } klad_slv_acc_ctrl[6:6];
+
+        enum MISC_CTRL61_dmac_slv_acc_ctrl_enum {
+            NORMAL_CONTROL = 0 { name = "Normal Control"; desc = "Normal secure-access control"; };
+            NONSECURE_READONLY = 1 { name = "Nonsecure Readonly"; desc = "Non-secure CPU is forced not to write the DMAC registers"; };
+        };
+
+        field {
+            name = "dmac_slv_acc_ctrl";
+            desc = "DMAC register secure-access control mode. 0: normal secure-access control, 1: non-secure CPU is forced not to write the DMAC registers.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL61_dmac_slv_acc_ctrl_enum;
+            reset = 0x0;
+        } dmac_slv_acc_ctrl[5:5];
+
+        enum MISC_CTRL61_otp_slv_acc_ctrl_enum {
+            NORMAL_CONTROL = 0 { name = "Normal Control"; desc = "Normal secure-access control"; };
+            NONSECURE_READONLY = 1 { name = "Nonsecure Readonly"; desc = "Non-secure CPU is forced not to write the OTP registers"; };
+        };
+
+        field {
+            name = "otp_slv_acc_ctrl";
+            desc = "OTP register secure-access control mode. 0: normal secure-access control, 1: non-secure CPU is forced not to write the OTP registers.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL61_otp_slv_acc_ctrl_enum;
+            reset = 0x0;
+        } otp_slv_acc_ctrl[4:4];
+
+        enum MISC_CTRL61_trng_slv_acc_ctrl_enum {
+            NORMAL_CONTROL = 0 { name = "Normal Control"; desc = "Normal secure-access control"; };
+            NONSECURE_READONLY = 1 { name = "Nonsecure Readonly"; desc = "Non-secure CPU is forced not to write the TRNG registers"; };
+        };
+
+        field {
+            name = "trng_slv_acc_ctrl";
+            desc = "TRNG register secure-access control mode. 0: normal secure-access control, 1: non-secure CPU is forced not to write the TRNG registers.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL61_trng_slv_acc_ctrl_enum;
+            reset = 0x0;
+        } trng_slv_acc_ctrl[3:3];
+
+        enum MISC_CTRL61_rsa1_slv_acc_ctrl_enum {
+            NORMAL_CONTROL = 0 { name = "Normal Control"; desc = "Normal secure-access control"; };
+            NONSECURE_READONLY = 1 { name = "Nonsecure Readonly"; desc = "Non-secure CPU is forced not to write the RSA1 registers"; };
+        };
+
+        field {
+            name = "rsa1_slv_acc_ctrl";
+            desc = "RSA1 register secure-access control mode. 0: normal secure-access control, 1: non-secure CPU is forced not to write the RSA1 registers.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL61_rsa1_slv_acc_ctrl_enum;
+            reset = 0x0;
+        } rsa1_slv_acc_ctrl[2:2];
+
+        enum MISC_CTRL61_rsa0_slv_acc_ctrl_enum {
+            NORMAL_CONTROL = 0 { name = "Normal Control"; desc = "Normal secure-access control"; };
+            NONSECURE_READONLY = 1 { name = "Nonsecure Readonly"; desc = "Non-secure CPU is forced not to write the RSA0 registers"; };
+        };
+
+        field {
+            name = "rsa0_slv_acc_ctrl";
+            desc = "RSA0 register secure-access control mode. 0: normal secure-access control, 1: non-secure CPU is forced not to write the RSA0 registers.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL61_rsa0_slv_acc_ctrl_enum;
+            reset = 0x0;
+        } rsa0_slv_acc_ctrl[1:1];
+
+        enum MISC_CTRL61_spacc_slv_acc_ctrl_enum {
+            NORMAL_CONTROL = 0 { name = "Normal Control"; desc = "Normal secure-access control"; };
+            NONSECURE_READONLY = 1 { name = "Nonsecure Readonly"; desc = "Non-secure CPU is forced not to write the SPACC registers"; };
+        };
+
+        field {
+            name = "spacc_slv_acc_ctrl";
+            desc = "SPACC register secure-access control mode. 0: normal secure-access control, 1: non-secure CPU is forced not to write the SPACC registers.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL61_spacc_slv_acc_ctrl_enum;
+            reset = 0x0;
+        } spacc_slv_acc_ctrl[0:0];
+    } MISC_CTRL61 @ 0x110;
+
+    reg {
+        name = "Secure access control register 4";
+        desc = "Secure access control register 4.
+
+Security attribute of the bus masters' accesses: 0 = secure access, 1 = non-secure access. The data sheet text dump lost the names of bits 9 and 8; they are taken from the PDF text (jpgd_mst_r_sec_acc, jpgd_mst_w_sec_acc).
+
+Data sheet 3.5.5 MISC_CTRL62 (offset 0x114, printed page 3-108, `hi3516av300--Hi3516AV300-Datasheet.txt` line 13526).";
+
+        enum MISC_CTRL62_fmc_mst_sec_acc_enum {
+            SECURE = 0 { name = "Secure"; desc = "Secure access"; };
+            NON_SECURE = 1 { name = "Non Secure"; desc = "Non-secure access"; };
+        };
+
+        field {
+            name = "fmc_mst_sec_acc";
+            desc = "FMC Master access security attribute. 0: secure access, 1: non-secure access.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL62_fmc_mst_sec_acc_enum;
+            reset = 0x0;
+        } fmc_mst_sec_acc[17:17];
+
+        enum MISC_CTRL62_emmc_mst_sec_acc_enum {
+            SECURE = 0 { name = "Secure"; desc = "Secure access"; };
+            NON_SECURE = 1 { name = "Non Secure"; desc = "Non-secure access"; };
+        };
+
+        field {
+            name = "emmc_mst_sec_acc";
+            desc = "eMMC Master access security attribute. 0: secure access, 1: non-secure access.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL62_emmc_mst_sec_acc_enum;
+            reset = 0x0;
+        } emmc_mst_sec_acc[16:16];
+
+        enum MISC_CTRL62_sdio1_mst_sec_acc_enum {
+            SECURE = 0 { name = "Secure"; desc = "Secure access"; };
+            NON_SECURE = 1 { name = "Non Secure"; desc = "Non-secure access"; };
+        };
+
+        field {
+            name = "sdio1_mst_sec_acc";
+            desc = "SDIO1 Master access security attribute. 0: secure access, 1: non-secure access.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL62_sdio1_mst_sec_acc_enum;
+            reset = 0x0;
+        } sdio1_mst_sec_acc[15:15];
+
+        enum MISC_CTRL62_scd_mst_sec_acc_enum {
+            SECURE = 0 { name = "Secure"; desc = "Secure access"; };
+            NON_SECURE = 1 { name = "Non Secure"; desc = "Non-secure access"; };
+        };
+
+        field {
+            name = "scd_mst_sec_acc";
+            desc = "SCD Master access security attribute. 0: secure access, 1: non-secure access.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL62_scd_mst_sec_acc_enum;
+            reset = 0x0;
+        } scd_mst_sec_acc[14:14];
+
+        enum MISC_CTRL62_sdio0_mst_sec_acc_enum {
+            SECURE = 0 { name = "Secure"; desc = "Secure access"; };
+            NON_SECURE = 1 { name = "Non Secure"; desc = "Non-secure access"; };
+        };
+
+        field {
+            name = "sdio0_mst_sec_acc";
+            desc = "SDIO0 Master access security attribute. 0: secure access, 1: non-secure access.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL62_sdio0_mst_sec_acc_enum;
+            reset = 0x0;
+        } sdio0_mst_sec_acc[13:13];
+
+        enum MISC_CTRL62_eth_mst_sec_acc_enum {
+            SECURE = 0 { name = "Secure"; desc = "Secure access"; };
+            NON_SECURE = 1 { name = "Non Secure"; desc = "Non-secure access"; };
+        };
+
+        field {
+            name = "eth_mst_sec_acc";
+            desc = "ETH Master access security attribute. 0: secure access, 1: non-secure access.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL62_eth_mst_sec_acc_enum;
+            reset = 0x0;
+        } eth_mst_sec_acc[12:12];
+
+        enum MISC_CTRL62_aiao_mst_r_sec_acc_enum {
+            SECURE = 0 { name = "Secure"; desc = "Secure access"; };
+            NON_SECURE = 1 { name = "Non Secure"; desc = "Non-secure access"; };
+        };
+
+        field {
+            name = "aiao_mst_r_sec_acc";
+            desc = "AIAO Master read-access security attribute. 0: secure access, 1: non-secure access.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL62_aiao_mst_r_sec_acc_enum;
+            reset = 0x0;
+        } aiao_mst_r_sec_acc[11:11];
+
+        enum MISC_CTRL62_aiao_mst_w_sec_acc_enum {
+            SECURE = 0 { name = "Secure"; desc = "Secure access"; };
+            NON_SECURE = 1 { name = "Non Secure"; desc = "Non-secure access"; };
+        };
+
+        field {
+            name = "aiao_mst_w_sec_acc";
+            desc = "AIAO Master write-access security attribute. 0: secure access, 1: non-secure access.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL62_aiao_mst_w_sec_acc_enum;
+            reset = 0x0;
+        } aiao_mst_w_sec_acc[10:10];
+
+        enum MISC_CTRL62_jpgd_mst_r_sec_acc_enum {
+            SECURE = 0 { name = "Secure"; desc = "Secure access"; };
+            NON_SECURE = 1 { name = "Non Secure"; desc = "Non-secure access"; };
+        };
+
+        field {
+            name = "jpgd_mst_r_sec_acc";
+            desc = "JPGD Master read-access security attribute. 0: secure access, 1: non-secure access.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL62_jpgd_mst_r_sec_acc_enum;
+            reset = 0x0;
+        } jpgd_mst_r_sec_acc[9:9];
+
+        enum MISC_CTRL62_jpgd_mst_w_sec_acc_enum {
+            SECURE = 0 { name = "Secure"; desc = "Secure access"; };
+            NON_SECURE = 1 { name = "Non Secure"; desc = "Non-secure access"; };
+        };
+
+        field {
+            name = "jpgd_mst_w_sec_acc";
+            desc = "JPGD Master write-access security attribute. 0: secure access, 1: non-secure access.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL62_jpgd_mst_w_sec_acc_enum;
+            reset = 0x0;
+        } jpgd_mst_w_sec_acc[8:8];
+
+        enum MISC_CTRL62_usb2_mst_r_sec_acc_enum {
+            SECURE = 0 { name = "Secure"; desc = "Secure access"; };
+            NON_SECURE = 1 { name = "Non Secure"; desc = "Non-secure access"; };
+        };
+
+        field {
+            name = "usb2_mst_r_sec_acc";
+            desc = "USB Master read-access security attribute. 0: secure access, 1: non-secure access.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL62_usb2_mst_r_sec_acc_enum;
+            reset = 0x0;
+        } usb2_mst_r_sec_acc[7:7];
+
+        enum MISC_CTRL62_usb2_mst_w_sec_acc_enum {
+            SECURE = 0 { name = "Secure"; desc = "Secure access"; };
+            NON_SECURE = 1 { name = "Non Secure"; desc = "Non-secure access"; };
+        };
+
+        field {
+            name = "usb2_mst_w_sec_acc";
+            desc = "USB Master write-access security attribute. 0: secure access, 1: non-secure access.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL62_usb2_mst_w_sec_acc_enum;
+            reset = 0x0;
+        } usb2_mst_w_sec_acc[6:6];
+
+        enum MISC_CTRL62_gzip_mst_r_sec_acc_enum {
+            SECURE = 0 { name = "Secure"; desc = "Secure access"; };
+            NON_SECURE = 1 { name = "Non Secure"; desc = "Non-secure access"; };
+        };
+
+        field {
+            name = "gzip_mst_r_sec_acc";
+            desc = "GZIP Master read-access security attribute. 0: secure access, 1: non-secure access.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL62_gzip_mst_r_sec_acc_enum;
+            reset = 0x0;
+        } gzip_mst_r_sec_acc[5:5];
+
+        enum MISC_CTRL62_gzip_mst_w_sec_acc_enum {
+            SECURE = 0 { name = "Secure"; desc = "Secure access"; };
+            NON_SECURE = 1 { name = "Non Secure"; desc = "Non-secure access"; };
+        };
+
+        field {
+            name = "gzip_mst_w_sec_acc";
+            desc = "GZIP Master write-access security attribute. 0: secure access, 1: non-secure access.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL62_gzip_mst_w_sec_acc_enum;
+            reset = 0x0;
+        } gzip_mst_w_sec_acc[4:4];
+
+        enum MISC_CTRL62_tde_mst_r_sec_acc_enum {
+            SECURE = 0 { name = "Secure"; desc = "Secure access"; };
+            NON_SECURE = 1 { name = "Non Secure"; desc = "Non-secure access"; };
+        };
+
+        field {
+            name = "tde_mst_r_sec_acc";
+            desc = "TDE Master read-access security attribute. 0: secure access, 1: non-secure access.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL62_tde_mst_r_sec_acc_enum;
+            reset = 0x0;
+        } tde_mst_r_sec_acc[3:3];
+
+        enum MISC_CTRL62_tde_mst_w_sec_acc_enum {
+            SECURE = 0 { name = "Secure"; desc = "Secure access"; };
+            NON_SECURE = 1 { name = "Non Secure"; desc = "Non-secure access"; };
+        };
+
+        field {
+            name = "tde_mst_w_sec_acc";
+            desc = "TDE Master write-access security attribute. 0: secure access, 1: non-secure access.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL62_tde_mst_w_sec_acc_enum;
+            reset = 0x0;
+        } tde_mst_w_sec_acc[2:2];
+
+        enum MISC_CTRL62_ive_mst_r_sec_acc_enum {
+            SECURE = 0 { name = "Secure"; desc = "Secure access"; };
+            NON_SECURE = 1 { name = "Non Secure"; desc = "Non-secure access"; };
+        };
+
+        field {
+            name = "ive_mst_r_sec_acc";
+            desc = "IVE Master read-access security attribute. 0: secure access, 1: non-secure access.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL62_ive_mst_r_sec_acc_enum;
+            reset = 0x0;
+        } ive_mst_r_sec_acc[1:1];
+
+        enum MISC_CTRL62_ive_mst_w_sec_acc_enum {
+            SECURE = 0 { name = "Secure"; desc = "Secure access"; };
+            NON_SECURE = 1 { name = "Non Secure"; desc = "Non-secure access"; };
+        };
+
+        field {
+            name = "ive_mst_w_sec_acc";
+            desc = "IVE Master write-access security attribute. 0: secure access, 1: non-secure access.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL62_ive_mst_w_sec_acc_enum;
+            reset = 0x0;
+        } ive_mst_w_sec_acc[0:0];
+    } MISC_CTRL62 @ 0x114;
+
+    reg {
+        name = "Secure access control register 5";
+        desc = "Secure access control register 5.
+
+Cortex-A7 CP15 write protection, one bit per core.
+
+Data sheet 3.5.5 MISC_CTRL63 (offset 0x118, printed page 3-110, `hi3516av300--Hi3516AV300-Datasheet.txt` line 13657).";
+
+        field {
+            name = "a7_cp15sdisable";
+            desc = "Disables writing of some CPU CP15 registers (per core), active high.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } a7_cp15sdisable[1:0];
+    } MISC_CTRL63 @ 0x118;
+
+};
+
+`endif
