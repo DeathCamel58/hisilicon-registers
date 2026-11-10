@@ -1,0 +1,628 @@
+`ifndef HISI_DMAC_V2_RDL
+`define HISI_DMAC_V2_RDL
+
+// EDMAC-style DMA controller (not PL080 compatible) of the Hi3516A V300. See the regfile desc.
+
+regfile eHISI_DMAC_V2_CURR {
+    name = "HiSilicon DMAC V2 per-channel current-transfer registers (one channel)";
+    desc = "Read-only progress registers of channel n (n = 0-7) at 0x404 + n x 0x20 (data sheet names: C(n)_CURR_CNT0, C(n)_CURR_SRC_ADDR, C(n)_CURR_DES_ADDR). Offsets are relative to the channel base.";
+
+    reg {
+        name = "Remaining data amount register of channel n";
+        desc = "C(n)_CURR_CNT0 holds the number of bytes still to be moved in the current node of channel n. Peripheral transfers: query it while the peripheral request is inactive. Memory-to-memory transfers: the DMAC is moving data continuously, so the value differs from the real progress and is of little use.
+
+Data sheet 3.6.6 C(n)_CURR_CNT0 (offset 0x0404 + 0x20 x n, printed page 3-124, `hi3516av300--Hi3516AV300-Datasheet.txt` line 14684).";
+
+        field {
+            name = "curr_a_count";
+            desc = "Bytes remaining in the current node of channel n";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } curr_a_count[15:0];
+    } CURR_CNT0 @ 0x0;
+
+    reg {
+        name = "Source address register of channel n";
+        desc = "C(n)_CURR_SRC_ADDR is the source address currently being transferred by channel n. The register inherits the security attribute of the channel.
+
+Data sheet 3.6.6 C(n)_CURR_SRC_ADDR (offset 0x0408 + 0x20 x n, printed page 3-125, `hi3516av300--Hi3516AV300-Datasheet.txt` line 14706).";
+
+        field {
+            name = "curr_src_addr";
+            desc = "Source address currently being transferred";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } curr_src_addr[31:0];
+    } CURR_SRC_ADDR @ 0x4;
+
+    reg {
+        name = "Destination address register of channel n";
+        desc = "C(n)_CURR_DES_ADDR is the destination address currently being transferred by channel n. The register inherits the security attribute of the channel.
+
+Data sheet 3.6.6 C(n)_CURR_DES_ADDR (offset 0x0410 + 0x20 x n, printed page 3-125, `hi3516av300--Hi3516AV300-Datasheet.txt` line 14723).";
+
+        field {
+            name = "curr_des_addr";
+            desc = "Destination address currently being transferred";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } curr_des_addr[31:0];
+    } CURR_DES_ADDR @ 0xC;
+};
+
+regfile eHISI_DMAC_V2_CH {
+    name = "HiSilicon DMAC V2 channel configuration registers (one channel)";
+    desc = "Configuration registers of channel n (n = 0-7) at 0x800 + n x 0x40 (data sheet names: C(n)_LLI, C(n)_CNT0, C(n)_SRC_ADDR, C(n)_DES_ADDR, C(n)_CONFIG, C(n)_AXI_CONF). All of them inherit the security attribute of the channel. Offsets are relative to the channel base. The channel cannot be reconfigured while CH_STAT reports it busy.";
+
+    reg {
+        name = "Linked-list address register of channel n";
+        desc = "C(n)_LLI holds the address of the next linked-list node of channel n (bits [31:6]; the list is always 512-bit = 64-byte aligned) and the chain enable. In linked-list mode `C(n)_CONFIG.ch_en` of a list node is not used by the DMAC.
+
+Data sheet 3.6.6 C(n)_LLI (offset 0x0800 + 0x40 x n, printed page 3-129, `hi3516av300--Hi3516AV300-Datasheet.txt` line 15018).";
+
+        field {
+            name = "lli";
+            desc = "Bits [31:6] of the address of the next linked-list node";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } lli[31:6];
+
+        field {
+            name = "chain_en";
+            desc = "Linked-list chain enable: 00 = disabled, 10 = enabled, 01 and 11 = reserved";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } chain_en[1:0];
+    } LLI @ 0x0;
+
+    reg {
+        name = "Transfer length register of channel n";
+        desc = "C(n)_CNT0 sets the transfer length: the length of one node in linked-list mode or the total length otherwise. Valid values 1-65535 bytes; 0 raises the configuration-error interrupt.
+
+Data sheet 3.6.6 C(n)_CNT0 (offset 0x081C + 0x40 x n, printed page 3-130, `hi3516av300--Hi3516AV300-Datasheet.txt` line 15046).";
+
+        field {
+            name = "a_count";
+            desc = "Transfer length in bytes (1-65535)";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } a_count[15:0];
+    } CNT0 @ 0x1C;
+
+    reg {
+        name = "Source address register of channel n";
+        desc = "C(n)_SRC_ADDR is the start address of the source device of channel n.
+
+Data sheet 3.6.6 C(n)_SRC_ADDR (offset 0x0820 + 0x40 x n, printed page 3-130, `hi3516av300--Hi3516AV300-Datasheet.txt` line 15066).";
+
+        field {
+            name = "src_addr";
+            desc = "Source address of channel n";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } src_addr[31:0];
+    } SRC_ADDR @ 0x20;
+
+    reg {
+        name = "Destination address register of channel n";
+        desc = "C(n)_DES_ADDR is the start address of the destination device of channel n.
+
+Data sheet 3.6.6 C(n)_DES_ADDR (offset 0x0828 + 0x40 x n, printed page 3-130, `hi3516av300--Hi3516AV300-Datasheet.txt` line 15085).";
+
+        field {
+            name = "des_addr";
+            desc = "Destination address of channel n (the data sheet prints the field name as `Codes_addr`, a watermark artefact)";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } des_addr[31:0];
+    } DES_ADDR @ 0x28;
+
+    reg {
+        name = "Configuration register of channel n";
+        desc = "C(n)_CONFIG configures channel n. `src_burst` / `dst_burst` hold burst length minus 1 (0x0 = 1 ... 0xF = 16). `src_width` / `dst_width`: 000 = 8-bit, 001 = 16-bit, 010 = 32-bit, 011 = 64-bit, 1xx reserved. `flow_ctrl`: 00 = memory to memory, 01 = memory/peripheral transfer (DMAC flow control), 1x reserved. The data sheet names the fields `si`, `di`, `sl`, `dl`, `sw`, `dw` (`sw` is a reserved word in SystemRDL, hence the longer names). The vendor driver `hiedmacv310.c` writes the same layout (src_inc bit 31, dst_inc bit 30, burst shifts 24 / 20, width shifts 16 / 12, request number shift 4, transfer type shift 2, itc_en bit 1). On read, `ch_en` shows the channel state (1 = running; with linked lists the channel stays enabled); the channel clears it by itself after a normal completion or an error interrupt.
+
+Data sheet 3.6.6 C(n)_CONFIG (offset 0x0830 + 0x40 x n, printed page 3-130, `hi3516av300--Hi3516AV300-Datasheet.txt` line 15100).";
+
+        field {
+            name = "src_incr";
+            desc = "Data sheet `si`. Source address increment: 0 = fixed, 1 = increment per transferred item (peripheral source: not incremented, memory source: incremented)";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } src_incr[31:31];
+
+        field {
+            name = "dst_incr";
+            desc = "Data sheet `di`. Destination address increment: 0 = fixed, 1 = increment per transferred item";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } dst_incr[30:30];
+
+        field {
+            name = "src_burst";
+            desc = "Data sheet `sl`. Source burst length minus 1 (0x0 = 1 beat ... 0xF = 16 beats)";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } src_burst[27:24];
+
+        field {
+            name = "dst_burst";
+            desc = "Data sheet `dl`. Destination burst length minus 1 (0x0 = 1 beat ... 0xF = 16 beats)";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } dst_burst[23:20];
+
+        field {
+            name = "src_width";
+            desc = "Data sheet `sw`. Source data width: 000 = 8-bit, 001 = 16-bit, 010 = 32-bit, 011 = 64-bit, 1xx = reserved";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } src_width[18:16];
+
+        field {
+            name = "dst_width";
+            desc = "Data sheet `dw`. Destination data width: 000 = 8-bit, 001 = 16-bit, 010 = 32-bit, 011 = 64-bit, 1xx = reserved";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } dst_width[14:12];
+
+        field {
+            name = "peri";
+            desc = "Peripheral request number (0-31, table in the regfile desc of the instance block); ignored for memory-to-memory transfers";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } peri[8:4];
+
+        field {
+            name = "flow_ctrl";
+            desc = "Flow control and transfer type: 00 = memory to memory, 01 = memory to/from peripheral (both DMAC flow control), 1x = reserved";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } flow_ctrl[3:2];
+
+        field {
+            name = "itc_en";
+            desc = "Linked-list node transfer-complete interrupt enable (the last node only raises the channel transfer-complete interrupt, which is always raised)";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } itc_en[1:1];
+
+        field {
+            name = "ch_en";
+            desc = "Channel enable. Write: 0 = disable, 1 = enable. Read: 0 = channel stopped, 1 = channel running";
+            sw = rw;
+            hw = rw;
+            reset = 0x0;
+        } ch_en[0:0];
+    } CONFIG @ 0x30;
+
+    reg {
+        name = "AXI special-operation configuration register of channel n";
+        desc = "C(n)_AXI_CONF sets the AXI cache and protection attributes of the channel's bus accesses (AXI protocol encodings). `awprot` and `arprot` are accessible by a secure CPU only.
+
+Data sheet 3.6.6 C(n)_AXI_CONF (offset 0x0834 + 0x40 x n, printed page 3-133, `hi3516av300--Hi3516AV300-Datasheet.txt` line 15287).";
+
+        field {
+            name = "awcache";
+            desc = "AXI write command cache type (AXI protocol)";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } awcache[23:20];
+
+        field {
+            name = "awprot";
+            desc = "AXI write command protection type (AXI protocol; secure CPU only)";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } awprot[19:17];
+
+        field {
+            name = "arcache";
+            desc = "AXI read command cache type (AXI protocol)";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } arcache[11:8];
+
+        field {
+            name = "arprot";
+            desc = "AXI read command protection type (AXI protocol; secure CPU only)";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } arprot[7:5];
+    } AXI_CONF @ 0x34;
+};
+
+regfile eHISI_DMAC_V2 {
+    name = "HiSilicon DMA controller V2 (EDMAC, 8 channels, 32 request lines)";
+    desc = "
+    DMA controller of the Hi3516A V300 at 0x10060000 (data sheet issue 01, section 3.6, Chinese edition; the chip has a single DMAC; interrupt 60 in the data sheet interrupt table, a GIC interrupt number). It is **not** the PL080-compatible
+    controller of the earlier chips (`HISI_DMAC.rdl`): different register map, 8 channels with independent 64-byte-aligned hardware linked lists, 32 peripheral request lines, per-channel security attribute, no endianness (little-endian only),
+    byte-count transfers of 1-65535 bytes per node, 8/16/32/64-bit widths, burst length 1-16. The data sheet names the fields `si`, `di`, `sl`, `dl`, `sw`, `dw` (`sw` is a reserved word in SystemRDL, hence the longer names). The vendor driver is `hiedmacv310.c` (later chips add 64-bit address high halves `C(n)_LLI_H` at +0x4 / `C(n)_SRC_ADDR_H` at +0x24 / `C(n)_DES_ADDR_H` at +0x2C
+    and a `DMA_CTRL` register at 0x698; the Hi3516A V300 data sheet documents none of them, they are not modelled).
+
+    Interrupts: five sources per channel (bit n of each register = channel n): `INT_TC1` channel transfer complete, `INT_TC2` linked-list node complete, `INT_ERR1` configuration error, `INT_ERR2` data transfer error, `INT_ERR3` linked-list read error;
+    `INT_STAT` is the OR of the masked sources. The masked status registers are at 0x00-0x14, the masks at 0x18-0x28 (1 = not masked), the raw (unmasked) status and write-1-to-clear registers at 0x600-0x620.
+    Per-channel registers: `CURR[8]` at 0x404 + n x 0x20 (remaining count, current source/destination address) and `CH[8]` at 0x800 + n x 0x40 (linked-list pointer, length, addresses, CONFIG, AXI attributes).
+
+    Bring-up: clock and reset in PERI_CRG101 (`dmac_cken` AXI clock, `dmac_apb_cken` APB clock, `dmac_srst_req` soft reset: set the clocks, pulse the reset), then (DS 3.6.4) set the access mode (all channels are secure after reset; a secure CPU
+    must hand channels to the non-secure side through the MISC security registers `dmac_slv_sec_acc_d` / `dmac_slv_acc_ctrl`), clear all interrupts (INT_TC1_RAW ... INT_ERR3_RAW), unmask the wanted ones, program CH[n] and set `ch_en`.
+    The DMAC reaches non-secure, secure and shared DDR plus the UART, I2C, SPI peripheral registers (DS table 3-6).
+
+    **DMA request line numbers (`C(n)_CONFIG.peri`, 5 bits; DS Table 3-5; `dmas` cell):** 0 I2C0 RX, 1 I2C0 TX, 2 I2C1 RX, 3 I2C1 TX, 4 I2C2 RX, 5 I2C2 TX, 6 I2C3 RX, 7 I2C3 TX, 8 I2C4 RX, 9 I2C4 TX, 10 I2C5 RX, 11 I2C5 TX,
+    12 I2C6 RX, 13 I2C6 TX, 14 I2C7 RX, 15 I2C7 TX, 16 UART0 RX, 17 UART0 TX, 18 UART1 RX, 19 UART1 TX, 20 UART2 RX, 21 UART2 TX, 22 UART3 RX, 23 UART3 TX, 24 UART4 RX, 25 UART4 TX, 26 SPI0 RX, 27 SPI0 TX, 28 SPI1 RX, 29 SPI1 TX, 30 SPI2 RX, 31 SPI2 TX.
+
+    Source: `hi3516av300--Hi3516AV300-Datasheet.txt` lines 13676-15332 (the Chinese edition is watermarked: the array-register headers and several field names were read by eye) and the vendor driver `drivers/dma/hiedmacv310.h` (register offsets agree with the data sheet).
+    No hardware verification; the data sheet gives no instance in a Hi3516A V300 board test.
+    ";
+
+    reg {
+        name = "Interrupt status register";
+        desc = "INT_STAT: masked interrupt status of channels 7-0 (1 = an error or transfer-complete interrupt of the channel is pending)
+
+Data sheet 3.6.6 INT_STAT (offset 0x0, printed page 3-121, `hi3516av300--Hi3516AV300-Datasheet.txt` line 14422).";
+
+        field {
+            name = "int_stat";
+            desc = "masked interrupt status of channels 7-0 (1 = an error or transfer-complete interrupt of the channel is pending), bit n = channel n";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } int_stat[7:0];
+    } INT_STAT @ 0x0;
+
+    reg {
+        name = "Channel transfer-complete interrupt status register";
+        desc = "INT_TC1: masked channel transfer-complete interrupt status
+
+Data sheet 3.6.6 INT_TC1 (offset 0x4, printed page 3-121, `hi3516av300--Hi3516AV300-Datasheet.txt` line 14443).";
+
+        field {
+            name = "int_tc1";
+            desc = "masked channel transfer-complete interrupt status, bit n = channel n";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } int_tc1[7:0];
+    } INT_TC1 @ 0x4;
+
+    reg {
+        name = "Linked-list node transfer-complete interrupt status register";
+        desc = "INT_TC2: masked linked-list node transfer-complete interrupt status
+
+Data sheet 3.6.6 INT_TC2 (offset 0x8, printed page 3-121, `hi3516av300--Hi3516AV300-Datasheet.txt` line 14467).";
+
+        field {
+            name = "int_tc2";
+            desc = "masked linked-list node transfer-complete interrupt status, bit n = channel n";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } int_tc2[7:0];
+    } INT_TC2 @ 0x8;
+
+    reg {
+        name = "Configuration-error interrupt status register";
+        desc = "INT_ERR1: masked configuration-error interrupt status
+
+Data sheet 3.6.6 INT_ERR1 (offset 0xC, printed page 3-122, `hi3516av300--Hi3516AV300-Datasheet.txt` line 14493).";
+
+        field {
+            name = "int_err1";
+            desc = "masked configuration-error interrupt status, bit n = channel n";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } int_err1[7:0];
+    } INT_ERR1 @ 0xC;
+
+    reg {
+        name = "Data-transfer-error interrupt status register";
+        desc = "INT_ERR2: masked data-transfer-error interrupt status
+
+Data sheet 3.6.6 INT_ERR2 (offset 0x10, printed page 3-122, `hi3516av300--Hi3516AV300-Datasheet.txt` line 14513).";
+
+        field {
+            name = "int_err2";
+            desc = "masked data-transfer-error interrupt status, bit n = channel n";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } int_err2[7:0];
+    } INT_ERR2 @ 0x10;
+
+    reg {
+        name = "Linked-list-read-error interrupt status register";
+        desc = "INT_ERR3: masked linked-list-read-error interrupt status
+
+Data sheet 3.6.6 INT_ERR3 (offset 0x14, printed page 3-122, `hi3516av300--Hi3516AV300-Datasheet.txt` line 14540).";
+
+        field {
+            name = "int_err3";
+            desc = "masked linked-list-read-error interrupt status, bit n = channel n";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } int_err3[7:0];
+    } INT_ERR3 @ 0x14;
+
+    reg {
+        name = "Channel transfer-complete interrupt mask register";
+        desc = "INT_TC1_MASK: channel transfer-complete interrupt mask (0 = masked, 1 = not masked)
+
+Data sheet 3.6.6 INT_TC1_MASK (offset 0x18, printed page 3-123, `hi3516av300--Hi3516AV300-Datasheet.txt` line 14566).";
+
+        field {
+            name = "int_tc1_mask";
+            desc = "channel transfer-complete interrupt mask (0 = masked, 1 = not masked), bit n = channel n";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } int_tc1_mask[7:0];
+    } INT_TC1_MASK @ 0x18;
+
+    reg {
+        name = "Linked-list node transfer-complete interrupt mask register";
+        desc = "INT_TC2_MASK: linked-list node transfer-complete interrupt mask (0 = masked, 1 = not masked)
+
+Data sheet 3.6.6 INT_TC2_MASK (offset 0x1C, printed page 3-123, `hi3516av300--Hi3516AV300-Datasheet.txt` line 14587).";
+
+        field {
+            name = "int_tc2_mask";
+            desc = "linked-list node transfer-complete interrupt mask (0 = masked, 1 = not masked), bit n = channel n";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } int_tc2_mask[7:0];
+    } INT_TC2_MASK @ 0x1C;
+
+    reg {
+        name = "Configuration-error interrupt mask register";
+        desc = "INT_ERR1_MASK: configuration-error interrupt mask (0 = masked, 1 = not masked)
+
+Data sheet 3.6.6 INT_ERR1_MASK (offset 0x20, printed page 3-123, `hi3516av300--Hi3516AV300-Datasheet.txt` line 14610).";
+
+        field {
+            name = "int_err1_mask";
+            desc = "configuration-error interrupt mask (0 = masked, 1 = not masked), bit n = channel n";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } int_err1_mask[7:0];
+    } INT_ERR1_MASK @ 0x20;
+
+    reg {
+        name = "Data-transfer-error interrupt mask register";
+        desc = "INT_ERR2_MASK: data-transfer-error interrupt mask (0 = masked, 1 = not masked)
+
+Data sheet 3.6.6 INT_ERR2_MASK (offset 0x24, printed page 3-124, `hi3516av300--Hi3516AV300-Datasheet.txt` line 14637).";
+
+        field {
+            name = "int_err2_mask";
+            desc = "data-transfer-error interrupt mask (0 = masked, 1 = not masked), bit n = channel n";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } int_err2_mask[7:0];
+    } INT_ERR2_MASK @ 0x24;
+
+    reg {
+        name = "Linked-list-read-error interrupt mask register";
+        desc = "INT_ERR3_MASK: linked-list-read-error interrupt mask (0 = masked, 1 = not masked)
+
+Data sheet 3.6.6 INT_ERR3_MASK (offset 0x28, printed page 3-124, `hi3516av300--Hi3516AV300-Datasheet.txt` line 14659).";
+
+        field {
+            name = "int_err3_mask";
+            desc = "linked-list-read-error interrupt mask (0 = masked, 1 = not masked), bit n = channel n";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } int_err3_mask[7:0];
+    } INT_ERR3_MASK @ 0x28;
+
+    reg {
+        name = "Raw channel transfer-complete interrupt status register";
+        desc = "INT_TC1_RAW is the raw (before masking) channel transfer-complete status register. Each bit inherits the security attribute of its channel; bit n = channel n. Read: 1 = interrupt generated; write 1 clears it, write 0 keeps the value.
+
+Data sheet 3.6.6 INT_TC1_RAW (offset 0x600, printed page 3-125, `hi3516av300--Hi3516AV300-Datasheet.txt` line 14738).";
+
+        field {
+            name = "int_tc1_raw";
+            desc = "channel transfer-complete, bit n = channel n";
+            sw = rw;
+            hw = r;
+            onwrite = woclr;
+            reset = 0x0;
+        } int_tc1_raw[7:0];
+    } INT_TC1_RAW @ 0x600;
+
+    reg {
+        name = "Raw linked-list node transfer-complete interrupt status register";
+        desc = "INT_TC2_RAW is the raw (before masking) linked-list node transfer-complete status register. Each bit inherits the security attribute of its channel; bit n = channel n. Read: 1 = interrupt generated; write 1 clears it, write 0 keeps the value.
+
+Data sheet 3.6.6 INT_TC2_RAW (offset 0x608, printed page 3-126, `hi3516av300--Hi3516AV300-Datasheet.txt` line 14774).";
+
+        field {
+            name = "int_tc2_raw";
+            desc = "linked-list node transfer-complete, bit n = channel n";
+            sw = rw;
+            hw = r;
+            onwrite = woclr;
+            reset = 0x0;
+        } int_tc2_raw[7:0];
+    } INT_TC2_RAW @ 0x608;
+
+    reg {
+        name = "Raw configuration-error interrupt status register";
+        desc = "INT_ERR1_RAW is the raw (before masking) configuration-error status register. Each bit inherits the security attribute of its channel; bit n = channel n. Read: 1 = interrupt generated; write 1 clears it, write 0 keeps the value.
+
+Data sheet 3.6.6 INT_ERR1_RAW (offset 0x610, printed page 3-126, `hi3516av300--Hi3516AV300-Datasheet.txt` line 14803).";
+
+        field {
+            name = "int_err1_raw";
+            desc = "configuration-error, bit n = channel n";
+            sw = rw;
+            hw = r;
+            onwrite = woclr;
+            reset = 0x0;
+        } int_err1_raw[7:0];
+    } INT_ERR1_RAW @ 0x610;
+
+    reg {
+        name = "Raw data-transfer-error interrupt status register";
+        desc = "INT_ERR2_RAW is the raw (before masking) data-transfer-error status register. Each bit inherits the security attribute of its channel; bit n = channel n. Read: 1 = interrupt generated; write 1 clears it, write 0 keeps the value.
+
+Data sheet 3.6.6 INT_ERR2_RAW (offset 0x618, printed page 3-127, `hi3516av300--Hi3516AV300-Datasheet.txt` line 14836).";
+
+        field {
+            name = "int_err2_raw";
+            desc = "data-transfer-error, bit n = channel n";
+            sw = rw;
+            hw = r;
+            onwrite = woclr;
+            reset = 0x0;
+        } int_err2_raw[7:0];
+    } INT_ERR2_RAW @ 0x618;
+
+    reg {
+        name = "Raw linked-list-read-error interrupt status register";
+        desc = "INT_ERR3_RAW is the raw (before masking) linked-list-read-error status register. Each bit inherits the security attribute of its channel; bit n = channel n. Read: 1 = interrupt generated; write 1 clears it, write 0 keeps the value.
+
+Data sheet 3.6.6 INT_ERR3_RAW (offset 0x620, printed page 3-127, `hi3516av300--Hi3516AV300-Datasheet.txt` line 14861).";
+
+        field {
+            name = "int_err3_raw";
+            desc = "linked-list-read-error, bit n = channel n";
+            sw = rw;
+            hw = r;
+            onwrite = woclr;
+            reset = 0x0;
+        } int_err3_raw[7:0];
+    } INT_ERR3_RAW @ 0x620;
+
+    reg {
+        name = "Channel priority control register";
+        desc = "CH_PRI sets the priority of each channel (2 bits per channel, 0 = highest, 3 = lowest). Accessible by a secure CPU only.
+
+Data sheet 3.6.6 CH_PRI (offset 0x688, printed page 3-127, `hi3516av300--Hi3516AV300-Datasheet.txt` line 14892).";
+
+        field {
+            name = "ch0_pri";
+            desc = "Channel 0 priority: 00 = priority 0 (highest), 01 = 1, 10 = 2, 11 = priority 3 (lowest)";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ch0_pri[1:0];
+
+        field {
+            name = "ch1_pri";
+            desc = "Channel 1 priority: 00 = priority 0 (highest), 01 = 1, 10 = 2, 11 = priority 3 (lowest)";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ch1_pri[3:2];
+
+        field {
+            name = "ch2_pri";
+            desc = "Channel 2 priority: 00 = priority 0 (highest), 01 = 1, 10 = 2, 11 = priority 3 (lowest)";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ch2_pri[5:4];
+
+        field {
+            name = "ch3_pri";
+            desc = "Channel 3 priority: 00 = priority 0 (highest), 01 = 1, 10 = 2, 11 = priority 3 (lowest)";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ch3_pri[7:6];
+
+        field {
+            name = "ch4_pri";
+            desc = "Channel 4 priority: 00 = priority 0 (highest), 01 = 1, 10 = 2, 11 = priority 3 (lowest)";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ch4_pri[9:8];
+
+        field {
+            name = "ch5_pri";
+            desc = "Channel 5 priority: 00 = priority 0 (highest), 01 = 1, 10 = 2, 11 = priority 3 (lowest)";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ch5_pri[11:10];
+
+        field {
+            name = "ch6_pri";
+            desc = "Channel 6 priority: 00 = priority 0 (highest), 01 = 1, 10 = 2, 11 = priority 3 (lowest)";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ch6_pri[13:12];
+
+        field {
+            name = "ch7_pri";
+            desc = "Channel 7 priority: 00 = priority 0 (highest), 01 = 1, 10 = 2, 11 = priority 3 (lowest)";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ch7_pri[15:14];
+    } CH_PRI @ 0x688;
+
+    reg {
+        name = "DMA status register";
+        desc = "CH_STAT shows which channels are working (bit n = channel n: 0 = idle, 1 = working). A working channel cannot be reconfigured.
+
+Data sheet 3.6.6 CH_STAT (offset 0x690, printed page 3-129, `hi3516av300--Hi3516AV300-Datasheet.txt` line 14985).";
+
+        field {
+            name = "ch_stat";
+            desc = "Channel working status, bit n = channel n";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } ch_stat[7:0];
+    } CH_STAT @ 0x690;
+
+    reg {
+        name = "DMAC version register";
+        desc = "DMAC_VERSION holds the controller version, 0xB310.
+
+Data sheet 3.6.6 DMAC_VERSION (offset 0xF00, printed page 3-134, `hi3516av300--Hi3516AV300-Datasheet.txt` line 15322).";
+
+        field {
+            name = "dmac_version";
+            desc = "Controller version";
+            sw = r;
+            hw = w;
+            reset = 0xB310;
+        } dmac_version[31:0];
+    } DMAC_VERSION @ 0xF00;
+
+    eHISI_DMAC_V2_CURR CURR[8] @ 0x404 += 0x20;
+    eHISI_DMAC_V2_CH CH[8] @ 0x800 += 0x40;
+};
+
+`endif

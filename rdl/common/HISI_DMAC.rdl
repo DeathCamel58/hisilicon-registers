@@ -1,9 +1,18 @@
 `ifndef HISI_DMAC_RDL
 `define HISI_DMAC_RDL
 
+// Number of DMA channels (CH array size and width of the per-channel status bits): 4 by default (Hi3518EV200/Hi3516CV200, Hi3518 V100, Hi3516C V100,
+// Hi3516A/D, Hi3516A V200, Hi3516C V300/E V100, Hi3519 V101), 8 when the chip's defines.rdl defines HISI_DMAC_8CH (Hi3511, Hi3515, Hi3520, Hi3516 V100).
+// HISI_DMAC_INT1 (defines.rdl): second interrupt output for the slave ARM (DMAC_INT_*STAT1 at 0x40-0x48, DMAC_Cn_CONFIG.tc_int_msk1/err_int_msk1): Hi3515, Hi3520.
+`ifdef HISI_DMAC_8CH
+`define HISI_DMAC_NCH 8
+`else
+`define HISI_DMAC_NCH 4
+`endif
+
 regfile eHISI_DMAC_CH {
     name = "HiSilicon DMAC channel registers (one channel)";
-    desc = "Registers of DMA channel n (n = 0-3) at 0x100 + n x 0x20 (data sheet names: DMAC_Cn_SRC_ADDR, DMAC_Cn_DEST_ADDR, DMAC_Cn_LLI, DMAC_Cn_CONTROL, DMAC_Cn_CONFIG). Offsets are relative to the channel base.";
+    desc = "Registers of DMA channel n (n = 0-3; 0-7 on the 8-channel chips) at 0x100 + n x 0x20 (data sheet names: DMAC_Cn_SRC_ADDR, DMAC_Cn_DEST_ADDR, DMAC_Cn_LLI, DMAC_Cn_CONTROL, DMAC_Cn_CONFIG). Offsets are relative to the channel base.";
 
     reg {
         name = "Source address register of DMA channel n (n = 0-3)";
@@ -235,6 +244,36 @@ The data sheet lists `ch_active` (bit 17) as RW; in the ARM PL080 this bit is re
 
 Data sheet 3.6.6 DMAC_Cn_CONFIG (offset 0x110, printed page 3-117, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 28485).";
 
+`ifdef HISI_DMAC_INT1
+        enum CONFIG_tc_int_msk1_enum {
+            TC_MASKED = 0 { name = "Masked"; desc = "The transfer terminal interrupt of the channel to the slave ARM is masked."; };
+            TC_NOT_MASKED = 1 { name = "Not Masked"; desc = "The transfer terminal interrupt of the channel to the slave ARM is not masked."; };
+        };
+
+        field {
+            name = "tc_int_msk1";
+            desc = "Transfer terminal interrupt mask for the slave ARM (data sheet name `itc1`; Hi3520/Hi3515 only)";
+            sw = rw;
+            hw = r;
+            encode = CONFIG_tc_int_msk1_enum;
+            reset = 0x0;
+        } tc_int_msk1[20:20];
+
+        enum CONFIG_err_int_msk1_enum {
+            ERR_MASKED = 0 { name = "Masked"; desc = "The error interrupt of the channel to the slave ARM is masked."; };
+            ERR_NOT_MASKED = 1 { name = "Not Masked"; desc = "The error interrupt of the channel to the slave ARM is not masked."; };
+        };
+
+        field {
+            name = "err_int_msk1";
+            desc = "Error interrupt mask for the slave ARM (data sheet name `ie1`; Hi3520/Hi3515 only)";
+            sw = rw;
+            hw = r;
+            encode = CONFIG_err_int_msk1_enum;
+            reset = 0x0;
+        } err_int_msk1[19:19];
+`endif
+
         enum CONFIG_ch_halt_enum {
             DMA_REQUEST_ALLOWED = 0 { name = "Dma Request Allowed"; desc = "The DMA request is allowed."; };
             SUBSEQUENT_DMA_REQUESTS = 1 { name = "Subsequent Dma Requests"; desc = "The subsequent DMA requests are ignored and the contents in the channel FIFO are completely transmitted. This bit can disable a DMA channel without data loss by working with the Active bit and the Channel Enable bit."; };
@@ -359,24 +398,65 @@ Data sheet 3.6.6 DMAC_Cn_CONFIG (offset 0x110, printed page 3-117, `hi3518ev200-
 };
 
 regfile eHISI_DMAC {
-    name = "HiSilicon DMA controller (PL080-compatible, 4 channels)";
+    name = "HiSilicon DMA controller (PL080-compatible, 4 or 8 channels)";
     desc = "
-    DMA controller of the Hi3518E V20X / Hi3516C V200 at 0x10060000 (data sheet issue 02, section 3.6), interrupt 14 of the VIC. It has the register layout of an **ARM PrimeCell PL080**
-    (the vendor driver `hi_pl08x.c` is derived from the Linux `amba-pl08x` driver) but with **4 channels** and 16 request lines; the data sheet documents no PrimeCell ID registers (PL080
-    has PeriphID/PCellID at 0xFE0..0xFFC): they are not modelled here and the DMAC is not AMBA-probed on this SoC (the vendor device tree binds it as the platform device
-    `hisilicon,hisi-dmac`). Global registers 0x000-0x034, per-channel registers `CH[4]` at 0x100 + n x 0x20 (SRC_ADDR, DEST_ADDR, LLI, CONTROL, CONFIG; the data sheet names them DMAC_Cn_*).
+    PL080-style DMA controller of the HiSilicon IP-cam / NVR SoCs up to the Hi3519 V101 (the Hi3516A V300 has a different, EDMAC-style controller: `HISI_DMAC_V2.rdl`). Written from the Hi3518E V20X / Hi3516C V200 data sheet
+    (issue 02, section 3.6, interrupt 14 of the VIC) and cross-checked against the data sheets of Hi3511, Hi3515, Hi3520, Hi3516 V100, Hi3516C V100, Hi3518 V100, Hi3516A/D, Hi3516A V200, Hi3516C V300/E V100 and Hi3519 V101
+    (Hi3520D V100 has no DMAC chapter; its vendor kernel uses `DMAC_BASE` 0x100D0000, the same base as the Hi3520). It has the register layout of an **ARM PrimeCell PL080**
+    (the vendor driver `hi_pl08x.c` is derived from the Linux `amba-pl08x` driver) but with **4 or 8 channels** and 16 request lines; the data sheets document no PrimeCell ID registers (PL080
+    has PeriphID/PCellID at 0xFE0..0xFFC): they are not modelled here and the DMAC is not AMBA-probed on these SoCs (the vendor device tree binds it as the platform device
+    `hisilicon,hisi-dmac`). Global registers 0x000-0x034, per-channel registers `CH[HISI_DMAC_NCH]` at 0x100 + n x 0x20 (SRC_ADDR, DEST_ADDR, LLI, CONTROL, CONFIG; the data sheets name them DMAC_Cn_* / DMAC_CX_*).
     Two AHB masters (`src_select`/`dest_select`, `ll_master`, `DMAC_CONFIG.m1/m2_endianness`).
 
-    Bring-up: clock/reset PERI_CRG54 `dma_cken` [5] / `dma_srst_req` [4] (reset = 0: clock off, not in reset); initialisation sequence (DS 3.6.4): write DMAC_CONFIG (endianness, `dmac_enable`), write 1s to
+    **Per-chip configuration** (macros of the chip's `defines.rdl`; the common file defaults to the Hi3518EV200 form: 4 channels, no slave-ARM interrupt):
+
+    | Chip | Base | Interrupt (data sheet number) | Channels | Macros |
+    |---|---|---|---|---|
+    | Hi3511 / Hi3512 V100 | 0x10130000 | 17 | 8 | `HISI_DMAC_8CH` |
+    | Hi3515 | 0x100D0000 | 15 | 8 | `HISI_DMAC_8CH`, `HISI_DMAC_INT1` |
+    | Hi3520 V100 | 0x100D0000 | n/a (not in the chapter) | 8 | `HISI_DMAC_8CH`, `HISI_DMAC_INT1` |
+    | Hi3516 V100 | 0x100D0000 | 67 | 8 | `HISI_DMAC_8CH` |
+    | Hi3516C V100, Hi3518 V100 | 0x100D0000 | 14 | 4 | none |
+    | Hi3518E V20X / Hi3516C V200 | 0x10060000 | 14 | 4 | none |
+    | Hi3516C V300 / Hi3516E V100 | 0x10030000 | 14 | 4 | none |
+    | Hi3516A / Hi3516D | 0x10060000 | 37 (GIC) | 4 | none |
+    | Hi3516A V200 | 0x10030000 | 49 (GIC) | 4 | none |
+    | Hi3519 V101 | 0x10030000 | 49 (GIC) | 4 | none |
+
+    Differences between the data sheets that are *not* modelled per chip (same bit layout, only the description or the access type differs):
+    - The status registers of the older data sheets (Hi3511, Hi3515, Hi3516 V100, Hi3516C V100, Hi3518 V100, Hi3520) describe one vector field `int_stat[N-1:0]` (`int_tc_stat`, `int_tc_clr`, ...); the Hi3518EV200-style one-bit-per-channel fields `chN_*` are used for all chips (same bits). The Hi3511/Hi3520 data sheets call register 0x1C `DMAC_ENBLD_CHNS`.
+    - `DMAC_SOFT_LBREQ` / `DMAC_SOFT_LSREQ`: write-only in the older data sheets, read/write (as in PL080) in the Hi3518EV200 one; modelled read/write. `DMAC_Cn_CONFIG.ch_active` is read-only in the older data sheets and in the PL080 but RW in the Hi3516A and later ones; modelled as in the Hi3518EV200 data sheet (RW, low confidence, only ever read).
+    - The Hi3515 and Hi3520 data sheets list the channel `DMAC_Cn_CONFIG` halt bit [18] only in the bit diagram (Hi3511 also in the table); it is kept for all chips (PL080 `H`).
+    - Older chips (Hi3511, Hi3515, Hi3520, Hi3516 V100, Hi3516C/Hi3518 V100) call the CONFIG fields `e`, `h`, `a`, `l`, `itc`, `ie`, `flow_cntrl`, `dest_peripheral`, `src_peripheral`; the CONTROL fields `i`, `prot`, `di`, `si`, `d`, `s`, `dwidth`, ...; DMAC_CONFIG `e`, `m1`, `m2`; DMAC_Cn_LLI `lm` / `lli` (bit 1 reserved, as here).
+    - Per-channel FIFOs: 4 x 32 bit (channels 0, 1) and 16 x 32 bit (channels 2, 3) on the 4-channel chips; Hi3515: 4 x 32 for channels 0-5, 16 x 32 for 6-7.
+
+    Bring-up: clock/reset in the chip's CRG (Hi3518EV200: PERI_CRG54 `dma_cken` [5] / `dma_srst_req` [4], reset = 0: clock off, not in reset; Hi3516 V100: PERI_CRG27 `dma_cken`); initialisation sequence (DS 3.6.4): write DMAC_CONFIG (endianness, `dmac_enable`), write 1s to
     DMAC_INT_TC_CLR / DMAC_INT_ERR_CLR, write DMAC_SYNC, disable all channels (`ch_en` = 0). Enabling a channel: pick an idle channel from DMAC_ENABLED_CHNS, clear its interrupts, program SRC_ADDR, DEST_ADDR,
-    LLI, CONTROL, CONFIG, then set `ch_en`. For memory-to-memory transfers use channel 2 or 3 (an idle cycle is inserted after each bus operation on those channels, DS 3.6.3).
+    LLI, CONTROL, CONFIG, then set `ch_en`. For memory-to-memory transfers use channel 2 or 3 on the 4-channel chips, channel 6 or 7 on the 8-channel ones (an idle cycle is inserted after each bus operation on those channels, DS 3.6.3). The register descriptions
+    below keep the Hi3518EV200 wording (n = 0-3); n runs 0-7 on the 8-channel chips.
 
-    **DMA request line numbers (data sheet Table 3-12; `DMAC_Cn_CONFIG.src_periph` / `dest_periph`):** 0 I2C0 RX, 1 I2C0 TX, 2 I2C1 RX, 3 I2C1 TX, 4 UART0 RX, 5 UART0 TX, 6 UART1 RX, 7 UART1 TX,
-    8 UART2 RX, 9 UART2 TX, 10 I2C2 RX, 11 I2C2 TX, 12 SSP1 RX, 13 SSP1 TX, 14 SSP0 RX, 15 SSP0 TX. The vendor header `hidmac_hi3518ev20x.h` uses the same table.
+    **DMA request line numbers (`DMAC_Cn_CONFIG.src_periph` / `dest_periph`, 4 bits, 16 lines; needed for the `dmas` cells):**
+    - Hi3518E V20X / Hi3516C V200 (DS Table 3-12; the vendor header `hidmac_hi3518ev20x.h` agrees): 0 I2C0 RX, 1 I2C0 TX, 2 I2C1 RX, 3 I2C1 TX, 4 UART0 RX, 5 UART0 TX, 6 UART1 RX, 7 UART1 TX,
+      8 UART2 RX, 9 UART2 TX, 10 I2C2 RX, 11 I2C2 TX, 12 SSP1 RX, 13 SSP1 TX, 14 SSP0 RX, 15 SSP0 TX.
+    - Hi3516C V300 / Hi3516E V100 (DS Table 3-12): 0 I2C0 RX, 1 I2C0 TX, 2-3 reserved, 4 I2C1 RX, 5 I2C1 TX, 6 UART0 RX, 7 UART0 TX, 8 UART1 RX, 9 UART1 TX, 10 UART2 RX, 11 UART2 TX, 12 SSP0 RX, 13 SSP0 TX, 14 SSP1 RX, 15 SSP1 TX
+      (the data sheet's worked example calls request 5 the UART0 RX request: it contradicts its own table, the table is kept).
+    - Hi3516C V100 / Hi3518 V100 (A/C) (DS Table 3-24): 0 SIO RX, 1 SIO TX, 2-5 reserved, 6 UART0 RX, 7 UART0 TX, 8 UART1 RX, 9 UART1 TX, 10 UART2 RX, 11 UART2 TX, 12 SSP1 RX, 13 SSP1 TX, 14 SSP0 RX, 15 SSP0 TX
+      (the Hi3518 data sheet marks the SSP lines 12-15 as reserved for the Hi3518C).
+    - Hi3516A / Hi3516D (DS Table 3-11; the I2C/SSP lines are shared and selected by `MISC_CTRL1.i2c1_dma_ch_sel`): 0 I2C1/I2C0 RX, 1 I2C1/I2C0 TX, 2 I2C1/I2C2 RX, 3 I2C1/I2C2 TX, 4 UART0 RX, 5 UART0 TX, 6 UART1 RX, 7 UART1 TX,
+      8 UART2 RX, 9 UART2 TX, 10 UART3 RX, 11 UART3 TX, 12 I2C1/SSP1 RX, 13 I2C1/SSP1 TX, 14 I2C1/SSP0 RX, 15 I2C1/SSP0 TX.
+    - Hi3516A V200 / Hi3519 V101 (DS Table 3-11; selected by `MISC_CTRL1.dma_01_sel` / `dma_67_sel` / `dma_89_sel` / `dma_ab_sel`): 0 UART0/UART4 RX, 1 UART0/UART4 TX, 2 UART1 RX, 3 UART1 TX, 4 UART2 RX, 5 UART2 TX, 6 UART3/I2C3/SSP3 RX, 7 UART3/I2C3/SSP3 TX,
+      8 I2C0/SSP0 RX, 9 I2C0/SSP0 TX, 10 I2C1/SSP1 RX, 11 I2C1/SSP1 TX, 12 SSP2 RX, 13 SSP2 TX, 14 I2C2 RX, 15 I2C2 TX.
+    - Hi3516 V100 (8 channels, DS Table 3-21): 0 SIO0 RX, 1 SIO0 TX, 2 SIO1 RX, 3 SIO1 TX, 4 SIO2 RX (printed \"SIO2 TX\", obvious typo), 5 SIO2 TX, 6 SSP0 RX, 7 SSP0 TX, 8 SSP1 RX, 9 SSP1 TX, 10 UART0 RX, 11 UART0 TX, 12 UART1 RX, 13 UART1 TX, 14 UART2 RX, 15 UART2 TX.
+    - Hi3520 V100 (8 channels, DS Table 3-23): 0 SIO0 RX, 1 SIO0 TX, 2 SIO1 RX, 3 SIO1 TX, 4 SIO2 RX, 5 SIO2 TX, 6 SPI RX, 7 SPI TX, 8 SDIO read, 9 SDIO write, 10 UART0 RX, 11 UART0 TX, 12 UART1 RX, 13 UART1 TX, 14 UART2 RX, 15 UART2 TX.
+    - Hi3515 (8 channels, DS Table 3-18): 0 SIO0 RX, 1 SIO0 TX, 2 SIO1 RX, 3 SIO1 TX, 4 UART RX, 5 UART TX, 6 SPI RX, 7 SPI TX, 8 MMC read, 9 MMC write, 10 UART0 RX, 11 UART0 TX, 12 UART1 RX, 13 UART1 TX, 14 UART2 RX, 15 UART2 TX
+      (lines 4/5 are the data sheet's generic \"UART\" entries and are probably vestigial).
+    - Hi3511 / Hi3512 (8 channels, DS Table 3-15): 0-1 reserved, 2 SIO0 RX, 3 SIO0 TX, 4 SIO1 RX, 5 reserved (printed; probably SIO1 TX), 6-7 reserved, 8 SSP RX, 9 SSP TX, 10-11 reserved, 12 MMC RX, 13 MMC TX, 14 UART0 RX, 15 UART0 TX.
 
-    Source: data sheet 3.6.5/3.6.6 (`hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` lines 27600-28696) and the vendor driver `drivers/hidmac/hidmac_hi3518ev20x.h` (register offsets and the channel control/config values the driver writes agree with the data sheet). The channel registers
-    are modelled as the nested regfile `eHISI_DMAC_CH` instantiated `CH[4] @ 0x100 += 0x20`. No hardware verification.
+    Source: Hi3518E V20X data sheet 3.6.5/3.6.6 (`hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` lines 27600-28696) and the vendor driver `drivers/hidmac/hidmac_hi3518ev20x.h` (register offsets and the channel control/config values the driver writes agree with the data sheet);
+    the other data sheets are compared register by register (offsets, bit ranges and resets all agree except for the points above). The channel registers
+    are modelled as the nested regfile `eHISI_DMAC_CH` instantiated `CH[HISI_DMAC_NCH] @ 0x100 += 0x20`. No hardware verification.
     ";
+
 
     reg {
         name = "DMAC interrupt status register";
@@ -397,6 +477,64 @@ Data sheet 3.6.6 DMAC_INT_STAT (offset 0x0, printed page 3-101, `hi3518ev200--Hi
             encode = DMAC_INT_STAT_ch3_int_stat_enum;
             reset = 0x0;
         } ch3_int_stat[3:3];
+
+`ifdef HISI_DMAC_8CH
+        enum DMAC_INT_STAT_ch4_int_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            TRANSFER_ERROR_INTERRUPT = 1 { name = "Transfer Error Interrupt"; desc = "A transfer error interrupt or transfer terminal interrupt is generated."; };
+        };
+
+        field {
+            name = "ch4_int_stat";
+            desc = "Masked interrupt status of channel 4";
+            sw = r;
+            hw = w;
+            encode = DMAC_INT_STAT_ch4_int_stat_enum;
+            reset = 0x0;
+        } ch4_int_stat[4:4];
+
+        enum DMAC_INT_STAT_ch5_int_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            TRANSFER_ERROR_INTERRUPT = 1 { name = "Transfer Error Interrupt"; desc = "A transfer error interrupt or transfer terminal interrupt is generated."; };
+        };
+
+        field {
+            name = "ch5_int_stat";
+            desc = "Masked interrupt status of channel 5";
+            sw = r;
+            hw = w;
+            encode = DMAC_INT_STAT_ch5_int_stat_enum;
+            reset = 0x0;
+        } ch5_int_stat[5:5];
+
+        enum DMAC_INT_STAT_ch6_int_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            TRANSFER_ERROR_INTERRUPT = 1 { name = "Transfer Error Interrupt"; desc = "A transfer error interrupt or transfer terminal interrupt is generated."; };
+        };
+
+        field {
+            name = "ch6_int_stat";
+            desc = "Masked interrupt status of channel 6";
+            sw = r;
+            hw = w;
+            encode = DMAC_INT_STAT_ch6_int_stat_enum;
+            reset = 0x0;
+        } ch6_int_stat[6:6];
+
+        enum DMAC_INT_STAT_ch7_int_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            TRANSFER_ERROR_INTERRUPT = 1 { name = "Transfer Error Interrupt"; desc = "A transfer error interrupt or transfer terminal interrupt is generated."; };
+        };
+
+        field {
+            name = "ch7_int_stat";
+            desc = "Masked interrupt status of channel 7";
+            sw = r;
+            hw = w;
+            encode = DMAC_INT_STAT_ch7_int_stat_enum;
+            reset = 0x0;
+        } ch7_int_stat[7:7];
+`endif
 
         enum DMAC_INT_STAT_ch2_int_stat_enum {
             NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
@@ -461,6 +599,64 @@ Data sheet 3.6.6 DMAC_INT_TC_STAT (offset 0x4, printed page 3-102, `hi3518ev200-
             reset = 0x0;
         } ch3_int_tc_stat[3:3];
 
+`ifdef HISI_DMAC_8CH
+        enum DMAC_INT_TC_STAT_ch4_int_tc_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "ch4_int_tc_stat";
+            desc = "Status of the masked transfer terminal interrupt of channel 4";
+            sw = r;
+            hw = w;
+            encode = DMAC_INT_TC_STAT_ch4_int_tc_stat_enum;
+            reset = 0x0;
+        } ch4_int_tc_stat[4:4];
+
+        enum DMAC_INT_TC_STAT_ch5_int_tc_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "ch5_int_tc_stat";
+            desc = "Status of the masked transfer terminal interrupt of channel 5";
+            sw = r;
+            hw = w;
+            encode = DMAC_INT_TC_STAT_ch5_int_tc_stat_enum;
+            reset = 0x0;
+        } ch5_int_tc_stat[5:5];
+
+        enum DMAC_INT_TC_STAT_ch6_int_tc_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "ch6_int_tc_stat";
+            desc = "Status of the masked transfer terminal interrupt of channel 6";
+            sw = r;
+            hw = w;
+            encode = DMAC_INT_TC_STAT_ch6_int_tc_stat_enum;
+            reset = 0x0;
+        } ch6_int_tc_stat[6:6];
+
+        enum DMAC_INT_TC_STAT_ch7_int_tc_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "ch7_int_tc_stat";
+            desc = "Status of the masked transfer terminal interrupt of channel 7";
+            sw = r;
+            hw = w;
+            encode = DMAC_INT_TC_STAT_ch7_int_tc_stat_enum;
+            reset = 0x0;
+        } ch7_int_tc_stat[7:7];
+`endif
+
         enum DMAC_INT_TC_STAT_ch2_int_tc_stat_enum {
             NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
             INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
@@ -523,6 +719,64 @@ Data sheet 3.6.6 DMAC_INT_TC_CLR (offset 0x8, printed page 3-103, `hi3518ev200--
             encode = DMAC_INT_TC_CLR_ch3_int_tc_clr_enum;
             reset = 0x0;
         } ch3_int_tc_clr[3:3];
+
+`ifdef HISI_DMAC_8CH
+        enum DMAC_INT_TC_CLR_ch4_int_tc_clr_enum {
+            NOT_CLEARED = 0 { name = "Not Cleared"; desc = "not cleared"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "ch4_int_tc_clr";
+            desc = "Transfer terminal interrupt clear for channel 4";
+            sw = w;
+            hw = r;
+            encode = DMAC_INT_TC_CLR_ch4_int_tc_clr_enum;
+            reset = 0x0;
+        } ch4_int_tc_clr[4:4];
+
+        enum DMAC_INT_TC_CLR_ch5_int_tc_clr_enum {
+            NOT_CLEARED = 0 { name = "Not Cleared"; desc = "not cleared"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "ch5_int_tc_clr";
+            desc = "Transfer terminal interrupt clear for channel 5";
+            sw = w;
+            hw = r;
+            encode = DMAC_INT_TC_CLR_ch5_int_tc_clr_enum;
+            reset = 0x0;
+        } ch5_int_tc_clr[5:5];
+
+        enum DMAC_INT_TC_CLR_ch6_int_tc_clr_enum {
+            NOT_CLEARED = 0 { name = "Not Cleared"; desc = "not cleared"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "ch6_int_tc_clr";
+            desc = "Transfer terminal interrupt clear for channel 6";
+            sw = w;
+            hw = r;
+            encode = DMAC_INT_TC_CLR_ch6_int_tc_clr_enum;
+            reset = 0x0;
+        } ch6_int_tc_clr[6:6];
+
+        enum DMAC_INT_TC_CLR_ch7_int_tc_clr_enum {
+            NOT_CLEARED = 0 { name = "Not Cleared"; desc = "not cleared"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "ch7_int_tc_clr";
+            desc = "Transfer terminal interrupt clear for channel 7";
+            sw = w;
+            hw = r;
+            encode = DMAC_INT_TC_CLR_ch7_int_tc_clr_enum;
+            reset = 0x0;
+        } ch7_int_tc_clr[7:7];
+`endif
 
         enum DMAC_INT_TC_CLR_ch2_int_tc_clr_enum {
             NOT_CLEARED = 0 { name = "Not Cleared"; desc = "not cleared"; };
@@ -587,6 +841,64 @@ Data sheet 3.6.6 DMAC_INT_ERR_STAT (offset 0xC, printed page 3-104, `hi3518ev200
             reset = 0x0;
         } ch3_int_err_stat[3:3];
 
+`ifdef HISI_DMAC_8CH
+        enum DMAC_INT_ERR_STAT_ch4_int_err_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "ch4_int_err_stat";
+            desc = "Status of the masked error interrupt of channel 4";
+            sw = r;
+            hw = w;
+            encode = DMAC_INT_ERR_STAT_ch4_int_err_stat_enum;
+            reset = 0x0;
+        } ch4_int_err_stat[4:4];
+
+        enum DMAC_INT_ERR_STAT_ch5_int_err_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "ch5_int_err_stat";
+            desc = "Status of the masked error interrupt of channel 5";
+            sw = r;
+            hw = w;
+            encode = DMAC_INT_ERR_STAT_ch5_int_err_stat_enum;
+            reset = 0x0;
+        } ch5_int_err_stat[5:5];
+
+        enum DMAC_INT_ERR_STAT_ch6_int_err_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "ch6_int_err_stat";
+            desc = "Status of the masked error interrupt of channel 6";
+            sw = r;
+            hw = w;
+            encode = DMAC_INT_ERR_STAT_ch6_int_err_stat_enum;
+            reset = 0x0;
+        } ch6_int_err_stat[6:6];
+
+        enum DMAC_INT_ERR_STAT_ch7_int_err_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "ch7_int_err_stat";
+            desc = "Status of the masked error interrupt of channel 7";
+            sw = r;
+            hw = w;
+            encode = DMAC_INT_ERR_STAT_ch7_int_err_stat_enum;
+            reset = 0x0;
+        } ch7_int_err_stat[7:7];
+`endif
+
         enum DMAC_INT_ERR_STAT_ch2_int_err_stat_enum {
             NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
             INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
@@ -649,6 +961,64 @@ Data sheet 3.6.6 DMAC_INT_ERR_CLR (offset 0x10, printed page 3-105, `hi3518ev200
             encode = DMAC_INT_ERR_CLR_ch3_int_err_clr_enum;
             reset = 0x0;
         } ch3_int_err_clr[3:3];
+
+`ifdef HISI_DMAC_8CH
+        enum DMAC_INT_ERR_CLR_ch4_int_err_clr_enum {
+            NOT_CLEARED = 0 { name = "Not Cleared"; desc = "not cleared"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "ch4_int_err_clr";
+            desc = "Error interrupt clear for channel 4";
+            sw = w;
+            hw = r;
+            encode = DMAC_INT_ERR_CLR_ch4_int_err_clr_enum;
+            reset = 0x0;
+        } ch4_int_err_clr[4:4];
+
+        enum DMAC_INT_ERR_CLR_ch5_int_err_clr_enum {
+            NOT_CLEARED = 0 { name = "Not Cleared"; desc = "not cleared"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "ch5_int_err_clr";
+            desc = "Error interrupt clear for channel 5";
+            sw = w;
+            hw = r;
+            encode = DMAC_INT_ERR_CLR_ch5_int_err_clr_enum;
+            reset = 0x0;
+        } ch5_int_err_clr[5:5];
+
+        enum DMAC_INT_ERR_CLR_ch6_int_err_clr_enum {
+            NOT_CLEARED = 0 { name = "Not Cleared"; desc = "not cleared"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "ch6_int_err_clr";
+            desc = "Error interrupt clear for channel 6";
+            sw = w;
+            hw = r;
+            encode = DMAC_INT_ERR_CLR_ch6_int_err_clr_enum;
+            reset = 0x0;
+        } ch6_int_err_clr[6:6];
+
+        enum DMAC_INT_ERR_CLR_ch7_int_err_clr_enum {
+            NOT_CLEARED = 0 { name = "Not Cleared"; desc = "not cleared"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "ch7_int_err_clr";
+            desc = "Error interrupt clear for channel 7";
+            sw = w;
+            hw = r;
+            encode = DMAC_INT_ERR_CLR_ch7_int_err_clr_enum;
+            reset = 0x0;
+        } ch7_int_err_clr[7:7];
+`endif
 
         enum DMAC_INT_ERR_CLR_ch2_int_err_clr_enum {
             NOT_CLEARED = 0 { name = "Not Cleared"; desc = "not cleared"; };
@@ -713,6 +1083,64 @@ Data sheet 3.6.6 DMAC_RAW_INT_TC_STAT (offset 0x14, printed page 3-106, `hi3518e
             reset = 0x0;
         } ch3_raw_int_tc[3:3];
 
+`ifdef HISI_DMAC_8CH
+        enum DMAC_RAW_INT_TC_STAT_ch4_raw_int_tc_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "ch4_raw_int_tc";
+            desc = "Status of the raw transfer terminal interrupt of channel 4";
+            sw = r;
+            hw = w;
+            encode = DMAC_RAW_INT_TC_STAT_ch4_raw_int_tc_enum;
+            reset = 0x0;
+        } ch4_raw_int_tc[4:4];
+
+        enum DMAC_RAW_INT_TC_STAT_ch5_raw_int_tc_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "ch5_raw_int_tc";
+            desc = "Status of the raw transfer terminal interrupt of channel 5";
+            sw = r;
+            hw = w;
+            encode = DMAC_RAW_INT_TC_STAT_ch5_raw_int_tc_enum;
+            reset = 0x0;
+        } ch5_raw_int_tc[5:5];
+
+        enum DMAC_RAW_INT_TC_STAT_ch6_raw_int_tc_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "ch6_raw_int_tc";
+            desc = "Status of the raw transfer terminal interrupt of channel 6";
+            sw = r;
+            hw = w;
+            encode = DMAC_RAW_INT_TC_STAT_ch6_raw_int_tc_enum;
+            reset = 0x0;
+        } ch6_raw_int_tc[6:6];
+
+        enum DMAC_RAW_INT_TC_STAT_ch7_raw_int_tc_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "ch7_raw_int_tc";
+            desc = "Status of the raw transfer terminal interrupt of channel 7";
+            sw = r;
+            hw = w;
+            encode = DMAC_RAW_INT_TC_STAT_ch7_raw_int_tc_enum;
+            reset = 0x0;
+        } ch7_raw_int_tc[7:7];
+`endif
+
         enum DMAC_RAW_INT_TC_STAT_ch2_raw_int_tc_enum {
             NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
             INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
@@ -776,6 +1204,64 @@ Data sheet 3.6.6 DMAC_RAW_INT_ERR_STAT (offset 0x18, printed page 3-107, `hi3518
             reset = 0x0;
         } ch3_raw_int_err[3:3];
 
+`ifdef HISI_DMAC_8CH
+        enum DMAC_RAW_INT_ERR_STAT_ch4_raw_int_err_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "ch4_raw_int_err";
+            desc = "Status of the raw error interrupt of channel 4";
+            sw = r;
+            hw = w;
+            encode = DMAC_RAW_INT_ERR_STAT_ch4_raw_int_err_enum;
+            reset = 0x0;
+        } ch4_raw_int_err[4:4];
+
+        enum DMAC_RAW_INT_ERR_STAT_ch5_raw_int_err_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "ch5_raw_int_err";
+            desc = "Status of the raw error interrupt of channel 5";
+            sw = r;
+            hw = w;
+            encode = DMAC_RAW_INT_ERR_STAT_ch5_raw_int_err_enum;
+            reset = 0x0;
+        } ch5_raw_int_err[5:5];
+
+        enum DMAC_RAW_INT_ERR_STAT_ch6_raw_int_err_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "ch6_raw_int_err";
+            desc = "Status of the raw error interrupt of channel 6";
+            sw = r;
+            hw = w;
+            encode = DMAC_RAW_INT_ERR_STAT_ch6_raw_int_err_enum;
+            reset = 0x0;
+        } ch6_raw_int_err[6:6];
+
+        enum DMAC_RAW_INT_ERR_STAT_ch7_raw_int_err_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "ch7_raw_int_err";
+            desc = "Status of the raw error interrupt of channel 7";
+            sw = r;
+            hw = w;
+            encode = DMAC_RAW_INT_ERR_STAT_ch7_raw_int_err_enum;
+            reset = 0x0;
+        } ch7_raw_int_err[7:7];
+`endif
+
         enum DMAC_RAW_INT_ERR_STAT_ch2_raw_int_err_enum {
             NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
             INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
@@ -838,6 +1324,64 @@ Data sheet 3.6.6 DMAC_ENABLED_CHNS (offset 0x1C, printed page 3-108, `hi3518ev20
             encode = DMAC_ENABLED_CHNS_ch3_enabled_enum;
             reset = 0x0;
         } ch3_enabled[3:3];
+
+`ifdef HISI_DMAC_8CH
+        enum DMAC_ENABLED_CHNS_ch4_enabled_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "ch4_enabled";
+            desc = "Channel 3 enable";
+            sw = r;
+            hw = w;
+            encode = DMAC_ENABLED_CHNS_ch4_enabled_enum;
+            reset = 0x0;
+        } ch4_enabled[4:4];
+
+        enum DMAC_ENABLED_CHNS_ch5_enabled_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "ch5_enabled";
+            desc = "Channel 3 enable";
+            sw = r;
+            hw = w;
+            encode = DMAC_ENABLED_CHNS_ch5_enabled_enum;
+            reset = 0x0;
+        } ch5_enabled[5:5];
+
+        enum DMAC_ENABLED_CHNS_ch6_enabled_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "ch6_enabled";
+            desc = "Channel 3 enable";
+            sw = r;
+            hw = w;
+            encode = DMAC_ENABLED_CHNS_ch6_enabled_enum;
+            reset = 0x0;
+        } ch6_enabled[6:6];
+
+        enum DMAC_ENABLED_CHNS_ch7_enabled_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "ch7_enabled";
+            desc = "Channel 3 enable";
+            sw = r;
+            hw = w;
+            encode = DMAC_ENABLED_CHNS_ch7_enabled_enum;
+            reset = 0x0;
+        } ch7_enabled[7:7];
+`endif
 
         enum DMAC_ENABLED_CHNS_ch2_enabled_enum {
             DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
@@ -1034,7 +1578,382 @@ Data sheet 3.6.6 DMAC_SYNC (offset 0x34, printed page 3-112, `hi3518ev200--Hi351
         } dmac_sync[15:0];
     } DMAC_SYNC @ 0x34;
 
-    eHISI_DMAC_CH CH[4] @ 0x100 += 0x20;
+`ifdef HISI_DMAC_INT1
+    reg {
+        name = "DMAC interrupt status register (slave ARM)";
+        desc = "DMAC_INT_STAT1 is an interrupt status register.
+
+Same layout as DMAC_INT_STAT but reports the interrupts of the slave ARM; the matching per-channel mask bits are `DMAC_Cn_CONFIG.tc_int_msk1` / `err_int_msk1` (bits 20 / 19). Present on the Hi3520 and Hi3515 only (`HISI_DMAC_INT1`).
+
+Data sheet 3.5.6 DMAC_INT_STAT1 (offset 0x40, printed page 3-52, `hi3520v100--Hi3520-Datasheet.txt` line 13199; Hi3515: page 3-49, `hi3515v100--Hi3515-Datasheet.txt` line 9554).";
+
+        enum DMAC_INT_STAT1_ch3_int_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            TRANSFER_ERROR_INTERRUPT = 1 { name = "Transfer Error Interrupt"; desc = "A transfer error interrupt or transfer terminal interrupt is generated."; };
+        };
+
+        field {
+            name = "ch3_int_stat";
+            desc = "Masked interrupt status of channel 3";
+            sw = r;
+            hw = w;
+            encode = DMAC_INT_STAT1_ch3_int_stat_enum;
+            reset = 0x0;
+        } ch3_int_stat[3:3];
+
+`ifdef HISI_DMAC_8CH
+        enum DMAC_INT_STAT1_ch4_int_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            TRANSFER_ERROR_INTERRUPT = 1 { name = "Transfer Error Interrupt"; desc = "A transfer error interrupt or transfer terminal interrupt is generated."; };
+        };
+
+        field {
+            name = "ch4_int_stat";
+            desc = "Masked interrupt status of channel 4";
+            sw = r;
+            hw = w;
+            encode = DMAC_INT_STAT1_ch4_int_stat_enum;
+            reset = 0x0;
+        } ch4_int_stat[4:4];
+
+        enum DMAC_INT_STAT1_ch5_int_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            TRANSFER_ERROR_INTERRUPT = 1 { name = "Transfer Error Interrupt"; desc = "A transfer error interrupt or transfer terminal interrupt is generated."; };
+        };
+
+        field {
+            name = "ch5_int_stat";
+            desc = "Masked interrupt status of channel 5";
+            sw = r;
+            hw = w;
+            encode = DMAC_INT_STAT1_ch5_int_stat_enum;
+            reset = 0x0;
+        } ch5_int_stat[5:5];
+
+        enum DMAC_INT_STAT1_ch6_int_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            TRANSFER_ERROR_INTERRUPT = 1 { name = "Transfer Error Interrupt"; desc = "A transfer error interrupt or transfer terminal interrupt is generated."; };
+        };
+
+        field {
+            name = "ch6_int_stat";
+            desc = "Masked interrupt status of channel 6";
+            sw = r;
+            hw = w;
+            encode = DMAC_INT_STAT1_ch6_int_stat_enum;
+            reset = 0x0;
+        } ch6_int_stat[6:6];
+
+        enum DMAC_INT_STAT1_ch7_int_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            TRANSFER_ERROR_INTERRUPT = 1 { name = "Transfer Error Interrupt"; desc = "A transfer error interrupt or transfer terminal interrupt is generated."; };
+        };
+
+        field {
+            name = "ch7_int_stat";
+            desc = "Masked interrupt status of channel 7";
+            sw = r;
+            hw = w;
+            encode = DMAC_INT_STAT1_ch7_int_stat_enum;
+            reset = 0x0;
+        } ch7_int_stat[7:7];
+`endif
+
+        enum DMAC_INT_STAT1_ch2_int_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            TRANSFER_ERROR_INTERRUPT = 1 { name = "Transfer Error Interrupt"; desc = "A transfer error interrupt or transfer terminal interrupt is generated."; };
+        };
+
+        field {
+            name = "ch2_int_stat";
+            desc = "Masked interrupt status of channel 2";
+            sw = r;
+            hw = w;
+            encode = DMAC_INT_STAT1_ch2_int_stat_enum;
+            reset = 0x0;
+        } ch2_int_stat[2:2];
+
+        enum DMAC_INT_STAT1_ch1_int_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            TRANSFER_ERROR_INTERRUPT = 1 { name = "Transfer Error Interrupt"; desc = "A transfer error interrupt or transfer terminal interrupt is generated."; };
+        };
+
+        field {
+            name = "ch1_int_stat";
+            desc = "Masked interrupt status of channel 1";
+            sw = r;
+            hw = w;
+            encode = DMAC_INT_STAT1_ch1_int_stat_enum;
+            reset = 0x0;
+        } ch1_int_stat[1:1];
+
+        enum DMAC_INT_STAT1_ch0_int_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            TRANSFER_ERROR_INTERRUPT = 1 { name = "Transfer Error Interrupt"; desc = "A transfer error interrupt or transfer terminal interrupt is generated."; };
+        };
+
+        field {
+            name = "ch0_int_stat";
+            desc = "Masked interrupt status of channel 0";
+            sw = r;
+            hw = w;
+            encode = DMAC_INT_STAT1_ch0_int_stat_enum;
+            reset = 0x0;
+        } ch0_int_stat[0:0];
+    } DMAC_INT_STAT1 @ 0x40;
+`endif
+
+`ifdef HISI_DMAC_INT1
+    reg {
+        name = "DMAC transfer terminal interrupt status register (slave ARM)";
+        desc = "DMAC_INT_TC_STAT1 is a DMAC transfer terminal interrupt status register.
+
+Same layout as DMAC_INT_TC_STAT but reports the interrupts of the slave ARM; the matching per-channel mask bits are `DMAC_Cn_CONFIG.tc_int_msk1` / `err_int_msk1` (bits 20 / 19). Present on the Hi3520 and Hi3515 only (`HISI_DMAC_INT1`).
+
+Data sheet 3.5.6 DMAC_INT_TC_STAT1 (offset 0x44, printed page 3-53, `hi3520v100--Hi3520-Datasheet.txt` line 13234; Hi3515: page 3-49, `hi3515v100--Hi3515-Datasheet.txt` line 9580).";
+
+        enum DMAC_INT_TC_STAT1_ch3_int_tc_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "ch3_int_tc_stat";
+            desc = "Status of the masked transfer terminal interrupt of channel 3";
+            sw = r;
+            hw = w;
+            encode = DMAC_INT_TC_STAT1_ch3_int_tc_stat_enum;
+            reset = 0x0;
+        } ch3_int_tc_stat[3:3];
+
+`ifdef HISI_DMAC_8CH
+        enum DMAC_INT_TC_STAT1_ch4_int_tc_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "ch4_int_tc_stat";
+            desc = "Status of the masked transfer terminal interrupt of channel 4";
+            sw = r;
+            hw = w;
+            encode = DMAC_INT_TC_STAT1_ch4_int_tc_stat_enum;
+            reset = 0x0;
+        } ch4_int_tc_stat[4:4];
+
+        enum DMAC_INT_TC_STAT1_ch5_int_tc_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "ch5_int_tc_stat";
+            desc = "Status of the masked transfer terminal interrupt of channel 5";
+            sw = r;
+            hw = w;
+            encode = DMAC_INT_TC_STAT1_ch5_int_tc_stat_enum;
+            reset = 0x0;
+        } ch5_int_tc_stat[5:5];
+
+        enum DMAC_INT_TC_STAT1_ch6_int_tc_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "ch6_int_tc_stat";
+            desc = "Status of the masked transfer terminal interrupt of channel 6";
+            sw = r;
+            hw = w;
+            encode = DMAC_INT_TC_STAT1_ch6_int_tc_stat_enum;
+            reset = 0x0;
+        } ch6_int_tc_stat[6:6];
+
+        enum DMAC_INT_TC_STAT1_ch7_int_tc_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "ch7_int_tc_stat";
+            desc = "Status of the masked transfer terminal interrupt of channel 7";
+            sw = r;
+            hw = w;
+            encode = DMAC_INT_TC_STAT1_ch7_int_tc_stat_enum;
+            reset = 0x0;
+        } ch7_int_tc_stat[7:7];
+`endif
+
+        enum DMAC_INT_TC_STAT1_ch2_int_tc_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "ch2_int_tc_stat";
+            desc = "Status of the masked transfer terminal interrupt of channel 2";
+            sw = r;
+            hw = w;
+            encode = DMAC_INT_TC_STAT1_ch2_int_tc_stat_enum;
+            reset = 0x0;
+        } ch2_int_tc_stat[2:2];
+
+        enum DMAC_INT_TC_STAT1_ch1_int_tc_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "ch1_int_tc_stat";
+            desc = "Status of the masked transfer terminal interrupt of channel 1";
+            sw = r;
+            hw = w;
+            encode = DMAC_INT_TC_STAT1_ch1_int_tc_stat_enum;
+            reset = 0x0;
+        } ch1_int_tc_stat[1:1];
+
+        enum DMAC_INT_TC_STAT1_ch0_int_tc_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "ch0_int_tc_stat";
+            desc = "Status of the masked transfer terminal interrupt of channel 0";
+            sw = r;
+            hw = w;
+            encode = DMAC_INT_TC_STAT1_ch0_int_tc_stat_enum;
+            reset = 0x0;
+        } ch0_int_tc_stat[0:0];
+    } DMAC_INT_TC_STAT1 @ 0x44;
+`endif
+
+`ifdef HISI_DMAC_INT1
+    reg {
+        name = "DMAC error interrupt status register (slave ARM)";
+        desc = "DMAC_INT_ERR_STAT1 is a DMAC error interrupt status register.
+
+Same layout as DMAC_INT_ERR_STAT but reports the interrupts of the slave ARM; the matching per-channel mask bits are `DMAC_Cn_CONFIG.tc_int_msk1` / `err_int_msk1` (bits 20 / 19). Present on the Hi3520 and Hi3515 only (`HISI_DMAC_INT1`).
+
+Data sheet 3.5.6 DMAC_INT_ERR_STAT1 (offset 0x48, printed page 3-54, `hi3520v100--Hi3520-Datasheet.txt` line 13270; Hi3515: page 3-50, `hi3515v100--Hi3515-Datasheet.txt` line 9618).";
+
+        enum DMAC_INT_ERR_STAT1_ch3_int_err_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "ch3_int_err_stat";
+            desc = "Status of the masked error interrupt of channel 3";
+            sw = r;
+            hw = w;
+            encode = DMAC_INT_ERR_STAT1_ch3_int_err_stat_enum;
+            reset = 0x0;
+        } ch3_int_err_stat[3:3];
+
+`ifdef HISI_DMAC_8CH
+        enum DMAC_INT_ERR_STAT1_ch4_int_err_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "ch4_int_err_stat";
+            desc = "Status of the masked error interrupt of channel 4";
+            sw = r;
+            hw = w;
+            encode = DMAC_INT_ERR_STAT1_ch4_int_err_stat_enum;
+            reset = 0x0;
+        } ch4_int_err_stat[4:4];
+
+        enum DMAC_INT_ERR_STAT1_ch5_int_err_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "ch5_int_err_stat";
+            desc = "Status of the masked error interrupt of channel 5";
+            sw = r;
+            hw = w;
+            encode = DMAC_INT_ERR_STAT1_ch5_int_err_stat_enum;
+            reset = 0x0;
+        } ch5_int_err_stat[5:5];
+
+        enum DMAC_INT_ERR_STAT1_ch6_int_err_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "ch6_int_err_stat";
+            desc = "Status of the masked error interrupt of channel 6";
+            sw = r;
+            hw = w;
+            encode = DMAC_INT_ERR_STAT1_ch6_int_err_stat_enum;
+            reset = 0x0;
+        } ch6_int_err_stat[6:6];
+
+        enum DMAC_INT_ERR_STAT1_ch7_int_err_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "ch7_int_err_stat";
+            desc = "Status of the masked error interrupt of channel 7";
+            sw = r;
+            hw = w;
+            encode = DMAC_INT_ERR_STAT1_ch7_int_err_stat_enum;
+            reset = 0x0;
+        } ch7_int_err_stat[7:7];
+`endif
+
+        enum DMAC_INT_ERR_STAT1_ch2_int_err_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "ch2_int_err_stat";
+            desc = "Status of the masked error interrupt of channel 2";
+            sw = r;
+            hw = w;
+            encode = DMAC_INT_ERR_STAT1_ch2_int_err_stat_enum;
+            reset = 0x0;
+        } ch2_int_err_stat[2:2];
+
+        enum DMAC_INT_ERR_STAT1_ch1_int_err_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "ch1_int_err_stat";
+            desc = "Status of the masked error interrupt of channel 1";
+            sw = r;
+            hw = w;
+            encode = DMAC_INT_ERR_STAT1_ch1_int_err_stat_enum;
+            reset = 0x0;
+        } ch1_int_err_stat[1:1];
+
+        enum DMAC_INT_ERR_STAT1_ch0_int_err_stat_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "ch0_int_err_stat";
+            desc = "Status of the masked error interrupt of channel 0";
+            sw = r;
+            hw = w;
+            encode = DMAC_INT_ERR_STAT1_ch0_int_err_stat_enum;
+            reset = 0x0;
+        } ch0_int_err_stat[0:0];
+    } DMAC_INT_ERR_STAT1 @ 0x48;
+`endif
+
+    eHISI_DMAC_CH CH[`HISI_DMAC_NCH] @ 0x100 += 0x20;
 };
 
 `endif
