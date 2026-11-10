@@ -1,14 +1,16 @@
 `ifndef HISI_IVE_RDL
 `define HISI_IVE_RDL
 
-// Also instantiated for the Hi3518EV200 / Hi3516CV200 (data sheet Hi3518E V20X/Hi3516C V200 issue 02 section 8.4, base 0x206A0000, VIC interrupt 21): that data sheet gives only the
-// register summary (IVE_START 0x0, INT_EN 0x4, INT_RW 0x8, INT_STATUS 0xC, LIST_POINTER 0x10, IVE_STATUS 0x14, IVE_TASK_ID 0x18, same names and offsets as here) and no bit tables,
-// so the field layout below is the Hi3520D data sheet's and is unverified for that chip.
+// Shared by every chip with the 7-register IVE control block. Verified word for word against the Hi3516C V100 (data sheet issue 00B02, chapter 9, base 0x205E_0000, VIC 21),
+// Hi3518A/C V100 (issue 01, chapter 9, 0x205E_0000, VIC 21), Hi3518E V100 (issue 03, chapter 9, 0x205E_0000) and Hi3516 V100 (Chinese issue 00B60, chapter 11, base 0x2013_0000)
+// data sheets: identical offsets, bit ranges, access types and resets. The newer generation (Hi3516A/D, Hi3516AV200, Hi3516CV300, Hi3519V101, Hi3518EV200/Hi3516CV200) keeps the same
+// seven registers (same names and offsets, bit tables not published) and adds the counters/clock-gating registers at 0x30-0x6C of the register summary; those are modelled below
+// under `IVE_EXT_REGS` (define it in the chip's defines.rdl) as whole-register fields because no data sheet gives their bit layout.
 
 regfile eHISI_IVE {
     name = "HiSilicon intelligent video engine";
     desc = "
-    HiSilicon Intelligent Video Engine (IVE) at 0x205E0000, GIC interrupt ID 77: a hardware accelerator for image operators (DMA, 3x3 filter, YUV to RGB CSC, Sobel/Scharr gradients, canny magnitude and direction, erode, dilate, threshold, AND/OR/subtract of two images, integral image, histogram). It runs from a linked list of task nodes in DDR read over the AXI master (64-bit); the APB slave (32-bit) only holds the 7 control and status registers below (start, interrupt enable/raw/status, link-table start address, working status, completed task id). The node layout (Figure 10-1) and the operator parameters live in the linked list in memory, not in registers, so they are not modelled here. Registers are from Hi3520D/Hi3515A/Hi3515C data sheet issue 07, chapter 10 (`datasheet.txt` lines 31529-32830). Clock and reset: PERI_CRG (IVE bits). Not hardware verified.
+    HiSilicon Intelligent Video Engine (IVE) at 0x205E0000, GIC interrupt ID 77: a hardware accelerator for image operators (DMA, 3x3 filter, YUV to RGB CSC, Sobel/Scharr gradients, canny magnitude and direction, erode, dilate, threshold, AND/OR/subtract of two images, integral image, histogram). It runs from a linked list of task nodes in DDR read over the AXI master (64-bit); the APB slave (32-bit) only holds the 7 control and status registers below (start, interrupt enable/raw/status, link-table start address, working status, completed task id). The node layout (Figure 10-1) and the operator parameters live in the linked list in memory, not in registers, so they are not modelled here. Registers are from Hi3520D/Hi3515A/Hi3515C data sheet issue 07, chapter 10 (`datasheet.txt` lines 31529-32830), checked against the original Chinese edition (issue 02, `hi3520dv100--Hi3520D-Hi3515A-Hi3515C-original.txt` lines 34320-34620) and identical in the Hi3516C/Hi3518/Hi3518E/Hi3516 V100 data sheets (see the file header). Clock and reset: PERI_CRG (IVE bits). Not hardware verified.
     ";
 
     reg {
@@ -181,6 +183,83 @@ Data sheet 10.5 IVE_TASK_ID (offset 0x18, printed page 10-29, `datasheet.txt` li
             reset = 0x0;
         } ive_task_id[15:0];
     } IVE_TASK_ID @ 0x18;
+
+`ifdef IVE_EXT_REGS
+    // Registers of the newer IVE generation (Hi3518E V20X/Hi3516C V200 data sheet 8.4 Table 8-1, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` lines 49690-49735; the Hi3516A/D,
+    // Hi3516AV200, Hi3519V101 and Hi3516CV300 summaries list the same registers, the Hi3516AV200/Hi3519V101 ones without INT_DONE_CNT/INT_RD_CNT/INT_WR_CNT). Only the summary
+    // (offset, name, one-line description) is published; no bit tables, no reset values, so each is a whole 32-bit field of unknown layout.
+    reg {
+        name = "Cycles consumed by the preceding node";
+        desc = "NODE_CLK_VALUE: register for the number of cycles consumed by the preceding node (data sheet summary only; bit layout and reset not published).";
+        field { name = "node_clk_value"; desc = "Number of clock cycles consumed by the preceding node (layout not published)."; sw = r; hw = w; } node_clk_value[31:0];
+    } NODE_CLK_VALUE @ 0x30;
+
+    reg {
+        name = "Internal clock gating";
+        desc = "CLK_GT_EN: clock gating of the IVE internal modules (data sheet summary only; bit layout and reset not published).";
+        field { name = "clk_gt_en"; desc = "Clock gating enables of the IVE internal modules (layout not published)."; sw = rw; hw = r; } clk_gt_en[31:0];
+    } CLK_GT_EN @ 0x34;
+
+    reg {
+        name = "Processed node count";
+        desc = "NODE_DONE_CNT: register for the number of processed nodes (data sheet summary only).";
+        field { name = "node_done_cnt"; desc = "Number of processed nodes (layout not published)."; sw = r; hw = w; } node_done_cnt[31:0];
+    } NODE_DONE_CNT @ 0x40;
+
+    reg {
+        name = "Processed linked list count";
+        desc = "LIST_DONE_CNT: register for the number of processed linked lists (data sheet summary only).";
+        field { name = "list_done_cnt"; desc = "Number of processed linked lists (layout not published)."; sw = r; hw = w; } list_done_cnt[31:0];
+    } LIST_DONE_CNT @ 0x44;
+
+    reg {
+        name = "Node interrupts reported by the current linked list";
+        desc = "INT_DONE_CNT: count register for the node interrupts reported by the current linked list (Hi3518E V20X/Hi3516C V200 and Hi3516A/D summaries; not listed for the Hi3516AV200/Hi3519V101).";
+        field { name = "int_done_cnt"; desc = "Node interrupts reported by the current linked list (layout not published)."; sw = r; hw = w; } int_done_cnt[31:0];
+    } INT_DONE_CNT @ 0x48;
+
+    reg {
+        name = "Interrupts read by the current linked list";
+        desc = "INT_RD_CNT: count register for the interrupts that have been successfully read by the current linked list (Hi3518E V20X/Hi3516C V200 and Hi3516A/D summaries; not listed for the Hi3516AV200/Hi3519V101).";
+        field { name = "int_rd_cnt"; desc = "Interrupts read by the current linked list (layout not published)."; sw = r; hw = w; } int_rd_cnt[31:0];
+    } INT_RD_CNT @ 0x4C;
+
+    reg {
+        name = "Interrupts cleared by the current linked list";
+        desc = "INT_WR_CNT: count register for the interrupts that have been cleared by writing the current linked list (Hi3518E V20X/Hi3516C V200 and Hi3516A/D summaries; not listed for the Hi3516AV200/Hi3519V101).";
+        field { name = "int_wr_cnt"; desc = "Interrupts cleared by the current linked list (layout not published)."; sw = r; hw = w; } int_wr_cnt[31:0];
+    } INT_WR_CNT @ 0x50;
+
+    reg {
+        name = "AXI outstanding configuration";
+        desc = "AXI_INFO: read and write outstanding number register (data sheet summary only; bit layout and reset not published).";
+        field { name = "axi_info"; desc = "AXI read/write outstanding numbers (layout not published)."; sw = rw; hw = r; } axi_info[31:0];
+    } AXI_INFO @ 0x54;
+
+    reg {
+        name = "Overtime interrupt threshold";
+        desc = "IVE_OVER_TIME_THR: overtime interrupt threshold register (data sheet summary only; bit layout and reset not published).";
+        field { name = "ive_over_time_thr"; desc = "Operator overtime interrupt threshold in clock cycles (layout not published)."; sw = rw; hw = r; } ive_over_time_thr[31:0];
+    } IVE_OVER_TIME_THR @ 0x60;
+
+    reg {
+        name = "Operator working cycle counter";
+        desc = "IVE_OVER_TIME_CNT: register for the dynamic counting number of the operator working cycles (data sheet summary only).";
+        field { name = "ive_over_time_cnt"; desc = "Running count of the operator working cycles (layout not published)."; sw = r; hw = w; } ive_over_time_cnt[31:0];
+    } IVE_OVER_TIME_CNT @ 0x64;
+
+    reg {
+        name = "Cycles consumed by the preceding linked list";
+        desc = "CHAIN_STAT_CLK_VALUE: register for the number of cycles consumed by the preceding linked list (data sheet summary only).";
+        field { name = "chain_stat_clk_value"; desc = "Clock cycles consumed by the preceding linked list (layout not published)."; sw = r; hw = w; } chain_stat_clk_value[31:0];
+    } CHAIN_STAT_CLK_VALUE @ 0x68;
+
+    reg {
+        name = "Current linked list cycle counter";
+        desc = "CHAIN_CYCLE_CNT: register for the counting number of the current linked list cycles (data sheet summary only).";
+        field { name = "chain_cycle_cnt"; desc = "Running count of the current linked list cycles (layout not published)."; sw = r; hw = w; } chain_cycle_cnt[31:0];
+    } CHAIN_CYCLE_CNT @ 0x6C;
+`endif
 
 };
 
