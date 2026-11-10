@@ -1,0 +1,573 @@
+`ifndef HISI_SPACC_RDL
+`define HISI_SPACC_RDL
+
+// SPACC (Security Processing ACCelerator) of the Hi3516A V300 (Chinese data sheet section 13.1 'SPACC', register overview 13.1.5 / description 13.1.6, base 0x100C0000, address map
+// entry 'SPACC 寄存器 64KB'). It replaces the CIPHER block (HISI_CIPHER_MC.rdl) of the older chips: one register range covers the symmetric engine (DES, 3DES, AES, SM1, SM4; ECB, CBC,
+// CFB, OFB, CTR, CCM, GCM) and the hash engine (SHA1, SHA224, SHA256, SHA384, SHA512, SM3, HMAC). The TRNG, RSA and OTP user blocks are separate units at their own bases
+// (HISI_TRNG.rdl, HISI_RSA.rdl, HISI_OTP_USER.rdl); the key ladder (KLAD, 0x10070000) has no register description in the data sheet and no RDL. So this file is one block for one unit.
+//
+// Layout: channel 0 of each engine is a CPU-fed single-block channel (IV/DOUT/DIN, CHAN0_CIPHER_CTRL at 0x0400, CHAN0_HASH_CTRL at 0x0800); channels 1-7 are linked-list DMA channels
+// with input/output node queues, in the register groups 0x0400 + n x 0x80 (cipher, CIPHER_CHAN[0..6] = n 1..7) and 0x0800 + n x 0x80 (hash, HASH_CHAN[0..6]). Both engines support
+// SMMU translation (page table registers at 0x0440 / 0x0444). Channels can be made secure with SEC_CHN_CFG.
+//
+// Unknown: the data sheet does not describe the queue node format of channels 1-7, the state machine encodings, or how IV / GCM parameters are passed to those channels; there is no
+// vendor source for it in the workspace (the vendor SDK cipher v2 driver is not present). Not hardware verified. A different register layout from CIPHER / CIPHER_MC: do not mix the drivers.
+regfile eHISI_SPACC {
+    name = "SPACC (symmetric cipher + hash engine)";
+    desc = "
+    Symmetric cipher and hash engine of the Hi3516A V300 (data sheet 13.1). Eight symmetric channels and eight hash channels share the key registers and the algorithm cores.
+    Channel 0 is driven by the CPU (key in CIPHER_KEY, IV in CHAN0_CIPHER_IV, data in CHAN0_CIPHER_DIN / CHAN0_HASH_DAT_IN); channels 1-7 read their input and write their output through
+    node queues in memory (CIPHER_CHAN / HASH_CHAN groups). Register groups with an index in the data sheet (n = channel 1..7, m = channel 0..7, k = word 0..3, j = word 0..7) are modeled as arrays.
+    Register table: `hi3516av300--Hi3516AV300-Datasheet.txt` lines 70370-72736, base 0x100C0000; see docs/rdl-campaign/spacc.md in the workspace for the audit.
+    ";
+
+    enum SPACC_alg_sel_enum {
+        DES  = 0x0 { desc = "DES."; };
+        TDES = 0x1 { desc = "3DES."; };
+        AES  = 0x2 { desc = "AES."; };
+        SM4  = 0x3 { desc = "SM4."; };
+        SM1  = 0x4 { desc = "SM1."; };
+    };
+
+    enum SPACC_chn_alg_sel_enum {
+        DES      = 0x0 { desc = "DES."; };
+        TDES     = 0x1 { desc = "3DES."; };
+        AES      = 0x2 { desc = "AES."; };
+        SM4      = 0x3 { desc = "SM4."; };
+        SM1      = 0x4 { desc = "SM1."; };
+        DMA_COPY = 0x5 { desc = "DMA copy (data is moved without an algorithm; channels 1-7 only)."; };
+    };
+
+    enum SPACC_alg_mode_enum {
+        ECB = 0x0 { desc = "ECB mode."; };
+        CBC = 0x1 { desc = "CBC mode."; };
+        CFB = 0x2 { desc = "CFB mode (AES, DES, 3DES, SM1)."; };
+        OFB = 0x3 { desc = "OFB mode (AES, DES, 3DES, SM1)."; };
+        CTR = 0x4 { desc = "CTR mode (AES and SM4)."; };
+        CCM = 0x5 { desc = "CCM mode (AES)."; };
+        GCM = 0x6 { desc = "GCM mode (AES)."; };
+    };
+
+    enum SPACC_hash_alg_enum {
+        SHA1   = 0x0 { desc = "SHA-1."; };
+        SHA224 = 0x1 { desc = "SHA-224."; };
+        SHA256 = 0x2 { desc = "SHA-256."; };
+        SHA384 = 0x3 { desc = "SHA-384."; };
+        SHA512 = 0x4 { desc = "SHA-512."; };
+        SM3    = 0x5 { desc = "SM3."; };
+    };
+
+    reg {
+        name = "CHAN0_CIPHER_IV";
+        desc = "IV input/output registers of symmetric channel 0, four words (k = 0..3) at 0x0000 + k x 0x04. Little-endian. If CHAN0_CIPHER_CTRL.sym_ch0_ivin_sel = 0 the logic does not re-read the register; if it is 1 the logic re-reads it: AES/SM1/SM4 use all 128 bits, DES/3DES use the low 64 bits. Data sheet 13.1.6 CHAN0_CIPHER_IV (printed page 13-16).";
+        field { name = "chan0_cipher_iv"; desc = "IV input or output vector of channel 0, little-endian."; sw = rw; hw = r; reset = 0x0; } chan0_cipher_iv[31:0];
+    } CHAN0_CIPHER_IV[4] @ 0x0 += 0x4;
+
+    reg {
+        name = "CHANn_CIPHER_IVOUT";
+        desc = "IV output registers of channels 1-7: channel n (n = 1..7) at 0x0000 + n x 0x10 + k x 0x04 (k = 0..3), i.e. channel 1 at 0x0010-0x001C ... channel 7 at 0x0070-0x007C; the 28 registers are one array, register index = (n - 1) x 4 + k. Little-endian. Not used in ECB mode. AES/SM1/SM4: all 128 bits valid; DES/3DES: bits [63:0]. Data sheet 13.1.6 CHANN_CIPHER_IVOUT (printed page 13-16). Not hardware verified (compare the Hi3520D CIPHER_MC IVOUT layout, which differs).";
+        field { name = "chann_cipher_ivout"; desc = "Vector output of channel n after the operation, little-endian."; sw = r; hw = w; reset = 0x0; } chann_cipher_ivout[31:0];
+    } CHANN_CIPHER_IVOUT[28] @ 0x10 += 0x4;
+
+    reg {
+        name = "CHAN0_CIPHER_DOUT";
+        desc = "Output registers of symmetric channel 0, four words (k = 0..3) at 0x80 + k x 0x04, little-endian. AES/SM1: 1-CFB only bit [0] valid, 8-CFB bits [7:0], 128-CFB and all other modes all 128 bits. SM4: all 128 bits. DES/3DES: 1-CFB/1-OFB bit [0], 8-CFB/8-OFB bits [7:0], 64-CFB/64-OFB and all other modes bits [63:0]. Data sheet 13.1.6 CHAN0_CIPHER_DOUT (printed page 13-17).";
+        field { name = "chan0_cipher_dout"; desc = "Channel 0 output data, little-endian."; sw = r; hw = w; reset = 0x0; } chan0_cipher_dout[31:0];
+    } CHAN0_CIPHER_DOUT[4] @ 0x80 += 0x4;
+
+    reg {
+        name = "CIPHER_KEY";
+        desc = "CPU-configured key registers: 8 channels x 8 words. The key of channel m (host_key of channel m, m = 0..7) is at 0x0100 + m x 0x20 + j x 0x04 (j = 0..7); 64 registers in one array, index = m x 8 + j. Write-only, reads return 0, little-endian. DES: key[63:0]. 3DES: three keys key[63:0], key[127:64], key[191:128] (two keys: the first two). AES: 128-bit key[127:0], 192-bit key[191:0], 256-bit key[255:0]. SM1: fixed 384-bit key (data sheet 'fixed 384-bit key length'). SM4: fixed 128-bit key. Data sheet 13.1.6 CIPHER_KEY (printed page 13-18).";
+        field { name = "cipher_key"; desc = "Key input of the symmetric engine (reads return 0)."; sw = w; hw = r; reset = 0x0; } cipher_key[31:0];
+    } CIPHER_KEY[64] @ 0x100 += 0x4;
+
+    reg {
+        name = "SEC_CHN_CFG";
+        desc = "Secure channel configuration. Configure it only while the channels are idle. A set lock bit makes the corresponding configuration read-only until reset (only the secure CPU can write 1; software cannot clear it). Data sheet 13.1.6 SEC_CHN_CFG (offset 0x0304, printed page 13-19).";
+        field { name = "reserved_31_25"; desc = "Reserved (reads 0x0). Documented by the data sheet as reserved."; sw = r; hw = na; reset = 0x0; } reserved_31_25[31:25];
+        field { name = "hash_sec_chn_cfg_lock"; desc = "Lock for hash_sec_chn_cfg. 0: not locked; 1: locked (the secure CPU may write 1 only; cleared by reset)."; sw = rw; hw = r; reset = 0x0; } hash_sec_chn_cfg_lock[24:24];
+        field { name = "hash_sec_chn_cfg"; desc = "Secure hash channels: bit i = 1 makes hash channel i a secure channel, 0 a non-secure channel."; sw = rw; hw = r; reset = 0x0; } hash_sec_chn_cfg[23:16];
+        field { name = "reserved_15_9"; desc = "Reserved (reads 0x0). Documented by the data sheet as reserved."; sw = r; hw = na; reset = 0x0; } reserved_15_9[15:9];
+        field { name = "cipher_sec_chn_cfg_lock"; desc = "Lock for cipher_sec_chn_cfg. 0: not locked; 1: locked (the secure CPU may write 1 only; cleared by reset)."; sw = rw; hw = r; reset = 0x0; } cipher_sec_chn_cfg_lock[8:8];
+        field { name = "cipher_sec_chn_cfg"; desc = "Secure symmetric channels: bit i = 1 makes cipher channel i a secure channel, 0 a non-secure channel."; sw = rw; hw = r; reset = 0x0; } cipher_sec_chn_cfg[7:0];
+    } SEC_CHN_CFG @ 0x304;
+
+    reg {
+        name = "SPACC_VERSION";
+        desc = "SPACC version register. The value is a macro definition set at synthesis (reset 0 in the data sheet). Data sheet 13.1.6 SPACC_VERSION (offset 0x0308, printed page 13-20).";
+        field { name = "spacc_version"; desc = "SPACC version (macro value)."; sw = rw; hw = r; reset = 0x0; } spacc_version[31:0];
+    } SPACC_VERSION @ 0x308;
+
+    reg {
+        name = "MEM_EMA_CFG";
+        desc = "Memory timing (EMA) configuration of the SPACC internal register files (rft = two-port, rfs = single-port). Total reset 0x0000A413. Data sheet 13.1.6 MEM_EMA_CFG (offset 0x0310).";
+        field { name = "reserved_31_16"; desc = "Reserved (reads 0x0). Documented by the data sheet as reserved."; sw = r; hw = na; reset = 0x0; } reserved_31_16[31:16];
+        field { name = "rft_colldisn"; desc = "colldisn signal of the rft memory."; sw = rw; hw = r; reset = 0x1; } rft_colldisn[15:15];
+        field { name = "rft_emasa"; desc = "emasa signal of the rft memory."; sw = rw; hw = r; reset = 0x0; } rft_emasa[14:14];
+        field { name = "rft_emab"; desc = "emab signal of the rft memory."; sw = rw; hw = r; reset = 0x4; } rft_emab[13:11];
+        field { name = "rft_emaa"; desc = "emaa signal of the rft memory."; sw = rw; hw = r; reset = 0x4; } rft_emaa[10:8];
+        field { name = "reserved_7_6"; desc = "Reserved (reads 0x0). Documented by the data sheet as reserved."; sw = r; hw = na; reset = 0x0; } reserved_7_6[7:6];
+        field { name = "rfs_emaw"; desc = "emaw signal of the rfs memory."; sw = rw; hw = r; reset = 0x1; } rfs_emaw[5:4];
+        field { name = "reserved_3"; desc = "Reserved (reads 0x0). Documented by the data sheet as reserved."; sw = r; hw = na; reset = 0x0; } reserved_3[3:3];
+        field { name = "rfs_ema"; desc = "ema signal of the rfs memory."; sw = rw; hw = r; reset = 0x3; } rfs_ema[2:0];
+    } MEM_EMA_CFG @ 0x310;
+
+    reg {
+        name = "KEY_ST";
+        desc = "Status of the key used by the cores. Data sheet 13.1.6 KEY_ST (offset 0x0314, printed page 13-21).";
+        field { name = "reserved_31_2"; desc = "Reserved (reads 0x0). Documented by the data sheet as reserved."; sw = r; hw = na; reset = 0x0; } reserved_31_2[31:2];
+        field { name = "key_req_cur_st"; desc = "Current state of the key request state machine (encoding not documented)."; sw = r; hw = w; reset = 0x0; } key_req_cur_st[1:0];
+    } KEY_ST @ 0x314;
+
+    reg {
+        name = "CALC_ST0";
+        desc = "Status of the calculation state machines. Total reset 0x00005000. Data sheet 13.1.6 CALC_ST0 (offset 0x0318).";
+        field { name = "reserved_31_16"; desc = "Reserved (reads 0x0). Documented by the data sheet as reserved."; sw = r; hw = na; reset = 0x0; } reserved_31_16[31:16];
+        field { name = "hdcp_key_ksv_crc4"; desc = "CRC4 of the HDCP key KSV (reset 0x5)."; sw = r; hw = w; reset = 0x5; } hdcp_key_ksv_crc4[15:12];
+        field { name = "hash_calc_cur_st"; desc = "Current state of the hash state machine."; sw = r; hw = w; reset = 0x0; } hash_calc_cur_st[11:8];
+        field { name = "reserved_7_4"; desc = "Reserved (reads 0x0). Documented by the data sheet as reserved."; sw = r; hw = na; reset = 0x0; } reserved_7_4[7:4];
+        field { name = "cipher_calc_cur_st"; desc = "Current state of the cipher state machine."; sw = r; hw = w; reset = 0x0; } cipher_calc_cur_st[3:0];
+    } CALC_ST0 @ 0x318;
+
+    reg {
+        name = "CALC_ERR";
+        desc = "Algorithm core alarm status. Data sheet 13.1.6 CALC_ERR (offset 0x0320, printed page 13-21). The data sheet leaves the names of bit 3 and the description of bit 1 blank in the extracted text; the names below follow the register-map transcription (out_smmu_page_unvlid, alg_len_err), see docs/rdl-campaign/spacc.md.";
+        field { name = "reserved_31_5"; desc = "Reserved (reads 0x0). Documented by the data sheet as reserved."; sw = r; hw = na; reset = 0x0; } reserved_31_5[31:5];
+        field { name = "klad_key_write_err"; desc = "Key write error."; sw = r; hw = w; reset = 0x0; } klad_key_write_err[4:4];
+        field { name = "out_smmu_page_unvlid"; desc = "SMMU invalid for the node or the data (output side). The data sheet prints the same text as for bit 2."; sw = r; hw = w; reset = 0x0; } out_smmu_page_unvlid[3:3];
+        field { name = "smmu_page_unvlid"; desc = "SMMU invalid for the node or the data."; sw = r; hw = w; reset = 0x0; } smmu_page_unvlid[2:2];
+        field { name = "alg_len_err"; desc = "Algorithm length error: data length 0 with an empty command or symmetric algorithm, or hash length 0."; sw = r; hw = w; reset = 0x0; } alg_len_err[1:1];
+        field { name = "klad_key_use_err"; desc = "Key use error."; sw = r; hw = w; reset = 0x0; } klad_key_use_err[0:0];
+    } CALC_ERR @ 0x320;
+
+    regfile eHISI_SPACC_HASH_STATE {
+        name = "SPACC hash state of one channel";
+        desc = "Hash input/output state registers of one channel m (m = 0..7); instantiated as HASH_STATE[0..7] at 0x0340 + m x 0x08.";
+
+        reg {
+            name = "CHANm_HASH_STATE_VAL";
+            desc = "Hash state value of channel m (the intermediate or result hash word selected by CHANm_HASH_STATE_VAL_ADDR). Data sheet 13.1.6 CHANN_HASH_STATE_VAL (offset 0x340 + m x 0x8, printed page 13-22).";
+            field { name = "hash_state_val"; desc = "Hash result state value."; sw = rw; hw = r; reset = 0x0; } hash_state_val[31:0];
+        } CHANN_HASH_STATE_VAL @ 0x0;
+
+        reg {
+            name = "CHANm_HASH_STATE_VAL_ADDR";
+            desc = "Word index of the hash state value register of channel m (up to 16 words, 512 bits). Data sheet 13.1.6 CHANN_HASH_STATE_VAL_ADDR (offset 0x344 + m x 0x8).";
+            field { name = "reserved_31_4"; desc = "Reserved (reads 0x0). Documented by the data sheet as reserved."; sw = r; hw = na; reset = 0x0; } reserved_31_4[31:4];
+            field { name = "hash_state_val_addr"; desc = "Word index of the hash state value to access."; sw = rw; hw = r; reset = 0x0; } hash_state_val_addr[3:0];
+        } CHANN_HASH_STATE_VAL_ADDR @ 0x4;
+
+    };
+    eHISI_SPACC_HASH_STATE HASH_STATE[8] @ 0x0340 += 0x8;
+
+    reg {
+        name = "SPACC_CALC_CRG_CFG";
+        desc = "Clock gating and soft reset of the internal algorithm cores. Total reset 0x80002AAA. Data sheet 13.1.6 SPACC_CALC_CRG_CFG (offset 0x039C, printed page 13-22).";
+        field { name = "spacc_core_auto_cken_bypass"; desc = "Algorithm core auto clock gating switch. 0: auto clock gating enabled; 1: auto clock gating bypassed (off). Reset 1."; sw = rw; hw = r; reset = 0x1; } spacc_core_auto_cken_bypass[31:31];
+        field { name = "spacc_rft_mem_wr_clk_gt_en"; desc = "rft memory write clock gating. 0: auto clock gating off; 1: on."; sw = rw; hw = r; reset = 0x0; } spacc_rft_mem_wr_clk_gt_en[30:30];
+        field { name = "spacc_rft_mem_rd_clk_gt_en"; desc = "rft memory read clock gating. 0: auto clock gating off; 1: on."; sw = rw; hw = r; reset = 0x0; } spacc_rft_mem_rd_clk_gt_en[29:29];
+        field { name = "spacc_rfs_mem_clk_gt_en"; desc = "rfs memory clock gating. 0: auto clock gating off; 1: on."; sw = rw; hw = r; reset = 0x0; } spacc_rfs_mem_clk_gt_en[28:28];
+        field { name = "reserved_27_14"; desc = "Reserved (reads 0x0). Documented by the data sheet as reserved."; sw = r; hw = na; reset = 0x0; } reserved_27_14[27:14];
+        field { name = "spacc_aes_core_clk_en"; desc = "AES core clock enable. 0: disabled; 1: enabled. Reset 1."; sw = rw; hw = r; reset = 0x1; } spacc_aes_core_clk_en[13:13];
+        field { name = "spacc_aes_core_srst_req"; desc = "AES core soft reset request. 0: no reset; 1: reset."; sw = rw; hw = r; reset = 0x0; } spacc_aes_core_srst_req[12:12];
+        field { name = "spacc_des_core_clk_en"; desc = "DES core clock enable. 0: disabled; 1: enabled. Reset 1."; sw = rw; hw = r; reset = 0x1; } spacc_des_core_clk_en[11:11];
+        field { name = "spacc_des_core_srst_req"; desc = "DES core soft reset request. 0: no reset; 1: reset."; sw = rw; hw = r; reset = 0x0; } spacc_des_core_srst_req[10:10];
+        field { name = "spacc_sm1_core_clk_en"; desc = "SM1 core clock enable. 0: disabled; 1: enabled. Reset 1."; sw = rw; hw = r; reset = 0x1; } spacc_sm1_core_clk_en[9:9];
+        field { name = "spacc_sm1_core_srst_req"; desc = "SM1 core soft reset request. 0: no reset; 1: reset."; sw = rw; hw = r; reset = 0x0; } spacc_sm1_core_srst_req[8:8];
+        field { name = "spacc_sm3_core_clk_en"; desc = "SM3 core clock enable. 0: disabled; 1: enabled. Reset 1."; sw = rw; hw = r; reset = 0x1; } spacc_sm3_core_clk_en[7:7];
+        field { name = "spacc_sm3_core_srst_req"; desc = "SM3 core soft reset request. 0: no reset; 1: reset."; sw = rw; hw = r; reset = 0x0; } spacc_sm3_core_srst_req[6:6];
+        field { name = "spacc_sm4_core_clk_en"; desc = "SM4 core clock enable. 0: disabled; 1: enabled. Reset 1."; sw = rw; hw = r; reset = 0x1; } spacc_sm4_core_clk_en[5:5];
+        field { name = "spacc_sm4_core_srst_req"; desc = "SM4 core soft reset request. 0: no reset; 1: reset."; sw = rw; hw = r; reset = 0x0; } spacc_sm4_core_srst_req[4:4];
+        field { name = "spacc_sha1_core_clk_en"; desc = "SHA1 core clock enable. 0: disabled; 1: enabled. Reset 1."; sw = rw; hw = r; reset = 0x1; } spacc_sha1_core_clk_en[3:3];
+        field { name = "spacc_sha1_core_srst_req"; desc = "SHA1 core soft reset request. 0: no reset; 1: reset."; sw = rw; hw = r; reset = 0x0; } spacc_sha1_core_srst_req[2:2];
+        field { name = "spacc_sha2_core_clk_en"; desc = "SHA2 core clock enable. 0: disabled; 1: enabled. Reset 1."; sw = rw; hw = r; reset = 0x1; } spacc_sha2_core_clk_en[1:1];
+        field { name = "spacc_sha2_core_srst_req"; desc = "SHA2 core soft reset request. 0: no reset; 1: reset."; sw = rw; hw = r; reset = 0x0; } spacc_sha2_core_srst_req[0:0];
+    } SPACC_CALC_CRG_CFG @ 0x39C;
+
+    reg {
+        name = "CHAN0_CIPHER_CTRL";
+        desc = "Encryption/decryption control register of symmetric channel 0 (single-block channel: the CPU writes key, IV and data through CHAN0_CIPHER_DIN). Data sheet 13.1.6 CHAN0_CIPHER_CTRL (offset 0x0400, printed pages 13-24..13-27). The CCM/GCM fields exist only here; the linked-list channels 1-7 have no such fields in the data sheet (the node format is not described).";
+        field { name = "reserved_31_25"; desc = "Reserved (reads 0x0). Documented by the data sheet as reserved."; sw = r; hw = na; reset = 0x0; } reserved_31_25[31:25];
+        field { name = "sym_ch0_ccm_gcm_pc_last"; desc = "CCM/GCM last block flag. 0: not the last block; 1: last block."; sw = rw; hw = r; reset = 0x0; } sym_ch0_ccm_gcm_pc_last[24:24];
+        field { name = "sym_ch0_gcm_iv_len"; desc = "GCM IV length is (gcm_iv_len + 1) bytes."; sw = rw; hw = r; reset = 0x0; } sym_ch0_gcm_iv_len[23:20];
+        field { name = "reserved_19_17"; desc = "Reserved (reads 0x0). Documented by the data sheet as reserved."; sw = r; hw = na; reset = 0x0; } reserved_19_17[19:17];
+        field { name = "sym_ch0_odd_even_key_sel"; desc = "Odd/even key select of channel 0. 0: use the even key; 1: use the odd key."; sw = rw; hw = r; reset = 0x0; } sym_ch0_odd_even_key_sel[16:16];
+        field { name = "sym_ch0_ivin_sel"; desc = "IV input select, channel 0 only. 0: ivin need not be configured; 1: ivin must be configured (the logic re-reads CHAN0_CIPHER_IV)."; sw = rw; hw = r; reset = 0x0; } sym_ch0_ivin_sel[15:15];
+        field { name = "sym_ch0_key_sel"; desc = "Key source. 0: key configured by the CPU (CIPHER_KEY); 1: hardware key (key ladder)."; sw = rw; hw = r; reset = 0x0; } sym_ch0_key_sel[14:14];
+        field { name = "sym_ch0_ccm_gcm_input_flag"; desc = "Input data type in GCM/CCM mode. GCM: 01 = P or C, other = A. CCM: 10 = P or C, other = N."; sw = rw; hw = r; reset = 0x0; } sym_ch0_ccm_gcm_input_flag[13:12];
+        field { name = "sym_ch0_key_length"; desc = "Key length. AES: 00 = 128, 01 = 192, 10 = 256, 11 = 128 bits. 3DES: 00/01/10 = three keys, 11 = two keys. SM1: fixed 384 bits. SM4: fixed 128 bits."; sw = rw; hw = r; reset = 0x0; } sym_ch0_key_length[11:10];
+        field { name = "sym_ch0_dat_width"; desc = "Data width. DES/3DES: 00 = 64, 01 = 8, 10 = 1, 11 = 64 bits. AES/SM1: 00 = 128, 01 = 8, 10 = 1, 11 = 128 bits. SM4: fixed 128 bits."; sw = rw; hw = r; reset = 0x0; } sym_ch0_dat_width[9:8];
+        field { name = "sym_ch0_decrypt"; desc = "0: encrypt; 1: decrypt."; sw = rw; hw = r; reset = 0x0; } sym_ch0_decrypt[7:7];
+        field { name = "sym_ch0_alg_sel"; desc = "Algorithm. 000 DES, 001 3DES, 010 AES, 011 SM4, 100 SM1, other values select AES."; sw = rw; hw = r; encode = SPACC_alg_sel_enum; reset = 0x0; } sym_ch0_alg_sel[6:4];
+        field { name = "sym_ch0_alg_mode"; desc = "Work mode. AES: 000 ECB, 001 CBC, 010 CFB, 011 OFB, 100 CTR, 101 CCM, 110 GCM, other ECB. DES/3DES/SM1: 000 ECB, 001 CBC, 010 CFB, 011 OFB, other ECB. SM4: 000 ECB, 001 CBC, 100 CTR, other ECB."; sw = rw; hw = r; encode = SPACC_alg_mode_enum; reset = 0x0; } sym_ch0_alg_mode[3:1];
+        field { name = "sym_ch0_start"; desc = "Channel 0 start (input transfer end) signal. 0: not started (input transfer finished); 1: started (input transfer not finished)."; sw = rw; hw = r; reset = 0x0; } sym_ch0_start[0:0];
+    } CHAN0_CIPHER_CTRL @ 0x400;
+
+    reg {
+        name = "CIPHER_INT_STATUS";
+        desc = "Symmetric-algorithm interrupt status (masked by CIPHER_INT_EN). Total reset 0. Data sheet 13.1.6 CIPHER_INT_STATUS (offset 0x0404, printed page 13-27). Here the data sheet itself puts the output queue bits at [15:8] and the input queue bits at [7:1], the layout hardware showed for the Hi3520D CIPHER_MC; the Hi3520D data sheet had them swapped.";
+        field { name = "reserved_31_17"; desc = "Reserved (reads 0x0). Documented by the data sheet as reserved."; sw = r; hw = na; reset = 0x0; } reserved_31_17[31:17];
+        field { name = "ahb_bus_err_int"; desc = "AHB bus error interrupt."; sw = r; hw = w; reset = 0x0; } ahb_bus_err_int[16:16];
+        field { name = "cipher_chn_obuf_int"; desc = "Output queue interrupt of channels 7..0 (bit 8 + n = channel n)."; sw = r; hw = w; reset = 0x0; } cipher_chn_obuf_int[15:8];
+        field { name = "cipher_chn_ibuf_int"; desc = "Input queue interrupt of channels 7..1 (bit n = channel n)."; sw = r; hw = w; reset = 0x0; } cipher_chn_ibuf_int[7:1];
+        field { name = "reserved_0"; desc = "Reserved (reads 0x0). Documented by the data sheet as reserved."; sw = r; hw = na; reset = 0x0; } reserved_0[0:0];
+    } CIPHER_INT_STATUS @ 0x404;
+
+    reg {
+        name = "CIPHER_INT_EN";
+        desc = "Symmetric-algorithm interrupt enable. Data sheet 13.1.6 CIPHER_INT_EN (offset 0x0408, printed page 13-28).";
+        field { name = "cipher_nsec_int_en"; desc = "Non-secure (normal CPU) interrupt output enable. 0: disabled; 1: enabled."; sw = rw; hw = r; reset = 0x0; } cipher_nsec_int_en[31:31];
+        field { name = "cipher_sec_int_en"; desc = "Secure CPU interrupt output enable. 0: disabled; 1: enabled."; sw = rw; hw = r; reset = 0x0; } cipher_sec_int_en[30:30];
+        field { name = "ahb_bus_int_en"; desc = "AHB bus interrupt enable. 0: disabled; 1: enabled."; sw = rw; hw = r; reset = 0x0; } ahb_bus_int_en[29:29];
+        field { name = "reserved_28_17"; desc = "Reserved (reads 0x0). Documented by the data sheet as reserved."; sw = r; hw = na; reset = 0x0; } reserved_28_17[28:17];
+        field { name = "ahb_bus_err_int_en"; desc = "AHB bus error interrupt enable."; sw = rw; hw = r; reset = 0x0; } ahb_bus_err_int_en[16:16];
+        field { name = "cipher_chn_obuf_en"; desc = "Output queue interrupt enable of channels 7..0."; sw = rw; hw = r; reset = 0x0; } cipher_chn_obuf_en[15:8];
+        field { name = "cipher_chn_ibuf_en"; desc = "Input queue interrupt enable of channels 7..1."; sw = rw; hw = r; reset = 0x0; } cipher_chn_ibuf_en[7:1];
+        field { name = "reserved_0"; desc = "Reserved (reads 0x0). Documented by the data sheet as reserved."; sw = r; hw = na; reset = 0x0; } reserved_0[0:0];
+    } CIPHER_INT_EN @ 0x408;
+
+    reg {
+        name = "CIPHER_INT_RAW";
+        desc = "Symmetric-algorithm raw interrupt status. Data sheet access RWC; modeled as rw + woclr (write 1 to clear). Data sheet 13.1.6 CIPHER_INT_RAW (offset 0x040C, printed page 13-28).";
+        field { name = "reserved_31_17"; desc = "Reserved (reads 0x0). Documented by the data sheet as reserved."; sw = r; hw = na; reset = 0x0; } reserved_31_17[31:17];
+        field { name = "ahb_bus_err_int_raw"; desc = "Raw AHB bus error interrupt. 0: none; 1: pending. Write 1 to clear."; sw = rw; onwrite = woclr; hw = w; reset = 0x0; } ahb_bus_err_int_raw[16:16];
+        field { name = "cipher_chn_obuf_raw"; desc = "Raw output queue interrupt of channels 7..0. Write 1 to clear."; sw = rw; onwrite = woclr; hw = w; reset = 0x0; } cipher_chn_obuf_raw[15:8];
+        field { name = "cipher_chn_ibuf_raw"; desc = "Raw input queue interrupt of channels 7..1. Write 1 to clear."; sw = rw; onwrite = woclr; hw = w; reset = 0x0; } cipher_chn_ibuf_raw[7:1];
+        field { name = "reserved_0"; desc = "Reserved (reads 0x0). Documented by the data sheet as reserved."; sw = r; hw = na; reset = 0x0; } reserved_0[0:0];
+    } CIPHER_INT_RAW @ 0x40C;
+
+    reg {
+        name = "CIPHER_IN_SMMU_EN";
+        desc = "SMMU enable (bypass control) for the input-side reads of channels 1-7. Data sheet 13.1.6 CIPHER_IN_SMMU_EN (offset 0x0410, printed page 13-29).";
+        field { name = "reserved_31_23"; desc = "Reserved (reads 0x0). Documented by the data sheet as reserved."; sw = r; hw = na; reset = 0x0; } reserved_31_23[31:23];
+        field { name = "cipher_in_chann_rd_node_smmu_en"; desc = "SMMU enable for the input node read of channels 7..1 (bit 16 + n - 1 = channel n)."; sw = rw; hw = r; reset = 0x0; } cipher_in_chann_rd_node_smmu_en[22:16];
+        field { name = "reserved_15_7"; desc = "Reserved (reads 0x0). Documented by the data sheet as reserved."; sw = r; hw = na; reset = 0x0; } reserved_15_7[15:7];
+        field { name = "cipher_in_chann_rd_dat_smmu_en"; desc = "SMMU enable for the input data read of channels 7..1 (bit n - 1 = channel n)."; sw = rw; hw = r; reset = 0x0; } cipher_in_chann_rd_dat_smmu_en[6:0];
+    } CIPHER_IN_SMMU_EN @ 0x410;
+
+    reg {
+        name = "OUT_SMMU_EN";
+        desc = "SMMU enable for the output-side accesses of channels 1-7. Data sheet name: OUT_SMMU_EN; prefixed CIPHER_ here to be distinguishable from the hash register. Data sheet 13.1.6 OUT_SMMU_EN (offset 0x0414, printed page 13-29).";
+        field { name = "reserved_31_23"; desc = "Reserved (reads 0x0). Documented by the data sheet as reserved."; sw = r; hw = na; reset = 0x0; } reserved_31_23[31:23];
+        field { name = "out_chann_rd_node_smmu_en"; desc = "SMMU enable for the output node read of channels 7..1."; sw = rw; hw = r; reset = 0x0; } out_chann_rd_node_smmu_en[22:16];
+        field { name = "reserved_15_7"; desc = "Reserved (reads 0x0). Documented by the data sheet as reserved."; sw = r; hw = na; reset = 0x0; } reserved_15_7[15:7];
+        field { name = "out_chann_wr_dat_smmu_en"; desc = "SMMU enable for the output data write of channels 7..1."; sw = rw; hw = r; reset = 0x0; } out_chann_wr_dat_smmu_en[6:0];
+    } CIPHER_OUT_SMMU_EN @ 0x414;
+
+    reg {
+        name = "CHAN0_CIPHER_DIN";
+        desc = "Data input registers of symmetric channel 0, four words (k = 0..3) at 0x0420 + k x 0x04 (one 128-bit block). Data sheet 13.1.6 CHAN0_CIPHER_DIN (printed page 13-30).";
+        field { name = "chan0_cipher_din"; desc = "Channel 0 input data."; sw = rw; hw = r; reset = 0x0; } chan0_cipher_din[31:0];
+    } CHAN0_CIPHER_DIN[4] @ 0x420 += 0x4;
+
+    reg {
+        name = "NORM_SMMU_START_ADDR";
+        desc = "Start address of the non-secure SMMU page table. For the symmetric engine it is the page table of the first 128 nodes. Data sheet 13.1.6 NORM_SMMU_START_ADDR (offset 0x0440, printed page 13-31).";
+        field { name = "norm_smmu_start_addr"; desc = "Non-secure SMMU page table start address."; sw = rw; hw = r; reset = 0x0; } norm_smmu_start_addr[31:0];
+    } NORM_SMMU_START_ADDR @ 0x440;
+
+    reg {
+        name = "SEC_SMMU_START_ADDR";
+        desc = "Start address of the secure SMMU page table. Data sheet 13.1.6 SEC_SMMU_START_ADDR (offset 0x0444, printed page 13-31).";
+        field { name = "sec_smmu_start_addr"; desc = "Secure SMMU page table start address."; sw = rw; hw = r; reset = 0x0; } sec_smmu_start_addr[31:0];
+    } SEC_SMMU_START_ADDR @ 0x444;
+
+    reg {
+        name = "IN_ST";
+        desc = "Input state register. Data sheet 13.1.6 IN_ST (offset 0x0450).";
+        field { name = "reserved_31_12"; desc = "Reserved (reads 0x0). Documented by the data sheet as reserved."; sw = r; hw = na; reset = 0x0; } reserved_31_12[31:12];
+        field { name = "sym_hash_req_cur_st"; desc = "Request state of sym and hash."; sw = r; hw = w; reset = 0x0; } sym_hash_req_cur_st[11:8];
+        field { name = "sym_in_ctrl_cur_st"; desc = "State of the symmetric IN_CTRL state machine."; sw = r; hw = w; reset = 0x0; } sym_in_ctrl_cur_st[7:4];
+        field { name = "hash_in_ctrl_cur_st"; desc = "State of the hash IN_CTRL state machine."; sw = r; hw = w; reset = 0x0; } hash_in_ctrl_cur_st[3:0];
+    } IN_ST @ 0x450;
+
+    reg {
+        name = "OUT_ST";
+        desc = "Output state register. Data sheet 13.1.6 OUT_ST (offset 0x0454).";
+        field { name = "reserved_31_5"; desc = "Reserved (reads 0x0). Documented by the data sheet as reserved."; sw = r; hw = na; reset = 0x0; } reserved_31_5[31:5];
+        field { name = "out_cur_st"; desc = "State of the OUT_CTRL state machine."; sw = r; hw = w; reset = 0x0; } out_cur_st[4:0];
+    } OUT_ST @ 0x454;
+
+    regfile eHISI_SPACC_CHAN {
+        name = "SPACC cipher channel n queue registers (n = 1..7)";
+        desc = "Registers of one linked-list symmetric channel; instantiated as CIPHER_CHAN[0..6] = channels 1..7 at 0x0400 + n x 0x80 (channel n at 0x0400 + n x 0x80, so CIPHER_CHAN[0] is channel 1 at 0x0480). The input and output queue node format is not described in the data sheet.";
+
+        reg {
+            name = "CHANn_CIPHER_CTRL";
+            desc = "Encryption/decryption control register of channel n (n = 1..7). Total reset 0x00400000. Data sheet 13.1.6 CHANN_CIPHER_CTRL (offset 0x400 + n x 0x80, printed pages 13-32..13-35). The ivin_sel and CCM/GCM fields of channel 0 do not exist here (the data sheet does not say how an IV or GCM parameters are passed to these channels: presumably in the queue node).";
+            field { name = "weight"; desc = "Weight of the channel: weight x 4 blocks are processed per arbitration round (0 also means 4 blocks). Reset 1."; sw = rw; hw = r; reset = 0x1; } weight[31:22];
+            field { name = "reserved_21_18"; desc = "Reserved (reads 0x0). Documented by the data sheet as reserved."; sw = r; hw = na; reset = 0x0; } reserved_21_18[21:18];
+            field { name = "sym_chn_din_byte_swap_en"; desc = "Input data byte order swap. 0: disabled; 1: enabled."; sw = rw; hw = r; reset = 0x0; } sym_chn_din_byte_swap_en[17:17];
+            field { name = "sym_chn_dout_byte_swap_en"; desc = "Output data byte order swap. 0: disabled; 1: enabled."; sw = rw; hw = r; reset = 0x0; } sym_chn_dout_byte_swap_en[16:16];
+            field { name = "reserved_15"; desc = "Reserved (reads 0x0). Documented by the data sheet as reserved."; sw = r; hw = na; reset = 0x0; } reserved_15[15:15];
+            field { name = "sym_chn_key_sel"; desc = "Key source. 0: CPU-configured key; 1: hardware key."; sw = rw; hw = r; reset = 0x0; } sym_chn_key_sel[14:14];
+            field { name = "reserved_13_12"; desc = "Reserved (reads 0x0). Documented by the data sheet as reserved."; sw = r; hw = na; reset = 0x0; } reserved_13_12[13:12];
+            field { name = "sym_chn_key_length"; desc = "Key length. AES: 00 = 128, 01 = 192, 10 = 256, 11 = 128 bits. 3DES: 00/01/10 = three keys, 11 = two keys. SM1: fixed 384 bits. SM4: fixed 128 bits."; sw = rw; hw = r; reset = 0x0; } sym_chn_key_length[11:10];
+            field { name = "sym_chn_dat_width"; desc = "Data width. DES/3DES: 00 = 64, 01 = 8, 10 = 1, 11 = 64 bits. AES/SM1: 00 = 128, 01 = 8, 10 = 1, 11 = 128 bits. SM4: fixed 128 bits."; sw = rw; hw = r; reset = 0x0; } sym_chn_dat_width[9:8];
+            field { name = "sym_chn_decrypt"; desc = "0: encrypt; 1: decrypt."; sw = rw; hw = r; reset = 0x0; } sym_chn_decrypt[7:7];
+            field { name = "sym_chn_alg_sel"; desc = "Algorithm. 000 DES, 001 3DES, 010 AES, 011 SM4, 100 SM1, 101 DMA copy."; sw = rw; hw = r; encode = SPACC_chn_alg_sel_enum; reset = 0x0; } sym_chn_alg_sel[6:4];
+            field { name = "sym_chn_alg_mode"; desc = "Work mode, same codes as channel 0 (AES: 000 ECB, 001 CBC, 010 CFB, 011 OFB, 100 CTR; DES/3DES/SM1: ECB..OFB; SM4: ECB, CBC, CTR; other ECB)."; sw = rw; hw = r; encode = SPACC_alg_mode_enum; reset = 0x0; } sym_chn_alg_mode[3:1];
+            field { name = "reserved_0"; desc = "Reserved (reads 0x0). Documented by the data sheet as reserved."; sw = r; hw = na; reset = 0x0; } reserved_0[0:0];
+        } CHANN_CIPHER_CTRL @ 0x0;
+
+        reg {
+            name = "CHANn_CIPHER_IN_NODE_CFG";
+            desc = "Input node configuration of channel n (offset 0x404 + n x 0x80, printed page 13-35).";
+            field { name = "cipher_in_node_total_num"; desc = "Total depth of the input node queue."; sw = rw; hw = r; reset = 0x0; } cipher_in_node_total_num[31:24];
+            field { name = "cipher_in_node_wptr"; desc = "Input node write pointer."; sw = rw; hw = r; reset = 0x0; } cipher_in_node_wptr[23:16];
+            field { name = "cipher_in_node_rptr"; desc = "Input node read pointer."; sw = r; hw = w; reset = 0x0; } cipher_in_node_rptr[15:8];
+            field { name = "cipher_in_node_mpackage_int_level"; desc = "Input node multi-package interrupt watermark."; sw = rw; hw = r; reset = 0x0; } cipher_in_node_mpackage_int_level[7:0];
+        } CHANN_CIPHER_IN_NODE_CFG @ 0x4;
+
+        reg {
+            name = "CHANn_CIPHER_IN_NODE_START_ADDR";
+            desc = "Input node queue start address of channel n, low 32 bits (offset 0x408 + n x 0x80).";
+            field { name = "cipher_in_node_start_addr"; desc = "Start address of the input node queue."; sw = rw; hw = r; reset = 0x0; } cipher_in_node_start_addr[31:0];
+        } CHANN_CIPHER_IN_NODE_START_ADDR @ 0x8;
+
+        reg {
+            name = "CHANn_CIPHER_IN_BUF_RPTR";
+            desc = "Input buffer read address of channel n, low 32 bits (offset 0x40C + n x 0x80).";
+            field { name = "cipher_in_buf_rptr"; desc = "Read address of the input buffer."; sw = r; hw = w; reset = 0x0; } cipher_in_buf_rptr[31:0];
+        } CHANN_CIPHER_IN_BUF_RPTR @ 0xC;
+
+        reg {
+            name = "CHANn_CIPHER_IN_LEFT_BYTE";
+            desc = "Number of leftover bytes (less than one block) of the data currently read in on channel n (offset 0x410 + n x 0x80).";
+            field { name = "reserved_31_4"; desc = "Reserved (reads 0x0). Documented by the data sheet as reserved."; sw = r; hw = na; reset = 0x0; } reserved_31_4[31:4];
+            field { name = "in_left_byte"; desc = "Remaining byte count of the read data."; sw = r; hw = w; reset = 0x0; } in_left_byte[3:0];
+        } CHANN_CIPHER_IN_LEFT_BYTE @ 0x10;
+
+        reg {
+            name = "CHANn_CIPHER_IN_LEFT_WORD0";
+            desc = "Word 1 of the leftover input data (less than one block) of channel n (offset 0x414 + n x 0x80).";
+            field { name = "in_left_word0"; desc = "Word 1 of the leftover data."; sw = r; hw = w; reset = 0x0; } in_left_word0[31:0];
+        } CHANN_CIPHER_IN_LEFT_WORD0 @ 0x14;
+
+        reg {
+            name = "CHANn_CIPHER_IN_LEFT_WORD1";
+            desc = "Word 2 of the leftover input data (less than one block) of channel n (offset 0x418 + n x 0x80).";
+            field { name = "in_left_word1"; desc = "Word 2 of the leftover data."; sw = r; hw = w; reset = 0x0; } in_left_word1[31:0];
+        } CHANN_CIPHER_IN_LEFT_WORD1 @ 0x18;
+
+        reg {
+            name = "CHANn_CIPHER_IN_LEFT_WORD2";
+            desc = "Word 3 of the leftover input data (less than one block) of channel n (offset 0x41C + n x 0x80).";
+            field { name = "in_left_word2"; desc = "Word 3 of the leftover data."; sw = r; hw = w; reset = 0x0; } in_left_word2[31:0];
+        } CHANN_CIPHER_IN_LEFT_WORD2 @ 0x1C;
+
+        reg {
+            name = "CHANn_CIPHER_IN_BUF_REST_LEN";
+            desc = "Remaining length of the input buffer of channel n (offset 0x420 + n x 0x80).";
+            field { name = "cipher_in_buf_rest_len"; desc = "Remaining length of the input buffer."; sw = r; hw = w; reset = 0x0; } cipher_in_buf_rest_len[31:0];
+        } CHANN_CIPHER_IN_BUF_REST_LEN @ 0x20;
+
+        reg {
+            name = "CHANn_CIPHER_OUT_NODE_CFG";
+            desc = "Output node configuration of channel n (offset 0x430 + n x 0x80, printed page 13-37).";
+            field { name = "cipher_out_node_total_num"; desc = "Total depth of the output node queue."; sw = rw; hw = r; reset = 0x0; } cipher_out_node_total_num[31:24];
+            field { name = "cipher_out_node_wptr"; desc = "Output node write pointer."; sw = rw; hw = r; reset = 0x0; } cipher_out_node_wptr[23:16];
+            field { name = "cipher_out_node_rptr"; desc = "Output node read pointer."; sw = r; hw = w; reset = 0x0; } cipher_out_node_rptr[15:8];
+            field { name = "cipher_out_node_mpackage_int_level"; desc = "Output node multi-package interrupt watermark."; sw = rw; hw = r; reset = 0x0; } cipher_out_node_mpackage_int_level[7:0];
+        } CHANN_CIPHER_OUT_NODE_CFG @ 0x30;
+
+        reg {
+            name = "CHANn_CIPHER_OUT_NODE_START_ADDR";
+            desc = "Output node queue start address of channel n, low 32 bits (offset 0x434 + n x 0x80).";
+            field { name = "cipher_out_node_start_addr"; desc = "Start address of the output node queue."; sw = rw; hw = r; reset = 0x0; } cipher_out_node_start_addr[31:0];
+        } CHANN_CIPHER_OUT_NODE_START_ADDR @ 0x34;
+
+        reg {
+            name = "CHANn_CIPHER_OUT_BUF_RPTR";
+            desc = "Output buffer read address of channel n, low 32 bits (offset 0x438 + n x 0x80).";
+            field { name = "cipher_out_buf_rptr"; desc = "Read address of the output buffer."; sw = r; hw = w; reset = 0x0; } cipher_out_buf_rptr[31:0];
+        } CHANN_CIPHER_OUT_BUF_RPTR @ 0x38;
+
+        reg {
+            name = "CHANn_CIPHER_OUT_LEFT_BYTE";
+            desc = "Number of leftover bytes of the data currently written out on channel n (offset 0x440 + n x 0x80).";
+            field { name = "reserved_31_7"; desc = "Reserved (reads 0x0). Documented by the data sheet as reserved."; sw = r; hw = na; reset = 0x0; } reserved_31_7[31:7];
+            field { name = "out_left_byte"; desc = "Remaining byte count of the write data."; sw = r; hw = w; reset = 0x0; } out_left_byte[6:0];
+        } CHANN_CIPHER_OUT_LEFT_BYTE @ 0x40;
+
+        reg {
+            name = "CHANn_CIPHER_OUT_LEFT_WORD0";
+            desc = "Word 1 of the leftover output data of channel n (offset 0x444 + n x 0x80).";
+            field { name = "out_left_word0"; desc = "Word 1 of the leftover data."; sw = r; hw = w; reset = 0x0; } out_left_word0[31:0];
+        } CHANN_CIPHER_OUT_LEFT_WORD0 @ 0x44;
+
+        reg {
+            name = "CHANn_CIPHER_OUT_LEFT_WORD1";
+            desc = "Word 2 of the leftover output data of channel n (offset 0x448 + n x 0x80).";
+            field { name = "out_left_word1"; desc = "Word 2 of the leftover data."; sw = r; hw = w; reset = 0x0; } out_left_word1[31:0];
+        } CHANN_CIPHER_OUT_LEFT_WORD1 @ 0x48;
+
+        reg {
+            name = "CHANn_CIPHER_OUT_LEFT_WORD2";
+            desc = "Word 3 of the leftover output data of channel n (offset 0x44C + n x 0x80).";
+            field { name = "out_left_word2"; desc = "Word 3 of the leftover data."; sw = r; hw = w; reset = 0x0; } out_left_word2[31:0];
+        } CHANN_CIPHER_OUT_LEFT_WORD2 @ 0x4C;
+
+        reg {
+            name = "CHANn_CIPHER_OUT_BUF_REST_LEN";
+            desc = "Remaining length of the output buffer of channel n (offset 0x450 + n x 0x80). The data sheet title says 'input buf', a copy error.";
+            field { name = "cipher_out_buf_rest_len"; desc = "Remaining length of the output buffer."; sw = r; hw = w; reset = 0x0; } cipher_out_buf_rest_len[31:0];
+        } CHANN_CIPHER_OUT_BUF_REST_LEN @ 0x50;
+
+        reg {
+            name = "CHANn_CIPHER_IN_NODE_START_ADDR_HIGH";
+            desc = "Input node queue start address of channel n, high 32 bits (offset 0x460 + n x 0x80).";
+            field { name = "cipher_in_node_start_addr_high"; desc = "Upper 32 bits of the input node queue start address."; sw = rw; hw = r; reset = 0x0; } cipher_in_node_start_addr_high[31:0];
+        } CHANN_CIPHER_IN_NODE_START_ADDR_HIGH @ 0x60;
+
+        reg {
+            name = "CHANn_CIPHER_IN_BUF_RPTR_HIGH";
+            desc = "Input buffer read address of channel n, high 32 bits (offset 0x464 + n x 0x80).";
+            field { name = "cipher_in_buf_rptr_high"; desc = "Upper 32 bits of the input buffer read address."; sw = r; hw = w; reset = 0x0; } cipher_in_buf_rptr_high[31:0];
+        } CHANN_CIPHER_IN_BUF_RPTR_HIGH @ 0x64;
+
+        reg {
+            name = "CHANn_CIPHER_OUT_NODE_START_ADDR_HIGH";
+            desc = "Output node queue start address of channel n, high 32 bits (offset 0x470 + n x 0x80).";
+            field { name = "cipher_out_node_start_addr_high"; desc = "Upper 32 bits of the output node queue start address."; sw = rw; hw = r; reset = 0x0; } cipher_out_node_start_addr_high[31:0];
+        } CHANN_CIPHER_OUT_NODE_START_ADDR_HIGH @ 0x70;
+
+        reg {
+            name = "CHANn_CIPHER_OUT_BUF_RPTR_HIGH";
+            desc = "Output buffer read address of channel n, high 32 bits (offset 0x474 + n x 0x80).";
+            field { name = "cipher_out_buf_rptr_high"; desc = "Upper 32 bits of the output buffer read address."; sw = r; hw = w; reset = 0x0; } cipher_out_buf_rptr_high[31:0];
+        } CHANN_CIPHER_OUT_BUF_RPTR_HIGH @ 0x74;
+
+    };
+    eHISI_SPACC_CHAN CIPHER_CHAN[7] @ 0x0480 += 0x80;
+
+    reg {
+        name = "CHAN0_HASH_CTRL";
+        desc = "Hash control register of channel 0 (CPU-fed channel). Total reset 0x00000200. Data sheet 13.1.6 CHAN0_HASH_CTRL (offset 0x0800, printed pages 13-40..13-41). The data sheet extraction leaves the name of bits [12:10] and [4] blank; the names follow the register-map transcription.";
+        field { name = "reserved_31_13"; desc = "Reserved (reads 0x0). Documented by the data sheet as reserved."; sw = r; hw = na; reset = 0x0; } reserved_31_13[31:13];
+        field { name = "hash_ch0_hmac_key_addr"; desc = "HMAC key slot (host key of channel index 0..7) used in HMAC mode."; sw = rw; hw = r; reset = 0x0; } hash_ch0_hmac_key_addr[12:10];
+        field { name = "reserved_9"; desc = "Reserved (reads 0x1). Documented by the data sheet as reserved."; sw = r; hw = na; reset = 0x1; } reserved_9[9:9];
+        field { name = "reserved_8_7"; desc = "Reserved (reads 0x0). Documented by the data sheet as reserved."; sw = r; hw = na; reset = 0x0; } reserved_8_7[8:7];
+        field { name = "hash_ch0_key_sel"; desc = "Key source in HMAC mode. 0: CPU-configured key; 1: hardware key."; sw = rw; hw = r; reset = 0x0; } hash_ch0_key_sel[6:6];
+        field { name = "hash_ch0_mode"; desc = "0: raw hash calculation; 1: HMAC calculation."; sw = rw; hw = r; reset = 0x0; } hash_ch0_mode[5:5];
+        field { name = "hash_ch0_hmac_calc_step"; desc = "HMAC step. 0: key step; 1: message step."; sw = rw; hw = r; reset = 0x0; } hash_ch0_hmac_calc_step[4:4];
+        field { name = "hash_ch0_agl_sel"; desc = "Hash algorithm. 000 SHA1, 001 SHA224, 010 SHA256, 011 SHA384, 100 SHA512, 101 SM3, other SHA1."; sw = rw; hw = r; encode = SPACC_hash_alg_enum; reset = 0x0; } hash_ch0_agl_sel[3:1];
+        field { name = "hash_ch0_start"; desc = "Channel 0 start. 0: not started / input finished; 1: started."; sw = rw; hw = r; reset = 0x0; } hash_ch0_start[0:0];
+    } CHAN0_HASH_CTRL @ 0x800;
+
+    reg {
+        name = "HASH_INT_STATUS";
+        desc = "Hash interrupt status (masked by HASH_INT_EN). Data sheet 13.1.6 HASH_INT_STATUS (offset 0x0804, printed page 13-41).";
+        field { name = "reserved_31_26"; desc = "Reserved (reads 0x0). Documented by the data sheet as reserved."; sw = r; hw = na; reset = 0x0; } reserved_31_26[31:26];
+        field { name = "hash_chn_oram_int"; desc = "Hash result (output RAM) interrupt of channels 7..0 (bit 18 + n = channel n)."; sw = r; hw = w; reset = 0x0; } hash_chn_oram_int[25:18];
+        field { name = "reserved_17_0"; desc = "Reserved."; sw = r; hw = w; reset = 0x0; } reserved_17_0[17:0];
+    } HASH_INT_STATUS @ 0x804;
+
+    reg {
+        name = "HASH_INT_EN";
+        desc = "Hash interrupt enable. Data sheet 13.1.6 HASH_INT_EN (offset 0x0808, printed page 13-41).";
+        field { name = "hash_int_en"; desc = "Non-secure hash interrupt output enable. 0: disabled; 1: enabled."; sw = rw; hw = r; reset = 0x0; } hash_int_en[31:31];
+        field { name = "hash_sec_int_en"; desc = "Secure CPU hash interrupt output enable. 0: disabled; 1: enabled."; sw = rw; hw = r; reset = 0x0; } hash_sec_int_en[30:30];
+        field { name = "reserved_29_26"; desc = "Reserved (reads 0x0). Documented by the data sheet as reserved."; sw = r; hw = na; reset = 0x0; } reserved_29_26[29:26];
+        field { name = "hash_chn_oram_en"; desc = "Hash result interrupt enable of channels 7..0."; sw = rw; hw = r; reset = 0x0; } hash_chn_oram_en[25:18];
+        field { name = "reserved_17_0"; desc = "Reserved."; sw = r; hw = w; reset = 0x0; } reserved_17_0[17:0];
+    } HASH_INT_EN @ 0x808;
+
+    reg {
+        name = "HASH_INT_RAW";
+        desc = "Hash raw interrupt status. The data sheet prints the field as RW; modeled as rw + woclr like CIPHER_INT_RAW. Data sheet 13.1.6 HASH_INT_RAW (offset 0x080C, printed page 13-42).";
+        field { name = "reserved_31_26"; desc = "Reserved (reads 0x0). Documented by the data sheet as reserved."; sw = r; hw = na; reset = 0x0; } reserved_31_26[31:26];
+        field { name = "hash_chn_oram_raw"; desc = "Raw hash result interrupt of channels 7..0. Write 1 to clear (assumed from the cipher RAW register; the data sheet only prints RW)."; sw = rw; onwrite = woclr; hw = w; reset = 0x0; } hash_chn_oram_raw[25:18];
+        field { name = "reserved_17_0"; desc = "Reserved."; sw = r; hw = w; reset = 0x0; } reserved_17_0[17:0];
+    } HASH_INT_RAW @ 0x80C;
+
+    reg {
+        name = "HASH_IN_SMMU_EN";
+        desc = "SMMU enable for the hash input reads of channels 1-7. Data sheet 13.1.6 HASH_IN_SMMU_EN (offset 0x0810, printed page 13-42).";
+        field { name = "reserved_31_23"; desc = "Reserved (reads 0x0). Documented by the data sheet as reserved."; sw = r; hw = na; reset = 0x0; } reserved_31_23[31:23];
+        field { name = "hash_in_chann_rd_node_smmu_en"; desc = "SMMU enable for the hash input node read of channels 7..1."; sw = rw; hw = r; reset = 0x0; } hash_in_chann_rd_node_smmu_en[22:16];
+        field { name = "reserved_15_7"; desc = "Reserved (reads 0x0). Documented by the data sheet as reserved."; sw = r; hw = na; reset = 0x0; } reserved_15_7[15:7];
+        field { name = "hash_in_chann_rd_dat_smmu_en"; desc = "SMMU enable for the hash input data read of channels 7..1."; sw = rw; hw = r; reset = 0x0; } hash_in_chann_rd_dat_smmu_en[6:0];
+    } HASH_IN_SMMU_EN @ 0x810;
+
+    reg {
+        name = "CHAN0_HASH_DAT_IN";
+        desc = "CPU data input register of hash channel 0. Data sheet 13.1.6 CHAN0_HASH_DAT_IN (offset 0x0818, printed page 13-43).";
+        field { name = "chan0_hash_data_in"; desc = "CPU data input of channel 0."; sw = w; hw = r; reset = 0x0; } chan0_hash_data_in[31:0];
+    } CHAN0_HASH_DAT_IN @ 0x818;
+
+    reg {
+        name = "CHAN0_HASH_TOTAL_DAT_LEN";
+        desc = "Total data length of the CPU hash input on channel 0, in bytes. Data sheet 13.1.6 CHAN0_HASH_TOTAL_DAT_LEN (offset 0x081C).";
+        field { name = "chan0_hash_total_dat_len"; desc = "Total input data length in bytes."; sw = rw; hw = r; reset = 0x0; } chan0_hash_total_dat_len[31:0];
+    } CHAN0_HASH_TOTAL_DAT_LEN @ 0x81C;
+
+    reg {
+        name = "CHAN0_HASH_IN_DAT_LEN";
+        desc = "Data length already input on hash channel 0, in hash blocks. Data sheet 13.1.6 CHAN0_HASH_IN_DAT_LEN (offset 0x0820).";
+        field { name = "chan0_hash_in_dat_len"; desc = "Input data length so far (hash blocks)."; sw = r; hw = w; reset = 0x0; } chan0_hash_in_dat_len[31:0];
+    } CHAN0_HASH_IN_DAT_LEN @ 0x820;
+
+    regfile eHISI_SPACC_HASH_CHAN {
+        name = "SPACC hash channel n queue registers (n = 1..7)";
+        desc = "Registers of one linked-list hash channel; instantiated as HASH_CHAN[0..6] = channels 1..7 at 0x0800 + n x 0x80 (HASH_CHAN[0] is channel 1 at 0x0880). The input node format is not described in the data sheet.";
+
+        reg {
+            name = "CHANn_HASH_CTRL";
+            desc = "Hash control register of channel n (n = 1..7). Total reset 0x00000200. Data sheet 13.1.6 CHANN_HASH_CTRL (offset 0x800 + n x 0x80, printed page 13-43). Unlike channel 0 there is no hmac_key_addr and no hmac_calc_step field.";
+            field { name = "reserved_31_10"; desc = "Reserved (reads 0x0). Documented by the data sheet as reserved."; sw = r; hw = na; reset = 0x0; } reserved_31_10[31:10];
+            field { name = "reserved_9"; desc = "Reserved (reads 0x1). Documented by the data sheet as reserved."; sw = r; hw = na; reset = 0x1; } reserved_9[9:9];
+            field { name = "reserved_8"; desc = "Reserved (reads 0x0). Documented by the data sheet as reserved."; sw = r; hw = na; reset = 0x0; } reserved_8[8:8];
+            field { name = "hash_chn_dat_in_byte_swap_en"; desc = "Input data byte order swap. 0: disabled; 1: enabled."; sw = rw; hw = r; reset = 0x0; } hash_chn_dat_in_byte_swap_en[7:7];
+            field { name = "hash_chn_key_sel"; desc = "Key source in HMAC mode. 0: CPU-configured key; 1: hardware key."; sw = rw; hw = r; reset = 0x0; } hash_chn_key_sel[6:6];
+            field { name = "hash_chn_mode"; desc = "0: raw hash; 1: HMAC."; sw = rw; hw = r; reset = 0x0; } hash_chn_mode[5:5];
+            field { name = "reserved_4"; desc = "Reserved (reads 0x0). Documented by the data sheet as reserved."; sw = r; hw = na; reset = 0x0; } reserved_4[4:4];
+            field { name = "hash_chn_agl_sel"; desc = "Hash algorithm. 000 SHA1, 001 SHA224, 010 SHA256, 011 SHA384, 100 SHA512, 101 SM3, other SHA1."; sw = rw; hw = r; encode = SPACC_hash_alg_enum; reset = 0x0; } hash_chn_agl_sel[3:1];
+            field { name = "reserved_0"; desc = "Reserved (reads 0x0). Documented by the data sheet as reserved."; sw = r; hw = na; reset = 0x0; } reserved_0[0:0];
+        } CHANN_HASH_CTRL @ 0x0;
+
+        reg {
+            name = "CHANn_HASH_IN_NODE_CFG";
+            desc = "Input node configuration of hash channel n (offset 0x804 + n x 0x80, printed page 13-44).";
+            field { name = "hash_in_node_total_num"; desc = "Total depth of the input node queue."; sw = rw; hw = r; reset = 0x0; } hash_in_node_total_num[31:24];
+            field { name = "hash_in_node_wptr"; desc = "Input node write pointer."; sw = rw; hw = r; reset = 0x0; } hash_in_node_wptr[23:16];
+            field { name = "hash_in_node_rptr"; desc = "Input node read pointer."; sw = r; hw = w; reset = 0x0; } hash_in_node_rptr[15:8];
+            field { name = "hash_in_node_mpackage_int_level"; desc = "Input node multi-package interrupt watermark."; sw = rw; hw = r; reset = 0x0; } hash_in_node_mpackage_int_level[7:0];
+        } CHANN_HASH_IN_NODE_CFG @ 0x4;
+
+        reg {
+            name = "CHANn_HASH_IN_NODE_START_ADDR";
+            desc = "Input node queue start address of hash channel n, low 32 bits (offset 0x808 + n x 0x80).";
+            field { name = "hash_in_node_start_addr"; desc = "Start address of the input node queue."; sw = rw; hw = r; reset = 0x0; } hash_in_node_start_addr[31:0];
+        } CHANN_HASH_IN_NODE_START_ADDR @ 0x8;
+
+        reg {
+            name = "CHANn_HASH_IN_BUF_RPTR";
+            desc = "Input buffer read address of hash channel n, low 32 bits (offset 0x80C + n x 0x80). The data sheet prints RW (the cipher equivalent is RO).";
+            field { name = "hash_in_buf_rptr"; desc = "Read address of the input buffer."; sw = rw; hw = r; reset = 0x0; } hash_in_buf_rptr[31:0];
+        } CHANN_HASH_IN_BUF_RPTR @ 0xC;
+
+        reg {
+            name = "CHANn_HASH_IN_BUF_REST_LEN";
+            desc = "Remaining length of the input buffer of hash channel n (offset 0x810 + n x 0x80).";
+            field { name = "hash_in_buf_rest_len"; desc = "Remaining length of the input buffer."; sw = r; hw = w; reset = 0x0; } hash_in_buf_rest_len[31:0];
+        } CHANN_HASH_IN_BUF_REST_LEN @ 0x10;
+
+        reg {
+            name = "CHANn_HASH_IN_NODE_START_ADDR_HIGH";
+            desc = "Input node queue start address of hash channel n, high 32 bits (offset 0x820 + n x 0x80).";
+            field { name = "hash_in_node_start_addr_high"; desc = "Upper 32 bits of the input node queue start address."; sw = rw; hw = r; reset = 0x0; } hash_in_node_start_addr_high[31:0];
+        } CHANN_HASH_IN_NODE_START_ADDR_HIGH @ 0x20;
+
+        reg {
+            name = "CHANn_HASH_IN_BUF_RPTR_HIGH";
+            desc = "Input buffer read address of hash channel n, high 32 bits (offset 0x824 + n x 0x80). The data sheet prints RW.";
+            field { name = "hash_in_buf_rptr_high"; desc = "Upper 32 bits of the input buffer read address."; sw = rw; hw = r; reset = 0x0; } hash_in_buf_rptr_high[31:0];
+        } CHANN_HASH_IN_BUF_RPTR_HIGH @ 0x24;
+
+    };
+    eHISI_SPACC_HASH_CHAN HASH_CHAN[7] @ 0x0880 += 0x80;
+
+};
+
+`endif
