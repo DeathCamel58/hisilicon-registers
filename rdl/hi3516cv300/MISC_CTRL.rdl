@@ -1,0 +1,2128 @@
+`ifndef HI3516CV300_MISC_CTRL_RDL
+`define HI3516CV300_MISC_CTRL_RDL
+
+regfile eMISC_CTRL {
+    name = "Miscellaneous control (MISC_CTRL), Hi3516C V300 / Hi3516E V100";
+    desc = "    MISC_CTRLn miscellaneous control registers at 0x12030000 (offset = n x 4; only the 37 registers listed in the data sheet exist: MISC_CTRL0, 3, 5..10, 12..14, 16..25, 30..44, 47). Data sheet: Hi3516C V300/Hi3516E V100 Professional HD IP Camera SoC, Issue 05 (2018-05-10), chapter 3.5.5 (printed pages 3-63..3-97); shared by the Hi3516C V300 and Hi3516E V100 (no chip-specific marks in this block). Contents: function select (MISC_CTRL0: GZIP/DDRT, MIPI PHY mode, SPI chip select polarity/select, VICAP/VPSS online mode, test clock select), RAM retention control (MISC_CTRL3), AXI bus timeout/priority for the SYS, media and VIVO buses (MISC_CTRL5..16), DDR QoS/timeout group assignment (MISC_CTRL17..22), USB 2.0 controller and PHY control (MISC_CTRL23..25), SVB PWM (MISC_CTRL30), core and media HPM monitors (MISC_CTRL31..38), the temperature sensor (MISC_CTRL39..44) and the update-mode clear (MISC_CTRL47).
+
+    Bring-up notes. USB: the vendor U-Boot hiusb-3516cv300.c reads PERI_USB = MISC_CTRL23 (0x5C) and writes WORDINTERFACE/burst bits (these are already the reset values 0x000313A0 except WORDINTERFACE), sets MISC_CTRL24 (0x60) bit 16 `usb_phy_reg_access` before programming the PHY (registers at 0x120D0000) while releasing the reset in PERI_CRG46. SPI1 chip select: MISC_CTRL0 bit 4. GZIP: MISC_CTRL0 bit 19 selects GZIP (1) instead of DDRT (0). No clock or PLL registers live here.
+
+    Relation to the Hi3518EV200/Hi3516CV200 block (common/HISI_MISC_CTRL.rdl, MISC at 0x20120000): the register names and some offsets coincide, but the contents differ (different register set, USB glue in MISC_CTRL23..25 instead of MISC_CTRL30, no ACODEC/eMMC DLL registers here, HPM/T-sensor/SVB registers added), so the common block cannot be reused; all 37 registers are described from this data sheet.
+
+    Sources: the same data sheet dump as the CRG (`hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt`); the older Issue 00B03 draft (2016-09-28) was used as cross-check (all registers present, all matched Total Reset Values identical; its dump is watermark-noisy). Data sheet quirks: `MSIC` typo in MISC_CTRL0; the registers MISC_CTRL1, 2, 4, 11, 15, 26..29, 45, 46 do not exist; MISC_CTRL12 and MISC_CTRL16 are titled `... bus control register 3` although the previous numbered registers (11/15) are absent; field names of MISC_CTRL39/40 are wrapped across lines in the text (repaired); MISC_CTRL17 gzip_qosmap says `IVE/GZIP`. All 37 registers (names, offsets, fields, resets) were checked against the data sheet on 2026-11-09.
+    ";
+
+    reg {
+        name = "MSIC function select register 0";
+        desc = "MISC_CTRL0 is MSIC function select register 0.
+
+Miscellaneous function select (the data sheet calls it `MSIC function select register 0`, a typo). Reset 0x00200000: vgs_bootram_mode = 1 (the VGS RAM is used as boot RAM). The vendor U-Boot (lib/hw_dec) sets gzip_ddrt_sel (bit 19) to 1 to use the hardware GZIP decompressor, and the vendor Linux DT maps this register (0x12030000, 4 bytes) into the SPI1 node for the SPI1 chip-select select ssp1_cs_sel (bit 4). The Hi3516C V300/E V100 data sheet lists the CPU COMMTX/COMMRX interrupt enable (bit 14) and the MIPI PHY mode (bits 6:5, MIPI/LVDS/CMOS).
+
+Data sheet 3.5.5.2 MISC_CTRL0 (offset 0x0, printed page 3-65, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 8583).";
+
+        enum MISC_CTRL0_vgs_bootram_mode_enum {
+            VGS_FUNCTION = 0 { name = "Vgs Function"; desc = "disabled: the RAM serves the VGS function"; };
+            BOOT_RAM = 1 { name = "Boot Ram"; desc = "enabled: the VGS RAM is multiplexed as boot RAM (reset default)"; };
+        };
+
+        field {
+            name = "vgs_bootram_mode";
+            desc = "Enable of multiplexing the RAM of the VGS module as the boot RAM. This bit is set to 1 when the boot RAM is required, and it is set to 0 when the VGS function is used.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL0_vgs_bootram_mode_enum;
+            reset = 0x1;
+        } vgs_bootram_mode[21:21];
+
+        enum MISC_CTRL0_vo_pin_reverse_enum {
+            NORMAL = 0 { name = "Normal"; desc = "normal"; };
+            REVERSED = 1 { name = "Reversed"; desc = "VOU656_DATA[7:0]/LCD_DATA[5:0] output reversed"; };
+        };
+
+        field {
+            name = "vo_pin_reverse";
+            desc = "Reverse output enable of the VO pin. When this bit is set to 1, the output of VOU656_DATA[7:0]/LCD_DATA[5:0] is reversed.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL0_vo_pin_reverse_enum;
+            reset = 0x0;
+        } vo_pin_reverse[20:20];
+
+        enum MISC_CTRL0_gzip_ddrt_sel_enum {
+            DDRT = 0 { name = "Ddrt"; desc = "DDRT enabled, GZIP disabled"; };
+            GZIP = 1 { name = "Gzip"; desc = "GZIP enabled, DDRT disabled"; };
+        };
+
+        field {
+            name = "gzip_ddrt_sel";
+            desc = "GZIP/DDRT function select";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL0_gzip_ddrt_sel_enum;
+            reset = 0x0;
+        } gzip_ddrt_sel[19:19];
+
+        enum MISC_CTRL0_uart_txd_mask_by_lb_enum {
+            NOT_MASKED = 0 { name = "Not Masked"; desc = "the UART*_TXD pin is not masked when loopback is enabled"; };
+            MASKED = 1 { name = "Masked"; desc = "the UART*_TXD pin is masked when loopback is enabled and stays high"; };
+        };
+
+        field {
+            name = "uart_txd_mask_by_lb";
+            desc = "UART*_TXD pin mask when loopback is enabled";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL0_uart_txd_mask_by_lb_enum;
+            reset = 0x0;
+        } uart_txd_mask_by_lb[16:16];
+
+        enum MISC_CTRL0_commtx_rx_int_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "commtx_rx_int_en";
+            desc = "CPU COMMTX/COMMRX interrupt enable control";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL0_commtx_rx_int_en_enum;
+            reset = 0x0;
+        } commtx_rx_int_en[14:14];
+
+        enum MISC_CTRL0_test_clksel_enum {
+            PLL_TEST_OUT0 = 0 { name = "Pll Test Out0"; desc = "PLL_TEST_OUT[0]"; };
+            PLL_TEST_OUT1 = 1 { name = "Pll Test Out1"; desc = "PLL_TEST_OUT[1]"; };
+            PLL_TEST_OUT2 = 2 { name = "Pll Test Out2"; desc = "PLL_TEST_OUT[2]"; };
+            PLL_TEST_OUT3 = 3 { name = "Pll Test Out3"; desc = "PLL_TEST_OUT[3]"; };
+            CLK_TEST_OUT0 = 4 { name = "Clk Test Out0"; desc = "CLK_TEST_OUT[0]"; };
+            CLK_TEST_OUT1 = 5 { name = "Clk Test Out1"; desc = "CLK_TEST_OUT[1]"; };
+            CLK_TEST_OUT2 = 6 { name = "Clk Test Out2"; desc = "CLK_TEST_OUT[2]"; };
+            CLK_TEST_OUT3 = 7 { name = "Clk Test Out3"; desc = "CLK_TEST_OUT[3]"; };
+            CLK_24M = 8 { name = "Clk 24M"; desc = "CLK_24M"; };
+            CLK_RTC = 9 { name = "Clk Rtc"; desc = "CLK_RTC"; };
+            PLL_TEST_OUT0_10 = 10 { name = "Pll Test Out0 10"; desc = "other values select PLL_TEST_OUT[0]"; };
+            PLL_TEST_OUT0_11 = 11 { name = "Pll Test Out0 11"; desc = "other values select PLL_TEST_OUT[0]"; };
+            PLL_TEST_OUT0_12 = 12 { name = "Pll Test Out0 12"; desc = "other values select PLL_TEST_OUT[0]"; };
+            PLL_TEST_OUT0_13 = 13 { name = "Pll Test Out0 13"; desc = "other values select PLL_TEST_OUT[0]"; };
+            PLL_TEST_OUT0_14 = 14 { name = "Pll Test Out0 14"; desc = "other values select PLL_TEST_OUT[0]"; };
+            PLL_TEST_OUT0_15 = 15 { name = "Pll Test Out0 15"; desc = "other values select PLL_TEST_OUT[0]"; };
+        };
+
+        field {
+            name = "test_clksel";
+            desc = "TEST_CLK source clock select";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL0_test_clksel_enum;
+            reset = 0x0;
+        } test_clksel[11:8];
+
+        enum MISC_CTRL0_vicap_vpss_online_mode_enum {
+            OFFLINE = 0 { name = "Offline"; desc = "offline mode"; };
+            ONLINE = 1 { name = "Online"; desc = "online mode"; };
+        };
+
+        field {
+            name = "vicap_vpss_online_mode";
+            desc = "VICAP&VPSS working mode select";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL0_vicap_vpss_online_mode_enum;
+            reset = 0x0;
+        } vicap_vpss_online_mode[7:7];
+
+        enum MISC_CTRL0_mipi_phy_mode_enum {
+            MIPI = 0 { name = "Mipi"; desc = "MIPI mode"; };
+            LVDS = 1 { name = "Lvds"; desc = "LVDS mode"; };
+            CMOS = 2 { name = "Cmos"; desc = "CMOS mode"; };
+            RESERVED = 3 { name = "Reserved"; desc = "reserved"; };
+        };
+
+        field {
+            name = "mipi_phy_mode";
+            desc = "MIPI PHY mode select";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL0_mipi_phy_mode_enum;
+            reset = 0x0;
+        } mipi_phy_mode[6:5];
+
+        enum MISC_CTRL0_ssp1_cs_sel_enum {
+            CS0 = 0 { name = "Cs0"; desc = "CS0"; };
+            CS1 = 1 { name = "Cs1"; desc = "CS1"; };
+        };
+
+        field {
+            name = "ssp1_cs_sel";
+            desc = "SPI1 signal output CS select";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL0_ssp1_cs_sel_enum;
+            reset = 0x0;
+        } ssp1_cs_sel[4:4];
+
+        enum MISC_CTRL0_spi1_cs1_pctrl_enum {
+            ACTIVE_LOW = 0 { name = "Active Low"; desc = "SPI1_CSN1 active low"; };
+            ACTIVE_HIGH = 1 { name = "Active High"; desc = "SPI1_CSN1 active high"; };
+        };
+
+        field {
+            name = "spi1_cs1_pctrl";
+            desc = "Polarity control of SPI1 CS1";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL0_spi1_cs1_pctrl_enum;
+            reset = 0x0;
+        } spi1_cs1_pctrl[3:3];
+
+        enum MISC_CTRL0_spi1_cs0_pctrl_enum {
+            ACTIVE_LOW = 0 { name = "Active Low"; desc = "SPI1_CSN0 active low"; };
+            ACTIVE_HIGH = 1 { name = "Active High"; desc = "SPI1_CSN0 active high"; };
+        };
+
+        field {
+            name = "spi1_cs0_pctrl";
+            desc = "Polarity control of SPI1 CS0";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL0_spi1_cs0_pctrl_enum;
+            reset = 0x0;
+        } spi1_cs0_pctrl[2:2];
+
+        enum MISC_CTRL0_spi0_cs0_pctrl_enum {
+            ACTIVE_LOW = 0 { name = "Active Low"; desc = "SPI0_CSN active low"; };
+            ACTIVE_HIGH = 1 { name = "Active High"; desc = "SPI0_CSN active high"; };
+        };
+
+        field {
+            name = "spi0_cs0_pctrl";
+            desc = "Polarity control of the SPI0 CS";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL0_spi0_cs0_pctrl_enum;
+            reset = 0x0;
+        } spi0_cs0_pctrl[1:1];
+    } MISC_CTRL0 @ 0x0;
+
+    reg {
+        name = "RAM Retention control register 0";
+        desc = "MISC_CTRL3 is an RAM Retention control register 0.
+
+RAM retention control. Reset 0x800000EE: avc_ret1n_bypass = 1 and the six retention controls (emmc, sdio1, sdio0, usb, ir, cipher) = 1 (RAM active). Writing 0 to a *_ret1n bit puts the RAM of a disabled controller into retention to save power.
+
+Data sheet 3.5.5.2 MISC_CTRL3 (offset 0xC, printed page 3-67, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 8694).";
+
+        enum MISC_CTRL3_avc_ret1n_bypass_enum {
+            RETENTION_AUTO = 0 { name = "Retention Auto"; desc = "automatic RAM retention function enabled"; };
+            RETENTION_BYPASS = 1 { name = "Retention Bypass"; desc = "automatic RAM retention function disabled"; };
+        };
+
+        field {
+            name = "avc_ret1n_bypass";
+            desc = "Automatic RAM retention function control of the VEDU module";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL3_avc_ret1n_bypass_enum;
+            reset = 0x1;
+        } avc_ret1n_bypass[31:31];
+
+        enum MISC_CTRL3_bootrom_pgen_enum {
+            POWERED_ON = 0 { name = "Powered On"; desc = "boot ROM powered on"; };
+            POWERED_OFF = 1 { name = "Powered Off"; desc = "boot ROM powered off, it cannot work"; };
+        };
+
+        field {
+            name = "bootrom_pgen";
+            desc = "Boot ROM power supply control";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL3_bootrom_pgen_enum;
+            reset = 0x0;
+        } bootrom_pgen[10:10];
+
+        enum MISC_CTRL3_emmc_ret1n_enum {
+            RETENTION = 0 { name = "Retention"; desc = "RAM in retention state"; };
+            ACTIVE = 1 { name = "Active"; desc = "RAM active"; };
+        };
+
+        field {
+            name = "emmc_ret1n";
+            desc = "RAM retention control of the eMMC";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL3_emmc_ret1n_enum;
+            reset = 0x1;
+        } emmc_ret1n[7:7];
+
+        enum MISC_CTRL3_sdio1_ret1n_enum {
+            RETENTION = 0 { name = "Retention"; desc = "RAM in retention state"; };
+            ACTIVE = 1 { name = "Active"; desc = "RAM active"; };
+        };
+
+        field {
+            name = "sdio1_ret1n";
+            desc = "RAM retention control of SDIO1";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL3_sdio1_ret1n_enum;
+            reset = 0x1;
+        } sdio1_ret1n[6:6];
+
+        enum MISC_CTRL3_sdio0_ret1n_enum {
+            RETENTION = 0 { name = "Retention"; desc = "RAM in retention state"; };
+            ACTIVE = 1 { name = "Active"; desc = "RAM active"; };
+        };
+
+        field {
+            name = "sdio0_ret1n";
+            desc = "RAM retention control of SDIO0";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL3_sdio0_ret1n_enum;
+            reset = 0x1;
+        } sdio0_ret1n[5:5];
+
+        enum MISC_CTRL3_usb_ret1n_enum {
+            RETENTION = 0 { name = "Retention"; desc = "RAM in retention state"; };
+            ACTIVE = 1 { name = "Active"; desc = "RAM active"; };
+        };
+
+        field {
+            name = "usb_ret1n";
+            desc = "RAM retention control of the USB";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL3_usb_ret1n_enum;
+            reset = 0x1;
+        } usb_ret1n[3:3];
+
+        enum MISC_CTRL3_ir_ret1n_enum {
+            RETENTION = 0 { name = "Retention"; desc = "RAM in retention state"; };
+            ACTIVE = 1 { name = "Active"; desc = "RAM active"; };
+        };
+
+        field {
+            name = "ir_ret1n";
+            desc = "RAM retention control of the IR";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL3_ir_ret1n_enum;
+            reset = 0x1;
+        } ir_ret1n[2:2];
+
+        enum MISC_CTRL3_cipher_ret1n_enum {
+            RETENTION = 0 { name = "Retention"; desc = "RAM in retention state"; };
+            ACTIVE = 1 { name = "Active"; desc = "RAM active"; };
+        };
+
+        field {
+            name = "cipher_ret1n";
+            desc = "RAM retention control of the cipher";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL3_cipher_ret1n_enum;
+            reset = 0x1;
+        } cipher_ret1n[1:1];
+    } MISC_CTRL3 @ 0xC;
+
+    reg {
+        name = "SYS bus control register 0";
+        desc = "MISC_CTRL5 is an SYS bus control register 0.
+
+SYS AXI bus timeout counters (ports M1 = CPU and M2 = AHB master 0). The bus control registers MISC_CTRL5..MISC_CTRL16 hold, per bus (SYS, media, VIVO), the timeout enable/count of each master port and the priority of each master/slave port (3 = highest).
+
+Data sheet 3.5.5.2 MISC_CTRL5 (offset 0x14, printed page 3-69, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 8780).";
+
+        enum MISC_CTRL5_sysaxi_m2_timeout_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "sysaxi_m2_timeout_en";
+            desc = "Timeout count enable of the SYS AXI bus port M2 (AHB master 0)";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL5_sysaxi_m2_timeout_en_enum;
+            reset = 0x0;
+        } sysaxi_m2_timeout_en[31:31];
+
+        field {
+            name = "sysaxi_m2_timeout_value";
+            desc = "Timeout count of the SYS AXI bus port M2 (AHB master 0) Count value = sysaxi_timeout_value_m2 x 2";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } sysaxi_m2_timeout_value[30:16];
+
+        enum MISC_CTRL5_sysaxi_m1_timeout_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "sysaxi_m1_timeout_en";
+            desc = "Timeout count enable of the SYS AXI bus port M1 (CPU)";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL5_sysaxi_m1_timeout_en_enum;
+            reset = 0x0;
+        } sysaxi_m1_timeout_en[15:15];
+
+        field {
+            name = "sysaxi_m1_timeout_value";
+            desc = "Timeout count of the SYS AXI bus port M1 (CPU) Count value = sysaxi_timeout_value_m1 x 2";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } sysaxi_m1_timeout_value[14:0];
+    } MISC_CTRL5 @ 0x14;
+
+    reg {
+        name = "SYS bus control register 1";
+        desc = "MISC_CTRL6 is an SYS bus control register 1.
+
+Data sheet 3.5.5.2 MISC_CTRL6 (offset 0x18, printed page 3-70, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 8832).";
+
+        enum MISC_CTRL6_sysaxi_m4_timeout_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "sysaxi_m4_timeout_en";
+            desc = "Timeout count enable of the SYS AXI bus port M4 (AHB master 2)";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL6_sysaxi_m4_timeout_en_enum;
+            reset = 0x0;
+        } sysaxi_m4_timeout_en[31:31];
+
+        field {
+            name = "sysaxi_m4_timeout_value";
+            desc = "Timeout count of the SYS AXI bus port M4 (AHB master 2) Count value = sysaxi_timeout_value_m4 x 2";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } sysaxi_m4_timeout_value[30:16];
+
+        enum MISC_CTRL6_sysaxi_m3_timeout_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "sysaxi_m3_timeout_en";
+            desc = "Timeout count enable of the SYSAXI bus port M3 (AHB master 1)";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL6_sysaxi_m3_timeout_en_enum;
+            reset = 0x0;
+        } sysaxi_m3_timeout_en[15:15];
+
+        field {
+            name = "sysaxi_m3_timeout_value";
+            desc = "Timeout count of the SYS AXI bus port M3 (AHB master 1) Count value = sysaxi_timeout_value_m3 x 2";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } sysaxi_m3_timeout_value[14:0];
+    } MISC_CTRL6 @ 0x18;
+
+    reg {
+        name = "SYS bus control register 2";
+        desc = "MISC_CTRL7 is an SYS bus control register 2.
+
+SYS bus master priorities; reset 0x12 (M2 = 1, M1 = 2).
+
+Data sheet 3.5.5.2 MISC_CTRL7 (offset 0x1C, printed page 3-71, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 8884).";
+
+        field {
+            name = "sysaxi_m4_pri";
+            desc = "Priority of the SYS AXI bus port M4 (AHB master 2) The value 3 indicates the highest priority.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } sysaxi_m4_pri[14:12];
+
+        field {
+            name = "sysaxi_m3_pri";
+            desc = "Priority of the SYS AXI bus port M3 (AHB master 1) The value 3 indicates the highest priority.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } sysaxi_m3_pri[10:8];
+
+        field {
+            name = "sysaxi_m2_pri";
+            desc = "Priority of the SYS AXI bus port M2 (AHB master 0) The value 3 indicates the highest priority.";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } sysaxi_m2_pri[6:4];
+
+        field {
+            name = "sysaxi_m1_pri";
+            desc = "Priority of the SYS AXI bus port M1 (CPU) The value 3 indicates the highest priority.";
+            sw = rw;
+            hw = r;
+            reset = 0x2;
+        } sysaxi_m1_pri[2:0];
+    } MISC_CTRL7 @ 0x1C;
+
+    reg {
+        name = "SYS bus control register 3";
+        desc = "MISC_CTRL8 is an SYS bus control register 3.
+
+SYS bus slave priorities; reset 0x123 (S3 = 1, S2 = 2, S1 = 3).
+
+Data sheet 3.5.5.2 MISC_CTRL8 (offset 0x20, printed page 3-72, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 8935).";
+
+        field {
+            name = "sysaxi_s4_pri";
+            desc = "Bus access priority of the SYS AXI S4 (MDDRC) port The value 3 indicates the highest priority.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } sysaxi_s4_pri[14:12];
+
+        field {
+            name = "sysaxi_s3_pri";
+            desc = "Bus access priority of the SYS AXI S3 (media APB) port The value 3 indicates the highest priority.";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } sysaxi_s3_pri[10:8];
+
+        field {
+            name = "sysaxi_s2_pri";
+            desc = "Bus access priority of the SYS AXI S2 (SYS APB) port The value 3 indicates the highest priority.";
+            sw = rw;
+            hw = r;
+            reset = 0x2;
+        } sysaxi_s2_pri[6:4];
+
+        field {
+            name = "sysaxi_s1_pri";
+            desc = "Bus access priority of the SYS AXI S1 (AHB_SUBSYS) port The value 3 indicates the highest priority.";
+            sw = rw;
+            hw = r;
+            reset = 0x3;
+        } sysaxi_s1_pri[2:0];
+    } MISC_CTRL8 @ 0x20;
+
+    reg {
+        name = "Media bus control register 0";
+        desc = "MISC_CTRL9 is a MEDIA bus control register 0.
+
+Data sheet 3.5.5.2 MISC_CTRL9 (offset 0x24, printed page 3-73, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 8986).";
+
+        enum MISC_CTRL9_mediaaxi_m2_timeout_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "mediaaxi_m2_timeout_en";
+            desc = "Timeout count enable of the media AXI bus port M2 (IVE)";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL9_mediaaxi_m2_timeout_en_enum;
+            reset = 0x0;
+        } mediaaxi_m2_timeout_en[31:31];
+
+        field {
+            name = "mediaaxi_m2_timeout_value";
+            desc = "Timeout count of the media AXI bus port M2 (IVE) Count value = mediaaxi_timeout_value_m2 x 2";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } mediaaxi_m2_timeout_value[30:16];
+
+        enum MISC_CTRL9_mediaaxi_m1_timeout_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "mediaaxi_m1_timeout_en";
+            desc = "Timeout count enable of the media AXI bus port M1 (VGS)";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL9_mediaaxi_m1_timeout_en_enum;
+            reset = 0x0;
+        } mediaaxi_m1_timeout_en[15:15];
+
+        field {
+            name = "mediaaxi_m1_timeout_value";
+            desc = "Timeout count of the media AXI bus port M1 (VGS) Count value = mediaaxi_timeout_value_m1 x 2";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } mediaaxi_m1_timeout_value[14:0];
+    } MISC_CTRL9 @ 0x24;
+
+    reg {
+        name = "Media bus control register 1";
+        desc = "MISC_CTRL10 is a MEDIA bus control register 1.
+
+Data sheet 3.5.5.2 MISC_CTRL10 (offset 0x28, printed page 3-74, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 9039).";
+
+        enum MISC_CTRL10_mediaaxi_m4_timeout_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "mediaaxi_m4_timeout_en";
+            desc = "Timeout count enable of the media AXI bus port M4 (DDRT/GZIP)";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL10_mediaaxi_m4_timeout_en_enum;
+            reset = 0x0;
+        } mediaaxi_m4_timeout_en[31:31];
+
+        field {
+            name = "mediaaxi_m4_timeout_value";
+            desc = "Timeout count of the media AXI bus port M4 (DDRT/GZIP) Count value = mediaaxi_timeout_value_m4 x 2";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } mediaaxi_m4_timeout_value[30:16];
+
+        enum MISC_CTRL10_mediaaxi_m3_timeout_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "mediaaxi_m3_timeout_en";
+            desc = "Timeout count enable of the media AXI bus port M3 (JPGE)";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL10_mediaaxi_m3_timeout_en_enum;
+            reset = 0x0;
+        } mediaaxi_m3_timeout_en[15:15];
+
+        field {
+            name = "mediaaxi_m3_timeout_value";
+            desc = "Timeout count of the media AXI bus port M3 (JPGE) Count value = mediaaxi_timeout_value_m3 x 2";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } mediaaxi_m3_timeout_value[14:0];
+    } MISC_CTRL10 @ 0x28;
+
+    reg {
+        name = "Media bus control register 3";
+        desc = "MISC_CTRL12 is a MEDIA bus control register 3.
+
+Media bus master priorities (summary table title: `Media bus control register 3`; there is no MISC_CTRL11 in the data sheet); reset 0x123 (M3 = 1, M2 = 2, M1 = 3).
+
+Data sheet 3.5.5.2 MISC_CTRL12 (offset 0x30, printed page 3-75, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 9091).";
+
+        field {
+            name = "mediaaxi_m4_pri";
+            desc = "Priority of the media AXI bus port M4 (DDRT/GZIP) The value 3 indicates the highest priority.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } mediaaxi_m4_pri[14:12];
+
+        field {
+            name = "mediaaxi_m3_pri";
+            desc = "Priority of the media AXI bus port M3 (JPGE) The value 3 indicates the highest priority.";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } mediaaxi_m3_pri[10:8];
+
+        field {
+            name = "mediaaxi_m2_pri";
+            desc = "Priority of the media AXI bus port M2 (IVE) The value 3 indicates the highest priority.";
+            sw = rw;
+            hw = r;
+            reset = 0x2;
+        } mediaaxi_m2_pri[6:4];
+
+        field {
+            name = "mediaaxi_m1_pri";
+            desc = "Priority of the media AXI bus port M1 (VGS) The value 3 indicates the highest priority.";
+            sw = rw;
+            hw = r;
+            reset = 0x3;
+        } mediaaxi_m1_pri[2:0];
+    } MISC_CTRL12 @ 0x30;
+
+    reg {
+        name = "VIVO bus control register 0";
+        desc = "MISC_CTRL13 is a VIVO bus control register 0.
+
+Data sheet 3.5.5.2 MISC_CTRL13 (offset 0x34, printed page 3-76, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 9142).";
+
+        enum MISC_CTRL13_vivoaxi_m2_timeout_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "vivoaxi_m2_timeout_en";
+            desc = "Timeout count enable of the VIVO AXI bus port M2 (AIAO)";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL13_vivoaxi_m2_timeout_en_enum;
+            reset = 0x0;
+        } vivoaxi_m2_timeout_en[31:31];
+
+        field {
+            name = "vivoaxi_m2_timeout_value";
+            desc = "Timeout count of the VIVO AXI bus port M2 (AIAO) Count value = vivoaxi_timeout_value_m2 x 2";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } vivoaxi_m2_timeout_value[30:16];
+
+        enum MISC_CTRL13_vivoaxi_m1_timeout_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "vivoaxi_m1_timeout_en";
+            desc = "Timeout count enable of the VIVO AXI bus port M1 (VICAP)";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL13_vivoaxi_m1_timeout_en_enum;
+            reset = 0x0;
+        } vivoaxi_m1_timeout_en[15:15];
+
+        field {
+            name = "vivoaxi_m1_timeout_value";
+            desc = "Timeout count of the VIVO AXI bus port M1 (VICAP) Count value = vivoaxi_timeout_value_m1 x 2";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } vivoaxi_m1_timeout_value[14:0];
+    } MISC_CTRL13 @ 0x34;
+
+    reg {
+        name = "VIVO bus control register 1";
+        desc = "MISC_CTRL14 is a VIVO bus control register 1.
+
+Data sheet 3.5.5.2 MISC_CTRL14 (offset 0x38, printed page 3-77, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 9195).";
+
+        enum MISC_CTRL14_vivoaxi_m3_timeout_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "vivoaxi_m3_timeout_en";
+            desc = "Timeout count enable of the VIVO AXI bus port M3 (VDP)";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL14_vivoaxi_m3_timeout_en_enum;
+            reset = 0x0;
+        } vivoaxi_m3_timeout_en[15:15];
+
+        field {
+            name = "vivoaxi_m3_timeout_value";
+            desc = "Timeout count of the VIVO AXI bus port M3 (VDP) Count value = vivoaxi_timeout_value_m3 x 2";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } vivoaxi_m3_timeout_value[14:0];
+    } MISC_CTRL14 @ 0x38;
+
+    reg {
+        name = "VIVO bus control register 3";
+        desc = "MISC_CTRL16 is a VIVO bus control register 3.
+
+VIVO bus master priorities (summary title `VIVO bus control register 3`; MISC_CTRL15 does not exist in the data sheet); reset 0x12 (M2 = 1, M1 = 2).
+
+Data sheet 3.5.5.2 MISC_CTRL16 (offset 0x40, printed page 3-77, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 9230).";
+
+        field {
+            name = "vivoaxi_m3_pri";
+            desc = "Priority of the VIVO AXI bus port M3 (VDP) The value 3 indicates the highest priority.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } vivoaxi_m3_pri[10:8];
+
+        field {
+            name = "vivoaxi_m2_pri";
+            desc = "Priority of the VIVO AXI bus port M2 (AIAO) The value 3 indicates the highest priority.";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } vivoaxi_m2_pri[6:4];
+
+        field {
+            name = "vivoaxi_m1_pri";
+            desc = "Priority of the VIVO AXI bus port M1 (VICAP) The value 3 indicates the highest priority.";
+            sw = rw;
+            hw = r;
+            reset = 0x2;
+        } vivoaxi_m1_pri[2:0];
+    } MISC_CTRL16 @ 0x40;
+
+    reg {
+        name = "DDR_QoS control register 0";
+        desc = "MISC_CTRL17 is a DDR_QOS control register 0.
+
+DDR QoS group assignment of the masters, part 0 (MISC_CTRL17..19 = QoS group, MISC_CTRL20..22 = timeout group). The data sheet field `gzip_qosmap` is described as `QoS group of the IVE/GZIP` (bits 23:20), a copy-and-paste description of its own.
+
+Data sheet 3.5.5.2 MISC_CTRL17 (offset 0x44, printed page 3-78, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 9276).";
+
+        field {
+            name = "gzip_qosmap";
+            desc = "QoS group of the IVE/GZIP";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } gzip_qosmap[23:20];
+
+        field {
+            name = "hash_qosmap";
+            desc = "QoS group of the HASH";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } hash_qosmap[19:16];
+
+        field {
+            name = "jpge_qosmap";
+            desc = "QoS group of the JPGE";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } jpge_qosmap[15:12];
+
+        field {
+            name = "aio_qosmap";
+            desc = "QoS group of the AIAO";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } aio_qosmap[11:8];
+
+        field {
+            name = "vicap_qosmap";
+            desc = "QoS group of the VICAP";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } vicap_qosmap[7:4];
+
+        field {
+            name = "vdp_qosmap";
+            desc = "QoS group of the VDP";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } vdp_qosmap[3:0];
+    } MISC_CTRL17 @ 0x44;
+
+    reg {
+        name = "DDR_QoS control register 1";
+        desc = "MISC_CTRL18 is a DDR_QOS control register 1.
+
+Data sheet 3.5.5.2 MISC_CTRL18 (offset 0x48, printed page 3-79, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 9311).";
+
+        field {
+            name = "sdio2_qosmap";
+            desc = "QoS group of the SDIO2";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } sdio2_qosmap[31:28];
+
+        field {
+            name = "emmc_qosmap";
+            desc = "QoS group of the eMMC";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } emmc_qosmap[27:24];
+
+        field {
+            name = "fmc_qosmap";
+            desc = "QoS group of the FMC";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } fmc_qosmap[23:20];
+
+        field {
+            name = "sdio1_qosmap";
+            desc = "QoS group of the SDIO1";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } sdio1_qosmap[19:16];
+
+        field {
+            name = "sdio0_qosmap";
+            desc = "QoS group of the SDIO0";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } sdio0_qosmap[15:12];
+
+        field {
+            name = "arm9_qosmap";
+            desc = "QoS group of the ARM9";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } arm9_qosmap[11:8];
+
+        field {
+            name = "vpss_qosmap";
+            desc = "QoS group of the VPSS";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } vpss_qosmap[7:4];
+
+        field {
+            name = "vgs_qosmap";
+            desc = "QoS group of the VGS";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } vgs_qosmap[3:0];
+    } MISC_CTRL18 @ 0x48;
+
+    reg {
+        name = "DDR_QoS control register 2";
+        desc = "MISC_CTRL19 is a DDR_QOS control register 2.
+
+Data sheet 3.5.5.2 MISC_CTRL19 (offset 0x4C, printed page 3-79, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 9336).";
+
+        field {
+            name = "ive_qosmap";
+            desc = "QoS group of the IVE";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ive_qosmap[27:24];
+
+        field {
+            name = "vedu_qosmap";
+            desc = "QoS group of the VEDU";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } vedu_qosmap[23:20];
+
+        field {
+            name = "usb_qosmap";
+            desc = "QoS group of the USB";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } usb_qosmap[19:16];
+
+        field {
+            name = "cipher_qosmap";
+            desc = "QoS group of the cipher";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } cipher_qosmap[15:12];
+
+        field {
+            name = "dma_m2_qosmap";
+            desc = "M2 QoS group of the DMAC";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } dma_m2_qosmap[11:8];
+
+        field {
+            name = "dma_m1_qosmap";
+            desc = "M1 QoS group of the DMAC";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } dma_m1_qosmap[7:4];
+
+        field {
+            name = "eth_qosmap";
+            desc = "QoS group of the ETH";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } eth_qosmap[3:0];
+    } MISC_CTRL19 @ 0x4C;
+
+    reg {
+        name = "DDR_QoS control register 3";
+        desc = "MISC_CTRL20 is a DDR_QOS control register 3.
+
+Data sheet 3.5.5.2 MISC_CTRL20 (offset 0x50, printed page 3-80, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 9368).";
+
+        field {
+            name = "gzip_to";
+            desc = "Timeout group of the GZIP";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } gzip_to[21:20];
+
+        field {
+            name = "hash_to";
+            desc = "Timeout group of the HASH";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } hash_to[17:16];
+
+        field {
+            name = "jpge_to";
+            desc = "Timeout group of the JPGE";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } jpge_to[13:12];
+
+        field {
+            name = "aio_to";
+            desc = "Timeout group of the AIAO";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } aio_to[9:8];
+
+        field {
+            name = "vicap_to";
+            desc = "Timeout group of the VICAP";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } vicap_to[5:4];
+
+        field {
+            name = "vdp_to";
+            desc = "Timeout group of the VDP";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } vdp_to[1:0];
+    } MISC_CTRL20 @ 0x50;
+
+    reg {
+        name = "DDR_QoS control register 4";
+        desc = "MISC_CTRL21 is a DDR_QOS control register 4.
+
+Data sheet 3.5.5.2 MISC_CTRL21 (offset 0x54, printed page 3-81, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 9412).";
+
+        field {
+            name = "sdio2_to";
+            desc = "Timeout group of the SDIO2";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } sdio2_to[29:28];
+
+        field {
+            name = "emmc_to";
+            desc = "Timeout group of the eMMC";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } emmc_to[25:24];
+
+        field {
+            name = "fmc_to";
+            desc = "Timeout group of the FMC";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } fmc_to[21:20];
+
+        field {
+            name = "sdio1_to";
+            desc = "Timeout group of the SDIO1";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } sdio1_to[17:16];
+
+        field {
+            name = "sdio0_to";
+            desc = "Timeout group of the SDIO0";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } sdio0_to[13:12];
+
+        field {
+            name = "arm9_to";
+            desc = "Timeout group of the ARM9";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } arm9_to[9:8];
+
+        field {
+            name = "vpss_to";
+            desc = "Timeout group of the VPSS";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } vpss_to[5:4];
+
+        field {
+            name = "vgs_to";
+            desc = "Timeout group of the VGS";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } vgs_to[1:0];
+    } MISC_CTRL21 @ 0x54;
+
+    reg {
+        name = "DDR_QoS control register 5";
+        desc = "MISC_CTRL22 is a DDR_QOS control register 5.
+
+Data sheet 3.5.5.2 MISC_CTRL22 (offset 0x58, printed page 3-82, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 9461).";
+
+        field {
+            name = "ive_to";
+            desc = "Timeout group of the IVE";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ive_to[25:24];
+
+        field {
+            name = "vedu_to";
+            desc = "Timeout group of the VEDU";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } vedu_to[21:20];
+
+        field {
+            name = "usb_to";
+            desc = "Timeout group of the USB";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } usb_to[17:16];
+
+        field {
+            name = "cipher_to";
+            desc = "Timeout group of the cipher";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } cipher_to[13:12];
+
+        field {
+            name = "dma_m2_to";
+            desc = "Timeout group of the DMAC master 2";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } dma_m2_to[9:8];
+
+        field {
+            name = "dma_m1_to";
+            desc = "Timeout group of the DMAC master 1";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } dma_m1_to[5:4];
+
+        field {
+            name = "eth_to";
+            desc = "Timeout group of the ETH";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } eth_to[1:0];
+    } MISC_CTRL22 @ 0x58;
+
+    reg {
+        name = "USB2.0 control register 0";
+        desc = "MISC_CTRL23 is a USB2.0 control register 0.
+
+USB 2.0 host/device control register 0 (PERI_USB in the vendor U-Boot hiusb-3516cv300.c: WORDINTERFACE = bit 0, SS_BURST4/8/16_EN = bits 7/8/9, USBOVR_P_CTRL = bit 17; all match the data sheet). Reset 0x000313A0: overcurrent and power-enable polarity active high, port power enabled, INCR4/8/16 burst enabled, auto power-down on overcurrent enabled.
+
+Data sheet 3.5.5.2 MISC_CTRL23 (offset 0x5C, printed page 3-83, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 9509).";
+
+        enum MISC_CTRL23_usb_chipid_enum {
+            HOST = 0 { name = "Host"; desc = "host mode"; };
+            DEVICE = 1 { name = "Device"; desc = "device mode"; };
+        };
+
+        field {
+            name = "usb_chipid";
+            desc = "Working mode of the USB port";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL23_usb_chipid_enum;
+            reset = 0x0;
+        } usb_chipid[31:31];
+
+        enum MISC_CTRL23_usb_host_ss_hubsetup_min_enum {
+            CYCLES_5 = 0 { name = "Cycles 5"; desc = "5 idle cycles"; };
+            CYCLES_4 = 1 { name = "Cycles 4"; desc = "4 idle cycles"; };
+        };
+
+        field {
+            name = "usb_host_ss_hubsetup_min";
+            desc = "Number of idle cycles after the USB full-speed preamble packet";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL23_usb_host_ss_hubsetup_min_enum;
+            reset = 0x0;
+        } usb_host_ss_hubsetup_min[18:18];
+
+        enum MISC_CTRL23_usb_host_ovrcur_pctrl_enum {
+            ACTIVE_LOW = 0 { name = "Active Low"; desc = "active low"; };
+            ACTIVE_HIGH = 1 { name = "Active High"; desc = "active high"; };
+        };
+
+        field {
+            name = "usb_host_ovrcur_pctrl";
+            desc = "Polarity control of the USB port overcurrent protection";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL23_usb_host_ovrcur_pctrl_enum;
+            reset = 0x1;
+        } usb_host_ovrcur_pctrl[17:17];
+
+        enum MISC_CTRL23_usb_host_pwren_pctrl_enum {
+            ACTIVE_LOW = 0 { name = "Active Low"; desc = "active low"; };
+            ACTIVE_HIGH = 1 { name = "Active High"; desc = "active high"; };
+        };
+
+        field {
+            name = "usb_host_pwren_pctrl";
+            desc = "Polarity control of the USB port power";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL23_usb_host_pwren_pctrl_enum;
+            reset = 0x1;
+        } usb_host_pwren_pctrl[16:16];
+
+        enum MISC_CTRL23_usb_host_port_ovrcur_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "usb_host_port_ovrcur_en";
+            desc = "Overcurrent protection enable of the USB port";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL23_usb_host_port_ovrcur_en_enum;
+            reset = 0x0;
+        } usb_host_port_ovrcur_en[14:14];
+
+        enum MISC_CTRL23_usb_host_port_pwren_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "usb_host_port_pwren_en";
+            desc = "USB port power enable";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL23_usb_host_port_pwren_en_enum;
+            reset = 0x1;
+        } usb_host_port_pwren_en[12:12];
+
+        enum MISC_CTRL23_usb_host_incr16_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "usb_host_incr16_en";
+            desc = "BURST16 enable of the USB controller";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL23_usb_host_incr16_en_enum;
+            reset = 0x1;
+        } usb_host_incr16_en[9:9];
+
+        enum MISC_CTRL23_usb_host_incr8_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "usb_host_incr8_en";
+            desc = "BURST8 enable of the USB controller";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL23_usb_host_incr8_en_enum;
+            reset = 0x1;
+        } usb_host_incr8_en[8:8];
+
+        enum MISC_CTRL23_usb_host_incr4_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "usb_host_incr4_en";
+            desc = "BURST4 enable of the USB controller";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL23_usb_host_incr4_en_enum;
+            reset = 0x1;
+        } usb_host_incr4_en[7:7];
+
+        enum MISC_CTRL23_usb_host_incr_align_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "usb_host_incr_align_en";
+            desc = "Burst alignment enable of the USB controller";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL23_usb_host_incr_align_en_enum;
+            reset = 0x0;
+        } usb_host_incr_align_en[6:6];
+
+        enum MISC_CTRL23_usb_host_autopd_on_ovrcur_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "usb_host_autopd_on_ovrcur_en";
+            desc = "Enable of automatic port power cutoff during USB host overcurrent";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL23_usb_host_autopd_on_ovrcur_en_enum;
+            reset = 0x1;
+        } usb_host_autopd_on_ovrcur_en[5:5];
+
+        enum MISC_CTRL23_usb_host_app_start_clk_enum {
+            NORMAL = 0 { name = "Normal"; desc = "the OHCI works normally (default)"; };
+            CLK_IN_SUSPEND = 1 { name = "Clk In Suspend"; desc = "the OHCI clock is enabled in suspend mode"; };
+        };
+
+        field {
+            name = "usb_host_app_start_clk";
+            desc = "OHCI clock control signal";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL23_usb_host_app_start_clk_enum;
+            reset = 0x0;
+        } usb_host_app_start_clk[2:2];
+
+        field {
+            name = "usb_host_ohci_susp_lgcy";
+            desc = "Suspended strap input signal of the OHCI";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } usb_host_ohci_susp_lgcy[1:1];
+
+        enum MISC_CTRL23_usb_host_utmi_word_if_enum {
+            WIDTH_8 = 0 { name = "Width 8"; desc = "8 bits"; };
+            WIDTH_16 = 1 { name = "Width 16"; desc = "16 bits"; };
+        };
+
+        field {
+            name = "usb_host_utmi_word_if";
+            desc = "Data bit width select of the UTMI interface";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL23_usb_host_utmi_word_if_enum;
+            reset = 0x0;
+        } usb_host_utmi_word_if[0:0];
+    } MISC_CTRL23 @ 0x5C;
+
+    reg {
+        name = "USB2.0 control register 1";
+        desc = "MISC_CTRL24 is a USB2.0 control register 1.
+
+USB 2.0 control register 1. usb_phy_reg_access (bit 16): the vendor U-Boot (USB2_PHY_SET offset 0x60, USB_PHY_REG_ACCESS = 1 << 16) sets it to 1 (bus mode) before programming the PHY registers at 0x120D0000 during USB reset release (see PERI_CRG46).
+
+Data sheet 3.5.5.2 MISC_CTRL24 (offset 0x60, printed page 3-85, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 9625).";
+
+        enum MISC_CTRL24_usb_phy_reg_access_enum {
+            REGISTER_MODE = 0 { name = "Register Mode"; desc = "register mode"; };
+            BUS_MODE = 1 { name = "Bus Mode"; desc = "bus mode"; };
+        };
+
+        field {
+            name = "usb_phy_reg_access";
+            desc = "Access mode of USB PHY registers";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL24_usb_phy_reg_access_enum;
+            reset = 0x0;
+        } usb_phy_reg_access[16:16];
+
+        enum MISC_CTRL24_usb_dev_scaledown_mode_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "scale-down disabled, the actual timing value is used"; };
+            ALL_EXCEPT_SUSPEND_RESUME = 1 { name = "All Except Suspend Resume"; desc = "scale-down of all timings except those suspended or resumed in device mode"; };
+            SUSPEND_RESUME = 2 { name = "Suspend Resume"; desc = "scale-down of timings suspended or resumed in device mode"; };
+            BIT0_BIT1 = 3 { name = "Bit0 Bit1"; desc = "scale-down of timings of bit 0 and bit 1"; };
+        };
+
+        field {
+            name = "usb_dev_scaledown_mode";
+            desc = "USB device scale-down mode";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL24_usb_dev_scaledown_mode_enum;
+            reset = 0x0;
+        } usb_dev_scaledown_mode[5:4];
+
+        field {
+            name = "usb_dev_dbg_addr";
+            desc = "Address segment of USB device registers";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } usb_dev_dbg_addr[1:0];
+    } MISC_CTRL24 @ 0x60;
+
+    reg {
+        name = "USB2.0 control register 2";
+        desc = "MISC_CTRL25 is a USB2.0 control register 2.
+
+USB 2.0 control register 2: USB PHY test register interface (MISC_USB at offset 0x64 in the vendor U-Boot); valid only when usb_phy_reg_access = 0 (register mode).
+
+Data sheet 3.5.5.2 MISC_CTRL25 (offset 0x64, printed page 3-86, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 9678).";
+
+        field {
+            name = "usb2_phy_test_rddata";
+            desc = "Read data of USB PHY registers (This field is valid only when the access mode of the USB PHY register is register mode.)";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } usb2_phy_test_rddata[31:24];
+
+        field {
+            name = "usb2_phy_test_wrdata";
+            desc = "Write data of USB PHY registers (This field is valid only when the access mode of the USB PHY register is register mode.)";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } usb2_phy_test_wrdata[23:16];
+
+        field {
+            name = "usb2_phy_test_wren";
+            desc = "Write control signal of USB PHY registers. Writing 1 to this bit starts the write operation on USB PHY registers. (This field is valid only when the access mode of the USB PHY register is register mode.)";
+            sw = w;
+            hw = r;
+            reset = 0x0;
+        } usb2_phy_test_wren[11:11];
+
+        field {
+            name = "usb2_phy_test_addr";
+            desc = "Interface address of USB PHY registers (This field is valid only when the access mode of the USB PHY register is register mode.)";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } usb2_phy_test_addr[10:0];
+    } MISC_CTRL25 @ 0x64;
+
+    reg {
+        name = "SVB control register";
+        desc = "MISC_CTRL30 is an SVB control register.
+
+SVB (adaptive voltage scaling) PWM output: the number of high-level cycles/period is configured value plus 1. The vendor U-Boot (lowlevel_init_v300.c start_svb) reads the core HPM and picks the core voltage table.
+
+Data sheet 3.5.5.2 MISC_CTRL30 (offset 0x78, printed page 3-87, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 9733).";
+
+        field {
+            name = "svb_pwm_duty";
+            desc = "Number of high-level cycles output by the SVB. The actual number is the configured value plus 1.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } svb_pwm_duty[25:16];
+
+        field {
+            name = "svb_pwm_period";
+            desc = "Number of cycles output by the SVB. The actual number is the configured value plus 1.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } svb_pwm_period[13:4];
+
+        field {
+            name = "svb_pwm_load";
+            desc = "SVB output parameter load control. Writing 1 to this bit enables the parameters to take effect.";
+            sw = w;
+            hw = r;
+            reset = 0x0;
+        } svb_pwm_load[2:2];
+
+        enum MISC_CTRL30_svb_pwm_inv_enum {
+            NORMAL = 0 { name = "Normal"; desc = "normal"; };
+            INVERSED = 1 { name = "Inversed"; desc = "inversed"; };
+        };
+
+        field {
+            name = "svb_pwm_inv";
+            desc = "SVB output phase control";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL30_svb_pwm_inv_enum;
+            reset = 0x0;
+        } svb_pwm_inv[1:1];
+
+        enum MISC_CTRL30_svb_pwm_enable_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "svb_pwm_enable";
+            desc = "SVB enable control";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL30_svb_pwm_enable_enum;
+            reset = 0x0;
+        } svb_pwm_enable[0:0];
+    } MISC_CTRL30 @ 0x78;
+
+    reg {
+        name = "Core high performance monitor (HPM) control register 0";
+        desc = "MISC_CTRL31 is core HPM control register 0.
+
+Core HPM (high performance monitor) control. Monitoring period = core_hpm_monitor_period x 2.048 ms.
+
+Data sheet 3.5.5.2 MISC_CTRL31 (offset 0x7C, printed page 3-88, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 9786).";
+
+        enum MISC_CTRL31_core_hpm_srst_req_enum {
+            DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
+            RESET = 1 { name = "Reset"; desc = "reset"; };
+        };
+
+        field {
+            name = "core_hpm_srst_req";
+            desc = "Core HPM reset request, active high";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL31_core_hpm_srst_req_enum;
+            reset = 0x0;
+        } core_hpm_srst_req[31:31];
+
+        enum MISC_CTRL31_core_hpm_monitor_en_enum {
+            SINGLE_MONITORING = 0 { name = "Single Monitoring"; desc = "single monitoring"; };
+            CYCLIC_MONITORING = 1 { name = "Cyclic Monitoring"; desc = "cyclic monitoring"; };
+        };
+
+        field {
+            name = "core_hpm_monitor_en";
+            desc = "Core HPM cyclic monitoring enable";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL31_core_hpm_monitor_en_enum;
+            reset = 0x0;
+        } core_hpm_monitor_en[30:30];
+
+        enum MISC_CTRL31_core_hpm_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "core_hpm_en";
+            desc = "Core HPM measure enable";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL31_core_hpm_en_enum;
+            reset = 0x0;
+        } core_hpm_en[29:29];
+
+        field {
+            name = "core_hpm_monitor_period";
+            desc = "Core HPM cyclic monitoring period The monitoring period is core_hpm_monitor_period x 2.048 ms.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } core_hpm_monitor_period[15:8];
+
+        field {
+            name = "core_hpm_div";
+            desc = "Frequency division ratio of the core HPM reference clock The actual frequency divider is the configured value plus 1.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } core_hpm_div[5:0];
+    } MISC_CTRL31 @ 0x7C;
+
+    reg {
+        name = "Core HPM control register 1";
+        desc = "MISC_CTRL32 is core HPM control register 1.
+
+Core HPM control 1: offset/shift/limits.
+
+Data sheet 3.5.5.2 MISC_CTRL32 (offset 0x80, printed page 3-89, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 9843).";
+
+        field {
+            name = "core_hpm_offset";
+            desc = "Core HPM offset";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } core_hpm_offset[23:22];
+
+        field {
+            name = "core_hpm_shift";
+            desc = "Core HPM shift";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } core_hpm_shift[21:20];
+
+        field {
+            name = "core_hpm_lowlimit";
+            desc = "Lower limit of the core HPM";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } core_hpm_lowlimit[19:10];
+
+        field {
+            name = "core_hpm_uplimit";
+            desc = "Upper limit of the core HPM";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } core_hpm_uplimit[9:0];
+    } MISC_CTRL32 @ 0x80;
+
+    reg {
+        name = "Core HPM status register 0";
+        desc = "MISC_CTRL33 is core HPM status register 0.
+
+Data sheet 3.5.5.2 MISC_CTRL33 (offset 0x84, printed page 3-89, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 9872).";
+
+        field {
+            name = "core_hpm_up_warning";
+            desc = "Core HPM overflow alarm, active high";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } core_hpm_up_warning[31:31];
+
+        field {
+            name = "core_hpm_low_warning";
+            desc = "Core HPM underflow alarm, active high";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } core_hpm_low_warning[30:30];
+
+        enum MISC_CTRL33_core_hpm_pc_valid_enum {
+            INVALID = 0 { name = "Invalid"; desc = "invalid"; };
+            VALID = 1 { name = "Valid"; desc = "valid"; };
+        };
+
+        field {
+            name = "core_hpm_pc_valid";
+            desc = "Core HPM output validity indicator";
+            sw = r;
+            hw = w;
+            encode = MISC_CTRL33_core_hpm_pc_valid_enum;
+            reset = 0x0;
+        } core_hpm_pc_valid[29:29];
+
+        field {
+            name = "core_hpm_pc_record1";
+            desc = "Source code type 1 of the core HPM";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } core_hpm_pc_record1[25:16];
+
+        field {
+            name = "core_hpm_pc_record0";
+            desc = "Source code type 0 of the core HPM";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } core_hpm_pc_record0[9:0];
+    } MISC_CTRL33 @ 0x84;
+
+    reg {
+        name = "Core HPM status register 1";
+        desc = "MISC_CTRL34 is core HPM status register 1.
+
+Data sheet 3.5.5.2 MISC_CTRL34 (offset 0x88, printed page 3-90, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 9924).";
+
+        field {
+            name = "core_hpm_rcc";
+            desc = "RCC code in the core HPM output";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } core_hpm_rcc[31:27];
+
+        field {
+            name = "core_hpm_pc_record3";
+            desc = "Source code type 3 of the core HPM";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } core_hpm_pc_record3[25:16];
+
+        field {
+            name = "core_hpm_pc_record2";
+            desc = "Source code type 2 of the core HPM";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } core_hpm_pc_record2[9:0];
+    } MISC_CTRL34 @ 0x88;
+
+    reg {
+        name = "Media HPM control register 0";
+        desc = "MISC_CTRL35 is media HPM control register 0.
+
+Data sheet 3.5.5.2 MISC_CTRL35 (offset 0x8C, printed page 3-91, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 9965).";
+
+        enum MISC_CTRL35_media_hpm_srst_req_enum {
+            DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
+            RESET = 1 { name = "Reset"; desc = "reset"; };
+        };
+
+        field {
+            name = "media_hpm_srst_req";
+            desc = "Media HPM reset request, active high";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL35_media_hpm_srst_req_enum;
+            reset = 0x0;
+        } media_hpm_srst_req[31:31];
+
+        enum MISC_CTRL35_media_hpm_monitor_en_enum {
+            SINGLE_MONITORING = 0 { name = "Single Monitoring"; desc = "single monitoring"; };
+            CYCLIC_MONITORING = 1 { name = "Cyclic Monitoring"; desc = "cyclic monitoring"; };
+        };
+
+        field {
+            name = "media_hpm_monitor_en";
+            desc = "Media HPM cyclic monitoring enable";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL35_media_hpm_monitor_en_enum;
+            reset = 0x0;
+        } media_hpm_monitor_en[30:30];
+
+        enum MISC_CTRL35_media_hpm_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "media_hpm_en";
+            desc = "Media HPM measure enable";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL35_media_hpm_en_enum;
+            reset = 0x0;
+        } media_hpm_en[29:29];
+
+        field {
+            name = "media_hpm_monitor_period";
+            desc = "Media HPM cyclic monitoring period The cyclic monitoring period is media_hpm_monitor_period x 2.048 ms.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } media_hpm_monitor_period[15:8];
+
+        field {
+            name = "media_hpm_div";
+            desc = "Frequency divider of the media HPM reference clock The actual frequency divider is the configured value plus 1.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } media_hpm_div[5:0];
+    } MISC_CTRL35 @ 0x8C;
+
+    reg {
+        name = "Media HPM control register 1";
+        desc = "MISC_CTRL36 is media HPM control register 1.
+
+Data sheet 3.5.5.2 MISC_CTRL36 (offset 0x90, printed page 3-92, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 10025).";
+
+        field {
+            name = "media_hpm_offset";
+            desc = "Media HPM offset";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } media_hpm_offset[23:22];
+
+        field {
+            name = "media_hpm_shift";
+            desc = "Media HPM shift";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } media_hpm_shift[21:20];
+
+        field {
+            name = "media_hpm_lowlimit";
+            desc = "Lower limit of the media HPM";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } media_hpm_lowlimit[19:10];
+
+        field {
+            name = "media_hpm_uplimit";
+            desc = "Upper limit of the media HPM";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } media_hpm_uplimit[9:0];
+    } MISC_CTRL36 @ 0x90;
+
+    reg {
+        name = "Media HPM status register 0";
+        desc = "MISC_CTRL37 is media HPM status register 0.
+
+Data sheet 3.5.5.2 MISC_CTRL37 (offset 0x94, printed page 3-92, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 10054).";
+
+        field {
+            name = "media_hpm_up_warning";
+            desc = "Media HPM overflow alarm, active high";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } media_hpm_up_warning[31:31];
+
+        field {
+            name = "media_hpm_low_warning";
+            desc = "Media HPM underflow alarm, active high";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } media_hpm_low_warning[30:30];
+
+        enum MISC_CTRL37_media_hpm_pc_valid_enum {
+            INVALID = 0 { name = "Invalid"; desc = "invalid"; };
+            VALID = 1 { name = "Valid"; desc = "valid"; };
+        };
+
+        field {
+            name = "media_hpm_pc_valid";
+            desc = "Media HPM output validity indicator";
+            sw = r;
+            hw = w;
+            encode = MISC_CTRL37_media_hpm_pc_valid_enum;
+            reset = 0x0;
+        } media_hpm_pc_valid[29:29];
+
+        field {
+            name = "media_hpm_pc_record1";
+            desc = "Source code type 1 of the media HPM";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } media_hpm_pc_record1[25:16];
+
+        field {
+            name = "media_hpm_pc_record0";
+            desc = "Source code type 0 of the media HPM";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } media_hpm_pc_record0[9:0];
+    } MISC_CTRL37 @ 0x94;
+
+    reg {
+        name = "Media HPM status register 1";
+        desc = "MISC_CTRL38 is media HPM status register 1.
+
+Data sheet 3.5.5.2 MISC_CTRL38 (offset 0x98, printed page 3-93, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 10109).";
+
+        field {
+            name = "media_hpm_rcc";
+            desc = "RCC code in the media HPM output";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } media_hpm_rcc[31:27];
+
+        field {
+            name = "media_hpm_pc_record3";
+            desc = "Source code type 3 of the media HPM";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } media_hpm_pc_record3[25:16];
+
+        field {
+            name = "media_hpm_pc_record2";
+            desc = "Source code type 2 of the media HPM";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } media_hpm_pc_record2[9:0];
+    } MISC_CTRL38 @ 0x98;
+
+    reg {
+        name = "Temperature sensor (T-Sensor) control register";
+        desc = "MISC_CTRL39 is a T-sensor control register.
+
+Temperature sensor control. Names of fields [29] and [27:20] are wrapped in the data sheet text (`tsensor_cnt16_bypa`+`ss`, `tsensor_monitor_pe`+`riod`); repaired here.
+
+Data sheet 3.5.5.2 MISC_CTRL39 (offset 0x9C, printed page 3-94, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 10150).";
+
+        enum MISC_CTRL39_tsensor_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "tsensor_en";
+            desc = "T-sensor enable";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL39_tsensor_en_enum;
+            reset = 0x0;
+        } tsensor_en[31:31];
+
+        enum MISC_CTRL39_tsensor_monitor_en_enum {
+            SINGLE_MONITORING = 0 { name = "Single Monitoring"; desc = "single monitoring"; };
+            CYCLIC_MONITORING = 1 { name = "Cyclic Monitoring"; desc = "cyclic monitoring"; };
+        };
+
+        field {
+            name = "tsensor_monitor_en";
+            desc = "T-sensor temperature cyclic monitoring enable";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL39_tsensor_monitor_en_enum;
+            reset = 0x0;
+        } tsensor_monitor_en[30:30];
+
+        field {
+            name = "tsensor_cnt16_bypass";
+            desc = "Bypass of obtaining the average value of 16 measurements of the T-sensor";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } tsensor_cnt16_bypass[29:29];
+
+        field {
+            name = "tsensor_monitor_period";
+            desc = "T-sensor temperature cyclic monitoring period. The timing baseline is 2 ms.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } tsensor_monitor_period[27:20];
+
+        field {
+            name = "tsensor_uplimit";
+            desc = "Temperature overflow value";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } tsensor_uplimit[19:10];
+
+        field {
+            name = "tsensor_lowlimit";
+            desc = "Temperature underflow value";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } tsensor_lowlimit[9:0];
+    } MISC_CTRL39 @ 0x9C;
+
+    reg {
+        name = "T-sensor status register";
+        desc = "MISC_CTRL40 is a T-sensor status register.
+
+Temperature sensor status/config. Names of fields [3:2], [1], [0] are wrapped in the data sheet text; repaired here. Fields [5:4] and [3:2] are RW although the register is titled `status register`; the alarms [1:0] are RO.
+
+Data sheet 3.5.5.2 MISC_CTRL40 (offset 0xA0, printed page 3-95, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 10200).";
+
+        enum MISC_CTRL40_tsensor_vcalib1_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "tsensor_vcalib1_en";
+            desc = "TSensor VCALIB1 enable";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL40_tsensor_vcalib1_en_enum;
+            reset = 0x0;
+        } tsensor_vcalib1_en[5:5];
+
+        enum MISC_CTRL40_tsensor_temp_calib_enum {
+            ENABLED = 0 { name = "Enabled"; desc = "calibration algorithm enabled"; };
+            DISABLED = 1 { name = "Disabled"; desc = "calibration algorithm disabled"; };
+        };
+
+        field {
+            name = "tsensor_temp_calib";
+            desc = "TSensor calibration algorithm select";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL40_tsensor_temp_calib_enum;
+            reset = 0x0;
+        } tsensor_temp_calib[4:4];
+
+        enum MISC_CTRL40_tsensor_temp_ct_sel_enum {
+            CT_0P512MS = 0 { name = "Ct 0P512Ms"; desc = "0.512 ms"; };
+            CT_1P024MS = 1 { name = "Ct 1P024Ms"; desc = "1.024 ms"; };
+            CT_0P256MS = 2 { name = "Ct 0P256Ms"; desc = "0.256 ms"; };
+            CT_2P048MS = 3 { name = "Ct 2P048Ms"; desc = "2.048 ms"; };
+        };
+
+        field {
+            name = "tsensor_temp_ct_sel";
+            desc = "Time select for converting a temperature code value of the TSensor";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL40_tsensor_temp_ct_sel_enum;
+            reset = 0x0;
+        } tsensor_temp_ct_sel[3:2];
+
+        field {
+            name = "tsensor_low_warning";
+            desc = "Temperature underflow alarm, active high";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } tsensor_low_warning[1:1];
+
+        field {
+            name = "tsensor_up_warning";
+            desc = "Temperature overflow alarm, active high";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } tsensor_up_warning[0:0];
+    } MISC_CTRL40 @ 0xA0;
+
+    reg {
+        name = "T-sensor temperature record register 0";
+        desc = "MISC_CTRL41 is T-sensor temperature record register 0.
+
+Data sheet 3.5.5.2 MISC_CTRL41 (offset 0xA4, printed page 3-96, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 10255).";
+
+        field {
+            name = "tsensor_result1";
+            desc = "Temperature record 1";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } tsensor_result1[25:16];
+
+        field {
+            name = "tsensor_result0";
+            desc = "Temperature record 0";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } tsensor_result0[9:0];
+    } MISC_CTRL41 @ 0xA4;
+
+    reg {
+        name = "T-sensor temperature record register 1";
+        desc = "MISC_CTRL42 is T-sensor temperature record register 1.
+
+Data sheet 3.5.5.2 MISC_CTRL42 (offset 0xA8, printed page 3-96, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 10276).";
+
+        field {
+            name = "tsensor_result3";
+            desc = "Temperature record 3";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } tsensor_result3[25:16];
+
+        field {
+            name = "tsensor_result2";
+            desc = "Temperature record 2";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } tsensor_result2[9:0];
+    } MISC_CTRL42 @ 0xA8;
+
+    reg {
+        name = "T-sensor temperature record register 2";
+        desc = "MISC_CTRL43 is T-sensor temperature record register 2.
+
+Data sheet 3.5.5.2 MISC_CTRL43 (offset 0xAC, printed page 3-97, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 10308).";
+
+        field {
+            name = "tsensor_result5";
+            desc = "Temperature record 5";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } tsensor_result5[25:16];
+
+        field {
+            name = "tsensor_result4";
+            desc = "Temperature record 4";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } tsensor_result4[9:0];
+    } MISC_CTRL43 @ 0xAC;
+
+    reg {
+        name = "T-sensor temperature record register 3";
+        desc = "MISC_CTRL44 is T-sensor temperature record register 3.
+
+Data sheet 3.5.5.2 MISC_CTRL44 (offset 0xB0, printed page 3-97, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 10329).";
+
+        field {
+            name = "tsensor_result7";
+            desc = "Temperature record 7";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } tsensor_result7[25:16];
+
+        field {
+            name = "tsensor_result6";
+            desc = "Temperature record 6";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } tsensor_result6[9:0];
+    } MISC_CTRL44 @ 0xB0;
+
+    reg {
+        name = "Update mode clear register";
+        desc = "MISC_CTRL47 is an update mode clear register.
+
+Update mode clear register. The vendor U-Boot board.c writes 1 here after a successful eMMC update (`update success! clear update mode!`).
+
+Data sheet 3.5.5.2 MISC_CTRL47 (offset 0xBC, printed page 3-98, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 10361).";
+
+        field {
+            name = "update_mode_clear";
+            desc = "Writing 1 to this bit clears the update mode. This register is configured when the update is complete.";
+            sw = w;
+            hw = r;
+            reset = 0x0;
+        } update_mode_clear[0:0];
+    } MISC_CTRL47 @ 0xBC;
+
+};
+
+`endif
