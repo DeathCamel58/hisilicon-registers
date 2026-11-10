@@ -12,6 +12,19 @@ regfile eHISI_I2C_DW {
     compatibles `hisilicon,hibvt-i2c` / `hi3516cv300-i2c`): the Hi3518EV200 data sheet documents a different layout, and the vendor device tree for this SoC uses the out-of-tree
     compatible `hisilicon,hisi-i2c-hisilicon` for which no driver source is in the tree. FIFO depth: TXFLR/RXFLR are 5 bits (up to 16 or 32 entries).
 
+    The same register map is in the Hi3516A/Hi3516D V100 data sheet (13.1, three instances, all 28 registers identical incl. resets) and, with differences, in the Hi3516A V200 (12.1)
+    and Hi3519 V101 (12.1) data sheets: those two add I2C_CON[31] `i2c_mode_sel` and a second, \"non-standard timing mode\" register set MODE2_I2C_* at 0x800..0x81C that is
+    the old HiSilicon APB I2C (`eHISI_I2C`: CTRL, COM, ICR, SR, SCL_H, SCL_L, TXR, RXR), and they do not document I2C_RX_TL, I2C_TX_TL, I2C_TXFLR, I2C_RXFLR, I2C_SCL_SWITCH and
+    I2C_SCL_SIM (kept here; the registers are part of the DesignWare core and the SCL ones are HiSilicon additions documented for the other chips - unverified on those two chips).
+    Both additions are enabled by the chip macro `I2C_DW_MODE2`. The Hi3516A V200 / Hi3519 reference clock is 49.5 MHz (MODE2_I2C_SCL_H/L formulas), Hi3516A V100 / Hi3518E V20X
+    24 MHz. Not the Hi3511/Hi3515/Hi3520 V100 controller either: that is a plain 16-bit DesignWare DW_apb_i2c (`eDW_APB_I2C`).
+
+    | SoC | Instances | Base addresses | Interrupt |
+    |-----|-----------|----------------|-----------|
+    | Hi3516A / Hi3516D V100 | I2C0, I2C1, I2C2 | 0x200D0000, 0x20240000, 0x20250000 | GIC 46 (I2C0), 89 (I2C1), 90 (I2C2) |
+    | Hi3518E V20X / Hi3516C V200 | I2C0, I2C1, I2C2 | 0x200D0000, 0x20240000, 0x20250000 | VIC 20 (shared) |
+    | Hi3516A V200 / Hi3519 V101 (`I2C_DW_MODE2`) | I2C0-3 | 0x12110000 + n x 0x1000 | GIC 41 (SSP0/I2C0), 42 (SSP1/I2C1), 46 (I2C2), 44 (SSP3/I2C3) |
+
     Clocking (DS 12.1.2, 3.2.5): the I2C reference clock is 24 MHz in the data sheet's examples; the CRG selects it with PERI_CRG57 `i2c_cksel` [27:26] (00 = APB clock (reset default), 01 = 24 MHz,
     1x = 6 MHz) and the soft resets are PERI_CRG57 `i2c0_srst_req` [23], `i2c1_srst_req` [24], `i2c2_srst_req` [25]; there is no separate clock-gate bit. DMA request lines: I2C0 RX/TX = 0/1, I2C1 = 2/3,
     I2C2 = 10/11 (DMAC Table 3-12). The data register for DMA is the I2C_DATA_CMD at +0x10.
@@ -31,6 +44,22 @@ Total reset value 0x65: bit 5 `restart_en` resets to 1; bits 6, 2 and 0 are list
 
 Data sheet 12.1.5 I2C_CON (offset 0x0, printed page 12-5, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 77797).";
 
+`ifdef I2C_DW_MODE2
+        enum I2C_CON_i2c_mode_sel_enum {
+            STANDARD_TIMING = 0 { name = "Standard Timing"; desc = "standard timing mode (the DesignWare-style registers below)"; };
+            NON_STANDARD_TIMING = 1 { name = "Non-standard Timing"; desc = "non-standard timing mode (the MODE2_I2C_* registers at 0x800..0x81C)"; };
+        };
+
+        field {
+            name = "i2c_mode_sel";
+            desc = "I2C mode select (Hi3516A V200 / Hi3519 V101 data sheet I2C_CON[31]).";
+            sw = rw;
+            hw = r;
+            encode = I2C_CON_i2c_mode_sel_enum;
+            reset = 0x0;
+        } i2c_mode_sel[31:31];
+
+`endif
         field {
             name = "reserved_b6";
             desc = "Reserved. The data sheet lists this bit as RO reserved but its total reset value 0x0000_0065 has this bit set (reads 1 at reset).";
@@ -1472,6 +1501,390 @@ Data sheet 12.1.5 I2C_SEQUENCE_CMD2 (offset 0xC0, printed page 12-27, `hi3518ev2
             reset = 0x0;
         } sequential_length[31:0];
     } I2C_SEQUENCE_CMD2 @ 0xC0;
+
+`ifdef I2C_DW_MODE2
+    /* Non-standard timing mode (MODE2) registers, Hi3516A V200 / Hi3519 V101 data sheet 12.1.5 (offsets 0x800..0x81C): the old HiSilicon APB I2C
+       (`eHISI_I2C`, Hi3520D 14.1) register set, selected by I2C_CON[31] `i2c_mode_sel` = 1. Bit layouts, resets and descriptions are the data sheet's. */
+
+    reg {
+        name = "I2C control register (non-standard timing mode)";
+        desc = "MODE2_I2C_CTRL is the I2C control register in non-standard timing mode. It enables the module and masks its interrupts.
+
+Data sheet 12.1.5 MODE2_I2C_CTRL (offset 0x800, Hi3516A V200 printed page 12-33, `hi3516av200--Hi3516AV200-Datasheet.txt` line 91686; Hi3519 V101 `hi3519v101--Hi3519V101-Datasheet.txt` line 91635).";
+
+        enum MODE2_enable_enum {
+            DISABLED = 0 { desc = "disabled"; };
+            ENABLED  = 1 { desc = "enabled"; };
+        };
+
+        enum MODE2_mask_enum {
+            MASKED     = 0 { desc = "masked"; };
+            NOT_MASKED = 1 { desc = "not masked"; };
+        };
+
+        field {
+            name = "mode2_i2c_en";
+            desc = "I2C enable in non-standard timing mode.";
+            sw = rw;
+            hw = r;
+            encode = MODE2_enable_enum;
+            reset = 0x0;
+        } mode2_i2c_en[8:8];
+
+        field {
+            name = "mode2_int_mask";
+            desc = "Global I2C interrupt mask in non-standard timing mode.";
+            sw = rw;
+            hw = r;
+            encode = MODE2_mask_enum;
+            reset = 0x0;
+        } mode2_int_mask[7:7];
+
+        field {
+            name = "mode2_int_start_mask";
+            desc = "Master start condition TX completion interrupt mask in non-standard timing mode.";
+            sw = rw;
+            hw = r;
+            encode = MODE2_mask_enum;
+            reset = 0x0;
+        } mode2_int_start_mask[6:6];
+
+        field {
+            name = "mode2_int_stop_mask";
+            desc = "Master stop condition TX completion interrupt mask in non-standard timing mode.";
+            sw = rw;
+            hw = r;
+            encode = MODE2_mask_enum;
+            reset = 0x0;
+        } mode2_int_stop_mask[5:5];
+
+        field {
+            name = "mode2_int_tx_mask";
+            desc = "Master TX interrupt mask in non-standard timing mode.";
+            sw = rw;
+            hw = r;
+            encode = MODE2_mask_enum;
+            reset = 0x0;
+        } mode2_int_tx_mask[4:4];
+
+        field {
+            name = "mode2_int_rx_mask";
+            desc = "Master RX interrupt mask in non-standard timing mode.";
+            sw = rw;
+            hw = r;
+            encode = MODE2_mask_enum;
+            reset = 0x0;
+        } mode2_int_rx_mask[3:3];
+
+        field {
+            name = "mode2_int_ack_err_mask";
+            desc = "Slave ACK error interrupt mask in non-standard timing mode.";
+            sw = rw;
+            hw = r;
+            encode = MODE2_mask_enum;
+            reset = 0x0;
+        } mode2_int_ack_err_mask[2:2];
+
+        field {
+            name = "mode2_int_arb_loss_mask";
+            desc = "Bus arbitration failure interrupt mask in non-standard timing mode.";
+            sw = rw;
+            hw = r;
+            encode = MODE2_mask_enum;
+            reset = 0x0;
+        } mode2_int_arb_loss_mask[1:1];
+
+        field {
+            name = "mode2_int_done_mask";
+            desc = "Bus transfer completion interrupt mask in non-standard timing mode.";
+            sw = rw;
+            hw = r;
+            encode = MODE2_mask_enum;
+            reset = 0x0;
+        } mode2_int_done_mask[0:0];
+    } MODE2_I2C_CTRL @ 0x800;
+
+    reg {
+        name = "I2C command register (non-standard timing mode)";
+        desc = "MODE2_I2C_COM is the I2C command register in non-standard timing mode. The corresponding interrupts must be cleared before or during system initialization. Bits [3:0] are automatically cleared after the operation is complete.
+
+Data sheet 12.1.5 MODE2_I2C_COM (offset 0x804, Hi3516A V200 printed page 12-35, `hi3516av200--Hi3516AV200-Datasheet.txt` line 91775).";
+
+        enum MODE2_op_ack_enum {
+            ACK  = 0 { desc = "An ACK is transmitted."; };
+            NACK = 1 { desc = "An NACK is transmitted."; };
+        };
+
+        enum MODE2_op_enum {
+            NOT_SENT = 0 { desc = "not sent"; };
+            SENT     = 1 { desc = "sent"; };
+        };
+
+        field {
+            name = "mode2_op_ack";
+            desc = "ACK operation in non-standard timing mode.";
+            sw = rw;
+            hw = rw;
+            encode = MODE2_op_ack_enum;
+            reset = 0x0;
+        } mode2_op_ack[4:4];
+
+        field {
+            name = "mode2_op_start";
+            desc = "Start bit operation in non-standard timing mode (self-clearing).";
+            sw = rw;
+            hw = rw;
+            encode = MODE2_op_enum;
+            reset = 0x0;
+        } mode2_op_start[3:3];
+
+        field {
+            name = "mode2_op_rd";
+            desc = "Read operation in non-standard timing mode (self-clearing).";
+            sw = rw;
+            hw = rw;
+            encode = MODE2_op_enum;
+            reset = 0x0;
+        } mode2_op_rd[2:2];
+
+        field {
+            name = "mode2_op_we";
+            desc = "Write operation in non-standard timing mode (self-clearing).";
+            sw = rw;
+            hw = rw;
+            encode = MODE2_op_enum;
+            reset = 0x0;
+        } mode2_op_we[1:1];
+
+        field {
+            name = "mode2_op_stop";
+            desc = "Stop bit operation in non-standard timing mode (self-clearing).";
+            sw = rw;
+            hw = rw;
+            encode = MODE2_op_enum;
+            reset = 0x0;
+        } mode2_op_stop[0:0];
+    } MODE2_I2C_COM @ 0x804;
+
+    reg {
+        name = "I2C interrupt clear register (non-standard timing mode)";
+        desc = "MODE2_I2C_ICR is the I2C interrupt clear register in non-standard timing mode. Writing 1 clears the flag in MODE2_I2C_SR; when a new interrupt is generated, the I2C module automatically clears the corresponding bit of MODE2_I2C_ICR.
+
+Data sheet 12.1.5 MODE2_I2C_ICR (offset 0x808, Hi3516A V200 printed page 12-36, `hi3516av200--Hi3516AV200-Datasheet.txt` line 91835).";
+
+        field {
+            name = "mode2_clr_int_start";
+            desc = "Master start bit TX completion interrupt flag clear.";
+            sw = rw;
+            hw = rw;
+            onwrite = woclr;
+            reset = 0x0;
+        } mode2_clr_int_start[6:6];
+
+        field {
+            name = "mode2_clr_int_stop";
+            desc = "Master stop bit TX completion interrupt flag clear.";
+            sw = rw;
+            hw = rw;
+            onwrite = woclr;
+            reset = 0x0;
+        } mode2_clr_int_stop[5:5];
+
+        field {
+            name = "mode2_clr_int_tx";
+            desc = "Master TX interrupt flag clear.";
+            sw = rw;
+            hw = rw;
+            onwrite = woclr;
+            reset = 0x0;
+        } mode2_clr_int_tx[4:4];
+
+        field {
+            name = "mode2_clr_int_rx";
+            desc = "Master RX interrupt flag clear.";
+            sw = rw;
+            hw = rw;
+            onwrite = woclr;
+            reset = 0x0;
+        } mode2_clr_int_rx[3:3];
+
+        field {
+            name = "mode2_clr_int_ack_err";
+            desc = "Slave ACK error interrupt flag clear.";
+            sw = rw;
+            hw = rw;
+            onwrite = woclr;
+            reset = 0x0;
+        } mode2_clr_int_ack_err[2:2];
+
+        field {
+            name = "mode2_clr_int_arb_loss";
+            desc = "Bus arbitration failure interrupt flag clear.";
+            sw = rw;
+            hw = rw;
+            onwrite = woclr;
+            reset = 0x0;
+        } mode2_clr_int_arb_loss[1:1];
+
+        field {
+            name = "mode2_clr_int_done";
+            desc = "Bus transfer completion interrupt flag clear.";
+            sw = rw;
+            hw = rw;
+            onwrite = woclr;
+            reset = 0x0;
+        } mode2_clr_int_done[0:0];
+    } MODE2_I2C_ICR @ 0x808;
+
+    reg {
+        name = "I2C status register (non-standard timing mode)";
+        desc = "MODE2_I2C_SR is the I2C status register in non-standard timing mode. Bit [1] indicates an I2C bus arbitration failure.
+
+Data sheet 12.1.5 MODE2_I2C_SR (offset 0x80C, Hi3516A V200 printed page 12-37, `hi3516av200--Hi3516AV200-Datasheet.txt` line 91926).";
+
+        enum MODE2_int_enum {
+            NO_INTERRUPT = 0 { desc = "No interrupt is generated."; };
+            INTERRUPT    = 1 { desc = "An interrupt is generated."; };
+        };
+
+        enum MODE2_busy_enum {
+            IDLE = 0 { desc = "idle"; };
+            BUSY = 1 { desc = "busy"; };
+        };
+
+        field {
+            name = "mode2_bus_busy";
+            desc = "I2C bus status.";
+            sw = r;
+            hw = w;
+            encode = MODE2_busy_enum;
+            reset = 0x0;
+        } mode2_bus_busy[7:7];
+
+        field {
+            name = "mode2_int_start";
+            desc = "Master start bit TX completion interrupt flag.";
+            sw = r;
+            hw = w;
+            encode = MODE2_int_enum;
+            reset = 0x0;
+        } mode2_int_start[6:6];
+
+        field {
+            name = "mode2_int_stop";
+            desc = "Master stop bit TX completion interrupt flag.";
+            sw = r;
+            hw = w;
+            encode = MODE2_int_enum;
+            reset = 0x0;
+        } mode2_int_stop[5:5];
+
+        field {
+            name = "mode2_int_tx";
+            desc = "Master TX interrupt flag.";
+            sw = r;
+            hw = w;
+            encode = MODE2_int_enum;
+            reset = 0x0;
+        } mode2_int_tx[4:4];
+
+        field {
+            name = "mode2_int_rx";
+            desc = "Master RX interrupt flag (MODE2_I2C_RXR is valid when this bit is 1).";
+            sw = r;
+            hw = w;
+            encode = MODE2_int_enum;
+            reset = 0x0;
+        } mode2_int_rx[3:3];
+
+        field {
+            name = "mode2_int_ack_err";
+            desc = "Slave ACK error interrupt flag.";
+            sw = r;
+            hw = w;
+            encode = MODE2_int_enum;
+            reset = 0x0;
+        } mode2_int_ack_err[2:2];
+
+        field {
+            name = "mode2_int_arb_loss";
+            desc = "Bus arbitration failure interrupt flag.";
+            sw = r;
+            hw = w;
+            encode = MODE2_int_enum;
+            reset = 0x0;
+        } mode2_int_arb_loss[1:1];
+
+        field {
+            name = "mode2_int_done";
+            desc = "Bus transfer completion interrupt flag.";
+            sw = r;
+            hw = w;
+            encode = MODE2_int_enum;
+            reset = 0x0;
+        } mode2_int_done[0:0];
+    } MODE2_I2C_SR @ 0x80C;
+
+    reg {
+        name = "I2C SCL high level cycle number register (non-standard timing mode)";
+        desc = "MODE2_I2C_SCL_H configures the number of SCL high-level cycles in non-standard timing mode. During or before system initialization, set MODE2_I2C_CTRL bit[7] to 0.
+
+Data sheet 12.1.5 MODE2_I2C_SCL_H (offset 0x810, Hi3516A V200 printed page 12-38, `hi3516av200--Hi3516AV200-Datasheet.txt` line 91999).";
+
+        field {
+            name = "mode2_scl_h";
+            desc = "SCL high level time in non-standard timing mode, in units of the I2C working reference clock (FI2C = 49.5 MHz): TH = (1/FI2C) x (m + 1) x 2 for a configured value m.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } mode2_scl_h[15:0];
+    } MODE2_I2C_SCL_H @ 0x810;
+
+    reg {
+        name = "I2C SCL low level cycle number register (non-standard timing mode)";
+        desc = "MODE2_I2C_SCL_L configures the number of SCL low-level cycles in non-standard timing mode.
+
+Data sheet 12.1.5 MODE2_I2C_SCL_L (offset 0x814, Hi3516A V200 printed page 12-39, `hi3516av200--Hi3516AV200-Datasheet.txt` line 92045).";
+
+        field {
+            name = "mode2_scl_l";
+            desc = "SCL low level time in non-standard timing mode, in units of the I2C working reference clock (FI2C = 49.5 MHz): TL = (1/FI2C) x (n + 1) x 2 for a configured value n.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } mode2_scl_l[15:0];
+    } MODE2_I2C_SCL_L @ 0x814;
+
+    reg {
+        name = "I2C TX register (non-standard timing mode)";
+        desc = "MODE2_I2C_TXR holds the data to be transmitted in non-standard timing mode. After the transmission is complete the I2C does not modify its content.
+
+Data sheet 12.1.5 MODE2_I2C_TXR (offset 0x818, Hi3516A V200 printed page 12-40, `hi3516av200--Hi3516AV200-Datasheet.txt` line 92080).";
+
+        field {
+            name = "mode2_i2c_txr";
+            desc = "Data to be transmitted by the master in non-standard timing mode.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } mode2_i2c_txr[7:0];
+    } MODE2_I2C_TXR @ 0x818;
+
+    reg {
+        name = "I2C RX register (non-standard timing mode)";
+        desc = "MODE2_I2C_RXR stores the data received by the master from the slave in non-standard timing mode. It is valid when MODE2_I2C_SR bit[3] is 1 and is retained until the next read operation starts.
+
+Data sheet 12.1.5 MODE2_I2C_RXR (offset 0x81C, Hi3516A V200 printed page 12-40, `hi3516av200--Hi3516AV200-Datasheet.txt` line 92117).";
+
+        field {
+            name = "mode2_i2c_rxr";
+            desc = "Data received by the master in non-standard timing mode.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } mode2_i2c_rxr[7:0];
+    } MODE2_I2C_RXR @ 0x81C;
+`endif
 
 };
 
