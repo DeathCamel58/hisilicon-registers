@@ -1,0 +1,1097 @@
+`ifndef ARM_GIC400_RDL
+`define ARM_GIC400_RDL
+
+regfile eARM_GIC400 {
+    name = "Generic interrupt controller (ARM GIC-400, GICv2)";
+    // The preprocessor does not see directives inside a string, so the per-chip interrupt table selects a whole desc.
+`ifdef GIC400_IRQ_TABLE_HI3516AV100
+    desc = "
+    ARM GIC-400 (GICv2) generic interrupt controller of the Cortex-A7 / Cortex-A17 HiSilicon SoCs, in the 64 KB `GIC register` window of the chip's address map:
+    distributor (GICD) at +0x1000, CPU interface (GICC) at +0x2000, hypervisor interface (GICH) at +0x4000 and virtual CPU interface (GICV) at +0x6000 (GIC-400 TRM
+    memory map; GICH/GICV are not modelled here, mainline `arm,gic-400` nodes use `reg = <base+0x1000 0x1000>, <base+0x2000 0x2000>, <base+0x4000 0x2000>, <base+0x6000 0x2000>`).
+    **No HiSilicon data sheet documents these registers**; the register set, field layouts, access types and reset values are the architectural GIC-400 ones (ARM DDI 0471,
+    IHI 0048) and the chip-specific values (GICD_TYPER, the ID registers' revision, GICD_ICFGR1) are not hardware verified. The data sheets only give the GIC window, the
+    interrupt source allocation table (below, selected with `GIC400_IRQ_TABLE_<CHIP>` in the chip's defines.rdl) and the interrupt count.
+
+    **Hi3516A/Hi3516D (Hi3516A V100): GIC window 0x20300000** (data sheet Table 1-1 line 1013 `GIC internal register 64KB` of `hi3516av100--Hi3516A-Hi3516D-Datasheet.txt`, English
+    translation), single Cortex-A7 core (DS 3.3, line 20479), 96 interrupt sources (DS 3.4, line 20507: `ICDICTR`/GICD_TYPER.ITLinesNumber = 2). GIC IDs (3.4 Table 3-8 `A7 interrupt
+    sources`, lines 20510-20560): 0-31 A7 internal (SGI/PPI), 32 COMMTX[0], 33 COMMRX[0], 34 Watchdog, 35 Timer01, 36 Timer23, 37 DMAC, 38 reserved, 39 RTC, 40 UART0, 41 UART1, 42 UART2,
+    43 UART3, 44 SSP0, 45 SSP1, 46 I2C, 47 IR, 48 SAR_ADC, 49 SFC_NOR, 50 NFC, 51 SDIO0, 52 SDIO1, 53 USB_EHCI, 54 USB_OHCI, 55 USB_DEV, 56 SFC_NAND, 57 GSF, 58 Cipher, 59 reserved,
+    60 software int, 61-63 reserved, 64 A7_PMU_INT0, 65 VDP, 66 MIPI, 67 VICAP, 68 VPSS, 69 TDE, 70 VGS, 71 AIO, 72 AVC (264), 73 JPGE, 74 reserved, 75 VEDU (265), 76 MD, 77 IVE,
+    78 reserved, 79 GPIO0, 80 GPIO1, 81 GPIO2/GPIO15, 82 GPIO3/GPIO14, 83 GPIO4/GPIO13, 84 GPIO5/GPIO12, 85 GPIO6/GPIO11, 86 GPIO7/GPIO10, 87 GPIO8/GPIO9, 88 tem_cap_int, 89 I2C1,
+    90 I2C2, 91-95 reserved.
+    ";
+`elsif GIC400_IRQ_TABLE_HI3516AV200
+    desc = "
+    ARM GIC-400 (GICv2) generic interrupt controller of the Cortex-A7 / Cortex-A17 HiSilicon SoCs, in the 64 KB `GIC register` window of the chip's address map:
+    distributor (GICD) at +0x1000, CPU interface (GICC) at +0x2000, hypervisor interface (GICH) at +0x4000 and virtual CPU interface (GICV) at +0x6000 (GIC-400 TRM
+    memory map; GICH/GICV are not modelled here, mainline `arm,gic-400` nodes use `reg = <base+0x1000 0x1000>, <base+0x2000 0x2000>, <base+0x4000 0x2000>, <base+0x6000 0x2000>`).
+    **No HiSilicon data sheet documents these registers**; the register set, field layouts, access types and reset values are the architectural GIC-400 ones (ARM DDI 0471,
+    IHI 0048) and the chip-specific values (GICD_TYPER, the ID registers' revision, GICD_ICFGR1) are not hardware verified. The data sheets only give the GIC window, the
+    interrupt source allocation table (below, selected with `GIC400_IRQ_TABLE_<CHIP>` in the chip's defines.rdl) and the interrupt count.
+
+    **Hi3516A V200 / Hi3519 V101: GIC window 0x10300000** (data sheet Table 1-1 `GIC register 64 KB`: `hi3516av200--Hi3516AV200-Datasheet.txt` line 854, `hi3519v101--Hi3519V101-Datasheet.txt`
+    line 950; English translations), Cortex-A17 and Cortex-A7 single cores (DS 3.3), 128 interrupt sources (DS 3.4.1: GICD_TYPER.ITLinesNumber = 3). GIC IDs (3.4.1 Table 3-8 `Mapping
+    between the interrupt bits and interrupt sources`, Hi3516A V200 lines 7277-7340 / Hi3519 V101 lines 7111-7175, identical): 0-31 CPU internal, 32 WatchDog, 33 RTC/TEM_CAP, 34-35 reserved,
+    36 UART0, 37 UART1, 38 UART2, 39 UART3, 40 UART4, 41 SSP0/I2C0, 42 SSP1/I2C1, 43 SSP2, 44 SSP3/I2C3, 45 MMC2, 46 I2C2, 47 IR, 48 LSADC, 49 DMAC, 50 FMC, 51 USB2_EHCI, 52 USB2_OHCI,
+    53 USB2_DEV, 54 USB3, 55 MMC0, 56 MMC1, 57 GSF, 58 Cipher, 59 VDP, 60 MIPI0, 61 MIPI1, 62 VICAP0, 63 VICAP1, 64 VPSS, 65 reserved, 66 TDE, 67 VGS, 68 AIAO, 69 VEDU, 70 JPGE, 71 IVE,
+    72 reserved, 73 GZIP, 74 software int, 75 GPIO0-7, 76 GPIO8-14 and GPIO16, 77 A7_PMU, 78 A17_PMU, 79 CCI, 80 GDC, 81 A17_COMMRX, 82 A17_COMMTX, 83 A7_COMMRX, 84 A7_COMMTX, 85 reserved,
+    86 PCIE_CFG_LINK_AUTO_BW, 87 PCIE_CFG_BW_MGT, 88 PCIE_PM, 89 PCIE_INTA, 90 PCIE_INTB, 91 PCIE_INTC, 92 PCIE_INTD, 93 PCIE_EDMA, 94 PCIE_MSI, 95 PCIE_LINK_DOWN, 96 Timer0, 97 Timer1,
+    98 Timer2, 99 Timer3, 100 Timer4, 101 Timer5, 102-127 reserved.
+    ";
+`elsif GIC400_IRQ_TABLE_HI3516AV300
+    desc = "
+    ARM GIC-400 (GICv2) generic interrupt controller of the Cortex-A7 / Cortex-A17 HiSilicon SoCs, in the 64 KB `GIC register` window of the chip's address map:
+    distributor (GICD) at +0x1000, CPU interface (GICC) at +0x2000, hypervisor interface (GICH) at +0x4000 and virtual CPU interface (GICV) at +0x6000 (GIC-400 TRM
+    memory map; GICH/GICV are not modelled here, mainline `arm,gic-400` nodes use `reg = <base+0x1000 0x1000>, <base+0x2000 0x2000>, <base+0x4000 0x2000>, <base+0x6000 0x2000>`).
+    **No HiSilicon data sheet documents these registers**; the register set, field layouts, access types and reset values are the architectural GIC-400 ones (ARM DDI 0471,
+    IHI 0048) and the chip-specific values (GICD_TYPER, the ID registers' revision, GICD_ICFGR1) are not hardware verified. The data sheets only give the GIC window, the
+    interrupt source allocation table (below, selected with `GIC400_IRQ_TABLE_<CHIP>` in the chip's defines.rdl) and the interrupt count.
+
+    **Hi3516A V300: GIC base not given by the data sheet** (the original Chinese `hi3516av300--Hi3516AV300-Datasheet.txt` has no GIC row in its address map; dual Cortex-A7 at 900 MHz,
+    256 KB L2, line 729; 128 interrupt sources, 3.3 line 9960: GICD_TYPER.ITLinesNumber = 3). GIC IDs (3.3 表3-2 `中断源分配表`, lines 9975-10075, watermarked dump): 0-15 SGI0-SGI15,
+    16-31 reserved (PPIs), 32 WDG0, 33 Timer0/Timer1, 34 Timer2/Timer3, 35 Timer4/Timer5, 36 Timer6/Timer7, 37 RTC, 38 UART0, 39 UART1, 40 UART2, 41 UART3, 42 UART4, 43 I2C0, 44 I2C1,
+    45 I2C2, 46 I2C3, 47 I2C4, 48 GPIO0, 49 GPIO1, 50 GPIO2, 51 GPIO3, 52 GPIO4, 53 GPIO5, 54 GPIO6, 55 GPIO7, 56 GPIO8, 57 GPIO9, 58 GPIO10, 59 USB2.0, 60 DMAC, 61 FMC, 62 SDIO0,
+    63 SDIO1, 64 ETH, 65 DDR_SEC_INT, 66 GZIP, 67 TDE, 68 JPGE, 69 IVE, 70 VGS, 71 DDRT, 72 VEDU, 73 NNIE, 74 GDC, 75 VPSS, 76 VIPROC, 77 JPGD, 78 A7_COMMTX[1], 79 A7_COMMRX[1],
+    80 A7_PMUIRQ[1], 81-82 reserved, 83 SOFTWARE_INT, 84 A7_COMMTX[0], 85 A7_COMMRX[0], 86 A7_PMUIRQ[0], 87 AIAO, 88 VICAP, 89 MIPI Rx, 90 VDP_INT0, 91 VDP_INT1, 92 HDMITX_AON,
+    93 HDMITX_PWD, 94 HDMITX_SEC, 95 MIPI Tx, 96 eMMC, 97 LSADC, 98 DDR, 99 SCD, 100 SPI0, 101 SPI1, 102 SPI2, 103 SPACC_SEC_INT, 104 SPACC_NOR_INT, 105-106 reserved, 107 IR,
+    108 WDG1, 109 I2C5, 110 I2C6, 111 I2C7, 112 GPIO11, 113-127 reserved.
+    ";
+`else
+    desc = "
+    ARM GIC-400 (GICv2) generic interrupt controller of the Cortex-A7 / Cortex-A17 HiSilicon SoCs, in the 64 KB `GIC register` window of the chip's address map:
+    distributor (GICD) at +0x1000, CPU interface (GICC) at +0x2000, hypervisor interface (GICH) at +0x4000 and virtual CPU interface (GICV) at +0x6000 (GIC-400 TRM
+    memory map; GICH/GICV are not modelled here, mainline `arm,gic-400` nodes use `reg = <base+0x1000 0x1000>, <base+0x2000 0x2000>, <base+0x4000 0x2000>, <base+0x6000 0x2000>`).
+    **No HiSilicon data sheet documents these registers**; the register set, field layouts, access types and reset values are the architectural GIC-400 ones (ARM DDI 0471,
+    IHI 0048) and the chip-specific values (GICD_TYPER, the ID registers' revision, GICD_ICFGR1) are not hardware verified. The data sheets only give the GIC window, the
+    interrupt source allocation table (below, selected with `GIC400_IRQ_TABLE_<CHIP>` in the chip's defines.rdl) and the interrupt count.
+
+    No chip interrupt table selected (define `GIC400_IRQ_TABLE_HI3516AV100`, `GIC400_IRQ_TABLE_HI3516AV200` (also for the Hi3519 V101) or `GIC400_IRQ_TABLE_HI3516AV300`
+    in the chip's defines.rdl).
+    ";
+`endif
+
+    regfile {
+        name = "Distributor (GICD)";
+        desc = "GIC-400 distributor at +0x1000 of the GIC window. Secure/non-secure banking is not modelled (the secure view is described).";
+
+        reg {
+            name = "Distributor control register";
+            desc = "Enables the forwarding of pending interrupts from the distributor to the CPU interfaces. Banked for secure/non-secure access: the secure view has both bits, the non-secure view only EnableGrp1 (as bit 0).
+
+ARM GIC-400 TRM (DDI 0471) and GICv2 architecture specification (IHI 0048); not in any HiSilicon data sheet, not hardware verified.";
+
+            field {
+                name = "EnableGrp1";
+                desc = "Group 1 interrupt forwarding: 0 disabled, 1 enabled.";
+                sw = rw;
+                hw = r;
+                reset = 0x0;
+            } EnableGrp1[1:1];
+
+            field {
+                name = "EnableGrp0";
+                desc = "Group 0 interrupt forwarding: 0 disabled, 1 enabled.";
+                sw = rw;
+                hw = r;
+                reset = 0x0;
+            } EnableGrp0[0:0];
+        } GICD_CTLR @ 0x0;
+
+        reg {
+            name = "Interrupt controller type register";
+            desc = "Configuration of the GIC: number of interrupt lines, CPU interfaces, security extension, lockable SPIs. Reset value is the GIC-400 configuration of the chip (ITLinesNumber = N means 32*(N+1) interrupt IDs: 2 for 96 sources (Hi3516A), 3 for 128 sources (Hi3516A V200, Hi3519 V101, Hi3516A V300)); the field resets given here are placeholders (0), not measurements.
+
+ARM GIC-400 TRM (DDI 0471) and GICv2 architecture specification (IHI 0048); not in any HiSilicon data sheet, not hardware verified.";
+
+            field {
+                name = "LSPI";
+                desc = "Maximum number of lockable SPIs (secure view).";
+                sw = r;
+                hw = na;
+            } LSPI[15:11];
+
+            field {
+                name = "SecurityExtn";
+                desc = "1 = GIC implements the security extensions (GIC-400: always 1).";
+                sw = r;
+                hw = na;
+                reset = 0x1;
+            } SecurityExtn[10:10];
+
+            field {
+                name = "CPUNumber";
+                desc = "Number of implemented CPU interfaces minus 1.";
+                sw = r;
+                hw = na;
+            } CPUNumber[7:5];
+
+            field {
+                name = "ITLinesNumber";
+                desc = "Maximum number of interrupts is 32*(ITLinesNumber+1).";
+                sw = r;
+                hw = na;
+            } ITLinesNumber[4:0];
+        } GICD_TYPER @ 0x4;
+
+        reg {
+            name = "Distributor implementer identification register";
+            desc = "GIC-400 r0p0 reads 0x0200043B (ProductID 0x02, Variant 0, Revision 0, Implementer 0x43B = ARM); r0p1 reads 0x0200143B. Which revision the SoC integrates is unknown.
+
+ARM GIC-400 TRM (DDI 0471) and GICv2 architecture specification (IHI 0048); not in any HiSilicon data sheet, not hardware verified.";
+
+            field {
+                name = "ProductID";
+                desc = "Product identifier (0x02 = GIC-400).";
+                sw = r;
+                hw = na;
+                reset = 0x2;
+            } ProductID[31:24];
+
+            field {
+                name = "Variant";
+                desc = "Major revision (rN).";
+                sw = r;
+                hw = na;
+                reset = 0x0;
+            } Variant[23:20];
+
+            field {
+                name = "Revision";
+                desc = "Minor revision (pN).";
+                sw = r;
+                hw = na;
+                reset = 0x0;
+            } Revision[15:12];
+
+            field {
+                name = "Implementer";
+                desc = "JEP106 implementer code, 0x43B = ARM.";
+                sw = r;
+                hw = na;
+                reset = 0x43B;
+            } Implementer[11:0];
+        } GICD_IIDR @ 0x8;
+
+        reg {
+            name = "Interrupt group registers";
+            desc = "One bit per interrupt ID (register n covers IDs 32n..32n+31): 0 group 0 (secure), 1 group 1 (non-secure). Only accessible from the secure side; IDs 0-15 (SGIs) and 16-31 (PPIs) are banked per CPU in register 0. GIC-400 implements 16 registers (up to 512 IDs); registers above the implemented ITLinesNumber read as zero.
+
+ARM GIC-400 TRM (DDI 0471) and GICv2 architecture specification (IHI 0048); not in any HiSilicon data sheet, not hardware verified.";
+
+            field {
+                name = "value";
+                desc = "Group bits.";
+                sw = rw;
+                hw = r;
+                reset = 0x0;
+            } value[31:0];
+        } GICD_IGROUPR[16] @ 0x80 += 0x4;
+
+        reg {
+            name = "Interrupt set-enable registers";
+            desc = "Reading returns the enable state of each interrupt ID; writing 1 enables the interrupt (writing 0 has no effect). Register 0 covers the SGIs and PPIs (banked per CPU; the SGI bits [15:0] read as 1 and cannot be cleared on the GIC-400, reset 0x0000FFFF for register 0, 0 for the others).
+
+ARM GIC-400 TRM (DDI 0471) and GICv2 architecture specification (IHI 0048); not in any HiSilicon data sheet, not hardware verified.";
+
+            field {
+                name = "value";
+                desc = "Set-enable bits (write 1 to enable; reads the enable state).";
+                sw = rw;
+                hw = r;
+                onwrite = woset;
+                reset = 0x0;
+            } value[31:0];
+        } GICD_ISENABLER[16] @ 0x100 += 0x4;
+
+        reg {
+            name = "Interrupt clear-enable registers";
+            desc = "Reading returns the enable state; writing 1 disables the interrupt. Register 0 reset 0x0000FFFF (SGIs always enabled), others 0.
+
+ARM GIC-400 TRM (DDI 0471) and GICv2 architecture specification (IHI 0048); not in any HiSilicon data sheet, not hardware verified.";
+
+            field {
+                name = "value";
+                desc = "Clear-enable bits (write 1 to disable; reads the enable state).";
+                sw = rw;
+                hw = r;
+                onwrite = woclr;
+                reset = 0x0;
+            } value[31:0];
+        } GICD_ICENABLER[16] @ 0x180 += 0x4;
+
+        reg {
+            name = "Interrupt set-pending registers";
+            desc = "Reading returns the pending state; writing 1 sets the interrupt pending.
+
+ARM GIC-400 TRM (DDI 0471) and GICv2 architecture specification (IHI 0048); not in any HiSilicon data sheet, not hardware verified.";
+
+            field {
+                name = "value";
+                desc = "Set-pending bits.";
+                sw = rw;
+                hw = r;
+                onwrite = woset;
+                reset = 0x0;
+            } value[31:0];
+        } GICD_ISPENDR[16] @ 0x200 += 0x4;
+
+        reg {
+            name = "Interrupt clear-pending registers";
+            desc = "Reading returns the pending state; writing 1 clears the pending state of a level-sensitive interrupt only while its input is deasserted.
+
+ARM GIC-400 TRM (DDI 0471) and GICv2 architecture specification (IHI 0048); not in any HiSilicon data sheet, not hardware verified.";
+
+            field {
+                name = "value";
+                desc = "Clear-pending bits.";
+                sw = rw;
+                hw = r;
+                onwrite = woclr;
+                reset = 0x0;
+            } value[31:0];
+        } GICD_ICPENDR[16] @ 0x280 += 0x4;
+
+        reg {
+            name = "Interrupt set-active registers";
+            desc = "Reading returns the active state; writing 1 sets the interrupt active.
+
+ARM GIC-400 TRM (DDI 0471) and GICv2 architecture specification (IHI 0048); not in any HiSilicon data sheet, not hardware verified.";
+
+            field {
+                name = "value";
+                desc = "Set-active bits.";
+                sw = rw;
+                hw = r;
+                onwrite = woset;
+                reset = 0x0;
+            } value[31:0];
+        } GICD_ISACTIVER[16] @ 0x300 += 0x4;
+
+        reg {
+            name = "Interrupt clear-active registers";
+            desc = "Reading returns the active state; writing 1 deactivates the interrupt.
+
+ARM GIC-400 TRM (DDI 0471) and GICv2 architecture specification (IHI 0048); not in any HiSilicon data sheet, not hardware verified.";
+
+            field {
+                name = "value";
+                desc = "Clear-active bits.";
+                sw = rw;
+                hw = r;
+                onwrite = woclr;
+                reset = 0x0;
+            } value[31:0];
+        } GICD_ICACTIVER[16] @ 0x380 += 0x4;
+
+        reg {
+            name = "Interrupt priority registers";
+            desc = "One byte per interrupt ID (register n holds IDs 4n..4n+3), byte accessible. The GIC-400 implements 5 priority bits: bits [2:0] of each byte are RAZ/WI, so 32 priority levels. Registers 0-7 (IDs 0-31) are banked per CPU. Reset 0.
+
+ARM GIC-400 TRM (DDI 0471) and GICv2 architecture specification (IHI 0048); not in any HiSilicon data sheet, not hardware verified.";
+
+            field {
+                name = "prio3";
+                desc = "Priority of ID 4n+3 (bits [2:0] not implemented).";
+                sw = rw;
+                hw = r;
+                reset = 0x0;
+            } prio3[31:24];
+
+            field {
+                name = "prio2";
+                desc = "Priority of ID 4n+2.";
+                sw = rw;
+                hw = r;
+                reset = 0x0;
+            } prio2[23:16];
+
+            field {
+                name = "prio1";
+                desc = "Priority of ID 4n+1.";
+                sw = rw;
+                hw = r;
+                reset = 0x0;
+            } prio1[15:8];
+
+            field {
+                name = "prio0";
+                desc = "Priority of ID 4n.";
+                sw = rw;
+                hw = r;
+                reset = 0x0;
+            } prio0[7:0];
+        } GICD_IPRIORITYR[128] @ 0x400 += 0x4;
+
+        reg {
+            name = "Interrupt processor targets registers";
+            desc = "One byte per interrupt ID (register n holds IDs 4n..4n+3), bit m of a byte targets CPU interface m. Registers 0-7 (SGIs, PPIs) are read-only and return the number of the reading CPU interface; on a single-core chip every SPI byte reads as 0x01 after it is set. Reset 0 for the SPIs on the GIC-400.
+
+ARM GIC-400 TRM (DDI 0471) and GICv2 architecture specification (IHI 0048); not in any HiSilicon data sheet, not hardware verified.";
+
+            field {
+                name = "target3";
+                desc = "CPU targets of ID 4n+3.";
+                sw = rw;
+                hw = r;
+                reset = 0x0;
+            } target3[31:24];
+
+            field {
+                name = "target2";
+                desc = "CPU targets of ID 4n+2.";
+                sw = rw;
+                hw = r;
+                reset = 0x0;
+            } target2[23:16];
+
+            field {
+                name = "target1";
+                desc = "CPU targets of ID 4n+1.";
+                sw = rw;
+                hw = r;
+                reset = 0x0;
+            } target1[15:8];
+
+            field {
+                name = "target0";
+                desc = "CPU targets of ID 4n.";
+                sw = rw;
+                hw = r;
+                reset = 0x0;
+            } target0[7:0];
+        } GICD_ITARGETSR[128] @ 0x800 += 0x4;
+
+        reg {
+            name = "Interrupt configuration registers";
+            desc = "Two bits per interrupt ID (register n holds IDs 16n..16n+15): bit 1 of each pair 0 = level-sensitive, 1 = edge-triggered; bit 0 is reserved (model 1-N). Register 0 (SGIs) reads 0xAAAAAAAA (edge, read-only); register 1 (PPIs) is read-only on the GIC-400 and reads 0x7DC00000 (the fixed PPI trigger configuration of the Cortex-A7/A17 PPIs); the SPI registers reset to 0 (level).
+
+ARM GIC-400 TRM (DDI 0471) and GICv2 architecture specification (IHI 0048); not in any HiSilicon data sheet, not hardware verified.";
+
+            field {
+                name = "value";
+                desc = "Interrupt configuration pairs.";
+                sw = rw;
+                hw = r;
+                reset = 0x0;
+            } value[31:0];
+        } GICD_ICFGR[32] @ 0xC00 += 0x4;
+
+        reg {
+            name = "Private peripheral interrupt status register";
+            desc = "Read-only status of the PPI inputs of the CPU interface being read: bit 11 PPI 27 (virtual maintenance), bit 12 PPI 28 (hypervisor timer), bit 13 PPI 29 (virtual timer), bit 14 PPI 30 (legacy nFIQ), bit 15 PPI 31 (legacy nIRQ), bits 9-10 PPI 25/26 (physical secure / non-secure timer). GIC-400 specific.
+
+ARM GIC-400 TRM (DDI 0471) and GICv2 architecture specification (IHI 0048); not in any HiSilicon data sheet, not hardware verified.";
+
+            field {
+                name = "ppi_status";
+                desc = "PPI input status (bit n = PPI n+16).";
+                sw = r;
+                hw = w;
+                reset = 0x0;
+            } ppi_status[15:9];
+        } GICD_PPISR @ 0xD00;
+
+        reg {
+            name = "Shared peripheral interrupt status registers";
+            desc = "Read-only status of the SPI input lines (register n = SPI IDs 32n+32..32n+63). GIC-400 specific.
+
+ARM GIC-400 TRM (DDI 0471) and GICv2 architecture specification (IHI 0048); not in any HiSilicon data sheet, not hardware verified.";
+
+            field {
+                name = "value";
+                desc = "SPI input status.";
+                sw = r;
+                hw = w;
+                reset = 0x0;
+            } value[31:0];
+        } GICD_SPISR[15] @ 0xD04 += 0x4;
+
+        reg {
+            name = "Software generated interrupt register";
+            desc = "Writing generates an SGI (IDs 0-15).
+
+ARM GIC-400 TRM (DDI 0471) and GICv2 architecture specification (IHI 0048); not in any HiSilicon data sheet, not hardware verified.";
+
+            field {
+                name = "TargetListFilter";
+                desc = "0 = forward to the CPUs in CPUTargetList, 1 = all CPUs except the requesting one, 2 = the requesting CPU only, 3 = reserved.";
+                sw = w;
+                hw = r;
+            } TargetListFilter[25:24];
+
+            field {
+                name = "CPUTargetList";
+                desc = "Target CPU interfaces (bit m = interface m) when TargetListFilter is 0.";
+                sw = w;
+                hw = r;
+            } CPUTargetList[23:16];
+
+            field {
+                name = "NSATT";
+                desc = "Security of the generated interrupt: 0 group 0, 1 group 1 (secure writes only).";
+                sw = w;
+                hw = r;
+            } NSATT[15:15];
+
+            field {
+                name = "SGIINTID";
+                desc = "Interrupt ID of the SGI (0-15).";
+                sw = w;
+                hw = r;
+            } SGIINTID[3:0];
+        } GICD_SGIR @ 0xF00;
+
+        reg {
+            name = "SGI clear-pending registers";
+            desc = "One byte per SGI ID (register n = SGIs 4n..4n+3), bit m = pending from CPU m; writing 1 clears. Banked per CPU.
+
+ARM GIC-400 TRM (DDI 0471) and GICv2 architecture specification (IHI 0048); not in any HiSilicon data sheet, not hardware verified.";
+
+            field {
+                name = "sgi3";
+                desc = "SGI 4n+3 pending-by-CPU bits.";
+                sw = rw;
+                hw = r;
+                onwrite = woclr;
+                reset = 0x0;
+            } sgi3[31:24];
+
+            field {
+                name = "sgi2";
+                desc = "SGI 4n+2.";
+                sw = rw;
+                hw = r;
+                onwrite = woclr;
+                reset = 0x0;
+            } sgi2[23:16];
+
+            field {
+                name = "sgi1";
+                desc = "SGI 4n+1.";
+                sw = rw;
+                hw = r;
+                onwrite = woclr;
+                reset = 0x0;
+            } sgi1[15:8];
+
+            field {
+                name = "sgi0";
+                desc = "SGI 4n.";
+                sw = rw;
+                hw = r;
+                onwrite = woclr;
+                reset = 0x0;
+            } sgi0[7:0];
+        } GICD_CPENDSGIR[4] @ 0xF10 += 0x4;
+
+        reg {
+            name = "SGI set-pending registers";
+            desc = "One byte per SGI ID, bit m = pending from CPU m; writing 1 sets pending. Banked per CPU.
+
+ARM GIC-400 TRM (DDI 0471) and GICv2 architecture specification (IHI 0048); not in any HiSilicon data sheet, not hardware verified.";
+
+            field {
+                name = "sgi3";
+                desc = "SGI 4n+3 pending-by-CPU bits.";
+                sw = rw;
+                hw = r;
+                onwrite = woset;
+                reset = 0x0;
+            } sgi3[31:24];
+
+            field {
+                name = "sgi2";
+                desc = "SGI 4n+2.";
+                sw = rw;
+                hw = r;
+                onwrite = woset;
+                reset = 0x0;
+            } sgi2[23:16];
+
+            field {
+                name = "sgi1";
+                desc = "SGI 4n+1.";
+                sw = rw;
+                hw = r;
+                onwrite = woset;
+                reset = 0x0;
+            } sgi1[15:8];
+
+            field {
+                name = "sgi0";
+                desc = "SGI 4n.";
+                sw = rw;
+                hw = r;
+                onwrite = woset;
+                reset = 0x0;
+            } sgi0[7:0];
+        } GICD_SPENDSGIR[4] @ 0xF20 += 0x4;
+
+        reg {
+            name = "Identification register PIDR4";
+            desc = "CoreSight-style peripheral/component ID byte; the reset value is the GIC-400 r0p0 one from the TRM (PIDR2 bit [7:4] carries the revision: 0x2B r0p0, 0x3B r0p1).
+
+ARM GIC-400 TRM (DDI 0471) and GICv2 architecture specification (IHI 0048); not in any HiSilicon data sheet, not hardware verified.";
+
+            field {
+                name = "id";
+                desc = "ID byte.";
+                sw = r;
+                hw = na;
+                reset = 0x4;
+            } id[7:0];
+        } GICD_PIDR4 @ 0xFD0;
+
+        reg {
+            name = "Identification register PIDR5";
+            desc = "CoreSight-style peripheral/component ID byte; the reset value is the GIC-400 r0p0 one from the TRM (PIDR2 bit [7:4] carries the revision: 0x2B r0p0, 0x3B r0p1).
+
+ARM GIC-400 TRM (DDI 0471) and GICv2 architecture specification (IHI 0048); not in any HiSilicon data sheet, not hardware verified.";
+
+            field {
+                name = "id";
+                desc = "ID byte.";
+                sw = r;
+                hw = na;
+                reset = 0x0;
+            } id[7:0];
+        } GICD_PIDR5 @ 0xFD4;
+
+        reg {
+            name = "Identification register PIDR6";
+            desc = "CoreSight-style peripheral/component ID byte; the reset value is the GIC-400 r0p0 one from the TRM (PIDR2 bit [7:4] carries the revision: 0x2B r0p0, 0x3B r0p1).
+
+ARM GIC-400 TRM (DDI 0471) and GICv2 architecture specification (IHI 0048); not in any HiSilicon data sheet, not hardware verified.";
+
+            field {
+                name = "id";
+                desc = "ID byte.";
+                sw = r;
+                hw = na;
+                reset = 0x0;
+            } id[7:0];
+        } GICD_PIDR6 @ 0xFD8;
+
+        reg {
+            name = "Identification register PIDR7";
+            desc = "CoreSight-style peripheral/component ID byte; the reset value is the GIC-400 r0p0 one from the TRM (PIDR2 bit [7:4] carries the revision: 0x2B r0p0, 0x3B r0p1).
+
+ARM GIC-400 TRM (DDI 0471) and GICv2 architecture specification (IHI 0048); not in any HiSilicon data sheet, not hardware verified.";
+
+            field {
+                name = "id";
+                desc = "ID byte.";
+                sw = r;
+                hw = na;
+                reset = 0x0;
+            } id[7:0];
+        } GICD_PIDR7 @ 0xFDC;
+
+        reg {
+            name = "Identification register PIDR0";
+            desc = "CoreSight-style peripheral/component ID byte; the reset value is the GIC-400 r0p0 one from the TRM (PIDR2 bit [7:4] carries the revision: 0x2B r0p0, 0x3B r0p1).
+
+ARM GIC-400 TRM (DDI 0471) and GICv2 architecture specification (IHI 0048); not in any HiSilicon data sheet, not hardware verified.";
+
+            field {
+                name = "id";
+                desc = "ID byte.";
+                sw = r;
+                hw = na;
+                reset = 0x90;
+            } id[7:0];
+        } GICD_PIDR0 @ 0xFE0;
+
+        reg {
+            name = "Identification register PIDR1";
+            desc = "CoreSight-style peripheral/component ID byte; the reset value is the GIC-400 r0p0 one from the TRM (PIDR2 bit [7:4] carries the revision: 0x2B r0p0, 0x3B r0p1).
+
+ARM GIC-400 TRM (DDI 0471) and GICv2 architecture specification (IHI 0048); not in any HiSilicon data sheet, not hardware verified.";
+
+            field {
+                name = "id";
+                desc = "ID byte.";
+                sw = r;
+                hw = na;
+                reset = 0xB4;
+            } id[7:0];
+        } GICD_PIDR1 @ 0xFE4;
+
+        reg {
+            name = "Identification register PIDR2";
+            desc = "CoreSight-style peripheral/component ID byte; the reset value is the GIC-400 r0p0 one from the TRM (PIDR2 bit [7:4] carries the revision: 0x2B r0p0, 0x3B r0p1).
+
+ARM GIC-400 TRM (DDI 0471) and GICv2 architecture specification (IHI 0048); not in any HiSilicon data sheet, not hardware verified.";
+
+            field {
+                name = "id";
+                desc = "ID byte.";
+                sw = r;
+                hw = na;
+                reset = 0x2B;
+            } id[7:0];
+        } GICD_PIDR2 @ 0xFE8;
+
+        reg {
+            name = "Identification register PIDR3";
+            desc = "CoreSight-style peripheral/component ID byte; the reset value is the GIC-400 r0p0 one from the TRM (PIDR2 bit [7:4] carries the revision: 0x2B r0p0, 0x3B r0p1).
+
+ARM GIC-400 TRM (DDI 0471) and GICv2 architecture specification (IHI 0048); not in any HiSilicon data sheet, not hardware verified.";
+
+            field {
+                name = "id";
+                desc = "ID byte.";
+                sw = r;
+                hw = na;
+                reset = 0x0;
+            } id[7:0];
+        } GICD_PIDR3 @ 0xFEC;
+
+        reg {
+            name = "Identification register CIDR0";
+            desc = "CoreSight-style peripheral/component ID byte; the reset value is the GIC-400 r0p0 one from the TRM (PIDR2 bit [7:4] carries the revision: 0x2B r0p0, 0x3B r0p1).
+
+ARM GIC-400 TRM (DDI 0471) and GICv2 architecture specification (IHI 0048); not in any HiSilicon data sheet, not hardware verified.";
+
+            field {
+                name = "id";
+                desc = "ID byte.";
+                sw = r;
+                hw = na;
+                reset = 0xD;
+            } id[7:0];
+        } GICD_CIDR0 @ 0xFF0;
+
+        reg {
+            name = "Identification register CIDR1";
+            desc = "CoreSight-style peripheral/component ID byte; the reset value is the GIC-400 r0p0 one from the TRM (PIDR2 bit [7:4] carries the revision: 0x2B r0p0, 0x3B r0p1).
+
+ARM GIC-400 TRM (DDI 0471) and GICv2 architecture specification (IHI 0048); not in any HiSilicon data sheet, not hardware verified.";
+
+            field {
+                name = "id";
+                desc = "ID byte.";
+                sw = r;
+                hw = na;
+                reset = 0xF0;
+            } id[7:0];
+        } GICD_CIDR1 @ 0xFF4;
+
+        reg {
+            name = "Identification register CIDR2";
+            desc = "CoreSight-style peripheral/component ID byte; the reset value is the GIC-400 r0p0 one from the TRM (PIDR2 bit [7:4] carries the revision: 0x2B r0p0, 0x3B r0p1).
+
+ARM GIC-400 TRM (DDI 0471) and GICv2 architecture specification (IHI 0048); not in any HiSilicon data sheet, not hardware verified.";
+
+            field {
+                name = "id";
+                desc = "ID byte.";
+                sw = r;
+                hw = na;
+                reset = 0x5;
+            } id[7:0];
+        } GICD_CIDR2 @ 0xFF8;
+
+        reg {
+            name = "Identification register CIDR3";
+            desc = "CoreSight-style peripheral/component ID byte; the reset value is the GIC-400 r0p0 one from the TRM (PIDR2 bit [7:4] carries the revision: 0x2B r0p0, 0x3B r0p1).
+
+ARM GIC-400 TRM (DDI 0471) and GICv2 architecture specification (IHI 0048); not in any HiSilicon data sheet, not hardware verified.";
+
+            field {
+                name = "id";
+                desc = "ID byte.";
+                sw = r;
+                hw = na;
+                reset = 0xB1;
+            } id[7:0];
+        } GICD_CIDR3 @ 0xFFC;
+    } GICD @ 0x1000;
+
+    regfile {
+        name = "CPU interface (GICC)";
+        desc = "GIC-400 CPU interface at +0x2000 of the GIC window (the physical CPU interface; the secure view is described). GICC_DIR is at +0x1000 inside it (i.e. +0x3000 of the window).";
+
+        reg {
+            name = "CPU interface control register";
+            desc = "Enables the signalling of interrupts to the processor and selects the bypass / EOI modes. Banked secure/non-secure (the non-secure view has EnableGrp1 as bit 0, FIQBypDisGrp1/IRQBypDisGrp1 at bits 5/6 and EOImodeNS at bit 9).
+
+ARM GIC-400 TRM (DDI 0471) and GICv2 architecture specification (IHI 0048); not in any HiSilicon data sheet, not hardware verified.";
+
+            field {
+                name = "EOImodeNS";
+                desc = "Non-secure EOI mode: 0 GICC_EOIR deactivates, 1 GICC_EOIR only drops priority (GICC_DIR deactivates).";
+                sw = rw;
+                hw = r;
+                reset = 0x0;
+            } EOImodeNS[10:10];
+
+            field {
+                name = "EOImodeS";
+                desc = "Secure EOI mode.";
+                sw = rw;
+                hw = r;
+                reset = 0x0;
+            } EOImodeS[9:9];
+
+            field {
+                name = "IRQBypDisGrp1";
+                desc = "Disable the legacy IRQ bypass for group 1.";
+                sw = rw;
+                hw = r;
+                reset = 0x0;
+            } IRQBypDisGrp1[8:8];
+
+            field {
+                name = "FIQBypDisGrp1";
+                desc = "Disable the legacy FIQ bypass for group 1.";
+                sw = rw;
+                hw = r;
+                reset = 0x0;
+            } FIQBypDisGrp1[7:7];
+
+            field {
+                name = "IRQBypDisGrp0";
+                desc = "Disable the legacy IRQ bypass for group 0.";
+                sw = rw;
+                hw = r;
+                reset = 0x0;
+            } IRQBypDisGrp0[6:6];
+
+            field {
+                name = "FIQBypDisGrp0";
+                desc = "Disable the legacy FIQ bypass for group 0.";
+                sw = rw;
+                hw = r;
+                reset = 0x0;
+            } FIQBypDisGrp0[5:5];
+
+            field {
+                name = "CBPR";
+                desc = "Common binary point: 1 = GICC_BPR is used for both groups.";
+                sw = rw;
+                hw = r;
+                reset = 0x0;
+            } CBPR[4:4];
+
+            field {
+                name = "FIQEn";
+                desc = "1 = group 0 interrupts are signalled as FIQ, 0 = as IRQ.";
+                sw = rw;
+                hw = r;
+                reset = 0x0;
+            } FIQEn[3:3];
+
+            field {
+                name = "AckCtl";
+                desc = "1 = a secure read of GICC_IAR acknowledges group 1 interrupts too.";
+                sw = rw;
+                hw = r;
+                reset = 0x0;
+            } AckCtl[2:2];
+
+            field {
+                name = "EnableGrp1";
+                desc = "Enable group 1 interrupt signalling.";
+                sw = rw;
+                hw = r;
+                reset = 0x0;
+            } EnableGrp1[1:1];
+
+            field {
+                name = "EnableGrp0";
+                desc = "Enable group 0 interrupt signalling.";
+                sw = rw;
+                hw = r;
+                reset = 0x0;
+            } EnableGrp0[0:0];
+        } GICC_CTLR @ 0x0;
+
+        reg {
+            name = "Interrupt priority mask register";
+            desc = "Only interrupts with a higher priority (lower value) than this mask are signalled. The GIC-400 implements 5 bits ([7:3]); reset 0 masks everything.
+
+ARM GIC-400 TRM (DDI 0471) and GICv2 architecture specification (IHI 0048); not in any HiSilicon data sheet, not hardware verified.";
+
+            field {
+                name = "Priority";
+                desc = "Priority mask (bits [2:0] RAZ/WI).";
+                sw = rw;
+                hw = r;
+                reset = 0x0;
+            } Priority[7:0];
+        } GICC_PMR @ 0x4;
+
+        reg {
+            name = "Binary point register";
+            desc = "Splits the priority into group and sub-priority fields for pre-emption. Reset 2 (secure view; the non-secure alias reads one more, minimum 3).
+
+ARM GIC-400 TRM (DDI 0471) and GICv2 architecture specification (IHI 0048); not in any HiSilicon data sheet, not hardware verified.";
+
+            field {
+                name = "BinaryPoint";
+                desc = "Binary point.";
+                sw = rw;
+                hw = r;
+                reset = 0x2;
+            } BinaryPoint[2:0];
+        } GICC_BPR @ 0x8;
+
+        reg {
+            name = "Interrupt acknowledge register";
+            desc = "Reading acknowledges the highest priority pending interrupt and returns its ID (1023 = none pending / spurious, 1022 = group 1 pending when read secure with AckCtl 0).
+
+ARM GIC-400 TRM (DDI 0471) and GICv2 architecture specification (IHI 0048); not in any HiSilicon data sheet, not hardware verified.";
+
+            field {
+                name = "CPUID";
+                desc = "Requesting CPU of an SGI.";
+                sw = r;
+                hw = w;
+                reset = 0x0;
+            } CPUID[12:10];
+
+            field {
+                name = "InterruptID";
+                desc = "Interrupt ID.";
+                sw = r;
+                hw = w;
+                reset = 0x3FF;
+            } InterruptID[9:0];
+        } GICC_IAR @ 0xC;
+
+        reg {
+            name = "End of interrupt register";
+            desc = "Writing the ID read from GICC_IAR completes the interrupt (drops priority and, unless EOImode is set, deactivates it).
+
+ARM GIC-400 TRM (DDI 0471) and GICv2 architecture specification (IHI 0048); not in any HiSilicon data sheet, not hardware verified.";
+
+            field {
+                name = "CPUID";
+                desc = "CPU ID of an SGI being completed.";
+                sw = w;
+                hw = r;
+            } CPUID[12:10];
+
+            field {
+                name = "EOIINTID";
+                desc = "Interrupt ID.";
+                sw = w;
+                hw = r;
+            } EOIINTID[9:0];
+        } GICC_EOIR @ 0x10;
+
+        reg {
+            name = "Running priority register";
+            desc = "Priority of the highest priority active interrupt (0xFF = idle).
+
+ARM GIC-400 TRM (DDI 0471) and GICv2 architecture specification (IHI 0048); not in any HiSilicon data sheet, not hardware verified.";
+
+            field {
+                name = "Priority";
+                desc = "Running priority.";
+                sw = r;
+                hw = w;
+                reset = 0xFF;
+            } Priority[7:0];
+        } GICC_RPR @ 0x14;
+
+        reg {
+            name = "Highest priority pending interrupt register";
+            desc = "ID of the highest priority pending interrupt (1023 = none).
+
+ARM GIC-400 TRM (DDI 0471) and GICv2 architecture specification (IHI 0048); not in any HiSilicon data sheet, not hardware verified.";
+
+            field {
+                name = "CPUID";
+                desc = "Requesting CPU of an SGI.";
+                sw = r;
+                hw = w;
+                reset = 0x0;
+            } CPUID[12:10];
+
+            field {
+                name = "PENDINTID";
+                desc = "Interrupt ID.";
+                sw = r;
+                hw = w;
+                reset = 0x3FF;
+            } PENDINTID[9:0];
+        } GICC_HPPIR @ 0x18;
+
+        reg {
+            name = "Aliased binary point register";
+            desc = "Binary point for group 1 interrupts when CBPR is 0 (secure access). Reset 3.
+
+ARM GIC-400 TRM (DDI 0471) and GICv2 architecture specification (IHI 0048); not in any HiSilicon data sheet, not hardware verified.";
+
+            field {
+                name = "BinaryPoint";
+                desc = "Binary point.";
+                sw = rw;
+                hw = r;
+                reset = 0x3;
+            } BinaryPoint[2:0];
+        } GICC_ABPR @ 0x1C;
+
+        reg {
+            name = "Aliased interrupt acknowledge register";
+            desc = "Secure alias of GICC_IAR that acknowledges group 1 interrupts only.
+
+ARM GIC-400 TRM (DDI 0471) and GICv2 architecture specification (IHI 0048); not in any HiSilicon data sheet, not hardware verified.";
+
+            field {
+                name = "CPUID";
+                desc = "Requesting CPU of an SGI.";
+                sw = r;
+                hw = w;
+                reset = 0x0;
+            } CPUID[12:10];
+
+            field {
+                name = "InterruptID";
+                desc = "Interrupt ID.";
+                sw = r;
+                hw = w;
+                reset = 0x3FF;
+            } InterruptID[9:0];
+        } GICC_AIAR @ 0x20;
+
+        reg {
+            name = "Aliased end of interrupt register";
+            desc = "Secure alias of GICC_EOIR for group 1 interrupts.
+
+ARM GIC-400 TRM (DDI 0471) and GICv2 architecture specification (IHI 0048); not in any HiSilicon data sheet, not hardware verified.";
+
+            field {
+                name = "CPUID";
+                desc = "CPU ID.";
+                sw = w;
+                hw = r;
+            } CPUID[12:10];
+
+            field {
+                name = "EOIINTID";
+                desc = "Interrupt ID.";
+                sw = w;
+                hw = r;
+            } EOIINTID[9:0];
+        } GICC_AEOIR @ 0x24;
+
+        reg {
+            name = "Aliased highest priority pending interrupt register";
+            desc = "Secure alias of GICC_HPPIR for group 1.
+
+ARM GIC-400 TRM (DDI 0471) and GICv2 architecture specification (IHI 0048); not in any HiSilicon data sheet, not hardware verified.";
+
+            field {
+                name = "CPUID";
+                desc = "Requesting CPU of an SGI.";
+                sw = r;
+                hw = w;
+                reset = 0x0;
+            } CPUID[12:10];
+
+            field {
+                name = "PENDINTID";
+                desc = "Interrupt ID.";
+                sw = r;
+                hw = w;
+                reset = 0x3FF;
+            } PENDINTID[9:0];
+        } GICC_AHPPIR @ 0x28;
+
+        reg {
+            name = "Active priorities register";
+            desc = "Active priority bits (one per implemented priority group; GIC-400 implements bits [3:0]).
+
+ARM GIC-400 TRM (DDI 0471) and GICv2 architecture specification (IHI 0048); not in any HiSilicon data sheet, not hardware verified.";
+
+            field {
+                name = "value";
+                desc = "Active priorities.";
+                sw = rw;
+                hw = r;
+                reset = 0x0;
+            } value[31:0];
+        } GICC_APR0 @ 0xD0;
+
+        reg {
+            name = "Non-secure active priorities register";
+            desc = "Non-secure active priority bits (secure access only).
+
+ARM GIC-400 TRM (DDI 0471) and GICv2 architecture specification (IHI 0048); not in any HiSilicon data sheet, not hardware verified.";
+
+            field {
+                name = "value";
+                desc = "Non-secure active priorities.";
+                sw = rw;
+                hw = r;
+                reset = 0x0;
+            } value[31:0];
+        } GICC_NSAPR0 @ 0xE0;
+
+        reg {
+            name = "CPU interface identification register";
+            desc = "GIC-400 r0p0 reads 0x0202043B (ProductID 0x020, Architecture 2 = GICv2, Revision 0, Implementer 0x43B); r0p1 reads 0x0202143B.
+
+ARM GIC-400 TRM (DDI 0471) and GICv2 architecture specification (IHI 0048); not in any HiSilicon data sheet, not hardware verified.";
+
+            field {
+                name = "ProductID";
+                desc = "Product ID (0x020).";
+                sw = r;
+                hw = na;
+                reset = 0x20;
+            } ProductID[31:20];
+
+            field {
+                name = "Architecture";
+                desc = "GIC architecture version (2).";
+                sw = r;
+                hw = na;
+                reset = 0x2;
+            } Architecture[19:16];
+
+            field {
+                name = "Revision";
+                desc = "Revision.";
+                sw = r;
+                hw = na;
+                reset = 0x0;
+            } Revision[15:12];
+
+            field {
+                name = "Implementer";
+                desc = "0x43B = ARM.";
+                sw = r;
+                hw = na;
+                reset = 0x43B;
+            } Implementer[11:0];
+        } GICC_IIDR @ 0xFC;
+
+        reg {
+            name = "Deactivate interrupt register";
+            desc = "Writing an interrupt ID deactivates it when EOImode is 1 (priority drop and deactivation are split).
+
+ARM GIC-400 TRM (DDI 0471) and GICv2 architecture specification (IHI 0048); not in any HiSilicon data sheet, not hardware verified.";
+
+            field {
+                name = "CPUID";
+                desc = "CPU ID of an SGI.";
+                sw = w;
+                hw = r;
+            } CPUID[12:10];
+
+            field {
+                name = "InterruptID";
+                desc = "Interrupt ID.";
+                sw = w;
+                hw = r;
+            } InterruptID[9:0];
+        } GICC_DIR @ 0x1000;
+    } GICC @ 0x2000;
+};
+
+`endif
