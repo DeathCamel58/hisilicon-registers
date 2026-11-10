@@ -1132,7 +1132,7 @@ regfile eSYS_CTRL {
 `ifdef SYS_CTRL_PEREN_REG
     reg {
         name = "Peripheral Clock Enable Register";
-        desc = "Soft interrupt register";
+        desc = "Peripheral clock enable register (Hi3511/Hi3512, Hi3515, Hi3520 V100). Write-only set register: writing 1 to a bit enables the clock of that module, writing 0 has no effect; SC_PERDIS (0x028) is the matching clear register and SC_PERCLKEN (0x02C) the read-back status. The data sheets print a total reset value of 0xFFFF_FFFF with every bit (reserved bits included) at 1; a write-only register has no readable reset value, so the reserved bits are not modelled here and the field resets only mirror the power-on state of SC_PERCLKEN (all peripheral clocks enabled). Sheet example (Hi3511): disable SMI with `SC_PERDIS = 0x0000_0010`, re-enable with `SC_PEREN = 0x0000_0010`, verify with SC_PERCLKEN[4]. The same example in the Hi3515/Hi3520 sheets (write 0x0000_0004 to SC_PERDIS, 0x0000_0001 to SC_PEREN, check SC_PERCLKEN[3]) does not match their bit numbering (SMI is bit 3 = 0x8) and is taken as a sheet error. Hi3511 reserved bits: [31:23], [1]; Hi3515: [28], [26], [13:12], [10], [0]; Hi3520: [1:0].";
 `ifdef SYS_CTRL_PEREN_VAR1
         field {
             name = "uart2clken";
@@ -1688,7 +1688,7 @@ regfile eSYS_CTRL {
 `ifdef SYS_CTRL_PERDIS_REG
     reg {
         name = "Peripheral Clock Disable Register";
-        desc = "Soft interrupt register";
+        desc = "Peripheral clock disable register (Hi3511/Hi3512, Hi3515, Hi3520 V100). Write-only clear register: writing 1 to a bit gates the clock of that module, writing 0 has no effect; SC_PEREN (0x024) enables, SC_PERCLKEN (0x02C) reads the state. Total reset value in the sheets: Hi3511 and Hi3520 0x0000_0000; Hi3515 0x0400_0402 (bits 26 and 10 are reserved there and bit 1 is sataclkdis): a write-only register has no readable reset value, so those bits are not modelled.";
 `ifdef SYS_CTRL_PERDIS_VAR1
         field {
             name = "uart2clkdis";
@@ -2244,8 +2244,16 @@ regfile eSYS_CTRL {
 `ifdef SYS_CTRL_PERCLKEN_REG
     reg {
         name = "Peripheral Clock Status Register";
-        desc = "Soft interrupt register";
+        desc = "Peripheral clock status register (Hi3511/Hi3512, Hi3515, Hi3520 V100). Read-only: each bit reads 1 when the clock of the module is enabled and 0 when it is gated, used to verify writes to SC_PEREN (0x024) and SC_PERDIS (0x028). All peripheral clocks are enabled at power-on. Total reset value: Hi3511 and Hi3520 0xFFFF_FFFF (reserved bits read 1, modelled as reserved_nz fields); Hi3515 0xEFFF_CFFF (revision note of issue 00B03; bits 28 and 13:12 read 0, the reserved bits 26 and 0 read 1).";
 `ifdef SYS_CTRL_PERCLKEN_VAR1
+        field {
+            name = "reserved_nz_31_23";
+            desc = "Reserved in the bit table, but the data sheet total reset value of this register (0xFFFF_FFFF) and its reset row have these bits set (reset 0x1FF).";
+            sw = r;
+            hw = w;
+            reset = 0x1ff;
+        } reserved_nz_31_23[31:23];
+
         field {
             name = "uart2clken";
             sw = r;
@@ -2394,6 +2402,14 @@ regfile eSYS_CTRL {
         } cipherclken[2:2];
 
         field {
+            name = "reserved_nz_1_1";
+            desc = "Reserved in the bit table, but the data sheet total reset value of this register (0xFFFF_FFFF) and its reset row have this bit set (reset 0x1).";
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } reserved_nz_1_1[1:1];
+
+        field {
             name = "veduclken";
             sw = r;
             hw = w;
@@ -2405,7 +2421,7 @@ regfile eSYS_CTRL {
             name = "vdac1clkstat";
             sw = r;
             hw = w;
-            reset = 0x0;
+            reset = 0x1;
         } vdac1clkstat[31:31];
 
         field {
@@ -2428,6 +2444,14 @@ regfile eSYS_CTRL {
             hw = w;
             reset = 0x1;
         } nandcclkstat[27:27];
+
+        field {
+            name = "reserved_nz_26_26";
+            desc = "Reserved in the bit table, but the data sheet total reset value of this register (0xEFFF_CFFF) and its reset row have this bit set (reset 0x1).";
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } reserved_nz_26_26[26:26];
 
         field {
             name = "vohdclkstat";
@@ -2589,6 +2613,14 @@ regfile eSYS_CTRL {
             hw = w;
             reset = 0x1;
         } sataclkstat[1:1];
+
+        field {
+            name = "reserved_nz_0_0";
+            desc = "Reserved in the bit table, but the data sheet total reset value of this register (0xEFFF_CFFF) and its reset row have this bit set (reset 0x1).";
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } reserved_nz_0_0[0:0];
 `endif
 `ifdef SYS_CTRL_PERCLKEN_VAR3
         field {
@@ -2800,6 +2832,14 @@ regfile eSYS_CTRL {
             hw = w;
             reset = 0x1;
         } cipherclkstat[2:2];
+
+        field {
+            name = "reserved_nz_1_0";
+            desc = "Reserved in the bit table, but the data sheet total reset value of this register (0xFFFF_FFFF) and its reset row have these bits set (reset 0x3).";
+            sw = r;
+            hw = w;
+            reset = 0x3;
+        } reserved_nz_1_0[1:0];
 `endif
     } PERCLKEN @ 0x002C;
 `endif
