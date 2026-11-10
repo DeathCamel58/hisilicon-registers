@@ -1,0 +1,743 @@
+`ifndef HISI_RTC_SPI_V3_RDL
+`define HISI_RTC_SPI_V3_RDL
+
+regfile eHISI_RTC_SPI_INTERNAL_V3 {
+    name = "HiSilicon SPI-bridged RTC (internal registers, Hi3516A V200 family layout with battery low-voltage detection)";
+    desc = "
+    Internal (SPI-bridged) register space of the RTC of the **Hi3516A V200, Hi3519 V101, Hi3516C V300 / Hi3516E V100 and Hi3516A V300** (36 byte-wide registers). The offsets are **SPI internal addresses** (`spi_add`,
+    0-127, of `SPI_RW` in the APB part `eHISI_RTC_SPI`); this is not a CPU address space. It is the Hi3518E V20X map `eHISI_RTC_SPI_INTERNAL_V2` (0x00-0x18 counters / match / load / lock / interrupts / clock / POR,
+    0x51-0x5A SDM coefficients and user registers, no temperature-compensation LUT) plus **battery low-voltage (under-voltage, UV) detection**: a second interrupt source `*_uv` next to the timing interrupt in
+    RTC_IMSC / RTC_MSC_INT / RTC_RAW_INT, a global enable `rtc_imsc` [2], and the control register RTC_UV_CTRL at 0x1A (enable, filtered / unfiltered source, 1 s .. 30 min detection period). The Hi3520D register
+    RTC_SAR_CTRL (0x1A, temperature update period) does not exist on these chips.
+
+    Counter: RTC_10MS_COUNT 0x00 .. RTC_D_COUNT_H 0x05 (read-only 40-bit up counter at 100 Hz: 10 ms [6:0] 0-99, seconds 0-59, minutes 0-59, hours 0-23, days 16-bit); while `rtc_lock_bypass` is 0 the count registers only
+    update after a lock (write RTC_LORD = 0x2, poll until it reads 0, wait 1 ms, then read 0x00-0x05: DS 3.9.4.5 of the Hi3516A V300 edition). Match (alarm) value RTC_MR_* 0x06-0x0B (reset all ones), load value RTC_LR_* 0x0C-0x11,
+    loaded into the counter by RTC_LORD.rtc_load = 1 (wait 10 ms). RTC soft reset: write 0 to RTC_POR_N and wait 30 ms.
+
+    **SPI_RW protocol (DS 3.9.4.5):** wait until SPI_RW bit 31 (`spi_busy`) is 0; write `spi_start` (bit 24) | `spi_rw` (bit 23: 0 = write, 1 = read) | `spi_add` [22:16] | `spi_wdata` [7:0]; for a read poll `spi_busy` and take SPI_RW[15:8].
+    (The data sheet read example `0x01860000` has bit 23 set although the text says `spi_rw is 0`: DS text error, inherited from the Hi3518E V20X edition.)
+
+    Sources: Hi3516A V200 data sheet issue 01 section 3.9.7 (`hi3516av200--Hi3516AV200-Datasheet.txt` lines 13757-14760; the citations below), checked register by register (names, offsets, bit ranges, access, resets) against the
+    Hi3519 V101 (`hi3519v101--Hi3519V101-Datasheet.txt` lines 13701-14703), Hi3516C V300 / Hi3516E V100 (`hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` lines 13222-14224) and the original Chinese Hi3516A V300 user guide
+    (`hi3516av300--Hi3516AV300-Datasheet.txt` lines 16530-17381: identical map; the Hi3516A V300 APB side has no temperature-sensor registers, see `eHISI_RTC_SPI`): all four agree. Data-sheet only, not hardware verified; no vendor
+    driver source (the vendor `hi_rtc` driver is closed-source MPP code).
+    ";
+
+    reg {
+        name = "Count value register for the RTC 10 ms counter";
+        desc = "RTC_10MS_COUNT is a count value register for the RTC 10 ms counter.
+
+Data sheet 3.9.7 RTC_10MS_COUNT (internal address 0x00, printed page 3-180, `hi3516av200--Hi3516AV200-Datasheet.txt` line 13762).";
+        regwidth = 8;
+
+        field {
+            name = "rtc_10ms_count";
+            desc = "RTC 10 ms counter value. It indicates the currently counted time. Its unit is 10 ms. The value range is 0-99.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } rtc_10ms_count[6:0];
+    } RTC_10MS_COUNT @ 0x0;
+
+    reg {
+        name = "Count value register for the RTC second counter";
+        desc = "RTC_S_COUNT is a count value register for the RTC second counter.
+
+Data sheet 3.9.7 RTC_S_COUNT (internal address 0x01, printed page 3-180, `hi3516av200--Hi3516AV200-Datasheet.txt` line 13787).";
+        regwidth = 8;
+
+        field {
+            name = "rtc_s_count";
+            desc = "RTC second counter value. It indicates the currently counted seconds. The value range is 0-59.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } rtc_s_count[5:0];
+    } RTC_S_COUNT @ 0x1;
+
+    reg {
+        name = "Count value register for the RTC minute counter";
+        desc = "RTC_M_COUNT is a count value register for the RTC minute counter.
+
+Data sheet 3.9.7 RTC_M_COUNT (internal address 0x02, printed page 3-181, `hi3516av200--Hi3516AV200-Datasheet.txt` line 13818).";
+        regwidth = 8;
+
+        field {
+            name = "rtc_m_count";
+            desc = "RTC minute counter value. It indicates the currently counted minutes. The value range is 0-59.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } rtc_m_count[5:0];
+    } RTC_M_COUNT @ 0x2;
+
+    reg {
+        name = "Count value register for the RTC";
+        desc = "RTC_H_COUNT is a count value register for the RTC hour counter.
+
+Data sheet 3.9.7 RTC_H_COUNT (internal address 0x03, printed page 3-181, `hi3516av200--Hi3516AV200-Datasheet.txt` line 13844).";
+        regwidth = 8;
+
+        field {
+            name = "rtc_h_count";
+            desc = "RTC hour counter value. It indicates the currently counted hours. The value range is 0-23.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } rtc_h_count[4:0];
+    } RTC_H_COUNT @ 0x3;
+
+    reg {
+        name = "Lower-8-bit count value register for the RTC day counter";
+        desc = "RTC_D_COUNT_L is a lower-8-bit count value register for the RTC day counter.
+
+Data sheet 3.9.7 RTC_D_COUNT_L (internal address 0x04, printed page 3-182, `hi3516av200--Hi3516AV200-Datasheet.txt` line 13876).";
+        regwidth = 8;
+
+        field {
+            name = "rtc_d_count_l";
+            desc = "Lower eight bits of the RTC day counter value. This field works with RTC_D_COUNT_H to indicate the currently counted days. The day range is 0-65535.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } rtc_d_count_l[7:0];
+    } RTC_D_COUNT_L @ 0x4;
+
+    reg {
+        name = "Upper-8-bit count value register for the RTC day counter";
+        desc = "RTC_D_COUNT_H is an upper-8-bit count value register for the RTC day counter.
+
+Data sheet 3.9.7 RTC_D_COUNT_H (internal address 0x05, printed page 3-182, `hi3516av200--Hi3516AV200-Datasheet.txt` line 13897).";
+        regwidth = 8;
+
+        field {
+            name = "rtc_d_count_h";
+            desc = "Upper eight bits of the RTC day counter value. This field works with RTC_D_COUNT_L to indicate the currently counted day. The day range is 0-65535.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } rtc_d_count_h[7:0];
+    } RTC_D_COUNT_H @ 0x5;
+
+    reg {
+        name = "Match value register for the RTC 10 ms counter";
+        desc = "RTC_MR_10MS is a match value register for the RTC 10 ms counter.
+
+Data sheet 3.9.7 RTC_MR_10MS (internal address 0x06, printed page 3-182, `hi3516av200--Hi3516AV200-Datasheet.txt` line 13917).";
+        regwidth = 8;
+
+        field {
+            name = "rtc_mr_10ms";
+            desc = "Match value of the RTC 10 ms counter The value range is 0-99.";
+            sw = rw;
+            hw = r;
+            reset = 0x7F;
+        } rtc_mr_10ms[6:0];
+    } RTC_MR_10MS @ 0x6;
+
+    reg {
+        name = "Match value register for the RTC second counter";
+        desc = "RTC_MR_S is a match value register for the RTC second counter.
+
+Data sheet 3.9.7 RTC_MR_S (internal address 0x07, printed page 3-183, `hi3516av200--Hi3516AV200-Datasheet.txt` line 13950).";
+        regwidth = 8;
+
+        field {
+            name = "rtc_mr_s";
+            desc = "Match value of the RTC second counter The value range is 0-59.";
+            sw = rw;
+            hw = r;
+            reset = 0x3F;
+        } rtc_mr_s[5:0];
+    } RTC_MR_S @ 0x7;
+
+    reg {
+        name = "Match value register for the RTC minute counter";
+        desc = "RTC_MR_M is a match value register for the RTC minute counter.
+
+Data sheet 3.9.7 RTC_MR_M (internal address 0x08, printed page 3-183, `hi3516av200--Hi3516AV200-Datasheet.txt` line 13976).";
+        regwidth = 8;
+
+        field {
+            name = "rtc_mr_m";
+            desc = "Match value of the RTC minute counter The value range is 0-59.";
+            sw = rw;
+            hw = r;
+            reset = 0x3F;
+        } rtc_mr_m[5:0];
+    } RTC_MR_M @ 0x8;
+
+    reg {
+        name = "Match value register for the RTC hour counter";
+        desc = "RTC_MR_H is a match value register for the RTC hour counter.
+
+Data sheet 3.9.7 RTC_MR_H (internal address 0x09, printed page 3-184, `hi3516av200--Hi3516AV200-Datasheet.txt` line 14012).";
+        regwidth = 8;
+
+        field {
+            name = "rtc_mr_h";
+            desc = "Match value of the RTC hour counter The value range is 0-23.";
+            sw = rw;
+            hw = r;
+            reset = 0x1F;
+        } rtc_mr_h[4:0];
+    } RTC_MR_H @ 0x9;
+
+    reg {
+        name = "Lower-8-bit match value register for the RTC day counter";
+        desc = "RTC_MR_D_L is a lower-8-bit match value register for the RTC day counter.
+
+Data sheet 3.9.7 RTC_MR_D_L (internal address 0x0A, printed page 3-184, `hi3516av200--Hi3516AV200-Datasheet.txt` line 14038).";
+        regwidth = 8;
+
+        field {
+            name = "rtc_mr_d_l";
+            desc = "Lower eight bits of the match value of the RTC day counter. This field works with RTC_MR_D_H to indicate the matched day. The day range is 0-65535.";
+            sw = rw;
+            hw = r;
+            reset = 0xFF;
+        } rtc_mr_d_l[7:0];
+    } RTC_MR_D_L @ 0xA;
+
+    reg {
+        name = "Upper-8-bit match value register for the RTC day counter";
+        desc = "RTC_MR_D_H is an upper-8-bit match value register for the RTC day counter.
+
+Data sheet 3.9.7 RTC_MR_D_H (internal address 0x0B, printed page 3-185, `hi3516av200--Hi3516AV200-Datasheet.txt` line 14068).";
+        regwidth = 8;
+
+        field {
+            name = "rtc_mr_d_h";
+            desc = "Upper eight bits of the match value of the RTC day counter. This field works with RTC_MR_D_L to indicate the matched day. The day range is 0-65535.";
+            sw = rw;
+            hw = r;
+            reset = 0xFF;
+        } rtc_mr_d_h[7:0];
+    } RTC_MR_D_H @ 0xB;
+
+    reg {
+        name = "Configured value register for the RTC 10 ms counter";
+        desc = "RTC_LR_10MS is a configured value register for the RTC 10 ms counter.
+
+Data sheet 3.9.7 RTC_LR_10MS (internal address 0x0C, printed page 3-185, `hi3516av200--Hi3516AV200-Datasheet.txt` line 14088).";
+        regwidth = 8;
+
+        field {
+            name = "rtc_lr_10ms";
+            desc = "Configured value of the RTC 10 ms counter The value range is 0-99.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } rtc_lr_10ms[6:0];
+    } RTC_LR_10MS @ 0xC;
+
+    reg {
+        name = "Configured value register for the RTC second counter";
+        desc = "RTC_LR_S is a configured value register for the RTC second counter.
+
+Data sheet 3.9.7 RTC_LR_S (internal address 0x0D, printed page 3-185, `hi3516av200--Hi3516AV200-Datasheet.txt` line 14113).";
+        regwidth = 8;
+
+        field {
+            name = "rtc_lr_s";
+            desc = "Configured value of the RTC second counter The value range is 0-59.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } rtc_lr_s[5:0];
+    } RTC_LR_S @ 0xD;
+
+    reg {
+        name = "Configured value register for the RTC minute counter";
+        desc = "RTC_LR_M is a configured value register for the RTC minute counter.
+
+Data sheet 3.9.7 RTC_LR_M (internal address 0x0E, printed page 3-186, `hi3516av200--Hi3516AV200-Datasheet.txt` line 14146).";
+        regwidth = 8;
+
+        field {
+            name = "rtc_lr_m";
+            desc = "Configured value of the RTC minute counter The value range is 0-59.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } rtc_lr_m[5:0];
+    } RTC_LR_M @ 0xE;
+
+    reg {
+        name = "Configured value register for the RTC hour counter";
+        desc = "RTC_LR_H is a configured value register for the RTC hour counter.
+
+Data sheet 3.9.7 RTC_LR_H (internal address 0x0F, printed page 3-186, `hi3516av200--Hi3516AV200-Datasheet.txt` line 14172).";
+        regwidth = 8;
+
+        field {
+            name = "rtc_lr_h";
+            desc = "Configured value of the RTC hour counter The value range is 0-23.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } rtc_lr_h[4:0];
+    } RTC_LR_H @ 0xF;
+
+    reg {
+        name = "Lower-8-bit configured value register for the RTC day counter";
+        desc = "RTC_LR_D_L is a lower-8-bit configured value register for the RTC day counter.
+
+Data sheet 3.9.7 RTC_LR_D_L (internal address 0x10, printed page 3-187, `hi3516av200--Hi3516AV200-Datasheet.txt` line 14208).";
+        regwidth = 8;
+
+        field {
+            name = "rtc_lr_d_l";
+            desc = "Lower eight bits of the configured value of the RTC day counter. This field works with RTC_LR_D_H to indicate the configured day. The day range is 0-65535.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } rtc_lr_d_l[7:0];
+    } RTC_LR_D_L @ 0x10;
+
+    reg {
+        name = "Upper-8-bit configured value register for the RTC day counter";
+        desc = "RTC_LR_D_H is an upper-8-bit configured value register for the RTC day counter.
+
+Data sheet 3.9.7 RTC_LR_D_H (internal address 0x11, printed page 3-187, `hi3516av200--Hi3516AV200-Datasheet.txt` line 14228).";
+        regwidth = 8;
+
+        field {
+            name = "rtc_lr_d_h";
+            desc = "Upper eight bits of the configured value of the RTC day counter. This field works with RTC_LR_D_L to indicate the configured day. The day range is 0-65535.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } rtc_lr_d_h[7:0];
+    } RTC_LR_D_H @ 0x11;
+
+    reg {
+        name = "RTC configured value loading enable register";
+        desc = "RTC_LORD is an RTC configured value loading enable register.
+
+Same as the Hi3518E V20X (the Hi3520D RTC has no `rtc_lock` / `rtc_lock_bypass` here): while `rtc_lock_bypass` is 0 the counter registers 0x00-0x05 only update after a successful lock: write `rtc_lock` = 1 and wait until hardware clears it, then read RTC_*_COUNT. With `rtc_lock_bypass` = 1 the count registers update in real time.
+
+Data sheet 3.9.7 RTC_LORD (internal address 0x12, printed page 3-189, `hi3516av200--Hi3516AV200-Datasheet.txt` line 14254).";
+        regwidth = 8;
+
+        enum RTC_LORD_rtc_lock_bypass_enum {
+            ENABLED_RTC_COUNT = 0 { name = "Enabled Rtc Count"; desc = "enabled. The RTC count value (0x00-0x05) is updated only after the RTC is successfully locked."; };
+            DISABLED_RTC_COUNT = 1 { name = "Disabled Rtc Count"; desc = "disabled. The RTC count value (0x00-0x05) is updated in real time."; };
+        };
+
+        field {
+            name = "rtc_lock_bypass";
+            desc = "RTC lock enable";
+            sw = rw;
+            hw = r;
+            encode = RTC_LORD_rtc_lock_bypass_enum;
+            reset = 0x0;
+        } rtc_lock_bypass[2:2];
+
+        field {
+            name = "rtc_lock";
+            desc = "RTC lock. If software writes 1, hardware is automatically cleared after the RTC is successfully locked. Note: This field is valid only when rtc_lock_bypass is 0.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } rtc_lock[1:1];
+
+        field {
+            name = "rtc_load";
+            desc = "RTC configured value loading enable. When the field is enabled, the RTC configured value will be loaded to the RTC accumulator. If software writes 1 to load the configured value, hardware will automatically set this field to 0 after successful loading.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } rtc_load[0:0];
+    } RTC_LORD @ 0x12;
+
+    reg {
+        name = "RTC interrupt enable register";
+        desc = "RTC_IMSC is an RTC interrupt enable register.
+
+Two interrupt sources (timing / alarm match and battery low-voltage detection) behind one global output enable `rtc_imsc`; the Hi3518E V20X / Hi3520D RTC only has the timing enable in bit 0.
+
+Data sheet 3.9.7 RTC_IMSC (internal address 0x13, printed page 3-189, `hi3516av200--Hi3516AV200-Datasheet.txt` line 14290).";
+        regwidth = 8;
+
+        enum RTC_IMSC_enable_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "rtc_imsc";
+            desc = "RTC global interrupt output enable";
+            sw = rw;
+            hw = r;
+            encode = RTC_IMSC_enable_enum;
+            reset = 0x0;
+        } rtc_imsc[2:2];
+
+        field {
+            name = "rtc_imsc_uv";
+            desc = "Battery low-voltage detection interrupt output enable";
+            sw = rw;
+            hw = r;
+            encode = RTC_IMSC_enable_enum;
+            reset = 0x0;
+        } rtc_imsc_uv[1:1];
+
+        field {
+            name = "rtc_imsc_time";
+            desc = "RTC timing interrupt output enable";
+            sw = rw;
+            hw = r;
+            encode = RTC_IMSC_enable_enum;
+            reset = 0x0;
+        } rtc_imsc_time[0:0];
+    } RTC_IMSC @ 0x13;
+
+    reg {
+        name = "RTC interrupt clear register";
+        desc = "RTC_INT_CLR is an RTC interrupt clear register.
+
+Data sheet 3.9.7 RTC_INT_CLR (internal address 0x14, printed page 3-189, `hi3516av200--Hi3516AV200-Datasheet.txt` line 14331).";
+        regwidth = 8;
+
+        field {
+            name = "rtc_int_clr";
+            desc = "RTC interrupt clear register. Writing any value by software clears the interrupt. Reading back the value has no effect.";
+            sw = w;
+            hw = r;
+            reset = 0x0;
+        } rtc_int_clr[0:0];
+    } RTC_INT_CLR @ 0x14;
+
+    reg {
+        name = "RTC mask interrupt status register.";
+        desc = "RTC_MSC_INT is an RTC mask interrupt status register.
+
+Data sheet 3.9.7 RTC_MSC_INT (internal address 0x15, printed page 3-189, `hi3516av200--Hi3516AV200-Datasheet.txt` line 14358).";
+        regwidth = 8;
+
+        enum RTC_MSC_INT_status_enum {
+            NO_INTERRUPT = 0 { name = "No Interrupt"; desc = "No interrupt is generated."; };
+            INTERRUPT = 1 { name = "Interrupt"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "mask_int_uv";
+            desc = "Status of the masked battery low-voltage detection interrupt";
+            sw = r;
+            hw = w;
+            encode = RTC_MSC_INT_status_enum;
+            reset = 0x0;
+        } mask_int_uv[1:1];
+
+        field {
+            name = "mask_int_time";
+            desc = "Status of the masked RTC timing interrupt";
+            sw = r;
+            hw = w;
+            encode = RTC_MSC_INT_status_enum;
+            reset = 0x0;
+        } mask_int_time[0:0];
+    } RTC_MSC_INT @ 0x15;
+
+    reg {
+        name = "RTC raw interrupt status register";
+        desc = "RTC_RAW_INT is an RTC raw interrupt status register.
+
+Data sheet 3.9.7 RTC_RAW_INT (internal address 0x16, printed page 3-190, `hi3516av200--Hi3516AV200-Datasheet.txt` line 14396).";
+        regwidth = 8;
+
+        enum RTC_RAW_INT_status_enum {
+            NO_INTERRUPT = 0 { name = "No Interrupt"; desc = "No interrupt is generated."; };
+            INTERRUPT = 1 { name = "Interrupt"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "raw_int_uv";
+            desc = "Status of the raw battery low-voltage detection interrupt";
+            sw = r;
+            hw = w;
+            encode = RTC_RAW_INT_status_enum;
+            reset = 0x0;
+        } raw_int_uv[1:1];
+
+        field {
+            name = "raw_int_time";
+            desc = "Status of the raw RTC timing interrupt";
+            sw = r;
+            hw = w;
+            encode = RTC_RAW_INT_status_enum;
+            reset = 0x0;
+        } raw_int_time[0:0];
+    } RTC_RAW_INT @ 0x16;
+
+    reg {
+        name = "RTC output clock select register";
+        desc = "RTC_CLK is an RTC output clock select register.
+
+Test clock output select; 1x selects the 1 Hz clock.
+
+Data sheet 3.9.7 RTC_CLK (internal address 0x17, printed page 3-191, `hi3516av200--Hi3516AV200-Datasheet.txt` line 14432).";
+        regwidth = 8;
+
+        enum RTC_CLK_clk_out_sel_enum {
+            CRYSTAL_OSCILLATOR_CLOCK = 0 { name = "Crystal Oscillator Clock"; desc = "crystal oscillator clock"; };
+            CORRECTED_100_HZ = 1 { name = "Corrected 100 Hz"; desc = "corrected 100 Hz clock 1x: 1 Hz clock"; };
+        };
+
+        field {
+            name = "clk_out_sel";
+            desc = "Output test clock of the RTC";
+            sw = rw;
+            hw = r;
+            encode = RTC_CLK_clk_out_sel_enum;
+            reset = 0x0;
+        } clk_out_sel[1:0];
+    } RTC_CLK @ 0x17;
+
+    reg {
+        name = "RTC reset control register";
+        desc = "RTC_POR_N is an RTC reset control register.
+
+Soft reset: write 0, wait 30 ms (DS 3.9.4.2); after reset all RTC registers return to their defaults and must be re-initialised. The bit sets itself back to 1.
+
+Data sheet 3.9.7 RTC_POR_N (internal address 0x18, printed page 3-191, `hi3516av200--Hi3516AV200-Datasheet.txt` line 14462).";
+        regwidth = 8;
+
+        field {
+            name = "rtc_por_n";
+            desc = "RTC reset. This field is automatically set to 1 after the RTC is successfully reset. 0: reset";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } rtc_por_n[0:0];
+    } RTC_POR_N @ 0x18;
+
+    reg {
+        name = "RTC internal low-voltage detection control register";
+        desc = "RTC_UV_CTRL is an RTC internal low-voltage detection control register.
+
+Battery (RTC supply) under-voltage detection; the result is the `*_uv` interrupt in RTC_RAW_INT / RTC_MSC_INT. This register replaces the Hi3520D / Hi3516A V100 RTC_SAR_CTRL (temperature sensor update period) at the same internal address; only `sample_time` [1:0] keeps its position, with different periods.
+
+Data sheet 3.9.7 RTC_UV_CTRL (internal address 0x1A, printed page 3-192, `hi3516av200--Hi3516AV200-Datasheet.txt` line 14496).";
+        regwidth = 8;
+
+        enum RTC_UV_CTRL_bat_uv_ctrl_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        enum RTC_UV_CTRL_bat_uv_ctrl_sel_enum {
+            NO_FILTERING = 0 { name = "No Filtering"; desc = "no filtering"; };
+            FILTERING = 1 { name = "Filtering"; desc = "filtering"; };
+        };
+
+        enum RTC_UV_CTRL_sample_time_enum {
+            V_1_S = 0 { name = "1 s"; desc = "1 s"; };
+            V_1_MINUTE = 1 { name = "1 Minute"; desc = "1 minute"; };
+            V_10_MINUTES = 2 { name = "10 Minutes"; desc = "10 minutes"; };
+            V_30_MINUTES = 3 { name = "30 Minutes"; desc = "30 minutes"; };
+        };
+
+        field {
+            name = "bat_uv_ctrl_en";
+            desc = "Low-voltage detection enable";
+            sw = rw;
+            hw = r;
+            encode = RTC_UV_CTRL_bat_uv_ctrl_en_enum;
+            reset = 0x0;
+        } bat_uv_ctrl_en[5:5];
+
+        field {
+            name = "bat_uv_ctrl_sel";
+            desc = "Low-voltage detection source select";
+            sw = rw;
+            hw = r;
+            encode = RTC_UV_CTRL_bat_uv_ctrl_sel_enum;
+            reset = 0x0;
+        } bat_uv_ctrl_sel[4:4];
+
+        field {
+            name = "sample_time";
+            desc = "Low-voltage detection cycle";
+            sw = rw;
+            hw = r;
+            encode = RTC_UV_CTRL_sample_time_enum;
+            reset = 0x0;
+        } sample_time[1:0];
+    } RTC_UV_CTRL @ 0x1A;
+
+    reg {
+        name = "Upper 4-bit external frequency divider register";
+        desc = "SDM_COEF_OUSIDE_H is an upper 4-bit external frequency divider register.
+
+The data sheet names the registers 0x51/0x52 `Sdm_coef_ouside_h/l` (sic); the register names here are the summary-table spelling, the field of the _H register is `Sdm_coef_ouside_h` as in the bit table.
+
+Data sheet 3.9.7 SDM_COEF_OUSIDE_H (internal address 0x51, printed page 3-192, `hi3516av200--Hi3516AV200-Datasheet.txt` line 14535).";
+        regwidth = 8;
+
+        field {
+            name = "Sdm_coef_ouside_h";
+            desc = "Upper four bits of the frequency divider";
+            sw = rw;
+            hw = r;
+            reset = 0x8;
+        } Sdm_coef_ouside_h[3:0];
+    } SDM_COEF_OUSIDE_H @ 0x51;
+
+    reg {
+        name = "Lower 8-bit external frequency divider register";
+        desc = "SDM_COEF_OUSIDE_L is a lower 8-bit external frequency divider register.
+
+Read/write the upper four bits (0x51) and then the lower eight bits (0x52) consecutively. Divider = (f - 32700) x 30.52 where f is the external crystal frequency (about 32700..32800 Hz). Reset 0x81B (= 32768 Hz).
+
+Data sheet 3.9.7 SDM_COEF_OUSIDE_L (internal address 0x52, printed page 3-193, `hi3516av200--Hi3516AV200-Datasheet.txt` line 14567).";
+        regwidth = 8;
+
+        field {
+            name = "sdm_coef_ouside_l";
+            desc = "Lower eight bits of the frequency divider Note: When clock divider registers (addresses of 0x51 and 0x52) are read or written, you need to read or write to the upper four bits and then the lower eight bits continuously. The clock divider is calculated as follows: (f - 32700) x 30.52. f indicates the oscillation frequency of the external crystal and ranges from 32700 to 32799.";
+            sw = rw;
+            hw = r;
+            reset = 0x1B;
+        } sdm_coef_ouside_l[7:0];
+    } SDM_COEF_OUSIDE_L @ 0x52;
+
+    reg {
+        name = "64-bit user register 1";
+        desc = "USER_REGISTER1 is 64-bit user register 1.
+
+Data sheet 3.9.7 USER_REGISTER1 (internal address 0x53, printed page 3-193, `hi3516av200--Hi3516AV200-Datasheet.txt` line 14593).";
+        regwidth = 8;
+
+        field {
+            name = "user_register1";
+            desc = "64-bit user register 1 corresponding to bit[7:0]";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } user_register1[7:0];
+    } USER_REGISTER1 @ 0x53;
+
+    reg {
+        name = "64-bit user register 2";
+        desc = "USER_REGISTER2 is 64-bit user register 2.
+
+Data sheet 3.9.7 USER_REGISTER2 (internal address 0x54, printed page 3-194, `hi3516av200--Hi3516AV200-Datasheet.txt` line 14618).";
+        regwidth = 8;
+
+        field {
+            name = "user_register2";
+            desc = "64-bit user register 2 corresponding to bit[15:8]";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } user_register2[7:0];
+    } USER_REGISTER2 @ 0x54;
+
+    reg {
+        name = "64-bit user register 3";
+        desc = "USER_REGISTER3 is 64-bit user register 3.
+
+Data sheet 3.9.7 USER_REGISTER3 (internal address 0x55, printed page 3-194, `hi3516av200--Hi3516AV200-Datasheet.txt` line 14637).";
+        regwidth = 8;
+
+        field {
+            name = "user_register3";
+            desc = "64-bit user register 3 corresponding to bit[23:16]";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } user_register3[7:0];
+    } USER_REGISTER3 @ 0x55;
+
+    reg {
+        name = "64-bit user register 4";
+        desc = "USER_REGISTER4 is 64-bit user register 4.
+
+Data sheet 3.9.7 USER_REGISTER4 (internal address 0x56, printed page 3-194, `hi3516av200--Hi3516AV200-Datasheet.txt` line 14656).";
+        regwidth = 8;
+
+        field {
+            name = "user_register4";
+            desc = "64-bit user register 4 corresponding to bit[31:24]";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } user_register4[7:0];
+    } USER_REGISTER4 @ 0x56;
+
+    reg {
+        name = "64-bit user register 5";
+        desc = "USER_REGISTER5 is 64-bit user register 5.
+
+Data sheet 3.9.7 USER_REGISTER5 (internal address 0x57, printed page 3-195, `hi3516av200--Hi3516AV200-Datasheet.txt` line 14681).";
+        regwidth = 8;
+
+        field {
+            name = "user_register5";
+            desc = "64-bit user register 5 corresponding to bit[39:32]";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } user_register5[7:0];
+    } USER_REGISTER5 @ 0x57;
+
+    reg {
+        name = "64-bit user register 6";
+        desc = "USER_REGISTER6 is 64-bit user register 6.
+
+Data sheet 3.9.7 USER_REGISTER6 (internal address 0x58, printed page 3-195, `hi3516av200--Hi3516AV200-Datasheet.txt` line 14700).";
+        regwidth = 8;
+
+        field {
+            name = "user_register6";
+            desc = "64-bit user register 6 corresponding to bit[47:40]";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } user_register6[7:0];
+    } USER_REGISTER6 @ 0x58;
+
+    reg {
+        name = "64-bit user register 7";
+        desc = "USER_REGISTER7 is 64-bit user register 7.
+
+Data sheet 3.9.7 USER_REGISTER7 (internal address 0x59, printed page 3-195, `hi3516av200--Hi3516AV200-Datasheet.txt` line 14719).";
+        regwidth = 8;
+
+        field {
+            name = "user_register7";
+            desc = "64-bit user register 7 corresponding to bit[55:48]";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } user_register7[7:0];
+    } USER_REGISTER7 @ 0x59;
+
+    reg {
+        name = "64-bit user register 8";
+        desc = "USER_REGISTER8 is 64-bit user register 8.
+
+Data sheet 3.9.7 USER_REGISTER8 (internal address 0x5A, printed page 3-196, `hi3516av200--Hi3516AV200-Datasheet.txt` line 14744).";
+        regwidth = 8;
+
+        field {
+            name = "user_register8";
+            desc = "64-bit user register 8 corresponding to bit[63:56]";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } user_register8[7:0];
+    } USER_REGISTER8 @ 0x5A;
+
+};
+
+// Top-level wrapper so the internal address space can be elaborated and exported on its own (not instantiated in any SoC: the registers have no CPU address).
+addrmap aHISI_RTC_SPI_INTERNAL_V3 {
+    name = "HiSilicon SPI-bridged RTC internal address space (Hi3516A V200 family)";
+    desc = "Internal 8-bit register space of the RTC, reached only through SPI_RW (see eHISI_RTC_SPI). Offsets are the SPI internal addresses.";
+    eHISI_RTC_SPI_INTERNAL_V3 INTERNAL @ 0x0;
+};
+
+`endif

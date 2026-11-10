@@ -14,9 +14,20 @@ regfile eHISI_RTC_SPI {
     separate address space `eHISI_RTC_SPI_INTERNAL` below (also available as the top-level `aHISI_RTC_SPI_INTERNAL`); it is NOT memory mapped and has no CPU address. The
     registers at 0x80..0xA0 (`CONVER_T` .. `FILTER_NUM`) are the APB-side temperature sensor measurement interface.
 
-    **Hi3518EV200 / Hi3516CV200:** the same APB registers (data sheet Hi3518E V20X/Hi3516C V200 issue 02 section 3.9.6, base 0x20060000, VIC interrupt 2 shared with the temperature capture),
-    but the internal register set behind SPI_RW is the smaller `eHISI_RTC_SPI_INTERNAL_V2` (HISI_RTC_SPI_V2.rdl: 0x00-0x18 counters/match/load/interrupt/clock/POR, 0x51-0x5A SDM
-    coefficients and user registers, no LUT or temperature registers).
+    **Other SoCs with the same APB layer** (all checked register by register, same offsets, fields and resets, SPI_CLK_DIV reset 0x3B): the internal register set behind SPI_RW differs per generation:
+
+    | SoC (data sheet) | APB base | Internal map |
+    | --- | --- | --- |
+    | Hi3520D / Hi3515A / Hi3515C (3.8) | 0x20060000 | `eHISI_RTC_SPI_INTERNAL` (this file; no chip macros) |
+    | Hi3518A / Hi3518C V100 (3.9, `hi3518v100--Hi3518-Datasheet.txt` lines 24082-26410) | 0x20060000 | `eHISI_RTC_SPI_INTERNAL` with `HISI_RTC_SPI_NO_SDM` (no `sdm_sel`, no 0x51/0x52; LUT defaults as the Hi3520D) |
+    | Hi3516C V100 (3.9, `hi3516cv100--Hi3516C-Datasheet.txt` lines 18112-20450) | 0x20060000 | `eHISI_RTC_SPI_INTERNAL` with `HISI_RTC_SPI_NO_SDM` and `HISI_RTC_SPI_LUT_G2` (different LUT1..47 power-on defaults) |
+    | Hi3516A / Hi3516D V100 (3.10, `hi3516av100--Hi3516A-Hi3516D-Datasheet.txt` lines 28074-30560) | 0x20060000 | `eHISI_RTC_SPI_INTERNAL` with `HISI_RTC_SPI_LORD_LOCK` (rtc_lock / rtc_lock_bypass), `HISI_RTC_SPI_ANA_CTRL` (RTC_ANA_CTRL 0x1B) and `HISI_RTC_SPI_USER_REGS` (USER_REGISTER1-8 0x53-0x5A) |
+    | Hi3518E V20X / Hi3516C V200 (3.9) | 0x20060000 | `eHISI_RTC_SPI_INTERNAL_V2` (HISI_RTC_SPI_V2.rdl: 0x00-0x18 and 0x51-0x5A, no temperature compensation) |
+    | Hi3516A V200, Hi3519 V101 (3.9) | 0x12090000 | `eHISI_RTC_SPI_INTERNAL_V3` (HISI_RTC_SPI_V3.rdl: the V2 map plus battery low-voltage detection: RTC_UV_CTRL 0x1A, `*_uv` interrupt bits) |
+    | Hi3516C V300 / Hi3516E V100 (3.9) | 0x12090000 | `eHISI_RTC_SPI_INTERNAL_V3` |
+    | Hi3516A V300 (3.9, Chinese user guide) | 0x12080000 | `eHISI_RTC_SPI_INTERNAL_V3`; the APB side has **only** SPI_CLK_DIV and SPI_RW (`HISI_RTC_SPI_NO_TSENSOR` removes the temperature-sensor registers 0x80-0xA0) |
+
+    The chip macros are defined in the SoC's `defines.rdl`. The Hi3511, Hi3512, Hi3515, Hi3516 V100 and Hi3520 V100 have the ARM PL031-style RTC `eHISI_RTC` instead.
 
     The RTC alarm interrupt is GIC interrupt ID 39 (SPI 7); the temperature sensor capture interrupt is ID 89 (`TEM_CAP_INT`, SPI 57) (DS Table 3-16). The clock gate and soft reset are the
     RTC bits of PERI_CRG57.
@@ -114,6 +125,7 @@ Data sheet 3.8.6 SPI_RW (printed page 3-151, `datasheet.txt` line 15631).";
         } spi_wdata[7:0];
     } SPI_RW @ 0x4;
 
+`ifndef HISI_RTC_SPI_NO_TSENSOR
     reg {
         name = "Temperature sensor measurement control register";
         desc = "CONVER_T is the temperature sensor measurement control register.
@@ -280,13 +292,15 @@ Data sheet 3.8.6 FILTER_NUM (printed page 3-156, `datasheet.txt` line 15931).";
             reset = 0x0;
         } filter_num[3:0];
     } FILTER_NUM @ 0xA0;
+`endif
 
 };
 
 regfile eHISI_RTC_SPI_INTERNAL {
     name = "HiSilicon SPI-bridged RTC (internal registers)";
     desc = "
-    The 81 byte-wide registers inside the RTC macro (data sheet 3.8.7, Table 3-23, `datasheet.txt` lines 15948-18047). The offsets below are **internal addresses**
+    The 81 byte-wide registers inside the Hi3520D RTC macro (data sheet 3.8.7, Table 3-23, `datasheet.txt` lines 15948-18047); with the chip macros listed in `eHISI_RTC_SPI` the same regfile also describes the Hi3518A/C V100,
+    Hi3516C V100 and Hi3516A/D V100 RTCs (same registers, same resets except the LUT defaults of the Hi3516C V100; the `ifdef` blocks name the chip and data sheet). The offsets below are **internal addresses**
     (the `spi_add` field, 0-127, of `SPI_RW` in `eHISI_RTC_SPI`). This is not a CPU address space: the registers can only be read and written through the SPI bridge
     (write `SPI_RW` with `spi_start`, wait for `spi_busy` = 0, read `spi_rdata`). Every register is 8 bits wide.
 
@@ -294,7 +308,7 @@ regfile eHISI_RTC_SPI_INTERNAL {
     value: RTC_LR_* 0x0C-0x11, loaded into the counter by RTC_LORD (0x12) = 1. RTC_IMSC 0x13, RTC_INT_CLR 0x14, RTC_MSC_INT 0x15, RTC_RAW_INT 0x16 are the interrupt registers,
     RTC_POR_N 0x18 is the RTC soft reset (write 0, wait 30 ms; it returns to 1 by itself). 0x1A-0x52 hold the temperature compensation: RTC_SAR_CTRL, TOT_OFFSET_L/H, TEMP_OFFSET,
     OUTSIDE_TEMP, DIE_TEMP, TEMP_SEL, the 47 correction LUT entries LUT1..LUT47 (0x22-0x50, power-on defaults are a typical crystal curve) and the fixed-frequency divider
-    Sdm_coef_ouside_h/l (0x51/0x52). Internal addresses 0x19 and 0x1B are not described in the data sheet.
+    Sdm_coef_ouside_h/l (0x51/0x52). Internal addresses 0x19 and 0x1B are not described in the Hi3520D data sheet (0x1B is RTC_ANA_CTRL on the Hi3516A/D V100).
 
     !!! NOTE
         The data sheet names the registers 0x51 and 0x52 `Sdm_coef_ouside_h` / `Sdm_coef_ouside_l` (sic, summary table: lower case 'sdm'); the names are kept as printed.
@@ -595,6 +609,30 @@ Data sheet 3.8.7 RTC_LR_D_H (internal address 0x11, printed page 3-165, `datashe
 Data sheet 3.8.7 RTC_LORD (internal address 0x12, printed page 3-166, `datasheet.txt` line 16521).";
         regwidth = 8;
 
+`ifdef HISI_RTC_SPI_LORD_LOCK
+        enum RTC_LORD_rtc_lock_bypass_enum {
+            ENABLED_RTC_COUNT = 0 { name = "Enabled Rtc Count"; desc = "enabled. The RTC count value (0x00-0x05) is updated only after the RTC is successfully locked."; };
+            DISABLED_RTC_COUNT = 1 { name = "Disabled Rtc Count"; desc = "disabled. The RTC count value (0x00-0x05) is updated in real time."; };
+        };
+
+        field {
+            name = "rtc_lock_bypass";
+            desc = "RTC lock enable (Hi3516A/Hi3516D V100 only, HISI_RTC_SPI_LORD_LOCK; data sheet 3.10.7 RTC_LORD, printed page 3-213, `hi3516av100--Hi3516A-Hi3516D-Datasheet.txt` line 28917)";
+            sw = rw;
+            hw = r;
+            encode = RTC_LORD_rtc_lock_bypass_enum;
+            reset = 0x0;
+        } rtc_lock_bypass[2:2];
+
+        field {
+            name = "rtc_lock";
+            desc = "RTC lock. If software writes 1, hardware is automatically cleared after the RTC is successfully locked. Note: This field is valid only when rtc_lock_bypass is 0. (Hi3516A/Hi3516D V100 only, HISI_RTC_SPI_LORD_LOCK.)";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } rtc_lock[1:1];
+
+`endif
         field {
             name = "rtc_load";
             desc = "RTC configured value loading enable. When the field is enabled, the RTC configured value will be loaded to the RTC accumulator. If software writes 1 to load the configured value, hardware will automatically set this field to 0 after successful loading.";
@@ -736,6 +774,26 @@ Data sheet 3.8.7 RTC_SAR_CTRL (internal address 0x1A, printed page 3-169, `datas
         } sample_time[1:0];
     } RTC_SAR_CTRL @ 0x1A;
 
+`ifdef HISI_RTC_SPI_ANA_CTRL
+    reg {
+        name = "RTC analog startup circuit control register";
+        desc = "RTC_ANA_CTRL is an RTC analog startup circuit control register.
+
+Hi3516A/Hi3516D V100 only (HISI_RTC_SPI_ANA_CTRL); internal address 0x1B is not described in the Hi3520D data sheet.
+
+Data sheet 3.10.7 RTC_ANA_CTRL (internal address 0x1B, printed page 3-217, `hi3516av100--Hi3516A-Hi3516D-Datasheet.txt` line 29163).";
+        regwidth = 8;
+
+        field {
+            name = "ana_ctrl";
+            desc = "Adjustment of the bias current of the RTC analog startup circuit.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ana_ctrl[1:0];
+    } RTC_ANA_CTRL @ 0x1B;
+`endif
+
     reg {
         name = "Lower-8-bit corrected tot_offset register when the correction algorithm is used";
         desc = "TOT_OFFSET_L is the lower-8-bit corrected tot_offset register when the correction algorithm is used.
@@ -823,6 +881,7 @@ Data sheet 3.8.7 DIE_TEMP (internal address 0x20, printed page 3-172, `datasheet
 Data sheet 3.8.7 TEMP_SEL (internal address 0x21, printed page 3-172, `datasheet.txt` line 16932).";
         regwidth = 8;
 
+`ifndef HISI_RTC_SPI_NO_SDM
         field {
             name = "sdm_sel";
             desc = "Whether to perform temperature compensation. This field works with fix_model and temp_sel. When the chip is powered on or off: {temp_sel, fix_mode, temp_sel} 0xx: temperature compensation enabled. The mode depends on {fix_mode, temp_sel}. 110: temperature compensation disabled. The RTC clock is the one obtained after decimal frequency division. For details about the frequency dividers, see the sdm_coef_ouside_h and sdm_coef_ouside_l registers. Other values: reserved";
@@ -830,6 +889,7 @@ Data sheet 3.8.7 TEMP_SEL (internal address 0x21, printed page 3-172, `datasheet
             hw = r;
             reset = 0x0;
         } sdm_sel[2:2];
+`endif
 
         field {
             name = "fix_mode";
@@ -860,7 +920,11 @@ Data sheet 3.8.7 LUT1 (internal address 0x22, printed page 3-173, `datasheet.txt
             desc = "Temperature correction algorithm LUT1.";
             sw = rw;
             hw = r;
+`ifdef HISI_RTC_SPI_LUT_G2
+            reset = 0xBB;
+`else
             reset = 0xAC;
+`endif
         } lut1[7:0];
     } LUT1 @ 0x22;
 
@@ -876,7 +940,11 @@ Data sheet 3.8.7 LUT2 (internal address 0x23, printed page 3-173, `datasheet.txt
             desc = "Temperature correction algorithm LUT2.";
             sw = rw;
             hw = r;
+`ifdef HISI_RTC_SPI_LUT_G2
+            reset = 0xC3;
+`else
             reset = 0xB4;
+`endif
         } lut2[7:0];
     } LUT2 @ 0x23;
 
@@ -892,7 +960,11 @@ Data sheet 3.8.7 LUT3 (internal address 0x24, printed page 3-174, `datasheet.txt
             desc = "Temperature correction algorithm LUT3.";
             sw = rw;
             hw = r;
+`ifdef HISI_RTC_SPI_LUT_G2
+            reset = 0xCA;
+`else
             reset = 0xBB;
+`endif
         } lut3[7:0];
     } LUT3 @ 0x24;
 
@@ -908,7 +980,11 @@ Data sheet 3.8.7 LUT4 (internal address 0x25, printed page 3-174, `datasheet.txt
             desc = "Temperature correction algorithm LUT4.";
             sw = rw;
             hw = r;
+`ifdef HISI_RTC_SPI_LUT_G2
+            reset = 0xD2;
+`else
             reset = 0xC2;
+`endif
         } lut4[7:0];
     } LUT4 @ 0x25;
 
@@ -924,7 +1000,11 @@ Data sheet 3.8.7 LUT5 (internal address 0x26, printed page 3-174, `datasheet.txt
             desc = "Temperature correction algorithm LUT5.";
             sw = rw;
             hw = r;
+`ifdef HISI_RTC_SPI_LUT_G2
+            reset = 0xD9;
+`else
             reset = 0xC8;
+`endif
         } lut5[7:0];
     } LUT5 @ 0x26;
 
@@ -940,7 +1020,11 @@ Data sheet 3.8.7 LUT6 (internal address 0x27, printed page 3-175, `datasheet.txt
             desc = "Temperature correction algorithm LUT6.";
             sw = rw;
             hw = r;
+`ifdef HISI_RTC_SPI_LUT_G2
+            reset = 0xE0;
+`else
             reset = 0xCF;
+`endif
         } lut6[7:0];
     } LUT6 @ 0x27;
 
@@ -956,7 +1040,11 @@ Data sheet 3.8.7 LUT7 (internal address 0x28, printed page 3-175, `datasheet.txt
             desc = "Temperature correction algorithm LUT7.";
             sw = rw;
             hw = r;
+`ifdef HISI_RTC_SPI_LUT_G2
+            reset = 0xE7;
+`else
             reset = 0xD5;
+`endif
         } lut7[7:0];
     } LUT7 @ 0x28;
 
@@ -972,7 +1060,11 @@ Data sheet 3.8.7 LUT8 (internal address 0x29, printed page 3-175, `datasheet.txt
             desc = "Temperature correction algorithm LUT8.";
             sw = rw;
             hw = r;
+`ifdef HISI_RTC_SPI_LUT_G2
+            reset = 0xED;
+`else
             reset = 0xDC;
+`endif
         } lut8[7:0];
     } LUT8 @ 0x29;
 
@@ -988,7 +1080,11 @@ Data sheet 3.8.7 LUT9 (internal address 0x2A, printed page 3-176, `datasheet.txt
             desc = "Temperature correction algorithm LUT9.";
             sw = rw;
             hw = r;
+`ifdef HISI_RTC_SPI_LUT_G2
+            reset = 0xF4;
+`else
             reset = 0xE2;
+`endif
         } lut9[7:0];
     } LUT9 @ 0x2A;
 
@@ -1004,7 +1100,11 @@ Data sheet 3.8.7 LUT10 (internal address 0x2B, printed page 3-176, `datasheet.tx
             desc = "Temperature correction algorithm LUT10.";
             sw = rw;
             hw = r;
+`ifdef HISI_RTC_SPI_LUT_G2
+            reset = 0xFA;
+`else
             reset = 0xE8;
+`endif
         } lut10[7:0];
     } LUT10 @ 0x2B;
 
@@ -1020,7 +1120,11 @@ Data sheet 3.8.7 LUT11 (internal address 0x2C, printed page 3-176, `datasheet.tx
             desc = "Temperature correction algorithm LUT11.";
             sw = rw;
             hw = r;
+`ifdef HISI_RTC_SPI_LUT_G2
+            reset = 0x00;
+`else
             reset = 0xEE;
+`endif
         } lut11[7:0];
     } LUT11 @ 0x2C;
 
@@ -1036,7 +1140,11 @@ Data sheet 3.8.7 LUT12 (internal address 0x2D, printed page 3-177, `datasheet.tx
             desc = "Temperature correction algorithm LUT12.";
             sw = rw;
             hw = r;
+`ifdef HISI_RTC_SPI_LUT_G2
+            reset = 0x06;
+`else
             reset = 0xF3;
+`endif
         } lut12[7:0];
     } LUT12 @ 0x2D;
 
@@ -1052,7 +1160,11 @@ Data sheet 3.8.7 LUT13 (internal address 0x2E, printed page 3-177, `datasheet.tx
             desc = "Temperature correction algorithm LUT13.";
             sw = rw;
             hw = r;
+`ifdef HISI_RTC_SPI_LUT_G2
+            reset = 0x0C;
+`else
             reset = 0xF9;
+`endif
         } lut13[7:0];
     } LUT13 @ 0x2E;
 
@@ -1068,7 +1180,11 @@ Data sheet 3.8.7 LUT14 (internal address 0x2F, printed page 3-177, `datasheet.tx
             desc = "Temperature correction algorithm LUT14.";
             sw = rw;
             hw = r;
+`ifdef HISI_RTC_SPI_LUT_G2
+            reset = 0x12;
+`else
             reset = 0xFE;
+`endif
         } lut14[7:0];
     } LUT14 @ 0x2F;
 
@@ -1084,7 +1200,11 @@ Data sheet 3.8.7 LUT15 (internal address 0x30, printed page 3-178, `datasheet.tx
             desc = "Temperature correction algorithm LUT15.";
             sw = rw;
             hw = r;
+`ifdef HISI_RTC_SPI_LUT_G2
+            reset = 0x17;
+`else
             reset = 0x3;
+`endif
         } lut15[7:0];
     } LUT15 @ 0x30;
 
@@ -1100,7 +1220,11 @@ Data sheet 3.8.7 LUT16 (internal address 0x31, printed page 3-178, `datasheet.tx
             desc = "Temperature correction algorithm LUT16.";
             sw = rw;
             hw = r;
+`ifdef HISI_RTC_SPI_LUT_G2
+            reset = 0x1C;
+`else
             reset = 0x8;
+`endif
         } lut16[7:0];
     } LUT16 @ 0x31;
 
@@ -1116,7 +1240,11 @@ Data sheet 3.8.7 LUT17 (internal address 0x32, printed page 3-178, `datasheet.tx
             desc = "Temperature correction algorithm LUT17.";
             sw = rw;
             hw = r;
+`ifdef HISI_RTC_SPI_LUT_G2
+            reset = 0x21;
+`else
             reset = 0xD;
+`endif
         } lut17[7:0];
     } LUT17 @ 0x32;
 
@@ -1132,7 +1260,11 @@ Data sheet 3.8.7 LUT18 (internal address 0x33, printed page 3-179, `datasheet.tx
             desc = "Temperature correction algorithm LUT18.";
             sw = rw;
             hw = r;
+`ifdef HISI_RTC_SPI_LUT_G2
+            reset = 0x26;
+`else
             reset = 0x12;
+`endif
         } lut18[7:0];
     } LUT18 @ 0x33;
 
@@ -1148,7 +1280,11 @@ Data sheet 3.8.7 LUT19 (internal address 0x34, printed page 3-179, `datasheet.tx
             desc = "Temperature correction algorithm LUT19.";
             sw = rw;
             hw = r;
+`ifdef HISI_RTC_SPI_LUT_G2
+            reset = 0x2B;
+`else
             reset = 0x17;
+`endif
         } lut19[7:0];
     } LUT19 @ 0x34;
 
@@ -1164,7 +1300,11 @@ Data sheet 3.8.7 LUT20 (internal address 0x35, printed page 3-179, `datasheet.tx
             desc = "Temperature correction algorithm LUT20.";
             sw = rw;
             hw = r;
+`ifdef HISI_RTC_SPI_LUT_G2
+            reset = 0x30;
+`else
             reset = 0x1B;
+`endif
         } lut20[7:0];
     } LUT20 @ 0x35;
 
@@ -1180,7 +1320,11 @@ Data sheet 3.8.7 LUT21 (internal address 0x36, printed page 3-180, `datasheet.tx
             desc = "Temperature correction algorithm LUT21.";
             sw = rw;
             hw = r;
+`ifdef HISI_RTC_SPI_LUT_G2
+            reset = 0x34;
+`else
             reset = 0x1F;
+`endif
         } lut21[7:0];
     } LUT21 @ 0x36;
 
@@ -1196,7 +1340,11 @@ Data sheet 3.8.7 LUT22 (internal address 0x37, printed page 3-180, `datasheet.tx
             desc = "Temperature correction algorithm LUT22.";
             sw = rw;
             hw = r;
+`ifdef HISI_RTC_SPI_LUT_G2
+            reset = 0x38;
+`else
             reset = 0x23;
+`endif
         } lut22[7:0];
     } LUT22 @ 0x37;
 
@@ -1212,7 +1360,11 @@ Data sheet 3.8.7 LUT23 (internal address 0x38, printed page 3-180, `datasheet.tx
             desc = "Temperature correction algorithm LUT23.";
             sw = rw;
             hw = r;
+`ifdef HISI_RTC_SPI_LUT_G2
+            reset = 0x3D;
+`else
             reset = 0x27;
+`endif
         } lut23[7:0];
     } LUT23 @ 0x38;
 
@@ -1228,7 +1380,11 @@ Data sheet 3.8.7 LUT24 (internal address 0x39, printed page 3-181, `datasheet.tx
             desc = "Temperature correction algorithm LUT24.";
             sw = rw;
             hw = r;
+`ifdef HISI_RTC_SPI_LUT_G2
+            reset = 0x41;
+`else
             reset = 0x2B;
+`endif
         } lut24[7:0];
     } LUT24 @ 0x39;
 
@@ -1244,7 +1400,11 @@ Data sheet 3.8.7 LUT25 (internal address 0x3A, printed page 3-181, `datasheet.tx
             desc = "Temperature correction algorithm LUT25.";
             sw = rw;
             hw = r;
+`ifdef HISI_RTC_SPI_LUT_G2
+            reset = 0x44;
+`else
             reset = 0x2E;
+`endif
         } lut25[7:0];
     } LUT25 @ 0x3A;
 
@@ -1260,7 +1420,11 @@ Data sheet 3.8.7 LUT26 (internal address 0x3B, printed page 3-181, `datasheet.tx
             desc = "Temperature correction algorithm LUT26.";
             sw = rw;
             hw = r;
+`ifdef HISI_RTC_SPI_LUT_G2
+            reset = 0x48;
+`else
             reset = 0x32;
+`endif
         } lut26[7:0];
     } LUT26 @ 0x3B;
 
@@ -1276,7 +1440,11 @@ Data sheet 3.8.7 LUT27 (internal address 0x3C, printed page 3-182, `datasheet.tx
             desc = "Temperature correction algorithm LUT27.";
             sw = rw;
             hw = r;
+`ifdef HISI_RTC_SPI_LUT_G2
+            reset = 0x4B;
+`else
             reset = 0x35;
+`endif
         } lut27[7:0];
     } LUT27 @ 0x3C;
 
@@ -1292,7 +1460,11 @@ Data sheet 3.8.7 LUT28 (internal address 0x3D, printed page 3-182, `datasheet.tx
             desc = "Temperature correction algorithm LUT28.";
             sw = rw;
             hw = r;
+`ifdef HISI_RTC_SPI_LUT_G2
+            reset = 0x4F;
+`else
             reset = 0x38;
+`endif
         } lut28[7:0];
     } LUT28 @ 0x3D;
 
@@ -1308,7 +1480,11 @@ Data sheet 3.8.7 LUT29 (internal address 0x3E, printed page 3-182, `datasheet.tx
             desc = "Temperature correction algorithm LUT29.";
             sw = rw;
             hw = r;
+`ifdef HISI_RTC_SPI_LUT_G2
+            reset = 0x52;
+`else
             reset = 0x3B;
+`endif
         } lut29[7:0];
     } LUT29 @ 0x3E;
 
@@ -1324,7 +1500,11 @@ Data sheet 3.8.7 LUT30 (internal address 0x3F, printed page 3-183, `datasheet.tx
             desc = "Temperature correction algorithm LUT30.";
             sw = rw;
             hw = r;
+`ifdef HISI_RTC_SPI_LUT_G2
+            reset = 0x55;
+`else
             reset = 0x3E;
+`endif
         } lut30[7:0];
     } LUT30 @ 0x3F;
 
@@ -1340,7 +1520,11 @@ Data sheet 3.8.7 LUT31 (internal address 0x40, printed page 3-183, `datasheet.tx
             desc = "Temperature correction algorithm LUT31.";
             sw = rw;
             hw = r;
+`ifdef HISI_RTC_SPI_LUT_G2
+            reset = 0x57;
+`else
             reset = 0x41;
+`endif
         } lut31[7:0];
     } LUT31 @ 0x40;
 
@@ -1356,7 +1540,11 @@ Data sheet 3.8.7 LUT32 (internal address 0x41, printed page 3-183, `datasheet.tx
             desc = "Temperature correction algorithm LUT32.";
             sw = rw;
             hw = r;
+`ifdef HISI_RTC_SPI_LUT_G2
+            reset = 0x5A;
+`else
             reset = 0x43;
+`endif
         } lut32[7:0];
     } LUT32 @ 0x41;
 
@@ -1372,7 +1560,11 @@ Data sheet 3.8.7 LUT33 (internal address 0x42, printed page 3-184, `datasheet.tx
             desc = "Temperature correction algorithm LUT33.";
             sw = rw;
             hw = r;
+`ifdef HISI_RTC_SPI_LUT_G2
+            reset = 0x5D;
+`else
             reset = 0x45;
+`endif
         } lut33[7:0];
     } LUT33 @ 0x42;
 
@@ -1388,7 +1580,11 @@ Data sheet 3.8.7 LUT34 (internal address 0x43, printed page 3-184, `datasheet.tx
             desc = "Temperature correction algorithm LUT34.";
             sw = rw;
             hw = r;
+`ifdef HISI_RTC_SPI_LUT_G2
+            reset = 0x5F;
+`else
             reset = 0x48;
+`endif
         } lut34[7:0];
     } LUT34 @ 0x43;
 
@@ -1404,7 +1600,11 @@ Data sheet 3.8.7 LUT35 (internal address 0x44, printed page 3-184, `datasheet.tx
             desc = "Temperature correction algorithm LUT35.";
             sw = rw;
             hw = r;
+`ifdef HISI_RTC_SPI_LUT_G2
+            reset = 0x61;
+`else
             reset = 0x4A;
+`endif
         } lut35[7:0];
     } LUT35 @ 0x44;
 
@@ -1420,7 +1620,11 @@ Data sheet 3.8.7 LUT36 (internal address 0x45, printed page 3-185, `datasheet.tx
             desc = "Temperature correction algorithm LUT36.";
             sw = rw;
             hw = r;
+`ifdef HISI_RTC_SPI_LUT_G2
+            reset = 0x63;
+`else
             reset = 0x4B;
+`endif
         } lut36[7:0];
     } LUT36 @ 0x45;
 
@@ -1436,7 +1640,11 @@ Data sheet 3.8.7 LUT37 (internal address 0x46, printed page 3-185, `datasheet.tx
             desc = "Temperature correction algorithm LUT37.";
             sw = rw;
             hw = r;
+`ifdef HISI_RTC_SPI_LUT_G2
+            reset = 0x65;
+`else
             reset = 0x4D;
+`endif
         } lut37[7:0];
     } LUT37 @ 0x46;
 
@@ -1452,7 +1660,11 @@ Data sheet 3.8.7 LUT38 (internal address 0x47, printed page 3-185, `datasheet.tx
             desc = "Temperature correction algorithm LUT38.";
             sw = rw;
             hw = r;
+`ifdef HISI_RTC_SPI_LUT_G2
+            reset = 0x66;
+`else
             reset = 0x4F;
+`endif
         } lut38[7:0];
     } LUT38 @ 0x47;
 
@@ -1468,7 +1680,11 @@ Data sheet 3.8.7 LUT39 (internal address 0x48, printed page 3-186, `datasheet.tx
             desc = "Temperature correction algorithm LUT39.";
             sw = rw;
             hw = r;
+`ifdef HISI_RTC_SPI_LUT_G2
+            reset = 0x68;
+`else
             reset = 0x50;
+`endif
         } lut39[7:0];
     } LUT39 @ 0x48;
 
@@ -1484,7 +1700,11 @@ Data sheet 3.8.7 LUT40 (internal address 0x49, printed page 3-186, `datasheet.tx
             desc = "Temperature correction algorithm LUT40.";
             sw = rw;
             hw = r;
+`ifdef HISI_RTC_SPI_LUT_G2
+            reset = 0x69;
+`else
             reset = 0x51;
+`endif
         } lut40[7:0];
     } LUT40 @ 0x49;
 
@@ -1500,7 +1720,11 @@ Data sheet 3.8.7 LUT41 (internal address 0x4A, printed page 3-186, `datasheet.tx
             desc = "Temperature correction algorithm LUT41.";
             sw = rw;
             hw = r;
+`ifdef HISI_RTC_SPI_LUT_G2
+            reset = 0x6A;
+`else
             reset = 0x52;
+`endif
         } lut41[7:0];
     } LUT41 @ 0x4A;
 
@@ -1516,7 +1740,11 @@ Data sheet 3.8.7 LUT42 (internal address 0x4B, printed page 3-187, `datasheet.tx
             desc = "Temperature correction algorithm LUT42.";
             sw = rw;
             hw = r;
+`ifdef HISI_RTC_SPI_LUT_G2
+            reset = 0x6B;
+`else
             reset = 0x53;
+`endif
         } lut42[7:0];
     } LUT42 @ 0x4B;
 
@@ -1532,7 +1760,11 @@ Data sheet 3.8.7 LUT43 (internal address 0x4C, printed page 3-187, `datasheet.tx
             desc = "Temperature correction algorithm LUT43.";
             sw = rw;
             hw = r;
+`ifdef HISI_RTC_SPI_LUT_G2
+            reset = 0x6C;
+`else
             reset = 0x54;
+`endif
         } lut43[7:0];
     } LUT43 @ 0x4C;
 
@@ -1548,7 +1780,11 @@ Data sheet 3.8.7 LUT44 (internal address 0x4D, printed page 3-187, `datasheet.tx
             desc = "Temperature correction algorithm LUT44.";
             sw = rw;
             hw = r;
+`ifdef HISI_RTC_SPI_LUT_G2
+            reset = 0x6C;
+`else
             reset = 0x54;
+`endif
         } lut44[7:0];
     } LUT44 @ 0x4D;
 
@@ -1564,7 +1800,11 @@ Data sheet 3.8.7 LUT45 (internal address 0x4E, printed page 3-188, `datasheet.tx
             desc = "Temperature correction algorithm LUT45.";
             sw = rw;
             hw = r;
+`ifdef HISI_RTC_SPI_LUT_G2
+            reset = 0x6D;
+`else
             reset = 0x55;
+`endif
         } lut45[7:0];
     } LUT45 @ 0x4E;
 
@@ -1580,7 +1820,11 @@ Data sheet 3.8.7 LUT46 (internal address 0x4F, printed page 3-188, `datasheet.tx
             desc = "Temperature correction algorithm LUT46.";
             sw = rw;
             hw = r;
+`ifdef HISI_RTC_SPI_LUT_G2
+            reset = 0x6D;
+`else
             reset = 0x55;
+`endif
         } lut46[7:0];
     } LUT46 @ 0x4F;
 
@@ -1596,10 +1840,15 @@ Data sheet 3.8.7 LUT47 (internal address 0x50, printed page 3-188, `datasheet.tx
             desc = "Temperature correction algorithm LUT47.";
             sw = rw;
             hw = r;
+`ifdef HISI_RTC_SPI_LUT_G2
+            reset = 0x6D;
+`else
             reset = 0x55;
+`endif
         } lut47[7:0];
     } LUT47 @ 0x50;
 
+`ifndef HISI_RTC_SPI_NO_SDM
     reg {
         name = "External upper-4-bit frequency divider register";
         desc = "Sdm_coef_ouside_h is an external upper-4-bit frequency divider register.
@@ -1631,6 +1880,152 @@ Data sheet 3.8.7 Sdm_coef_ouside_l (internal address 0x52, printed page 3-189, `
             reset = 0x1B;
         } Sdm_coef_ouside_l[7:0];
     } Sdm_coef_ouside_l @ 0x52;
+`endif
+`ifdef HISI_RTC_SPI_USER_REGS
+    reg {
+        name = "64-bit user register 1";
+        desc = "USER_REGISTER1 is 64-bit user register 1.
+
+Eight byte-wide registers 0x53-0x5A form a 64-bit user data area that is kept as long as the RTC is supplied (Hi3516A/Hi3516D V100 only in this layout, HISI_RTC_SPI_USER_REGS; the same registers exist in `eHISI_RTC_SPI_INTERNAL_V2` / `_V3`).
+
+Data sheet 3.10.7 USER_REGISTER1 (internal address 0X53, printed page 3-238, `hi3516av100--Hi3516A-Hi3516D-Datasheet.txt` line 30395).";
+        regwidth = 8;
+
+        field {
+            name = "user_register1";
+            desc = "64-bit user register 1 corresponding to bit[7:0]";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } user_register1[7:0];
+    } USER_REGISTER1 @ 0X53;
+
+    reg {
+        name = "64-bit user register 2";
+        desc = "USER_REGISTER2 is 64-bit user register 2.
+
+Eight byte-wide registers 0x53-0x5A form a 64-bit user data area that is kept as long as the RTC is supplied (Hi3516A/Hi3516D V100 only in this layout, HISI_RTC_SPI_USER_REGS; the same registers exist in `eHISI_RTC_SPI_INTERNAL_V2` / `_V3`).
+
+Data sheet 3.10.7 USER_REGISTER2 (internal address 0X54, printed page 3-239, `hi3516av100--Hi3516A-Hi3516D-Datasheet.txt` line 30419).";
+        regwidth = 8;
+
+        field {
+            name = "user_register2";
+            desc = "64-bit user register 2 corresponding to bit[15:8]";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } user_register2[7:0];
+    } USER_REGISTER2 @ 0X54;
+
+    reg {
+        name = "64-bit user register 3";
+        desc = "USER_REGISTER3 is 64-bit user register 3.
+
+Eight byte-wide registers 0x53-0x5A form a 64-bit user data area that is kept as long as the RTC is supplied (Hi3516A/Hi3516D V100 only in this layout, HISI_RTC_SPI_USER_REGS; the same registers exist in `eHISI_RTC_SPI_INTERNAL_V2` / `_V3`).
+
+Data sheet 3.10.7 USER_REGISTER3 (internal address 0X55, printed page 3-239, `hi3516av100--Hi3516A-Hi3516D-Datasheet.txt` line 30437).";
+        regwidth = 8;
+
+        field {
+            name = "user_register3";
+            desc = "64-bit user register 3 corresponding to bit[23:16]";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } user_register3[7:0];
+    } USER_REGISTER3 @ 0X55;
+
+    reg {
+        name = "64-bit user register 4";
+        desc = "USER_REGISTER4 is 64-bit user register 4.
+
+Eight byte-wide registers 0x53-0x5A form a 64-bit user data area that is kept as long as the RTC is supplied (Hi3516A/Hi3516D V100 only in this layout, HISI_RTC_SPI_USER_REGS; the same registers exist in `eHISI_RTC_SPI_INTERNAL_V2` / `_V3`).
+
+Data sheet 3.10.7 USER_REGISTER4 (internal address 0X56, printed page 3-239, `hi3516av100--Hi3516A-Hi3516D-Datasheet.txt` line 30455).";
+        regwidth = 8;
+
+        field {
+            name = "user_register4";
+            desc = "64-bit user register 4 corresponding to bit[31:24]";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } user_register4[7:0];
+    } USER_REGISTER4 @ 0X56;
+
+    reg {
+        name = "64-bit user register 5";
+        desc = "USER_REGISTER5 is 64-bit user register 5.
+
+Eight byte-wide registers 0x53-0x5A form a 64-bit user data area that is kept as long as the RTC is supplied (Hi3516A/Hi3516D V100 only in this layout, HISI_RTC_SPI_USER_REGS; the same registers exist in `eHISI_RTC_SPI_INTERNAL_V2` / `_V3`).
+
+Data sheet 3.10.7 USER_REGISTER5 (internal address 0X57, printed page 3-240, `hi3516av100--Hi3516A-Hi3516D-Datasheet.txt` line 30479).";
+        regwidth = 8;
+
+        field {
+            name = "user_register5";
+            desc = "64-bit user register 5 corresponding to bit[39:32]";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } user_register5[7:0];
+    } USER_REGISTER5 @ 0X57;
+
+    reg {
+        name = "64-bit user register 6";
+        desc = "USER_REGISTER6 is 64-bit user register 6.
+
+Eight byte-wide registers 0x53-0x5A form a 64-bit user data area that is kept as long as the RTC is supplied (Hi3516A/Hi3516D V100 only in this layout, HISI_RTC_SPI_USER_REGS; the same registers exist in `eHISI_RTC_SPI_INTERNAL_V2` / `_V3`).
+
+Data sheet 3.10.7 USER_REGISTER6 (internal address 0X58, printed page 3-240, `hi3516av100--Hi3516A-Hi3516D-Datasheet.txt` line 30497).";
+        regwidth = 8;
+
+        field {
+            name = "user_register6";
+            desc = "64-bit user register 6 corresponding to bit[47:40]";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } user_register6[7:0];
+    } USER_REGISTER6 @ 0X58;
+
+    reg {
+        name = "64-bit user register 7";
+        desc = "USER_REGISTER7 is 64-bit user register 7.
+
+Eight byte-wide registers 0x53-0x5A form a 64-bit user data area that is kept as long as the RTC is supplied (Hi3516A/Hi3516D V100 only in this layout, HISI_RTC_SPI_USER_REGS; the same registers exist in `eHISI_RTC_SPI_INTERNAL_V2` / `_V3`).
+
+Data sheet 3.10.7 USER_REGISTER7 (internal address 0X59, printed page 3-240, `hi3516av100--Hi3516A-Hi3516D-Datasheet.txt` line 30515).";
+        regwidth = 8;
+
+        field {
+            name = "user_register7";
+            desc = "64-bit user register 7 corresponding to bit[55:48]";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } user_register7[7:0];
+    } USER_REGISTER7 @ 0X59;
+
+    reg {
+        name = "64-bit user register 8";
+        desc = "USER_REGISTER8 is 64-bit user register 8.
+
+Eight byte-wide registers 0x53-0x5A form a 64-bit user data area that is kept as long as the RTC is supplied (Hi3516A/Hi3516D V100 only in this layout, HISI_RTC_SPI_USER_REGS; the same registers exist in `eHISI_RTC_SPI_INTERNAL_V2` / `_V3`).
+
+Data sheet 3.10.7 USER_REGISTER8 (internal address 0X5A, printed page 3-241, `hi3516av100--Hi3516A-Hi3516D-Datasheet.txt` line 30539).";
+        regwidth = 8;
+
+        field {
+            name = "user_register8";
+            desc = "64-bit user register 8 corresponding to bit[63:56]";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } user_register8[7:0];
+    } USER_REGISTER8 @ 0X5A;
+`endif
 
 };
 
