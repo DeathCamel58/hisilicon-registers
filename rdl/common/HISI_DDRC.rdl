@@ -3,6 +3,13 @@
 
 regfile eDDRC {
     name = "DDRC Registers";
+`ifdef DDRC_HI3516V100
+    desc = "
+        DDRC (DDR2/3 SDRAM Controller) realizes the access control to the dynamic memory DDR2/3 SDRAM. In the following, DDRn SDRAM will be used instead of DDR2/3 SDRAM.
+
+        Hi3516 V100 edition (`DDRC_HI3516V100`, original Chinese data sheet 4.1.5, Table 4-8, base 0x2011_0000, 49 registers): the same controller core as the Hi3518 / Hi3516C V100 and Hi3520D (STATUS, SREFCTRL, INITCTRL, EMRS, CMDCFG/CMDEXE/RNKCFG, TIMING0-4 and the DTR gate-training registers are identical to the Hi3518 tables), with four AXI ports (AXISTATUS bits 3:0, one FIFO level per port in QOSCFG0), a per-rank ODT bitmap in ODTCFG, QoS ID registers at 0x110 with aging / priority adaptation, no BASEADDR / FLUX / TEST registers, and its own DDR PHY control block inside the same window: PHYCFG/PHYNEG/PHYSEL (0x200-0x218), command- and data-lane DLL configuration (CDLLCFG 0x228, QDLLCFG[4] 0x230), DDR3 write leveling (LVL* 0x260-0x2D4), DQS fine tuning (0x2F0/0x2F4) and IO configuration / compensation (0x360-0x388). The data sheet marks many fields 'reserved, not supported in this version' (ECC, exclusive address, extra ranks). The address map (Table 1-1 line 1008) lists the DDRC window as 64 KB at 0x2011_0000; 0x2012_0000 is reserved (no separate PHY window as on the Hi3518).
+   ";
+`else
     desc = "
         DDRC (DDR2/3 SDRAM Controller) realizes the access control to the dynamic memory DDR2/3 SDRAM. In the following, DDRn SDRAM will be used instead of DDR2/3 SDRAM.
 `ifdef DDRC_16_BIT_ONLY
@@ -11,6 +18,7 @@ regfile eDDRC {
             This version only supports 16bit DDR bit width.
 `endif
    ";
+`endif
 
     /* Useful enums to keep from having to keep copying them */
     enum DDRC_zero_enable_enum {
@@ -424,6 +432,20 @@ regfile eDDRC {
             INVALID = 0x1 { desc = "reset is invalid."; };
         };
 
+`ifdef DDRC_HI3516V100
+        field {
+            name = "cmdlane_ctrl";
+            desc = "Reserved; not supported in this version (Hi3516 V100 original Chinese data sheet 4.1.5 DDRC_CTRL, `hi3516v100--Hi3516-Datasheet.txt` line 22070). Resets to 3 (total reset value 0x0000_000C).";
+            reset = 0x3;
+        } cmdlane_ctrl[3:2];
+
+        field {
+            name = "eccnt_clr";
+            desc = "Reserved; not supported in this version (Hi3516 V100 data sheet).";
+            reset = 0x0;
+        } eccnt_clr[1:1];
+`endif
+
         field {
             name = "ddr_rst_n";
             desc = "
@@ -659,6 +681,7 @@ regfile eDDRC {
             reset = 0x0;
         } pd_prd[27:20];
 
+`ifndef DDRC_HI3516V100   // Hi3516 V100 data sheet: bit 19 reserved (RW)
         enum DDRC_CONFIG0_rcv_pdr_enum {
             FORBIDDEN = 0x0 { desc = "Forbidden."; };
             ENABLE    = 0x1 { desc = "Enable."; };
@@ -670,6 +693,7 @@ regfile eDDRC {
             encode = DDRC_CONFIG0_rcv_pdr_enum;
             reset = 0x0;
         } rcv_pdr[19:19];
+`endif
 
         enum DDRC_CONFIG0_sr_cc_enum {
             CLK_ENABLE  = 0x0 { desc = "Do not turn off the SDRAM clock."; };
@@ -811,6 +835,7 @@ regfile eDDRC {
             DISABLE    = 0x1 { desc = "Disable pin output."; };
         };
 
+`ifndef DDRC_HI3516V100   // Hi3516 V100 data sheet: bits [31:17] reserved (RO), bit 10 reserved; total reset 0x0000_A380 unchanged
         field {
             name = "sref_arefnum";
             desc = "
@@ -859,6 +884,7 @@ regfile eDDRC {
             encode = DDRC_CONFIG1_pin_output_disable_enum;
             reset = 0x0;
         } odis_ddrio[17:17];
+`endif
 
         field {
             name = "pd_ac";
@@ -910,12 +936,22 @@ regfile eDDRC {
             reset = 0x2;
         } pd_pre_cls[13:12];
 
+`ifndef DDRC_HI3516V100
         field {
             name = "auto_pre_en";
             desc = "The Auto Precharge function is enabled.";
             encode = DDRC_enabled_enum;
             reset = 0x0;
         } auto_pre_en[10:10];
+`endif
+
+`ifdef DDRC_HI3516V100
+        field {
+            name = "dual_ch";
+            desc = "Reserved; not supported in this version (Hi3516 V100 original Chinese data sheet 4.1.5 DDRC_CONFIG1, `hi3516v100--Hi3516-Datasheet.txt` line 22260).";
+            reset = 0x0;
+        } dual_ch[4:4];
+`endif
 
         enum DDRC_CONFIG1_wr_rcv_mode_enum {
             DIRECT = 0x0 { desc = "Write command direct receiving mode."; };
@@ -2334,6 +2370,14 @@ regfile eDDRC {
             reset = 0x0;
         } dt_byte_0[24:24];
 
+`ifdef DDRC_HI3516V100
+        field {
+            name = "ecc_byte";
+            desc = "Reserved; not supported in this version (Hi3516 V100 original Chinese data sheet 4.1.5 DDRC_DTRCTRL, `hi3516v100--Hi3516-Datasheet.txt` line 22964; the Hi3516 V100 prints dt_byte as one 8-bit field, modelled per byte as on the Hi3518).";
+            reset = 0x0;
+        } ecc_byte[21:20];
+`endif
+
 `ifdef DDRC_TRAIN_START_POS_FIELD
         field {
             name = "train_start_pos";
@@ -2433,8 +2477,11 @@ regfile eDDRC {
 
         field {
             name = "itm_rst";
-            desc = "ITM reset signal of the PHY.";
+            desc = "ITM reset signal of the PHY. 0: reset asserted; 1: reset released. Hi3516 V100: resets to 1 (original Chinese data sheet DDRC_DTRCTRL total reset 0x0000_0001).";
             encode = DDRC_DTRCTRL_itm_rst_enum;
+`ifdef DDRC_HI3516V100
+            reset = 0x1;
+`endif
         } itm_rst[0:0];
 `endif
 
@@ -2756,6 +2803,7 @@ regfile eDDRC {
             EXECUTED = 0x1 { desc = "A command is being executed."; };
         };
 
+`ifndef DDRC_HI3516V100   // Hi3516 V100: four AXI ports, bits [31:4] reserved
         field {
             name = "axi_st7";
             desc = "Status of DDRC bus interface 7.";
@@ -2791,6 +2839,7 @@ regfile eDDRC {
             sw = r;
             hw = w;
         } axi_st4[4:4];
+`endif
 
         field {
             name = "axi_st3";
@@ -2832,6 +2881,60 @@ regfile eDDRC {
 `endif
 
 `ifdef DDRT_ODTCFG_0xF4_REG
+`ifdef DDRC_HI3516V100
+    reg {
+        name = "DDR ODT feature configuration register";
+        desc = "Hi3516 V100 edition: one 4-bit ODT bitmap per rank for reads and for writes; only the rank 0 bitmaps are implemented (rodt1..3 / wodt1..3 are reserved, 'not supported in this version'). Original Chinese data sheet 4.1.5 DDRC_ODTCFG (`hi3516v100--Hi3516-Datasheet.txt` line 23273, total reset 0x0000_0000).";
+
+        field {
+            name = "rodt3";
+            desc = "Reserved; not supported in this version.";
+            reset = 0x0;
+        } rodt3[31:28];
+
+        field {
+            name = "rodt2";
+            desc = "Reserved; not supported in this version.";
+            reset = 0x0;
+        } rodt2[27:24];
+
+        field {
+            name = "rodt1";
+            desc = "Reserved; not supported in this version.";
+            reset = 0x0;
+        } rodt1[23:20];
+
+        field {
+            name = "rodt0";
+            desc = "Rank 0 read ODT configuration: which ranks drive ODT while rank 0 is read, one bit per rank (bit 16 = rank 0 ODT ... bit 19 = rank 3 ODT); 0: read ODT disabled; 1: read ODT enabled.";
+            reset = 0x0;
+        } rodt0[19:16];
+
+        field {
+            name = "wodt3";
+            desc = "Reserved; not supported in this version.";
+            reset = 0x0;
+        } wodt3[15:12];
+
+        field {
+            name = "wodt2";
+            desc = "Reserved; not supported in this version.";
+            reset = 0x0;
+        } wodt2[11:8];
+
+        field {
+            name = "wodt1";
+            desc = "Reserved; not supported in this version.";
+            reset = 0x0;
+        } wodt1[7:4];
+
+        field {
+            name = "wodt0";
+            desc = "Rank 0 write ODT configuration: which ranks drive ODT while rank 0 is written, one bit per rank (bit 0 = rank 0 ODT ... bit 3 = rank 3 ODT); 0: write ODT disabled; 1: write ODT enabled.";
+            reset = 0x0;
+        } wodt0[3:0];
+    } DDRC_ODTCFG @ 0x00F4;
+`else
     reg {
         name = "DDR ODT Feature Configuration Register";
         desc = "Hardware (Hi3520D V100 board, read on hardware 2026-11-08, stock U-Boot prompt after a cold boot): reads 0x00000001 (wodt0 = 1), reset here 0. Boot value: the vendor boot table writes 0x1 here, so it is not taken as the reset value.";
@@ -2862,8 +2965,59 @@ regfile eDDRC {
 
     } DDRC_ODTCFG @ 0x00F4;
 `endif
+`endif
 
 `ifdef DDRC_QOSCFG0_0x100_REG
+`ifdef DDRC_HI3516V100
+    reg {
+        name = "DDRC QoS algorithm configuration register 0";
+        desc = "Hi3516 V100 edition (one FIFO level per AXI port). Original Chinese data sheet 4.1.5 DDRC_QOSCFG0 (`hi3516v100--Hi3516-Datasheet.txt` line 23331, total reset 0x0007_7777). Bits [31:30] and [27:20] are reserved (RW).";
+
+        field {
+            name = "id_order_ctl";
+            desc = "Out-of-order execution enable of the specified ID. 1: the controller does not guarantee the order between the read/write commands of the specified ID and the commands of other IDs when a DDR row-address conflict occurs; the master must ensure data consistency.";
+            encode = DDRC_enabled_enum;
+            reset = 0x0;
+        } id_order_ctl[29:29];
+
+        field {
+            name = "order_en";
+            desc = "In-order execution enable for commands of the same priority.";
+            encode = DDRC_enabled_enum;
+            reset = 0x0;
+        } order_en[28:28];
+
+        field {
+            name = "dmc_fifo_lvl";
+            desc = "Depth of the command register FIFO in the DMC: 0x0-0x7 = n + 1 command depths; other values reserved.";
+            reset = 0x7;
+        } dmc_fifo_lvl[19:16];
+
+        field {
+            name = "axi3_fifo_lvl";
+            desc = "Command-full watermark of AXI interface 3 (flow control of the interface commands): 0x0-0x7 = n + 1 command depths; other values reserved.";
+            reset = 0x7;
+        } axi3_fifo_lvl[15:12];
+
+        field {
+            name = "axi2_fifo_lvl";
+            desc = "Command-full watermark of AXI interface 2: 0x0-0x7 = n + 1 command depths; other values reserved.";
+            reset = 0x7;
+        } axi2_fifo_lvl[11:8];
+
+        field {
+            name = "axi1_fifo_lvl";
+            desc = "Command-full watermark of AXI interface 1: 0x0-0x7 = n + 1 command depths; other values reserved.";
+            reset = 0x7;
+        } axi1_fifo_lvl[7:4];
+
+        field {
+            name = "axi0_fifo_lvl";
+            desc = "Command-full watermark of AXI interface 0: 0x0-0x7 = n + 1 command depths; other values reserved.";
+            reset = 0x7;
+        } axi0_fifo_lvl[3:0];
+    } DDRC_QOSCFG0 @ 0x0100;
+`else
     reg {
         name = "DDRC QoS algorithm configuration register 0";
 
@@ -2912,11 +3066,40 @@ regfile eDDRC {
         } dmc_fifo_lvl[3:0];
     } DDRC_QOSCFG0 @ 0x0100;
 `endif
+`endif
 
 `ifdef DDRC_QOSCFG1_0x104_REG
     reg {
         name = "DDRC QoS algorithm configuration register 1";
 
+`ifdef DDRC_HI3516V100
+        enum DDRC_QOSCFG1_idmap_mode_enum {
+            ID_MAP_REGISTER = 0x0 { desc = "Use the id_map mapping configured in this register (default)."; };
+            QOS_MAPPING     = 0x1 { desc = "Use the QoS mapping configured in-band with the read/write commands on the AXI interface (valid only when the corresponding macro is enabled in the RTL code)."; };
+        };
+
+        field {
+            name = "idmap_mode";
+            desc = "ID mapping mode. Hi3516 V100 original Chinese data sheet 4.1.5 DDRC_QOSCFG1 (`hi3516v100--Hi3516-Datasheet.txt` line 23399, total reset 0x0000_3210; bits [31:17] reserved).";
+            encode = DDRC_QOSCFG1_idmap_mode_enum;
+            reset = 0x0;
+        } idmap_mode[16:16];
+
+        field {
+            name = "id_map";
+            desc = "
+                Selects four bits of the bus ID for the QoS configuration lookup:
+
+                * bit[15:12]: bus ID bit mapped to bit[3] of the QoS ID
+                * bit[11:8]: bus ID bit mapped to bit[2]
+                * bit[7:4]: bus ID bit mapped to bit[1]
+                * bit[3:0]: bus ID bit mapped to bit[0]
+
+                For example, 0x5320 uses ID[5], ID[3], ID[2] and ID[0] of the bus ID for the ID mapping and priority configuration. The DDRC inserts a 2-bit AXI port number into bits 9 and 8 of the original 13-bit ID (00: AXI port 1, 01: AXI port 2, 10: AXI port 3, 11: AXI port 4), so the mapped ID is 15 bits wide.
+            ";
+            reset = 0x3210;
+        } id_map[15:0];
+`endif
 `ifdef DDRC_QOSCFG1_VAR1
         field {
             name = "id_map";
@@ -3078,6 +3261,552 @@ regfile eDDRC {
         } pri[2:0];
 
     } DDRC_QOS[16] @ 0x0150 += 0x4;
+`endif
+
+`ifdef DDRC_HI3516V100
+    // Hi3516 V100 edition: registers that exist only in this chip's DDRC (original Chinese data sheet
+    // 4.1.5, Table 4-8, base 0x2011_0000, `hi3516v100--Hi3516-Datasheet.txt` lines 21770-24330).
+    // The per-rank / per-channel / per-command-lane registers (rnks, chnls, cmdls = 0..0) are single
+    // registers; the per-byte-lane (blanes = 0..3) and per-compensation-block (cmps = 0..1) ones are arrays.
+
+    reg {
+        name = "DDRC exclusive-operation data-consistency address configuration register";
+        desc = "Reserved: used only when both ECC and exclusive access are present, which this version does not support (original Chinese data sheet 4.1.5 DDRC_EXADDRCFG, `hi3516v100--Hi3516-Datasheet.txt` line 22830, total reset 0x0000_0000).";
+
+        field {
+            name = "ex_addr_mask";
+            desc = "Reserved; not supported in this version.";
+            reset = 0x0;
+        } ex_addr_mask[31:16];
+
+        field {
+            name = "ex_addr_base";
+            desc = "Reserved; not supported in this version.";
+            reset = 0x0;
+        } ex_addr_base[15:0];
+    } DDRC_EXADDRCFG @ 0x0090;
+
+    reg {
+        name = "DDRC ECC gate-training status register";
+        desc = "All fields are reserved ('not supported in this version'). Original Chinese data sheet 4.1.5 DDRC_ECCDTST (`hi3516v100--Hi3516-Datasheet.txt` line 23200, total reset 0x0000_0000); bits [31:16] reserved.";
+
+        field {
+            name = "ecc_st";
+            desc = "Reserved; not supported in this version.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } ecc_st[15:8];
+
+        field {
+            name = "ecc_err";
+            desc = "Reserved; not supported in this version.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } ecc_err[7:4];
+
+        field {
+            name = "ecc_ok";
+            desc = "Reserved; not supported in this version.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } ecc_ok[3:0];
+    } DDRC_ECCDTST @ 0x00E8;
+
+    enum DDRC_QOS_pri_enum_hi3516 {
+        HIGHEST = 0x0 { desc = "Highest priority."; };
+        LOWEST  = 0x7 { desc = "Lowest priority."; };
+    };
+
+    reg {
+        name = "DDRC command priority configuration register";
+        desc = "One register per QoS ID, n = 0..15 (0x110 + 0x4 x n). Original Chinese data sheet 4.1.5 DDRC_QOS (`hi3516v100--Hi3516-Datasheet.txt` line 23459, total reset 0x0000_0004); bits [31:28], [19:17], [15:14] and 3 are reserved.";
+
+        field {
+            name = "pri_apt";
+            desc = "Command priority adaptation: 0x0: priority adaptation disabled; 0x1-0xF: N x 16 clock cycles.";
+            reset = 0x0;
+        } pri_apt[27:24];
+
+        field {
+            name = "age_prd";
+            desc = "Command aging time: 0x0: aging disabled; 0x1-0xF: N x 16 clock cycles.";
+            reset = 0x0;
+        } age_prd[23:20];
+
+        field {
+            name = "qos_en";
+            desc = "QoS enable.";
+            encode = DDRC_enabled_enum;
+            reset = 0x0;
+        } qos_en[16:16];
+
+        field {
+            name = "qos";
+            desc = "Command QoS: 0x1-0x3FF: n clock cycles; other values reserved.";
+            reset = 0x0;
+        } qos[13:4];
+
+        field {
+            name = "pri";
+            desc = "Channel priority: 000 highest, 001 second highest ... 111 lowest. Resets to 100.";
+            encode = DDRC_QOS_pri_enum_hi3516;
+            reset = 0x4;
+        } pri[2:0];
+    } DDRC_QOS[16] @ 0x0110 += 0x4;
+
+    reg {
+        name = "DDR PHY configuration register";
+        desc = "Original Chinese data sheet 4.1.5 DDRC_PHYCFG (0x200 + 0x4 x chnls, chnls = 0 only; `hi3516v100--Hi3516-Datasheet.txt` line 23525, total reset 0x0000_0000); bits [31:8] reserved.";
+
+        field {
+            name = "ref_e";
+            desc = "DDR PHY IO reference configuration: 0: external input control; 1: internal resistor control.";
+            reset = 0x0;
+        } ref_e[7:7];
+
+        field {
+            name = "rensel";
+            desc = "Read-enable delay: 000-011: n + 1 clock cycles; other values reserved.";
+            reset = 0x0;
+        } rensel[6:4];
+
+        field {
+            name = "comp";
+            desc = "DDR PHY gate select: 0: gate value output by the DDRC; 1: the DDR PHY's own gate value.";
+            reset = 0x0;
+        } comp[3:3];
+
+        field {
+            name = "comp_en";
+            desc = "DDR PHY gate training enable.";
+            encode = DDRC_enabled_enum;
+            reset = 0x0;
+        } comp_en[2:2];
+
+        field {
+            name = "bl";
+            desc = "DDR PHY burst configuration: 0: BL4; 1: BL8.";
+            reset = 0x0;
+        } bl[1:1];
+
+        field {
+            name = "bl_en";
+            desc = "DDR PHY burst configuration enable: 0: disabled, a variable burst length is used; 1: enabled.";
+            reset = 0x0;
+        } bl_en[0:0];
+    } DDRC_PHYCFG @ 0x0200;
+
+    reg {
+        name = "DDR PHY gate phase position register";
+        desc = "Original Chinese data sheet 4.1.5 DDRC_PHYNEG (0x208 + 0x4 x rnks, rnks = 0 only; `hi3516v100--Hi3516-Datasheet.txt` line 23586, total reset 0x0000_0000); bits [31:18] reserved.";
+
+        field {
+            name = "ecc_negmod";
+            desc = "Reserved; not supported in this version.";
+            reset = 0x0;
+        } ecc_negmod[17:16];
+
+        field {
+            name = "neg_mod";
+            desc = "DDR PHY gate phase select (Dolphin mode), two bits per data lane N in bits [2N+1:2N], N = 0..3 (the data sheet prints the field as 16 bits wide): 00: 0 degree phase shift; 01: 90 degrees; 10: 180 degrees; 11: 270 degrees.";
+            reset = 0x0;
+        } neg_mod[15:0];
+    } DDRC_PHYNEG @ 0x0208;
+
+    reg {
+        name = "DDR PHY gate cycle position register";
+        desc = "Original Chinese data sheet 4.1.5 DDRC_PHYSEL (0x218 + 0x4 x rnks, rnks = 0 only; `hi3516v100--Hi3516-Datasheet.txt` line 23635, total reset 0x0000_0000); bits [31:18] reserved.";
+
+        field {
+            name = "ecc_selmod";
+            desc = "Reserved; not supported in this version.";
+            reset = 0x0;
+        } ecc_selmod[17:16];
+
+        field {
+            name = "sel_mod";
+            desc = "DDR PHY gate delay select (Dolphin mode), two bits per data lane N in bits [2N+1:2N], N = 0..3: 00-11: n clock cycles.";
+            reset = 0x0;
+        } sel_mod[15:0];
+    } DDRC_PHYSEL @ 0x0218;
+
+    reg {
+        name = "DDR PHY command-lane DLL configuration register";
+        desc = "Original Chinese data sheet 4.1.5 DDRC_CDLLCFG (0x228 + 0x4 x cmdls, cmdls = 0 only; `hi3516v100--Hi3516-Datasheet.txt` line 23681, total reset 0x0000_0057); bits [31:30], [27:25], 19 and [15:11] reserved.";
+
+        field {
+            name = "unfl";
+            desc = "DLL underflow status: 0: no underflow; 1: underflow.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } unfl[29:29];
+
+        field {
+            name = "ovfl";
+            desc = "DLL overflow status: 0: no overflow; 1: overflow.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } ovfl[28:28];
+
+        field {
+            name = "bypctl";
+            desc = "DLL ctlout value while the DLL is bypassed.";
+            reset = 0x0;
+        } bypctl[24:20];
+
+        field {
+            name = "bypfc";
+            desc = "DLL fcout value while the DLL is bypassed.";
+            reset = 0x0;
+        } bypfc[18:16];
+
+        field {
+            name = "limit";
+            desc = "DLL lock bandwidth.";
+            reset = 0x5;
+        } limit[10:4];
+
+        field {
+            name = "byp";
+            desc = "DLL bypass enable.";
+            encode = DDRC_enabled_enum;
+            reset = 0x0;
+        } byp[3:3];
+
+        field {
+            name = "dll_updt_en";
+            desc = "DLL update enable.";
+            encode = DDRC_enabled_enum;
+            reset = 0x1;
+        } dll_updt_en[2:2];
+
+        field {
+            name = "dll_en";
+            desc = "DLL enable.";
+            encode = DDRC_enabled_enum;
+            reset = 0x1;
+        } dll_en[1:1];
+
+        field {
+            name = "dll_reset";
+            desc = "DLL reset: 0: reset asserted; 1: reset released.";
+            reset = 0x1;
+        } dll_reset[0:0];
+    } DDRC_CDLLCFG @ 0x0228;
+
+    reg {
+        name = "DDR PHY data-lane DLL configuration register";
+        desc = "One register per byte lane, n = 0..3 (0x230 + 0x4 x n). Same layout as DDRC_CDLLCFG. Original Chinese data sheet 4.1.5 DDRC_QDLLCFG (`hi3516v100--Hi3516-Datasheet.txt` line 23756, total reset 0x0000_0057); bits [31:30], [27:25], 19 and [15:11] reserved.";
+
+        field {
+            name = "unfl_mod";
+            desc = "DLL underflow status: 0: no underflow; 1: underflow.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } unfl_mod[29:29];
+
+        field {
+            name = "ovfl_mod";
+            desc = "DLL overflow status: 0: no overflow; 1: overflow.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } ovfl_mod[28:28];
+
+        field {
+            name = "bypctl_mod";
+            desc = "DLL ctlout value while the DLL is bypassed.";
+            reset = 0x0;
+        } bypctl_mod[24:20];
+
+        field {
+            name = "bypfc_mod";
+            desc = "DLL fcout value while the DLL is bypassed.";
+            reset = 0x0;
+        } bypfc_mod[18:16];
+
+        field {
+            name = "limit_mod";
+            desc = "DLL lock bandwidth.";
+            reset = 0x5;
+        } limit_mod[10:4];
+
+        field {
+            name = "byp_mod";
+            desc = "DLL bypass enable.";
+            encode = DDRC_enabled_enum;
+            reset = 0x0;
+        } byp_mod[3:3];
+
+        field {
+            name = "dll_updt_en_mod";
+            desc = "DLL update enable.";
+            encode = DDRC_enabled_enum;
+            reset = 0x1;
+        } dll_updt_en_mod[2:2];
+
+        field {
+            name = "dll_en_mod";
+            desc = "DLL enable.";
+            encode = DDRC_enabled_enum;
+            reset = 0x1;
+        } dll_en_mod[1:1];
+
+        field {
+            name = "dll_reset_mod";
+            desc = "DLL reset: 0: reset asserted; 1: reset released.";
+            reset = 0x1;
+        } dll_reset_mod[0:0];
+    } DDRC_QDLLCFG[4] @ 0x0230 += 0x4;
+
+    reg {
+        name = "DDR PHY data-line phase fine-tune control register";
+        desc = "Original Chinese data sheet 4.1.5 DDRC_LVLSKEW (`hi3516v100--Hi3516-Datasheet.txt` line 23830, total reset 0x0000_0000); bits [31:10] reserved.";
+
+        field {
+            name = "dqs_skew";
+            desc = "Data-line fine-tune enable, one bit per byte: bit N = byte N (N = 0..9). 0: disabled; 1: enabled.";
+            reset = 0x0;
+        } dqs_skew[9:0];
+    } DDRC_LVLSKEW @ 0x0260;
+
+    reg {
+        name = "DDR PHY write-leveling control register";
+        desc = "Original Chinese data sheet 4.1.5 DDRC_LVLCTRL (`hi3516v100--Hi3516-Datasheet.txt` line 23864, total reset 0x0000_0000); bits [31:10] reserved.";
+
+        field {
+            name = "wrlvl_allow";
+            desc = "Write-leveling operation start, one bit per byte: bit N = byte N (N = 0..9). 0: disabled; 1: enabled.";
+            reset = 0x0;
+        } wrlvl_allow[9:0];
+    } DDRC_LVLCTRL @ 0x0264;
+
+    reg {
+        name = "DDR PHY write-leveling DQS control register";
+        desc = "Original Chinese data sheet 4.1.5 DDRC_LVLSTR (`hi3516v100--Hi3516-Datasheet.txt` line 23889, total reset 0x0000_0000); bits [31:10] reserved.";
+
+        field {
+            name = "wrlvl_strobe";
+            desc = "Write-leveling single-cycle strobe, one bit per byte: bit N = byte N (N = 0..9). 0: idle; writing 1 issues one strobe.";
+            reset = 0x0;
+        } wrlvl_strobe[9:0];
+    } DDRC_LVLSTR @ 0x0268;
+
+    reg {
+        name = "DDR PHY write-leveling ODT control register";
+        desc = "Original Chinese data sheet 4.1.5 DDRC_LVLODT (`hi3516v100--Hi3516-Datasheet.txt` line 23923, total reset 0x0000_0000); bits [31:4] reserved.";
+
+        field {
+            name = "wrlvl_odt";
+            desc = "ODT control in write-leveling mode, one bit per rank: bit N = rank N (N = 0..3). 0: disabled; 1: enabled.";
+            reset = 0x0;
+        } wrlvl_odt[3:0];
+    } DDRC_LVLODT @ 0x026C;
+
+    reg {
+        name = "DDR PHY write-leveling configuration register";
+        desc = "One register per byte lane, n = 0..3 (0x270 + 0x4 x n). Accessible only while DDRC_CONFIG1[wrlvl_en] is 0. Original Chinese data sheet 4.1.5 DDRC_LVLCTL (`hi3516v100--Hi3516-Datasheet.txt` line 23950, total reset 0x0000_0000).";
+
+        field {
+            name = "clkinv";
+            desc = "Leveling phase select: 0: phase 0; 1: 180 degree phase.";
+            reset = 0x0;
+        } clkinv[31:31];
+
+        field {
+            name = "lvlctl_mod";
+            desc = "DQS coarse delay in write-leveling mode, thermometer coded: 0x0000_0000: 0 delay units; 0x0000_0001: 1; 0x0000_0003: 2; 0x0000_0007: 3; ... 0x7FFF_FFFF: 31 delay units.";
+            reset = 0x0;
+        } lvlctl_mod[30:0];
+    } DDRC_LVLCTL[4] @ 0x0270 += 0x4;
+
+    reg {
+        name = "DDR PHY write-leveling response register";
+        desc = "Original Chinese data sheet 4.1.5 DDRC_LVLRSP (`hi3516v100--Hi3516-Datasheet.txt` line 23994, total reset 0x0000_0000); bits [31:10] reserved.";
+
+        field {
+            name = "lvlrsp_mod";
+            desc = "Write-leveling response, one bit per byte: bit N = byte N (N = 0..9). 0: error; 1: OK.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } lvlrsp_mod[9:0];
+    } DDRC_LVLRSP @ 0x02D0;
+
+    reg {
+        name = "DDR PHY write-leveling status register";
+        desc = "Original Chinese data sheet 4.1.5 DDRC_LVLST (`hi3516v100--Hi3516-Datasheet.txt` line 24028, total reset 0x0000_0000); bits [31:10] reserved.";
+
+        field {
+            name = "lvl_ok";
+            desc = "Write-leveling status after initialisation, one bit per byte: bit N = byte N (N = 0..9). 0: failed; 1: succeeded.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } lvl_ok[9:0];
+    } DDRC_LVLST @ 0x02D4;
+
+    reg {
+        name = "DDR PHY write DQS fine-tune register";
+        desc = "Original Chinese data sheet 4.1.5 DDRC_WRDQS_SKEW (`hi3516v100--Hi3516-Datasheet.txt` line 24053, total reset 0x0000_0000; the summary table truncates the name to DDRC_WRDQS_SKE); bits [31:30] reserved.";
+
+        field {
+            name = "wrdqs_skew";
+            desc = "Write DQS delay fine-tune, three bits per byte lane N in bits [3N+2:3N], N = 0..9: 0x0-0x7 delay units.";
+            reset = 0x0;
+        } wrdqs_skew[29:0];
+    } DDRC_WRDQS_SKEW @ 0x02F0;
+
+    reg {
+        name = "DDR PHY read DQS fine-tune register";
+        desc = "Original Chinese data sheet 4.1.5 DDRC_RDDQS_SKEW (`hi3516v100--Hi3516-Datasheet.txt` line 24093, total reset 0x0000_0000; the summary table truncates the name to DDRC_RDDQS_SKE); bits [31:30] reserved.";
+
+        field {
+            name = "rddqs_skew";
+            desc = "Read DQS delay fine-tune, three bits per byte lane N in bits [3N+2:3N], N = 0..9: 0x0-0x7 delay units.";
+            reset = 0x0;
+        } rddqs_skew[29:0];
+    } DDRC_RDDQS_SKEW @ 0x02F4;
+
+    reg {
+        name = "DDR PHY IO configuration register";
+        desc = "Original Chinese data sheet 4.1.5 DDRC_IOCFG (0x360 + 0x4 x cmdls, cmdls = 0 only; `hi3516v100--Hi3516-Datasheet.txt` line 24126, total reset 0x0000_0007); bits [31:12] and 3 reserved.";
+
+        field {
+            name = "lpddr_en";
+            desc = "Single-ended read DQS receive mode: 0: disabled, differential DQS; 1: enabled, single-ended DQS.";
+            reset = 0x0;
+        } lpddr_en[11:11];
+
+        field {
+            name = "odis_clk";
+            desc = "Output clock disable, one bit per clock pair: bit n = DDR_CLKP/N[n], n = 0..2. 0: the output clock is enabled; 1: disabled. DDR_CLKP2 / DDR_CLKN2 are unused in this version: set odis_clk[2] = 1.";
+            reset = 0x0;
+        } odis_clk[10:8];
+
+        field {
+            name = "fena_rcv";
+            desc = "Force receive enable.";
+            encode = DDRC_enabled_enum;
+            reset = 0x0;
+        } fena_rcv[7:7];
+
+        field {
+            name = "ddr3";
+            desc = "Mode select: 0: DDR2 mode; 1: DDR3 mode.";
+            reset = 0x0;
+        } ddr3[6:6];
+
+        field {
+            name = "rtt";
+            desc = "Termination resistance (ren75, ren150): 00: disabled; 01: external resistor value / 2; 1x: external resistor value / 4.";
+            reset = 0x0;
+        } rtt[5:4];
+
+        field {
+            name = "sl";
+            desc = "Signal slew-rate control: 111: fastest ... 000: slowest.";
+            reset = 0x7;
+        } sl[2:0];
+    } DDRC_IOCFG @ 0x0360;
+
+    reg {
+        name = "DDR PHY IO compensation configuration register";
+        desc = "One register per compensation block, n = 0..1 (0x370 + 0x4 x n). Original Chinese data sheet 4.1.5 DDRC_IOCMP (`hi3516v100--Hi3516-Datasheet.txt` line 24207, total reset 0x0000_0005); bits [31:17] reserved.";
+
+        field {
+            name = "rtt_byp_en";
+            desc = "Termination-resistor compensation circuit bypass enable.";
+            encode = DDRC_enabled_enum;
+            reset = 0x0;
+        } rtt_byp_en[16:16];
+
+        field {
+            name = "rtt_byp";
+            desc = "Termination resistance value in bypass mode.";
+            reset = 0x0;
+        } rtt_byp[15:12];
+
+        field {
+            name = "drv_byp_n";
+            desc = "Pull-down drive resistance value in bypass mode.";
+            reset = 0x0;
+        } drv_byp_n[11:8];
+
+        field {
+            name = "drv_byp_p";
+            desc = "Pull-up drive resistance value in bypass mode.";
+            reset = 0x0;
+        } drv_byp_p[7:4];
+
+        field {
+            name = "drv_byp_en";
+            desc = "Drive compensation bypass enable.";
+            encode = DDRC_enabled_enum;
+            reset = 0x0;
+        } drv_byp_en[3:3];
+
+        field {
+            name = "update_en";
+            desc = "Compensation update enable.";
+            encode = DDRC_enabled_enum;
+            reset = 0x1;
+        } update_en[2:2];
+
+        field {
+            name = "mvg_en";
+            desc = "Averaging enable.";
+            encode = DDRC_enabled_enum;
+            reset = 0x0;
+        } mvg_en[1:1];
+
+        field {
+            name = "comp_e";
+            desc = "Driver and receiver compensation enable.";
+            encode = DDRC_enabled_enum;
+            reset = 0x1;
+        } comp_e[0:0];
+    } DDRC_IOCMP[2] @ 0x0370 += 0x4;
+
+    reg {
+        name = "DDR PHY IO compensation status register 0";
+        desc = "One register per compensation block, n = 0..1 (0x380 + 0x4 x n). Original Chinese data sheet 4.1.5 DDRC_CMPSTATUS0 (`hi3516v100--Hi3516-Datasheet.txt` line 24271, total reset 0x0001_0001). The data sheet labels pctl_core 'pull-down' and nctl_core 'pull-up' (as printed).";
+
+        field {
+            name = "pctl_core";
+            desc = "Pull-down compensation resistance status.";
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } pctl_core[31:16];
+
+        field {
+            name = "nctl_core";
+            desc = "Pull-up compensation resistance status.";
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } nctl_core[15:0];
+    } DDRC_CMPSTATUS0[2] @ 0x0380 += 0x4;
+
+    reg {
+        name = "DDR PHY IO compensation status register 1";
+        desc = "Original Chinese data sheet 4.1.5 DDRC_CMPSTATUS1 (`hi3516v100--Hi3516-Datasheet.txt` line 24293, total reset 0x0000_0000); bits [31:14] reserved.";
+
+        field {
+            name = "ctl_core";
+            desc = "RTT (termination) compensation resistance status.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } ctl_core[13:0];
+    } DDRC_CMPSTATUS1 @ 0x0388;
 `endif
 
 `ifdef DDRC_FLUX_0x200_REG
