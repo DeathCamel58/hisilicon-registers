@@ -1,0 +1,391 @@
+`ifndef HISI_SFC_300_RDL
+`define HISI_SFC_300_RDL
+
+regfile eHISI_SFC_300 {
+    name = "SPI Flash Controller Registers (hisfc300 generation)";
+    desc = "
+    The serial peripheral interface flash controller (SFC) of the Hi3516 V100 generation. It provides an AHB slave interface through which the SPI flash is either accessed directly (bus mode: AHB reads/writes are translated to SPI read / WREN+PP+RDSR sequences) or driven by register programming (CMD/INS/ADDR/DATABUFFER1-8, up to 32 bytes per command). There is no DMA master, unlike the later `hisfc350` SFC (eHISI_SFC_350) and the FMC.
+
+    Source: Hi3516 V100 data sheet (Chinese original, 00B60, 2011-08-12) section 4.3 `SPI Flash 控制器`, base 0x1001_0000. The register layout is the one the vendor `hisfc300` driver (`drivers/mtd/devices/hisfc300`, macros `HISFC200_*`) programs; that driver also reads a VERSION register at 0x1F8 that this data sheet does not list.
+
+    ## Features
+
+    * AHB slave interface (AMBA 2.0, little endian), selecting either the configuration registers or the flash memory window.
+    * Two chip selects CS0 and CS1, each up to 128 Mbits in 3-byte address mode / 8 Gbits in 4-byte address mode, with different capacities allowed. Each chip select is mapped to its own system window (CS0BASEADDR, CS1BASEADDR, inside the SPI_MEM space 0x5800_0000-0x5BFF_FFFF); CS1 additionally supports address aliasing (CS1ALIASADDR) so that the boot flash can appear at address 0.
+    * Standard SPI, Dual-Input/Dual-Output SPI, Quad-Input/Quad-Output SPI and Full Quad SPI timings (CONFIG.mem_if_type); standard SPI after power-on.
+    * 3-byte (default) and 4-byte flash address modes (CONFIG.flash_addr_mode); both chip selects must use the same mode, otherwise CONFIG/CMD must be rewritten before switching flash.
+    * Bus access and register access to the flash; hardware write protection (CMD.wp_en).
+
+    ## Register operation
+
+    Read: write INS, ADDR, then CMD with start = 1; poll CMD.start (or wait for the op_end interrupt), then read DATABUFFER1..8 according to data_cnt. Write (page program): WREN via INS/CMD, fill DATABUFFER1..8, ADDR (must not cross a page boundary), CMD with wrdata_en and start; wait for completion, then poll the flash status register (WIP) before the next write. Erase, deep power down, read ID etc. are register operations too.
+
+    After power-on the bus read uses the normal read opcode 0x03 with no dummy byte; software can switch to fast read (0x0B, one dummy byte) through CONFIG.rd_ins/dummy_byte.
+    ";
+
+    enum SFC300_flash_size_enum {
+        NONE     = 0x0 { desc = "No SPI flash connected"; };
+        KBIT_512 = 0x1 { desc = "512 kbits"; };
+        MBIT_1   = 0x2 { desc = "1 Mbit"; };
+        MBIT_2   = 0x3 { desc = "2 Mbits"; };
+        MBIT_4   = 0x4 { desc = "4 Mbits"; };
+        MBIT_8   = 0x5 { desc = "8 Mbits"; };
+        MBIT_16  = 0x6 { desc = "16 Mbits"; };
+        MBIT_32  = 0x7 { desc = "32 Mbits"; };
+        MBIT_64  = 0x8 { desc = "64 Mbits"; };
+        MBIT_128 = 0x9 { desc = "128 Mbits (default)"; };
+        MBIT_256 = 0xA { desc = "256 Mbits"; };
+        MBIT_512 = 0xB { desc = "512 Mbits"; };
+        GBIT_1   = 0xC { desc = "1 Gbit"; };
+        GBIT_2   = 0xD { desc = "2 Gbits"; };
+        GBIT_4   = 0xE { desc = "4 Gbits"; };
+        GBIT_8   = 0xF { desc = "8 Gbits"; };
+    };
+
+    reg {
+        name = "SFC Configuration Register";
+        desc = "Total reset value 0x0203_0000 (wr_ins = 0x02 page program, rd_ins = 0x03 normal read). wr_ins, rd_ins, prefetch_cnt and dummy_byte apply to bus access only; rd_delay, flash_addr_mode, wip_locate, mem_if_type and mode apply to bus and register access.";
+
+        enum SFC300_mode_enum {
+            MODE0 = 0x0 { desc = "SPI mode 0"; };
+            MODE3 = 0x1 { desc = "SPI mode 3"; };
+        };
+
+        field {
+            name = "mode";
+            desc = "SPI mode.";
+            encode = SFC300_mode_enum;
+            reset = 0x0;
+        } mode[0:0];
+
+        enum SFC300_mem_if_type_enum {
+            TYPE0_STANDARD   = 0x0 { desc = "Interface type 0: all operations use standard SPI (0b000-0b011)"; };
+            TYPE0_STANDARD_1 = 0x1 { desc = "Interface type 0: all operations use standard SPI"; };
+            TYPE0_STANDARD_2 = 0x2 { desc = "Interface type 0: all operations use standard SPI"; };
+            TYPE0_STANDARD_3 = 0x3 { desc = "Interface type 0: all operations use standard SPI"; };
+            TYPE1_DUAL_READ  = 0x4 { desc = "Interface type 1: bus reads use Dual-Input/Dual-Output; register access and bus writes use standard SPI"; };
+            TYPE2_DUAL       = 0x5 { desc = "Interface type 2: bus access uses Dual-Input/Dual-Output; register access uses standard SPI"; };
+            TYPE3_QUAD       = 0x6 { desc = "Interface type 3: bus access uses Quad-Input/Quad-Output; register access uses standard SPI"; };
+            TYPE4_FULL_QUAD  = 0x7 { desc = "Interface type 4: all operations use Full Quad SPI"; };
+        };
+
+        field {
+            name = "mem_if_type";
+            desc = "Interface type of the connected SPI flash. In the non-standard modes rd_ins and wr_ins must be set accordingly. Both chip selects must use the same interface type, otherwise reconfigure before switching flash.";
+            encode = SFC300_mem_if_type_enum;
+            reset = 0x0;
+        } mem_if_type[6:4];
+
+        field {
+            name = "dummy_byte";
+            desc = "Number of dummy bytes in bus access mode: 0 = none, 1 = one dummy byte.";
+            reset = 0x0;
+        } dummy_byte[7:7];
+
+        field {
+            name = "wip_locate";
+            desc = "Bit position of WIP (write in progress) in the flash status register, 0..7 (default 0).";
+            reset = 0x0;
+        } wip_locate[10:8];
+
+        enum SFC300_addr_mode_enum {
+            BYTE_3 = 0x0 { desc = "3-byte address mode (default)"; };
+            BYTE_4 = 0x1 { desc = "4-byte address mode"; };
+        };
+
+        field {
+            name = "flash_addr_mode";
+            desc = "SPI flash address mode. Writes are ignored while CMD.start is 1.";
+            encode = SFC300_addr_mode_enum;
+            reset = 0x0;
+        } flash_addr_mode[11:11];
+
+        field {
+            name = "rd_delay";
+            desc = "SPI read data sampling delay, 0..3 clock cycles (default 0).";
+            reset = 0x0;
+        } rd_delay[13:12];
+
+        field {
+            name = "prefetch_cnt";
+            desc = "Prefetch depth for bus accesses (undefined-length INCR reads): 0 = no prefetch (default), 1..3 = prefetch n clock cycles of data.";
+            reset = 0x0;
+        } prefetch_cnt[15:14];
+
+        field {
+            name = "rd_ins";
+            desc = "Read opcode used by bus reads (default 0x03, normal read).";
+            reset = 0x03;
+        } rd_ins[23:16];
+
+        field {
+            name = "wr_ins";
+            desc = "Write (page program) opcode used by bus writes (default 0x02).";
+            reset = 0x02;
+        } wr_ins[31:24];
+
+    } CONFIG @ 0x00;
+
+    reg {
+        name = "Command Register";
+        desc = "Register-mode flash command. Total reset value 0x001F_0002 (data_cnt = 31, sel_cs = 1).";
+
+        field {
+            name = "start";
+            desc = "Start the instruction operation. Write 1 to start; returns to 0 automatically when the operation completes.";
+            reset = 0x0;
+        } start[0:0];
+
+        enum SFC300_cs_enum {
+            CS0 = 0x0 { desc = "Operate on chip select 0"; };
+            CS1 = 0x1 { desc = "Operate on chip select 1"; };
+        };
+
+        field {
+            name = "sel_cs";
+            desc = "Chip select for this operation.";
+            encode = SFC300_cs_enum;
+            reset = 0x1;
+        } sel_cs[1:1];
+
+        field {
+            name = "wrdata_en";
+            desc = "This operation has write data (DATABUFFER1..8 are sent). Must not be set together with rddata_en.";
+            reset = 0x0;
+        } wrdata_en[2:2];
+
+        field {
+            name = "rddata_en";
+            desc = "This operation returns read data (into DATABUFFER1..8). Must not be set together with wrdata_en.";
+            reset = 0x0;
+        } rddata_en[3:3];
+
+        field {
+            name = "wp_en";
+            desc = "Hardware write protection enable.";
+            reset = 0x0;
+        } wp_en[4:4];
+
+        field {
+            name = "addr_en";
+            desc = "This operation has an address phase (ADDR).";
+            reset = 0x0;
+        } addr_en[8:8];
+
+        field {
+            name = "dummy_byte_cnt";
+            desc = "Number of dummy bytes in register access mode, 0..7 (default 0).";
+            reset = 0x0;
+        } dummy_byte_cnt[14:12];
+
+        field {
+            name = "data_cnt";
+            desc = "Number of data bytes minus one: 0 = 1 byte, n = n+1 bytes, 0x1F = 32 bytes. Write count when wrdata_en = 1, read count when rddata_en = 1.";
+            reset = 0x1F;
+        } data_cnt[20:16];
+
+    } CMD @ 0x04;
+
+    reg {
+        name = "Instruction Register";
+
+        field {
+            name = "ins";
+            desc = "Flash instruction (opcode) for the register-mode operation.";
+            reset = 0x0;
+        } ins[7:0];
+
+    } INS @ 0x08;
+
+    reg {
+        name = "Address Register";
+
+        field {
+            name = "addr";
+            desc = "Flash address of the register-mode operation. 3-byte address mode uses [23:0]; in 4-byte mode the two upper bits are fixed to 0.";
+            reset = 0x0;
+        } addr[29:0];
+
+    } ADDR @ 0x0C;
+
+    reg {
+        name = "Data Buffer Register";
+        desc = "Data buffer N (N = 1..8, `DATABUFFER1`..`DATABUFFER8`, called `DATABUF1`..`DATABUF8` in the register summary): bytes 4N-3 (bits [7:0]) to 4N (bits [31:24]) of the register-mode read or write data, little endian.";
+
+        field {
+            name = "byte1";
+            desc = "Data byte 4N-3.";
+            reset = 0x0;
+        } byte1[7:0];
+
+        field {
+            name = "byte2";
+            desc = "Data byte 4N-2.";
+            reset = 0x0;
+        } byte2[15:8];
+
+        field {
+            name = "byte3";
+            desc = "Data byte 4N-1.";
+            reset = 0x0;
+        } byte3[23:16];
+
+        field {
+            name = "byte4";
+            desc = "Data byte 4N.";
+            reset = 0x0;
+        } byte4[31:24];
+
+    } DATABUFFER[8] @ 0x10 += 0x4;
+
+    reg {
+        name = "CS0 Configuration Register";
+
+        field {
+            name = "mem_size";
+            desc = "Capacity of the SPI flash connected to CS0.";
+            encode = SFC300_flash_size_enum;
+            reset = 0x9;
+        } mem_size[3:0];
+
+    } CS0CONFIG @ 0x30;
+
+    reg {
+        name = "CS1 Configuration Register";
+
+        field {
+            name = "mem_size";
+            desc = "Capacity of the SPI flash connected to CS1.";
+            encode = SFC300_flash_size_enum;
+            reset = 0x9;
+        } mem_size[3:0];
+
+    } CS1CONFIG @ 0x34;
+
+    reg {
+        name = "CS0 Base Address Register";
+
+        field {
+            name = "hi_base_addr";
+            desc = "Upper 16 bits of the system address the CS0 flash is mapped to; must lie inside the SPI_MEM space. Reset 0x5A00_0000.";
+            reset = 0x5A00;
+        } hi_base_addr[31:16];
+
+    } CS0BASEADDR @ 0x38;
+
+    reg {
+        name = "CS1 Base Address Register";
+
+        field {
+            name = "hi_base_addr";
+            desc = "Upper 16 bits of the system address the CS1 flash is mapped to; must lie inside the SPI_MEM space. Reset 0x5800_0000.";
+            reset = 0x5800;
+        } hi_base_addr[31:16];
+
+    } CS1BASEADDR @ 0x3C;
+
+    reg {
+        name = "CS1 Alias Base Address Register";
+        desc = "Called `CS1ALIASADDR` in the summary and `CS1ALISADDR` in the register header of the data sheet.";
+
+        field {
+            name = "alias_addr";
+            desc = "Upper 16 bits of the second system window of the CS1 flash (address aliasing, e.g. address 0 for booting); must lie inside the SPI_MEM space.";
+            reset = 0x0;
+        } alias_addr[31:16];
+
+    } CS1ALIASADDR @ 0x40;
+
+    reg {
+        name = "Timing Parameter Register";
+        desc = "Total reset value 0x0100_660F.";
+
+        field {
+            name = "tshsl";
+            desc = "Chip-select deselect time (interval between two flash operations): n + 2 clock cycles, n = 0..15.";
+            reset = 0xF;
+        } tshsl[3:0];
+
+        field {
+            name = "tshwl";
+            desc = "Write-protect hold time: n clock cycles, n = 0..15.";
+            reset = 0x0;
+        } tshwl[7:4];
+
+        field {
+            name = "tcss";
+            desc = "CS setup time: n + 1 clock cycles, n = 0..7.";
+            reset = 0x6;
+        } tcss[10:8];
+
+        field {
+            name = "tcsh";
+            desc = "CS hold time: n + 1 clock cycles, n = 0..7.";
+            reset = 0x6;
+        } tcsh[14:12];
+
+        field {
+            name = "trpd";
+            desc = "Delay before the first flash access after reset, in clock cycles.";
+            reset = 0x010;
+        } trpd[27:16];
+
+    } TIMING @ 0x44;
+
+    reg {
+        name = "Raw Interrupt Status Register";
+
+        field {
+            name = "op_end_raw_status";
+            desc = "Raw (unmasked) instruction-operation-end interrupt: 1 = the operation has completed.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } op_end_raw_status[0:0];
+
+    } INTRAWSTATUS @ 0x50;
+
+    reg {
+        name = "Masked Interrupt Status Register";
+
+        field {
+            name = "op_end_status";
+            desc = "Masked instruction-operation-end interrupt status: 1 = the operation has completed.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } op_end_status[0:0];
+
+    } INTSTATUS @ 0x54;
+
+    reg {
+        name = "Interrupt Mask Register";
+
+        enum SFC300_int_mask_enum {
+            MASKED   = 0x0 { desc = "Interrupt masked"; };
+            UNMASKED = 0x1 { desc = "Interrupt not masked"; };
+        };
+
+        field {
+            name = "op_end_mask";
+            desc = "Instruction-operation-end interrupt mask (1 = pass the interrupt).";
+            encode = SFC300_int_mask_enum;
+            reset = 0x0;
+        } op_end_mask[0:0];
+
+    } INTMASK @ 0x58;
+
+    reg {
+        name = "Interrupt Clear Register";
+
+        field {
+            name = "clear_op_end";
+            desc = "Write 1 to clear INTRAWSTATUS[0] and INTSTATUS[0]; returns to 0 automatically once cleared.";
+            reset = 0x0;
+        } clear_op_end[0:0];
+
+    } INTCLEAR @ 0x5C;
+
+};
+
+`endif
