@@ -1,7 +1,17 @@
 `ifndef HISI_AIAO_RDL
 `define HISI_AIAO_RDL
 
-// AIAO (audio input/output, I2S/PCM, one RX + one TX port) of the Hi3518EV200 / Hi3516CV200 (data sheet 11.1).
+// AIAO (audio input/output, I2S/PCM, one RX + one TX port) of the Hi3518EV200 / Hi3516CV200 (data sheet 11.1) and of the other chips of the same generation.
+// Cross-chip audit (register tables compared offset by offset and bit by bit with the extracted data sheet tables):
+//   Hi3516AV200 (issue 06? chapter 11, base 0x1108_0000, GIC 68), Hi3519V101 (chapter 11, 0x1108_0000, GIC 68) and Hi3516CV300/Hi3516EV100 (chapter 11, 0x1131_0000, VIC 9):
+//     identical to the Hi3518EV200 tables (same 31 registers, same bits, access and resets, same three data sheet typos); the shared definition needs no macro.
+//   Hi3516AV300 (Chinese issue 01, chapter 11, base 0x113B_0000, GIC 87): same tables plus a second TX channel (tx_ch1 bits 17 of the three AIAO_INT_* registers) and its
+//     clock generator I2S_CRG_CFG0_09/CFG1_09 at 0x148/0x14C: define `AIAO_TX1` in the chip's defines.rdl.
+//   Hi3516A/Hi3516D (issue 08, chapter 12 'AIO', base 0x2065_0000, GIC 71): older edition of the same IP with 41 registers: adds AIAO_SWITCH_RX_BCLK/AIAO_SWITCH_TX_BCLK/AIAO_STATUS,
+//     RX_WPTR_TMP, TX_DSP_STATUS/TX_IF_STATUS/TX_DMAR_STATUS/TX_WS_CNT/TX_BCLK_CNT, TX_RPTR_TMP; I2S_CRG_CFG1_xx has six more control bits ([15:10]) and resets to 0 instead of
+//     0x131; RX_IF_ATTRI/TX_IF_ATTRI name the serial data line selects (sd0..sd3_sel, [31:24], reset 0xE4 = the bits this file models as reserved_b31_24 for the Hi3518EV200),
+//     rx_multislot_en [7], tx_underflow_ctrl [6], and rx_ch_num is 2 bits ([5:4]): define `AIAO_HI3516A`. Its RX_DSP_CTRL table claims reset 0 and RW for disable_done
+//     (the TX_DSP_CTRL table of the same edition and all later editions say 0x2000_0000 / RO), kept as the later editions say.
 regfile eHISI_AIAO {
     name = "AIAO (audio input/output)";
     desc = "
@@ -12,8 +22,9 @@ regfile eHISI_AIAO {
     enabled in RX_INT_ENA / TX_INT_ENA and gated by AIAO_INT_ENA. The on-chip audio CODEC is controlled through the MISC_CTRL registers at 0x20120000 + 0xC4..0xD8 (data sheet 11.2, `eHISI_MISC_CTRL`),
     not through this block.
 
-    This is the AIAO generation of the Hi3516CV300 / Hi3519 / Hi3516AV200 (register names RX_IF_ATTRI, RX_DSP_CTRL, TX_DSP_CTRL with volume/fade, I2S_CRG_CFG); it is NOT the AIP/AOP layout
-    of the Hi3520D (`eHISI_AIO`). Vendor drivers for it are binary (`mpp` libraries); nothing in the local trees; no hardware verification. Register table: data sheet 11.1.5 / 11.1.6 (`hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt`
+    This is the AIAO generation of the Hi3516CV300 / Hi3519V101 / Hi3516AV200 (register names RX_IF_ATTRI, RX_DSP_CTRL, TX_DSP_CTRL with volume/fade, I2S_CRG_CFG), whose data sheets
+    give exactly the same register tables; the Hi3516AV300 (second TX channel, `AIAO_TX1`) and the older Hi3516A/Hi3516D (`AIAO_HI3516A`, extra status registers and control bits) variants are
+    macro-guarded in this file (see the file header). It is NOT the AIP/AOP layout of the Hi3520D (`eHISI_AIO`) nor the FIFO-based SIO of the Hi3511/Hi3515/Hi3520 (`eHISI_SIO`). Vendor drivers for it are binary (`mpp` libraries); nothing in the local trees; no hardware verification. Register table: data sheet 11.1.5 / 11.1.6 (`hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt`
     lines 75750-77294), 31 registers; the three data sheet typos corrected are listed in the register descriptions.
     ";
 
@@ -30,6 +41,16 @@ Data sheet 11.1.6 AIAO_INT_ENA (offset 0x0, printed page 11-9, `hi3518ev200--Hi3
             ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
         };
 
+`ifdef AIAO_TX1
+        field {
+            name = "tx_ch1_int_ena";
+            desc = "TX channel 1 interrupt enable (Hi3516AV300 only: second TX channel; data sheet 11.1 AIAO_INT_ENA bit 17).";
+            sw = rw;
+            hw = r;
+            encode = AIAO_INT_ENA_tx_ch0_int_ena_enum;
+            reset = 0x0;
+        } tx_ch1_int_ena[17:17];
+`endif
         field {
             name = "tx_ch0_int_ena";
             desc = "TX channel 0 interrupt enable";
@@ -65,6 +86,16 @@ Data sheet 11.1.6 AIAO_INT_STATUS (offset 0x4, printed page 11-9, `hi3518ev200--
             INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
         };
 
+`ifdef AIAO_TX1
+        field {
+            name = "tx_ch1_int_status";
+            desc = "Interrupt status of TX channel 1 (Hi3516AV300 only: second TX channel; data sheet 11.1 AIAO_INT_STATUS bit 17).";
+            sw = r;
+            hw = w;
+            encode = AIAO_INT_STATUS_tx_ch0_int_status_enum;
+            reset = 0x0;
+        } tx_ch1_int_status[17:17];
+`endif
         field {
             name = "tx_ch0_int_status";
             desc = "Interrupt status of TX channel 0";
@@ -100,6 +131,16 @@ Data sheet 11.1.6 AIAO_INT_RAW (offset 0x8, printed page 11-10, `hi3518ev200--Hi
             RAW_INTERRUPT_GENERATED = 1 { name = "Raw Interrupt Generated"; desc = "A raw interrupt is generated."; };
         };
 
+`ifdef AIAO_TX1
+        field {
+            name = "tx_ch1_int_raw";
+            desc = "Raw interrupt of TX channel 1 (Hi3516AV300 only: second TX channel; data sheet 11.1 AIAO_INT_RAW bit 17).";
+            sw = r;
+            hw = w;
+            encode = AIAO_INT_RAW_tx_ch0_int_raw_enum;
+            reset = 0x0;
+        } tx_ch1_int_raw[17:17];
+`endif
         field {
             name = "tx_ch0_int_raw";
             desc = "Raw interrupt of TX channel 0";
@@ -124,6 +165,84 @@ Data sheet 11.1.6 AIAO_INT_RAW (offset 0x8, printed page 11-10, `hi3518ev200--Hi
         } rx_ch0_int_raw[0:0];
     } AIAO_INT_RAW @ 0x8;
 
+`ifdef AIAO_HI3516A
+    reg {
+        name = "AIAO I2S RX BCLK switch configuration register";
+        desc = "AIAO_SWITCH_RX_BCLK is an AIAO I2S RX BCLK switch configuration register (Hi3516A/Hi3516D only). Total reset value 0x7654_3210: the data sheet marks bits 31:4 'reserved' but gives them the reset 0x7654321, i.e. the register is a bank of eight 4-bit selects of which only the first (RX 00) is documented.
+Data sheet 12.3 AIAO_SWITCH_RX_BCLK (offset 0x28, printed page 12-11, `hi3516av100--Hi3516A-Hi3516D-Datasheet.txt` line 84598).";
+
+        field {
+            name = "reserved_b31_4";
+            desc = "Reserved in the data sheet (RW, reset 0x7654321; by the pattern these are the BCLK selects of RX channels 01..07 of the full 8-channel IP).";
+            sw = rw;
+            hw = r;
+            reset = 0x7654321;
+        } reserved_b31_4[31:4];
+
+        enum AIAO_SWITCH_RX_BCLK_inner_bclk_ws_sel_rx_00_enum {
+            BCLK0 = 0 { name = "BCLK0"; desc = "BCLK0 (the RX clock generator I2S_CRG_CFGx_00)"; };
+            BCLK8 = 8 { name = "BCLK8"; desc = "BCLK8 (the TX clock generator I2S_CRG_CFGx_08). Other values: reserved"; };
+        };
+
+        field {
+            name = "inner_bclk_ws_sel_rx_00";
+            desc = "Internal BCLK select for the RX channel.";
+            sw = rw;
+            hw = r;
+            encode = AIAO_SWITCH_RX_BCLK_inner_bclk_ws_sel_rx_00_enum;
+            reset = 0x0;
+        } inner_bclk_ws_sel_rx_00[3:0];
+    } AIAO_SWITCH_RX_BCLK @ 0x28;
+
+    reg {
+        name = "AIAO I2S TX BCLK switch configuration register";
+        desc = "AIAO_SWITCH_TX_BCLK is an AIAO I2S TX BCLK switch configuration register (Hi3516A/Hi3516D only). Total reset value 0x7654_3210 (see AIAO_SWITCH_RX_BCLK).
+Data sheet 12.3 AIAO_SWITCH_TX_BCLK (offset 0x2C, printed page 12-11, `hi3516av100--Hi3516A-Hi3516D-Datasheet.txt` line 84633).";
+
+        field {
+            name = "reserved_b31_4";
+            desc = "Reserved in the data sheet (RW, reset 0x7654321; by the pattern the BCLK selects of TX channels 01..07 of the full 8-channel IP).";
+            sw = rw;
+            hw = r;
+            reset = 0x7654321;
+        } reserved_b31_4[31:4];
+
+        enum AIAO_SWITCH_TX_BCLK_inner_bclk_ws_sel_tx_00_enum {
+            BCLK0 = 0 { name = "BCLK0"; desc = "BCLK0 (the RX clock generator I2S_CRG_CFGx_00)"; };
+            BCLK8 = 8 { name = "BCLK8"; desc = "BCLK8 (the TX clock generator I2S_CRG_CFGx_08). Other values: reserved"; };
+        };
+
+        field {
+            name = "inner_bclk_ws_sel_tx_00";
+            desc = "Internal BCLK select for the TX channel.";
+            sw = rw;
+            hw = r;
+            encode = AIAO_SWITCH_TX_BCLK_inner_bclk_ws_sel_tx_00_enum;
+            reset = 0x0;
+        } inner_bclk_ws_sel_tx_00[3:0];
+    } AIAO_SWITCH_TX_BCLK @ 0x2C;
+
+    reg {
+        name = "AIAO status register";
+        desc = "AIAO_STATUS is an AIAO status register (Hi3516A/Hi3516D only).
+Data sheet 12.3 AIAO_STATUS (offset 0x30, printed page 12-12, `hi3516av100--Hi3516A-Hi3516D-Datasheet.txt` line 84658).";
+
+        enum AIAO_STATUS_srst_rdy_enum {
+            RESETTING = 0 { name = "Resetting"; desc = "resetting"; };
+            RESET_COMPLETED = 1 { name = "Reset Completed"; desc = "reset completed"; };
+        };
+
+        field {
+            name = "srst_rdy";
+            desc = "Soft reset status.";
+            sw = r;
+            hw = w;
+            encode = AIAO_STATUS_srst_rdy_enum;
+            reset = 0x0;
+        } srst_rdy[0:0];
+    } AIAO_STATUS @ 0x30;
+`endif
+
     reg {
         name = "I2S00 CRG configuration register 0";
         desc = "I2S_CRG_CFG0_00 is I2S00 CRG configuration register 0.
@@ -143,9 +262,59 @@ Data sheet 11.1.6 I2S_CRG_CFG0_00 (offset 0x100, printed page 11-10, `hi3518ev20
         name = "I2S00 CRG configuration register 1";
         desc = "I2S_CRG_CFG1_00 is I2S00 CRG configuration register 1.
 
-Clock generator of the RX (AIP, 'CRG00') port: MCLK (I2S_CRG_CFG0_00) -> BCLK (aiao_bclk_div) -> WS / sampling clock (aiao_fsclk_div). Total reset value 0x131: cken 1, fsclk_div 3 (BCLK/64), bclk_div 1 (MCLK/3).
+Clock generator of the RX (AIP, 'CRG00') port: MCLK (I2S_CRG_CFG0_00) -> BCLK (aiao_bclk_div) -> WS / sampling clock (aiao_fsclk_div). Total reset value 0x131: cken 1, fsclk_div 3 (BCLK/64), bclk_div 1 (MCLK/3). Hi3516A/Hi3516D (`AIAO_HI3516A`): total reset value 0x0 and six more control bits [15:10] (WS/BCLK gating, BCLK polarity, master/slave select); data sheet 12.3 (`hi3516av100--Hi3516A-Hi3516D-Datasheet.txt` line 84720).
 
 Data sheet 11.1.6 I2S_CRG_CFG1_00 (offset 0x104, printed page 11-11, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 75972).";
+
+`ifdef AIAO_HI3516A
+        field {
+            name = "aiao_rx_ws_en";
+            desc = "RX WS gating select (Hi3516A/Hi3516D only; the data sheet text says 'rx bclk gating select' for both bits 15 and 14). 0: disabled, 1: enabled.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } aiao_rx_ws_en[15:15];
+
+        field {
+            name = "aiao_rx_bclk_en";
+            desc = "RX BCLK gating select (Hi3516A/Hi3516D only). 0: disabled, 1: enabled.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } aiao_rx_bclk_en[14:14];
+
+        field {
+            name = "aiao_bclkout_pctrl";
+            desc = "BCLKOUT polarity (Hi3516A/Hi3516D only). 0: positive, 1: negative.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } aiao_bclkout_pctrl[13:13];
+
+        field {
+            name = "aiao_bclkin_pctrl";
+            desc = "BCLKIN polarity (Hi3516A/Hi3516D only). 0: positive, 1: negative.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } aiao_bclkin_pctrl[12:12];
+
+        field {
+            name = "aiao_bclk_sel";
+            desc = "BCLK/FCLK select (Hi3516A/Hi3516D only). 0: the clocks are generated internally; 1: the clocks are input from the external ADAC.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } aiao_bclk_sel[11:11];
+
+        field {
+            name = "aiao_bclk_oen";
+            desc = "BCLK/FCLK I/O output enable control (Hi3516A/Hi3516D only). 0: the BCLK/FCLK I/O is an output; 1: it is an input. Works with aiao_bclk_sel to select the master/slave mode of the I2S interface.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } aiao_bclk_oen[10:10];
+`endif
 
         enum I2S_CRG_CFG1_00_aiao_srst_req_enum {
             DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
@@ -172,7 +341,11 @@ Data sheet 11.1.6 I2S_CRG_CFG1_00 (offset 0x104, printed page 11-11, `hi3518ev20
             sw = rw;
             hw = r;
             encode = I2S_CRG_CFG1_00_aiao_cken_enum;
+`ifdef AIAO_HI3516A
+            reset = 0x0;
+`else
             reset = 0x1;
+`endif
         } aiao_cken[8:8];
 
         enum I2S_CRG_CFG1_00_aiao_fsclk_div_enum {
@@ -190,7 +363,11 @@ Data sheet 11.1.6 I2S_CRG_CFG1_00 (offset 0x104, printed page 11-11, `hi3518ev20
             sw = rw;
             hw = r;
             encode = I2S_CRG_CFG1_00_aiao_fsclk_div_enum;
+`ifdef AIAO_HI3516A
+            reset = 0x0;
+`else
             reset = 0x3;
+`endif
         } aiao_fsclk_div[6:4];
 
         enum I2S_CRG_CFG1_00_aiao_bclk_div_enum {
@@ -214,7 +391,11 @@ Data sheet 11.1.6 I2S_CRG_CFG1_00 (offset 0x104, printed page 11-11, `hi3518ev20
             sw = rw;
             hw = r;
             encode = I2S_CRG_CFG1_00_aiao_bclk_div_enum;
+`ifdef AIAO_HI3516A
+            reset = 0x0;
+`else
             reset = 0x1;
+`endif
         } aiao_bclk_div[3:0];
     } I2S_CRG_CFG1_00 @ 0x104;
 
@@ -241,6 +422,56 @@ Clock generator of the TX (AOP, 'CRG08') port, same layout as I2S_CRG_CFG1_00.
 
 Data sheet 11.1.6 I2S_CRG_CFG1_08 (offset 0x144, printed page 11-13, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 76074).";
 
+`ifdef AIAO_HI3516A
+        field {
+            name = "aiao_tx_ws_en";
+            desc = "TX WS gating select (Hi3516A/Hi3516D only; the data sheet text says 'tx bclk gating select' for both bits 15 and 14). 0: disabled, 1: enabled.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } aiao_tx_ws_en[15:15];
+
+        field {
+            name = "aiao_tx_bclk_en";
+            desc = "TX BCLK gating select (Hi3516A/Hi3516D only). 0: disabled, 1: enabled.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } aiao_tx_bclk_en[14:14];
+
+        field {
+            name = "aiao_bclkout_pctrl";
+            desc = "BCLKOUT polarity (Hi3516A/Hi3516D only). 0: positive, 1: negative.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } aiao_bclkout_pctrl[13:13];
+
+        field {
+            name = "aiao_bclkin_pctrl";
+            desc = "BCLKIN polarity (Hi3516A/Hi3516D only). 0: positive, 1: negative.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } aiao_bclkin_pctrl[12:12];
+
+        field {
+            name = "aiao_bclk_sel";
+            desc = "BCLK/FCLK select (Hi3516A/Hi3516D only). 0: the clocks are generated internally; 1: the clocks are input from the external ADAC.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } aiao_bclk_sel[11:11];
+
+        field {
+            name = "aiao_bclk_oen";
+            desc = "BCLK/FCLK I/O output enable control (Hi3516A/Hi3516D only). 0: the BCLK/FCLK I/O is an output; 1: it is an input. Works with aiao_bclk_sel to select the master/slave mode of the I2S interface.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } aiao_bclk_oen[10:10];
+`endif
+
         enum I2S_CRG_CFG1_08_aiao_srst_req_enum {
             DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
             RESET_F = 1 { name = "Reset F"; desc = "reset"; };
@@ -266,7 +497,11 @@ Data sheet 11.1.6 I2S_CRG_CFG1_08 (offset 0x144, printed page 11-13, `hi3518ev20
             sw = rw;
             hw = r;
             encode = I2S_CRG_CFG1_08_aiao_cken_enum;
+`ifdef AIAO_HI3516A
+            reset = 0x0;
+`else
             reset = 0x1;
+`endif
         } aiao_cken[8:8];
 
         enum I2S_CRG_CFG1_08_aiao_fsclk_div_enum {
@@ -284,7 +519,11 @@ Data sheet 11.1.6 I2S_CRG_CFG1_08 (offset 0x144, printed page 11-13, `hi3518ev20
             sw = rw;
             hw = r;
             encode = I2S_CRG_CFG1_08_aiao_fsclk_div_enum;
+`ifdef AIAO_HI3516A
+            reset = 0x0;
+`else
             reset = 0x3;
+`endif
         } aiao_fsclk_div[6:4];
 
         enum I2S_CRG_CFG1_08_aiao_bclk_div_enum {
@@ -308,9 +547,102 @@ Data sheet 11.1.6 I2S_CRG_CFG1_08 (offset 0x144, printed page 11-13, `hi3518ev20
             sw = rw;
             hw = r;
             encode = I2S_CRG_CFG1_08_aiao_bclk_div_enum;
+`ifdef AIAO_HI3516A
+            reset = 0x0;
+`else
             reset = 0x1;
+`endif
         } aiao_bclk_div[3:0];
     } I2S_CRG_CFG1_08 @ 0x144;
+
+`ifdef AIAO_TX1
+    reg {
+        name = "I2S09 CRG configuration register 0";
+        desc = "I2S_CRG_CFG0_09 is I2S09 CRG configuration register 0: MCLK divider of the second TX channel's clock generator (Hi3516AV300 only; same layout as I2S_CRG_CFG0_08).
+Data sheet 11.1 I2S_CRG_CFG0_09 (offset 0x148, Chinese issue 01, `hi3516av300--Hi3516AV300-Datasheet.txt` line 53165).";
+
+        field {
+            name = "aiao_mclk_div";
+            desc = "Configured value of the frequency division clock of the MCLK: (target MCLK frequency / MCLK source PLL frequency, 1188 MHz by default) x 2^27; reset 0x00AA_AAAA = 1/3 of the source.";
+            sw = rw;
+            hw = r;
+            reset = 0x00AAAAAA;
+        } aiao_mclk_div[26:0];
+    } I2S_CRG_CFG0_09 @ 0x148;
+
+    reg {
+        name = "I2S09 CRG configuration register 1";
+        desc = "I2S_CRG_CFG1_09 is I2S09 CRG configuration register 1: soft reset, clock gate and BCLK/WS dividers of the second TX channel (TX1) clock generator (Hi3516AV300 only; same layout and total reset value 0x131 as I2S_CRG_CFG1_08).
+Data sheet 11.1 I2S_CRG_CFG1_09 (offset 0x14C, Chinese issue 01, `hi3516av300--Hi3516AV300-Datasheet.txt` line 53183).";
+
+        enum I2S_CRG_CFG1_09_aiao_srst_req_enum {
+            DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "deassert reset"; };
+            RESET_F = 1 { name = "Reset F"; desc = "reset"; };
+        };
+        enum I2S_CRG_CFG1_09_aiao_cken_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+        enum I2S_CRG_CFG1_09_aiao_fsclk_div_enum {
+            FS_OBTAINED_DIVIDING = 0 { name = "Fs Obtained Dividing"; desc = "The FS is obtained by dividing the BCLK by 16."; };
+            FS_OBTAINED_DIVIDING_2 = 1 { name = "Fs Obtained Dividing 2"; desc = "The FS is obtained by dividing the BCLK by 32."; };
+            FS_OBTAINED_DIVIDING_3 = 2 { name = "Fs Obtained Dividing 3"; desc = "The FS is obtained by dividing the BCLK by 48."; };
+            FS_OBTAINED_DIVIDING_4 = 3 { name = "Fs Obtained Dividing 4"; desc = "The FS is obtained by dividing the BCLK by 64."; };
+            FS_OBTAINED_DIVIDING_5 = 4 { name = "Fs Obtained Dividing 5"; desc = "The FS is obtained by dividing the BCLK by 128."; };
+            FS_OBTAINED_DIVIDING_6 = 5 { name = "Fs Obtained Dividing 6"; desc = "The FS is obtained by dividing the BCLK by 256. Other values: The FS is obtained by dividing the BCLK by 8."; };
+        };
+        enum I2S_CRG_CFG1_09_aiao_bclk_div_enum {
+            BCLK_OBTAINED_DIVIDING = 0 { name = "Bclk Obtained Dividing"; desc = "The BCLK is obtained by dividing the MCLK by 1."; };
+            BCLK_OBTAINED_DIVIDING_2 = 1 { name = "Bclk Obtained Dividing 2"; desc = "The BCLK is obtained by dividing the MCLK by 3."; };
+            BCLK_OBTAINED_DIVIDING_3 = 2 { name = "Bclk Obtained Dividing 3"; desc = "The BCLK is obtained by dividing the MCLK by 2."; };
+            BCLK_OBTAINED_DIVIDING_4 = 3 { name = "Bclk Obtained Dividing 4"; desc = "The BCLK is obtained by dividing the MCLK by 4."; };
+            BCLK_OBTAINED_DIVIDING_5 = 4 { name = "Bclk Obtained Dividing 5"; desc = "The BCLK is obtained by dividing the MCLK by 6."; };
+            BCLK_OBTAINED_DIVIDING_6 = 5 { name = "Bclk Obtained Dividing 6"; desc = "The BCLK is obtained by dividing the MCLK by 8."; };
+            BCLK_OBTAINED_DIVIDING_7 = 6 { name = "Bclk Obtained Dividing 7"; desc = "The BCLK is obtained by dividing the MCLK by 12."; };
+            BCLK_OBTAINED_DIVIDING_8 = 7 { name = "Bclk Obtained Dividing 8"; desc = "The BCLK is obtained by dividing the MCLK by 16."; };
+            BCLK_OBTAINED_DIVIDING_9 = 8 { name = "Bclk Obtained Dividing 9"; desc = "The BCLK is obtained by dividing the MCLK by 24."; };
+            BCLK_OBTAINED_DIVIDING_10 = 9 { name = "Bclk Obtained Dividing 10"; desc = "The BCLK is obtained by dividing the MCLK by 32."; };
+            BCLK_OBTAINED_DIVIDING_11 = 10 { name = "Bclk Obtained Dividing 11"; desc = "The BCLK is obtained by dividing the MCLK by 48."; };
+            BCLK_OBTAINED_DIVIDING_12 = 11 { name = "Bclk Obtained Dividing 12"; desc = "The BCLK is obtained by dividing the MCLK by 64. Other values: The BCLK is obtained by dividing the MCLK by 8."; };
+        };
+
+        field {
+            name = "aiao_srst_req";
+            desc = "Independent soft reset request of the TX 1 channel. 0: deassert reset, 1: reset.";
+            sw = rw;
+            hw = r;
+            encode = I2S_CRG_CFG1_09_aiao_srst_req_enum;
+            reset = 0x0;
+        } aiao_srst_req[9:9];
+
+        field {
+            name = "aiao_cken";
+            desc = "MCLK/BCLK/WS clock gating for CRG09. 0: off, 1: on.";
+            sw = rw;
+            hw = r;
+            encode = I2S_CRG_CFG1_09_aiao_cken_enum;
+            reset = 0x1;
+        } aiao_cken[8:8];
+
+        field {
+            name = "aiao_fsclk_div";
+            desc = "Frequency division relationship between the bit clock BCLK and the sampling clock FS (same encoding as I2S_CRG_CFG1_08).";
+            sw = rw;
+            hw = r;
+            encode = I2S_CRG_CFG1_09_aiao_fsclk_div_enum;
+            reset = 0x3;
+        } aiao_fsclk_div[6:4];
+
+        field {
+            name = "aiao_bclk_div";
+            desc = "Frequency division relationship between the main clock MCLK and the bit clock BCLK (same encoding as I2S_CRG_CFG1_08).";
+            sw = rw;
+            hw = r;
+            encode = I2S_CRG_CFG1_09_aiao_bclk_div_enum;
+            reset = 0x1;
+        } aiao_bclk_div[3:0];
+    } I2S_CRG_CFG1_09 @ 0x14C;
+`endif
 
     reg {
         name = "Interface attribute configuration register for the RX channel";
@@ -320,13 +652,59 @@ Total reset value 0xE400_0004: rx_i2s_precision = 1 (16 bits) and the data sheet
 
 Data sheet 11.1.6 RX_IF_ATTRI (offset 0x1000, printed page 11-14, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 76139).";
 
+`ifdef AIAO_HI3516A
+        enum RX_IF_ATTRI_rx_sd_sel_enum {
+            SD0 = 0 { name = "SD0"; desc = "SD0"; };
+            SD1 = 1 { name = "SD1"; desc = "SD1"; };
+            SD2 = 2 { name = "SD2"; desc = "SD2"; };
+            SD3 = 3 { name = "SD3"; desc = "SD3"; };
+        };
+
+        field {
+            name = "rx_sd3_sel";
+            desc = "SD3 select: which serial data line carries the data of channel pair 3 (Hi3516A/Hi3516D only; 'select the channel and data line in sequence'). Reset 3 = SD3.";
+            sw = rw;
+            hw = r;
+            encode = RX_IF_ATTRI_rx_sd_sel_enum;
+            reset = 0x3;
+        } rx_sd3_sel[31:30];
+
+        field {
+            name = "rx_sd2_sel";
+            desc = "SD2 select: which serial data line carries the data of channel pair 2 (Hi3516A/Hi3516D only; 'select the channel and data line in sequence'). Reset 2 = SD2.";
+            sw = rw;
+            hw = r;
+            encode = RX_IF_ATTRI_rx_sd_sel_enum;
+            reset = 0x2;
+        } rx_sd2_sel[29:28];
+
+        field {
+            name = "rx_sd1_sel";
+            desc = "SD1 select: which serial data line carries the data of channel pair 1 (Hi3516A/Hi3516D only; 'select the channel and data line in sequence'). Reset 1 = SD1.";
+            sw = rw;
+            hw = r;
+            encode = RX_IF_ATTRI_rx_sd_sel_enum;
+            reset = 0x1;
+        } rx_sd1_sel[27:26];
+
+        field {
+            name = "rx_sd0_sel";
+            desc = "SD0 select: which serial data line carries the data of channel pair 0 (Hi3516A/Hi3516D only; 'select the channel and data line in sequence'). Reset 0 = SD0.";
+            sw = rw;
+            hw = r;
+            encode = RX_IF_ATTRI_rx_sd_sel_enum;
+            reset = 0x0;
+        } rx_sd0_sel[25:24];
+
+`else
         field {
             name = "reserved_b31_24";
-            desc = "Reserved in the data sheet; modelled so that the total reset value 0xE4000004 of the data sheet header is reproduced (reads 0xE4).";
+            desc = "Reserved in the data sheet; modelled so that the total reset value 0xE4000004 of the data sheet header is reproduced (reads 0xE4). The Hi3516A/Hi3516D data sheet names these bits rx_sd3_sel..rx_sd0_sel (serial data line select per channel pair, reset 3,2,1,0 = 0xE4), so the same hardware is likely present here.";
             sw = r;
             hw = w;
             reset = 0xE4;
         } reserved_b31_24[31:24];
+`endif
 
         field {
             name = "rx_sd_source_sel";
@@ -369,6 +747,37 @@ Data sheet 11.1.6 RX_IF_ATTRI (offset 0x1000, printed page 11-14, `hi3518ev200--
             V_2_OTHER_VALUES = 1 { name = "V 2 Other Values"; desc = "2 Other values: reserved"; };
         };
 
+`ifdef AIAO_HI3516A
+        enum RX_IF_ATTRI_rx_multislot_en_enum {
+            NORMAL = 0 { name = "Normal"; desc = "invalid (normal mode)"; };
+            TDM = 1 { name = "TDM"; desc = "valid (time-division multiplexing mode)"; };
+        };
+
+        field {
+            name = "rx_multislot_en";
+            desc = "Time-division multiplexing validity indicator (Hi3516A/Hi3516D only). Changes the meaning of rx_ch_num and rx_i2s_precision.";
+            sw = rw;
+            hw = r;
+            encode = RX_IF_ATTRI_rx_multislot_en_enum;
+            reset = 0x0;
+        } rx_multislot_en[7:7];
+
+        enum RX_IF_ATTRI_rx_ch_num_hi3516a_enum {
+            CH_1 = 0 { name = "1 Channel"; desc = "rx_multislot_en = 0: 1-channel RX (SD0 data line); = 1: 2-channel RX (SD0)"; };
+            CH_2 = 1 { name = "2 Channels"; desc = "rx_multislot_en = 0: 2-channel RX (SD0 data line); = 1: 4-channel RX (SD0)"; };
+            CH_RESERVED = 2 { name = "Reserved"; desc = "rx_multislot_en = 0: reserved; = 1: 8-channel RX (SD0)"; };
+            CH_8 = 3 { name = "8 Channels"; desc = "rx_multislot_en = 0: 8-channel RX (data lines SD0, SD1, SD2 and SD3); = 1: 16-channel RX (SD0)"; };
+        };
+
+        field {
+            name = "rx_ch_num";
+            desc = "Number of RX channels (Hi3516A/Hi3516D: 2 bits; the data line must be SD0 for multi-channel RX).";
+            sw = rw;
+            hw = r;
+            encode = RX_IF_ATTRI_rx_ch_num_hi3516a_enum;
+            reset = 0x0;
+        } rx_ch_num[5:4];
+`else
         field {
             name = "rx_ch_num";
             desc = "Number of RX channels";
@@ -377,6 +786,7 @@ Data sheet 11.1.6 RX_IF_ATTRI (offset 0x1000, printed page 11-14, `hi3518ev200--
             encode = RX_IF_ATTRI_rx_ch_num_enum;
             reset = 0x0;
         } rx_ch_num[6:4];
+`endif
 
         field {
             name = "rx_i2s_precision";
@@ -416,7 +826,7 @@ Data sheet 11.1.6 RX_DSP_CTRL (offset 0x1004, printed page 11-16, `hi3518ev200--
 
         field {
             name = "rx_disable_done";
-            desc = "RX channel disable completion identifier";
+            desc = "RX channel disable completion identifier. (The Hi3516A/Hi3516D data sheet table gives this bit as RW with total reset 0x0000_0000, but its own TX_DSP_CTRL table and every later edition say RO / 0x2000_0000; kept as RO, reset 1.)";
             sw = r;
             hw = w;
             encode = RX_DSP_CTRL_rx_disable_done_enum;
@@ -541,6 +951,22 @@ Data sheet 11.1.6 RX_TRANS_SIZE (offset 0x1094, printed page 11-19, `hi3518ev200
             reset = 0x0;
         } rx_trans_size[23:0];
     } RX_TRANS_SIZE @ 0x1094;
+
+`ifdef AIAO_HI3516A
+    reg {
+        name = "RX write address at the transfer completion interrupt";
+        desc = "RX_WPTR_TMP is a write address storage register for the RX channel upon reporting of the transfer completion interrupt (Hi3516A/Hi3516D only).
+Data sheet 12.3 RX_WPTR_TMP (offset 0x1098, printed page 12-21, `hi3516av100--Hi3516A-Hi3516D-Datasheet.txt` line 85312).";
+
+        field {
+            name = "rx_wptr_tmp";
+            desc = "Write address of the RX channel saved when the transfer completion interrupt is reported.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } rx_wptr_tmp[23:0];
+    } RX_WPTR_TMP @ 0x1098;
+`endif
 
     reg {
         name = "Interrupt enable register for the RX channel";
@@ -860,6 +1286,16 @@ Data sheet 11.1.6 RX_INT_CLR (offset 0x10AC, printed page 11-22, `hi3518ev200--H
             CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
         };
 
+`ifdef AIAO_HI3516A
+        field {
+            name = "rx_ififo_full_int_clear";
+            desc = "Interface FIFO full interrupt clear for the RX channel (Hi3516A/Hi3516D only: its data sheet lists this clear bit although bit 4 of RX_INT_ENA/RAW/STATUS is reserved there too). Write 1 to clear.";
+            sw = w;
+            hw = r;
+            onwrite = woclr;
+        } rx_ififo_full_int_clear[4:4];
+`endif
+
         field {
             name = "rx_bfifo_full_int_clear";
             desc = "Bus fifo overflow interrupt clear for the RX channel";
@@ -924,13 +1360,72 @@ Total reset value 0xE400_0004: tx_i2s_precision = 1 (16 bits) and the data sheet
 
 Data sheet 11.1.6 TX_IF_ATTRI (offset 0x2000, printed page 11-23, `hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 76669).";
 
+`ifdef AIAO_HI3516A
+        enum TX_IF_ATTRI_tx_sd_sel_enum {
+            SD0 = 0 { name = "SD0"; desc = "SD0"; };
+            SD1 = 1 { name = "SD1"; desc = "SD1"; };
+            SD2 = 2 { name = "SD2"; desc = "SD2"; };
+            SD3 = 3 { name = "SD3"; desc = "SD3"; };
+        };
+
+        field {
+            name = "tx_sd3_sel";
+            desc = "SD3 select: which serial data line carries the data of channel pair 3 (Hi3516A/Hi3516D only; 'select the channel and data line in sequence'). Reset 3 = SD3.";
+            sw = rw;
+            hw = r;
+            encode = TX_IF_ATTRI_tx_sd_sel_enum;
+            reset = 0x3;
+        } tx_sd3_sel[31:30];
+
+        field {
+            name = "tx_sd2_sel";
+            desc = "SD2 select: which serial data line carries the data of channel pair 2 (Hi3516A/Hi3516D only; 'select the channel and data line in sequence'). Reset 2 = SD2.";
+            sw = rw;
+            hw = r;
+            encode = TX_IF_ATTRI_tx_sd_sel_enum;
+            reset = 0x2;
+        } tx_sd2_sel[29:28];
+
+        field {
+            name = "tx_sd1_sel";
+            desc = "SD1 select: which serial data line carries the data of channel pair 1 (Hi3516A/Hi3516D only; 'select the channel and data line in sequence'). Reset 1 = SD1.";
+            sw = rw;
+            hw = r;
+            encode = TX_IF_ATTRI_tx_sd_sel_enum;
+            reset = 0x1;
+        } tx_sd1_sel[27:26];
+
+        field {
+            name = "tx_sd0_sel";
+            desc = "SD0 select: which serial data line carries the data of channel pair 0 (Hi3516A/Hi3516D only; 'select the channel and data line in sequence'). Reset 0 = SD0.";
+            sw = rw;
+            hw = r;
+            encode = TX_IF_ATTRI_tx_sd_sel_enum;
+            reset = 0x0;
+        } tx_sd0_sel[25:24];
+
+        enum TX_IF_ATTRI_tx_sd_source_sel_enum {
+            I2S_TX0 = 0 { name = "I2S TX0"; desc = "I2S TX0"; };
+            I2S_RX0 = 8 { name = "I2S RX0"; desc = "I2S RX0. Other values: reserved"; };
+        };
+
+        field {
+            name = "tx_sd_source_sel";
+            desc = "Source select for SD0, SD1, SD2 and SD3 (Hi3516A/Hi3516D only).";
+            sw = rw;
+            hw = r;
+            encode = TX_IF_ATTRI_tx_sd_source_sel_enum;
+            reset = 0x0;
+        } tx_sd_source_sel[23:20];
+`else
         field {
             name = "reserved_b31_19";
-            desc = "Reserved in the data sheet; modelled so that the total reset value 0xE4000004 of the data sheet header is reproduced (reads 0x1C80).";
+            desc = "Reserved in the data sheet; modelled so that the total reset value 0xE4000004 of the data sheet header is reproduced (reads 0x1C80). The Hi3516A/Hi3516D data sheet names these bits tx_sd3_sel..tx_sd0_sel [31:24] (reset 3,2,1,0 = 0xE4) and tx_sd_source_sel [23:20], so the same hardware is likely present here.";
             sw = r;
             hw = w;
             reset = 0x1C80;
         } reserved_b31_19[31:19];
+`endif
 
         enum TX_IF_ATTRI_tx_trackmode_enum {
             SOUND_NOT_PROCESSED = 0 { name = "Sound Not Processed"; desc = "The sound is not processed."; };
@@ -970,6 +1465,22 @@ Data sheet 11.1.6 TX_IF_ATTRI (offset 0x2000, printed page 11-23, `hi3518ev200--
             DATA_TRANSMITTED_ONE = 0 { name = "Data Transmitted One"; desc = "Data is transmitted by one audio channel."; };
             DATA_TRANSMITTED_TWO = 1 { name = "Data Transmitted Two"; desc = "Data is transmitted by two audio channels as stereo. Other values: reserved"; };
         };
+
+`ifdef AIAO_HI3516A
+        enum TX_IF_ATTRI_tx_underflow_ctrl_enum {
+            ZERO = 0 { name = "Zero"; desc = "0 is output."; };
+            LAST_SAMPLE = 1 { name = "Last Sample"; desc = "The data at the last sampling point is output."; };
+        };
+
+        field {
+            name = "tx_underflow_ctrl";
+            desc = "Output control when an underflow occurs in the TX channel (Hi3516A/Hi3516D only).";
+            sw = rw;
+            hw = r;
+            encode = TX_IF_ATTRI_tx_underflow_ctrl_enum;
+            reset = 0x0;
+        } tx_underflow_ctrl[6:6];
+`endif
 
         field {
             name = "tx_ch_num";
@@ -1130,6 +1641,76 @@ Data sheet 11.1.6 TX_DSP_CTRL (offset 0x2004, printed page 11-24, `hi3518ev200--
         } mute_en[0:0];
     } TX_DSP_CTRL @ 0x2004;
 
+`ifdef AIAO_HI3516A
+    reg {
+        name = "TX DSP status register";
+        desc = "TX_DSP_STATUS is a TX DSP status register (Hi3516A/Hi3516D only; read-only debug view of the TX data path). Total reset value 0x4000_0079.
+Data sheet 12.3 TX_DSP_STATUS (offset 0x2008, printed page 12-34, `hi3516av100--Hi3516A-Hi3516D-Datasheet.txt` line 85837).";
+
+        field { name = "tx_enable"; desc = "TX enable. 0: disabled, 1: enabled."; sw = r; hw = w; reset = 0x0; } tx_enable[31:31];
+        field { name = "tx_axi_afifo_rd_aempty"; desc = "Bus FIFO almost empty status of the current channel. 0: not almost empty, 1: almost empty."; sw = r; hw = w; reset = 0x1; } tx_axi_afifo_rd_aempty[30:30];
+        field { name = "tx_if_afifo_wr_full"; desc = "Interface FIFO full status of the current channel. 0: not full, 1: full."; sw = r; hw = w; reset = 0x0; } tx_if_afifo_wr_full[29:29];
+        field { name = "proc_256bit_done"; desc = "256-bit processing complete status of the current channel. 0: not complete, 1: complete."; sw = r; hw = w; reset = 0x0; } proc_256bit_done[28:28];
+        field { name = "if_fifo_wr_en"; desc = "Write interface FIFO enable for the current channel. 0: disabled, 1: enabled."; sw = r; hw = w; reset = 0x0; } if_fifo_wr_en[27:27];
+        field { name = "tx_dsp_stop_done_req"; desc = "DSP stop request for the current channel. 0: no request, 1: request."; sw = r; hw = w; reset = 0x0; } tx_dsp_stop_done_req[26:26];
+        field { name = "tx_rd_bus_fifo_cnt"; desc = "Read bus FIFO counter. The FIFO is read twice each time."; sw = r; hw = w; reset = 0x0; } tx_rd_bus_fifo_cnt[25:24];
+        field { name = "state_clr_end"; desc = "Status clear complete. 0: not complete, 1: complete."; sw = r; hw = w; reset = 0x0; } state_clr_end[23:23];
+        field { name = "cur_fifo_id"; desc = "ID of the current channel."; sw = r; hw = w; reset = 0x0; } cur_fifo_id[22:19];
+        field { name = "cur_state"; desc = "Status of the state machine."; sw = r; hw = w; reset = 0x0; } cur_state[18:16];
+        field { name = "tx_axi_afifo_rd_empty"; desc = "Bus FIFO empty status of the current channel. 0: not empty, 1: empty."; sw = r; hw = w; reset = 0x0; } tx_axi_afifo_rd_empty[7:7];
+        field { name = "mute_fade_vol"; desc = "Mute fade-in/fade-out volume: 0x00-0x28 mute, 0x29 -80 dB ... 0x7E +5 dB, 0x7F +6 dB (same scale as TX_DSP_CTRL volume). Reset 0x79."; sw = r; hw = w; reset = 0x79; } mute_fade_vol[6:0];
+    } TX_DSP_STATUS @ 0x2008;
+
+    reg {
+        name = "TX control interface status register";
+        desc = "TX_IF_STATUS is a TX control interface status register (Hi3516A/Hi3516D only). Total reset value 0x0100_0060.
+Data sheet 12.3 TX_IF_STATUS (offset 0x200C, printed page 12-36, `hi3516av100--Hi3516A-Hi3516D-Datasheet.txt` line 85912).";
+
+        field { name = "if_fifo_empty_cnt"; desc = "Interface FIFO empty counter."; sw = r; hw = w; reset = 0x0; } if_fifo_empty_cnt[31:28];
+        field { name = "i2s_tx_afifo_raddr"; desc = "Interface FIFO read address."; sw = r; hw = w; reset = 0x0; } i2s_tx_afifo_raddr[25:25];
+        field { name = "i2s_tx_afifo_rd_aempty"; desc = "Interface FIFO write almost empty."; sw = r; hw = w; reset = 0x1; } i2s_tx_afifo_rd_aempty[24:24];
+        field { name = "i2s_tx_afifo_waddr"; desc = "Interface FIFO write address."; sw = r; hw = w; reset = 0x0; } i2s_tx_afifo_waddr[17:17];
+        field { name = "i2s_tx_afifo_wr_afull"; desc = "Interface FIFO write almost full."; sw = r; hw = w; reset = 0x0; } i2s_tx_afifo_wr_afull[16:16];
+        field { name = "tx_bit_cnt"; desc = "TX bit counter."; sw = r; hw = w; reset = 0x0; } tx_bit_cnt[15:8];
+        field { name = "i2s_tx_ctrl_stop_done"; desc = "IF ctrl stop complete."; sw = r; hw = w; reset = 0x1; } i2s_tx_ctrl_stop_done[6:6];
+        field { name = "i2s_tx_afifo_rd_empty"; desc = "Interface FIFO empty."; sw = r; hw = w; reset = 0x1; } i2s_tx_afifo_rd_empty[5:5];
+        field { name = "cur_state"; desc = "Status of the tx_if_ctrl state machine (the data sheet says 'rx_if_ctrl')."; sw = r; hw = w; reset = 0x0; } cur_state[2:0];
+    } TX_IF_STATUS @ 0x200C;
+
+    reg {
+        name = "TX DMA read status register";
+        desc = "TX_DMAR_STATUS is a TX DMA read (the data sheet says 'DMAW') status register (Hi3516A/Hi3516D only). Total reset value 0x0000_0200.
+Data sheet 12.3 TX_DMAR_STATUS (offset 0x2010, printed page 12-37, `hi3516av100--Hi3516A-Hi3516D-Datasheet.txt` line 85970).";
+
+        field { name = "tx_fifo_raddr"; desc = "Read pointer of the bus FIFO."; sw = r; hw = w; reset = 0x0; } tx_fifo_raddr[29:24];
+        field { name = "tx_fifo_waddr"; desc = "Write pointer of the bus FIFO."; sw = r; hw = w; reset = 0x0; } tx_fifo_waddr[21:16];
+        field { name = "tx_fifo_full"; desc = "Bus FIFO full."; sw = r; hw = w; reset = 0x0; } tx_fifo_full[14:14];
+        field { name = "state_clr_end"; desc = "Status clear complete."; sw = r; hw = w; reset = 0x0; } state_clr_end[13:13];
+        field { name = "trans_finish_ind"; desc = "Burst transfer complete. 0: not complete, 1: complete."; sw = r; hw = w; reset = 0x0; } trans_finish_ind[12:12];
+        field { name = "vcmdready"; desc = "Transfer command complete. 0: not complete, 1: complete."; sw = r; hw = w; reset = 0x0; } vcmdready[11:11];
+        field { name = "vtrans"; desc = "Transfer command start."; sw = r; hw = w; reset = 0x0; } vtrans[10:10];
+        field { name = "tx_buf_empty"; desc = "Buffer empty."; sw = r; hw = w; reset = 0x1; } tx_buf_empty[9:9];
+        field { name = "tx_fifo_afull"; desc = "Bus FIFO almost full."; sw = r; hw = w; reset = 0x0; } tx_fifo_afull[8:8];
+        field { name = "cur_state"; desc = "Status of the DMAR state machine."; sw = r; hw = w; reset = 0x0; } cur_state[2:0];
+    } TX_DMAR_STATUS @ 0x2010;
+
+    reg {
+        name = "TX WS cyclic count status register";
+        desc = "TX_WS_CNT is a WS cyclic count status register for the TX channel (Hi3516A/Hi3516D only).
+Data sheet 12.3 TX_WS_CNT (offset 0x2020, printed page 12-38, `hi3516av100--Hi3516A-Hi3516D-Datasheet.txt` line 86021).";
+
+        field { name = "ws_count"; desc = "FSCLK cyclic count register. The unit is FSCLK."; sw = r; hw = w; reset = 0x0; } ws_count[23:0];
+    } TX_WS_CNT @ 0x2020;
+
+    reg {
+        name = "TX BCLK cyclic count status register";
+        desc = "TX_BCLK_CNT is a BCLK cyclic count status register for the TX channel (Hi3516A/Hi3516D only).
+Data sheet 12.3 TX_BCLK_CNT (offset 0x2024, printed page 12-38, `hi3516av100--Hi3516A-Hi3516D-Datasheet.txt` line 86042).";
+
+        field { name = "bclk_count"; desc = "BCLK cyclic count register. The unit is BCLK."; sw = r; hw = w; reset = 0x0; } bclk_count[23:0];
+    } TX_BCLK_CNT @ 0x2024;
+`endif
+
     reg {
         name = "DDR buffer start address register for the TX channel";
         desc = "TX_BUFF_SADDR is a DDR buffer start address register for the TX channel.
@@ -1219,6 +1800,22 @@ Data sheet 11.1.6 TX_TRANS_SIZE (offset 0x2094, printed page 11-29, `hi3518ev200
             reset = 0x0;
         } tx_trans_size[23:0];
     } TX_TRANS_SIZE @ 0x2094;
+
+`ifdef AIAO_HI3516A
+    reg {
+        name = "TX read address at the transfer completion interrupt";
+        desc = "TX_RPTR_TMP is a read address storage register for the TX channel upon reporting of the transfer completion interrupt (Hi3516A/Hi3516D only).
+Data sheet 12.3 TX_RPTR_TMP (offset 0x2098, printed page 12-41, `hi3516av100--Hi3516A-Hi3516D-Datasheet.txt` line 86235).";
+
+        field {
+            name = "tx_rptr_tmp";
+            desc = "Read address of the TX channel saved when the transfer completion interrupt is reported.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } tx_rptr_tmp[23:0];
+    } TX_RPTR_TMP @ 0x2098;
+`endif
 
     reg {
         name = "Interrupt enable register for the TX channel";
