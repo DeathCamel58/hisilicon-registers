@@ -1,14 +1,75 @@
 `ifndef HISI_DWMMC_RDL
 `define HISI_DWMMC_RDL
 
+// Chip generation macros (set in the chip's defines.rdl). Without any macro the block is the
+// Hi3518E V20X / Hi3516C V200 edition (himciv200, data sheet 12.4). Generation macros:
+//   DWMMC_GEN1  dw_mmc 1.x: Hi3511/Hi3512, Hi3515, Hi3520 V100 (no IDMAC, PWREN, CLKSRC, WRTPRT, boot
+//               bits; FIFO at 0x100; MMC_CARDSTATUS instead of MMC_CDETECT on the Hi3515: DWMMC_CARDSTATUS)
+//   DWMMC_GEN2  Hi3516C V100, Hi3518A/C V100, Hi3518E V100, Hi3516 V100: IDMAC, FIFO still at 0x100, no
+//               DEBNCE/UHS/CARDTHRCTL/phase registers (Hi3516 V100 adds DWMMC_OD_PULLUP)
+//   DWMMC_GEN3  Hi3516A/D V100: GEN2 + DEBNCE, UHS_REG, CARDTHRCTL, UHS_REG_EXT, DDR_REG, ENABLE_SHIFT,
+//               FIFO at 0x200 (= the default edition without CARD_RSTN / use_hold_reg / volt_switch)
+//   DWMMC_GEN4  Hi3516C V300 / Hi3516E V100, Hi3516A V300: default edition without CLKSRC, with CARD_RSTN
+//               (Hi3516A V300 adds DWMMC_FIFOTH_MSIZE0 and DWMMC_NO_WRTPRT)
+//   DWMMC_GEN5  Hi3516A V200, Hi3519 V101: GEN4 + WRTPRT + ADMA3 (ADMA_* registers, IDSTS/IDINTEN[29:17],
+//               4-bit clock phase fields)
+// Feature macros derived below (a chip may also set them directly): DWMMC_SINGLE_SLOT_BITS (one card per
+// controller: the eMMC/SDIO bit pairs of the Hi3518E V20X data sheet are single bits), DWMMC_FIFO_0x100,
+// DWMMC_NO_CLKSRC, DWMMC_NO_WRTPRT, DWMMC_NO_CARD_RSTN, DWMMC_NO_HOLD_REG (MMC_CMD without use_hold_reg /
+// volt_switch, reset 0), DWMMC_FIFOTH_MSIZE0 (MMC_FIFOTH reset 0x00FF0000), DWMMC_CDETECT_RESET0,
+// DWMMC_CTRL_DMA_ENABLE (MMC_CTRL[5] dma_enable for the external DMAC), DWMMC_ADMA3.
+`ifdef DWMMC_GEN1
+`define DWMMC_SINGLE_SLOT_BITS
+`define DWMMC_FIFO_0x100
+`define DWMMC_NO_CLKSRC
+`define DWMMC_NO_WRTPRT
+`define DWMMC_NO_CARD_RSTN
+`define DWMMC_NO_HOLD_REG
+`define DWMMC_FIFOTH_MSIZE0
+`define DWMMC_CTRL_DMA_ENABLE
+`endif
+`ifdef DWMMC_GEN2
+`define DWMMC_SINGLE_SLOT_BITS
+`define DWMMC_FIFO_0x100
+`define DWMMC_NO_CARD_RSTN
+`define DWMMC_NO_HOLD_REG
+`define DWMMC_FIFOTH_MSIZE0
+`define DWMMC_CDETECT_RESET0
+`define DWMMC_CTRL_DMA_ENABLE
+`endif
+`ifdef DWMMC_GEN3
+`define DWMMC_SINGLE_SLOT_BITS
+`define DWMMC_NO_CARD_RSTN
+`define DWMMC_NO_HOLD_REG
+`define DWMMC_CTRL_DMA_ENABLE
+`endif
+`ifdef DWMMC_GEN4
+`define DWMMC_SINGLE_SLOT_BITS
+`define DWMMC_NO_CLKSRC
+`endif
+`ifdef DWMMC_GEN5
+`define DWMMC_SINGLE_SLOT_BITS
+`define DWMMC_NO_CLKSRC
+`define DWMMC_ADMA3
+`endif
+
 
 regfile eHISI_DWMMC {
     name = "HiSilicon MMC/SD/SDIO controller (DesignWare-MMC based, himciv200)";
     desc = "
-    HiSilicon MMC/SD/SDIO host controller \"himciv200\", a Synopsys DesignWare Mobile Storage Host (dw_mmc) core with HiSilicon additions (PHASE/tuning register MMC_UHS_REG_EXT, MMC_ENABLE_SHIFT, MMC_DDR_REG (HS400), card threshold control, 256-word FIFO at 0x200). Two instances: MMC0 / SDIO0 at 0x10020000 (SD 3.0, SDIO 3.0, eMMC 5.0 with 8-bit bus; GIC/VIC interrupt 18) and MMC1 / SDIO1 at 0x10030000 (SD 2.0 and SDIO 2.0 only, 4-bit bus; interrupt 8, shared with GZIP). Data moves through the built-in IDMAC (descriptor list, MMC_DBADDR) or the CPU through the FIFO window.
+    HiSilicon MMC/SD/SDIO host controller \"himciv200\", a Synopsys DesignWare Mobile Storage Host (dw_mmc) core with HiSilicon additions (PHASE/tuning register MMC_UHS_REG_EXT, MMC_ENABLE_SHIFT, MMC_DDR_REG (HS400), card threshold control, 256-word FIFO at 0x200). Hi3518E V20X / Hi3516C V200: two instances, MMC0 / SDIO0 at 0x10020000 (SD 3.0, SDIO 3.0, eMMC 5.0 with 8-bit bus; GIC/VIC interrupt 18) and MMC1 / SDIO1 at 0x10030000 (SD 2.0 and SDIO 2.0 only, 4-bit bus; interrupt 8, shared with GZIP). Data moves through the built-in IDMAC (descriptor list, MMC_DBADDR) or the CPU through the FIFO window.
     Registers are from the Hi3518E V20X/Hi3516C V200 data sheet issue 02 (2017-06-12), section 12.4.4 (`datasheet` text lines 82110-84358). The DS describes eMMC/SDIO bit pairs in several registers (copied from a two-slot variant of the IP); on this SoC each controller drives a single slot and the vendor driver (and the Linux dw_mmc based `himci` driver) only uses bit 0 / bits 7:0 / bit 16 for the 8-bit mode. The vendor U-Boot register header (include/himciv200_reg.h) additionally names MMC_GPIO (0x58), MMC_USRID (0x68), MMC_VERID (0x6C) and MMC_HCON (0x70); they are modelled as vendor-only registers.
     Clock and reset (PERI_CRG49, 0x20030000 + 0xC4): MMC0 srst bit 8, clock enable bit 9, clock select bits 11:10 (0 = 99 MHz, 1 = 74.25 MHz, 2 = 49.5 MHz, 3 = 148.5 MHz); MMC1 srst bit 0, clock enable bit 1, clock select bits 3:2 (the vendor driver programs 0 = 49.5 MHz for MMC1; compare the MMC0 encoding, where 2 = 49.5 MHz). The card clock is CCLK_IN / (2 x MMC_CLKDIV).
     Not hardware verified.
+
+    The same dw_mmc core, in five generations, is the SD/SDIO/eMMC host of every HiSilicon SoC in this repository (chip macros DWMMC_GEN1..GEN5 in the file header select the generation; every data sheet other than the Hi3518E V20X one shows the slot fields as single bits):
+    - GEN1 (dw_mmc 1.x, registers 0x00-0x60 and the FIFO at 0x100; no IDMAC: data moves through the external PL080 DMAC or the CPU; MMC_CTRL[0] and the card-detect interrupt bit 0 are reserved; no PWREN, CLKSRC, WRTPRT, boot or hold-register bits; MMC_FIFOTH reset 0): Hi3511/Hi3512 MMC at 0x90020000 (Hi3511 data sheet chapter 8, Chinese), Hi3515 MMC at 0x10030000 (chapter 8; adds MMC_CARDSTATUS at 0x50, reset 1), Hi3520 V100 MMC at 0x10030000 (chapter 8, Chinese).
+    - GEN2 (adds PWREN, CLKSRC[0], CDETECT (reset 0), WRTPRT, MMC_CTRL[25] use_internal_dmac and the IDMAC registers 0x80-0x98; FIFO still at 0x100; MMC_CMD without use_hold_reg / volt_switch; MMC_FIFOTH reset 0x00FF0000): Hi3516C V100 SDIO at 0x10020000 (DS 13.7), Hi3518A/C V100 SDIO at 0x10020000 (DS 13.7), Hi3518E V100 (DS 13.7), Hi3516 V100 SDIO0 at 0x10020000 and SDIO1 at 0x10030000 (Chinese DS; MMC_CTRL[24] enable_od_pullup).
+    - GEN3 (adds DEBNCE 0x64, UHS_REG 0x74, CLKSRC[1:0], CARDTHRCTL 0x100, UHS_REG_EXT 0x108, DDR_REG 0x10C, ENABLE_SHIFT 0x110, FIFO at 0x200, MMC_FIFOTH reset 0x60FF0000; no CARD_RSTN): Hi3516A/D V100 SDIO0 at 0x206E0000 and SDIO1 at 0x206F0000 (DS 13.4).
+    - Hi3518E V20X / Hi3516C V200 (default): GEN3 + CLKSRC[3:0], MMC_CMD use_hold_reg (reset 1) / volt_switch, CARD_RSTN 0x78, CARDTHRCTL cardwrthr_en.
+    - GEN4 (default without CLKSRC; MMC_STATUS[8] data_3_status reserved): Hi3516C V300 / Hi3516E V100 MMC0..MMC3 at 0x100C0000, 0x100D0000, 0x100E0000, 0x100F0000 (DS 12.5; the Hi3516CV300-only edition lists MMC_WRTPRT, the Hi3516CV300/EV100 edition does not), Hi3516A V300 SDIO1 at 0x10020000, SDIO0 at 0x100F0000 and eMMC at 0x10100000 (Chinese DS; MMC_FIFOTH reset 0x00FF0000, no WRTPRT).
+    - GEN5 (GEN4 + WRTPRT + ADMA3 command-queue engine: ADMA_CONTROL..ADMA_TIMEOUT at 0xB0-0xC4, MMC_IDSTS/MMC_IDINTEN bits 29:17, 4-bit clock phase fields in MMC_UHS_REG_EXT): Hi3516A V200 and Hi3519 V101 MMC0..MMC2 at 0x100C0000, 0x100D0000, 0x100E0000 (DS 12.5).
+    Vendor drivers: himci (Hi3515/Hi3520/Hi3516C/Hi3518 V100 generations, FIFO at 0x100), himciv200 (Hi3516A V100 on), himciv300 (Hi3516A V200/Hi3519); mainline Linux dw_mmc-hi3798cv200 / dw_mmc-pltfm are the closest in-tree drivers.
 ";
 
     reg {
@@ -24,6 +85,7 @@ Data sheet 12.4.4 MMC_CTRL (offset 0x0, printed page 12-88, `Hi3518EV20X-Hi3516C
             CPU_TRANSFERS_DATA_2 = 1 { name = "Cpu Transfers Data 2"; desc = "The CPU transfers data by using the IDMAC."; };
         };
 
+`ifndef DWMMC_GEN1
         field {
             name = "Use_internal_dmac";
             desc = "Whether to transfer data by using the IDMAC";
@@ -32,6 +94,17 @@ Data sheet 12.4.4 MMC_CTRL (offset 0x0, printed page 12-88, `Hi3518EV20X-Hi3516C
             encode = MMC_CTRL_Use_internal_dmac_enum;
             reset = 0x0;
         } Use_internal_dmac[25:25];
+`endif
+
+`ifdef DWMMC_OD_PULLUP
+        field {
+            name = "Enable_OD_pullup";
+            desc = "External open-drain pull-up enable (Hi3516 V100 only): 0 = disabled, 1 = enabled. The inverted value drives the SDIOn_CCMD_ODPULLUP_EN_N pin (n = 0, 1). Hi3516 V100 Chinese data sheet MMC_CTRL bit 24.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } Enable_OD_pullup[24:24];
+`endif
 
         enum MMC_CTRL_Abort_read_data_enum {
             INVALID = 0 { name = "Invalid"; desc = "invalid"; };
@@ -74,6 +147,16 @@ Data sheet 12.4.4 MMC_CTRL (offset 0x0, printed page 12-88, `Hi3518EV20X-Hi3516C
             encode = MMC_CTRL_Read_wait_enum;
             reset = 0x0;
         } Read_wait[6:6];
+
+`ifdef DWMMC_CTRL_DMA_ENABLE
+        field {
+            name = "Dma_enable";
+            desc = "DMA request enable for the external DMAC (dw_mmc dma_enable): 0 = the CPU moves data through MMC_DATA, 1 = the controller raises DMA requests at the FIFO thresholds. Listed in the Hi3515/Hi3520 V100, Hi3516C/Hi3518 V100 and Hi3516A/D V100 data sheets; reserved from the Hi3518E V20X on (IDMAC only).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } Dma_enable[5:5];
+`endif
 
         enum MMC_CTRL_Int_enable_enum {
             DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
@@ -122,6 +205,7 @@ Data sheet 12.4.4 MMC_CTRL (offset 0x0, printed page 12-88, `Hi3518EV20X-Hi3516C
             RESET_MMC_SD = 1 { name = "Reset Mmc Sd"; desc = "reset the MMC/SD/SDIO host module"; };
         };
 
+`ifndef DWMMC_GEN1
         field {
             name = "Controller_reset";
             desc = "Soft reset control for the controller";
@@ -130,8 +214,10 @@ Data sheet 12.4.4 MMC_CTRL (offset 0x0, printed page 12-88, `Hi3518EV20X-Hi3516C
             encode = MMC_CTRL_Controller_reset_enum;
             reset = 0x0;
         } Controller_reset[0:0];
+`endif
     } MMC_CTRL @ 0x0;
 
+`ifndef DWMMC_GEN1
     reg {
         name = "Power_en control register";
         desc = "MMC_PWREN is a Power_en control register.
@@ -152,8 +238,13 @@ Data sheet 12.4.4 MMC_PWREN (offset 0x4, printed page 12-90, `Hi3518EV20X-Hi3516
             hw = r;
             encode = MMC_PWREN_Power_enable_enum;
             reset = 0x0;
+`ifdef DWMMC_SINGLE_SLOT_BITS
+        } Power_enable[0:0];
+`else
         } Power_enable[1:0];
+`endif
     } MMC_PWREN @ 0x4;
+`endif
 
     reg {
         name = "Clock divider register";
@@ -163,6 +254,7 @@ Interface clock = CCLK_IN / (2 x clk_divider) (DS 12.4.2); CCLK_IN is selected i
 
 Data sheet 12.4.4 MMC_CLKDIV (offset 0x8, printed page 12-91, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 82258).";
 
+`ifndef DWMMC_SINGLE_SLOT_BITS
         field {
             name = "clk_divider1";
             desc = "eMMC clock divider. The clock divider is 2 x n. If the value of n is 0, it indicates no frequency division; if the value of n is 1, the frequency is divided by 2; if the value of is 0xFF, the frequency is divided by 510.";
@@ -170,6 +262,7 @@ Data sheet 12.4.4 MMC_CLKDIV (offset 0x8, printed page 12-91, `Hi3518EV20X-Hi351
             hw = r;
             reset = 0x0;
         } clk_divider1[15:8];
+`endif
 
         field {
             name = "clk_divider0";
@@ -180,11 +273,12 @@ Data sheet 12.4.4 MMC_CLKDIV (offset 0x8, printed page 12-91, `Hi3518EV20X-Hi351
         } clk_divider0[7:0];
     } MMC_CLKDIV @ 0x8;
 
+`ifndef DWMMC_NO_CLKSRC
     reg {
         name = "Clock source select register of the SD card";
         desc = "MMC_CLKSRC is a clock source select register of the SD card.
 
-Must stay 0 on this SoC in practice; the DS text for clk_source says \"must be set to 4\" for the bit pair of two cards but the vendor driver never writes this register. (DS wording kept verbatim in the field description.)
+Must stay 0 on this SoC in practice; the DS text for clk_source says \"must be set to 4\" for the bit pair of two cards but the vendor driver never writes this register. (DS wording kept verbatim in the field description.) The Hi3516C/Hi3518 V100 and Hi3516 V100 data sheets show a single bit [0], the Hi3516A/D V100 one bits [1:0] (\"must be 0\"); the register is absent (reserved) on Hi3511/Hi3515/Hi3520 V100, Hi3516C V300, Hi3516A V300, Hi3516A V200 and Hi3519.
 
 Data sheet 12.4.4 MMC_CLKSRC (offset 0xC, printed page 12-91, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 82286).";
 
@@ -196,6 +290,7 @@ Data sheet 12.4.4 MMC_CLKSRC (offset 0xC, printed page 12-91, `Hi3518EV20X-Hi351
             reset = 0x0;
         } clk_source[3:0];
     } MMC_CLKSRC @ 0xC;
+`endif
 
     reg {
         name = "Clock enable register";
@@ -215,7 +310,11 @@ Data sheet 12.4.4 MMC_CLKENA (offset 0x10, printed page 12-92, `Hi3518EV20X-Hi35
             hw = r;
             encode = MMC_CLKENA_cclk_low_power_enum;
             reset = 0x0;
+`ifdef DWMMC_SINGLE_SLOT_BITS
+        } cclk_low_power[16:16];
+`else
         } cclk_low_power[17:16];
+`endif
 
         enum MMC_CLKENA_cclk_enable_enum {
             DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
@@ -229,7 +328,11 @@ Data sheet 12.4.4 MMC_CLKENA (offset 0x10, printed page 12-92, `Hi3518EV20X-Hi35
             hw = r;
             encode = MMC_CLKENA_cclk_enable_enum;
             reset = 0x0;
+`ifdef DWMMC_SINGLE_SLOT_BITS
+        } cclk_enable[0:0];
+`else
         } cclk_enable[1:0];
+`endif
     } MMC_CLKENA @ 0x10;
 
     reg {
@@ -263,13 +366,19 @@ DS inconsistency: the field names are swapped against their bit positions (`card
 
 Data sheet 12.4.4 MMC_CTYPE (offset 0x18, printed page 12-93, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 82393).";
 
+`ifndef DWMMC_GEN1
         field {
             name = "card_width_0";
-            desc = "Bus width of the card Bit 17 and bit 16 indicate the eMMC bus width and SDIO bus width respectively. The following takes bit 16 as an example: This field must be set to 0 (non 8-bit mode). The bus width of the card is set to 1-bit mode or 4-bit mode, which depends on the value of bit[0].";
+            desc = "Bus width of the card Bit 17 and bit 16 indicate the eMMC bus width and SDIO bus width respectively. The following takes bit 16 as an example: This field must be set to 0 (non 8-bit mode). The bus width of the card is set to 1-bit mode or 4-bit mode, which depends on the value of bit[0]. (Other data sheets: bit 16 = 8-bit mode enable; absent on Hi3511/Hi3515/Hi3520 V100, which have no 8-bit bus.)";
             sw = rw;
             hw = r;
             reset = 0x0;
+`ifdef DWMMC_SINGLE_SLOT_BITS
+        } card_width_0[16:16];
+`else
         } card_width_0[17:16];
+`endif
+`endif
 
         enum MMC_CTYPE_card_width_1_enum {
             V_1_BIT_MODE = 0 { name = "V 1 Bit Mode"; desc = "1-bit mode"; };
@@ -283,7 +392,11 @@ Data sheet 12.4.4 MMC_CTYPE (offset 0x18, printed page 12-93, `Hi3518EV20X-Hi351
             hw = r;
             encode = MMC_CTYPE_card_width_1_enum;
             reset = 0x0;
+`ifdef DWMMC_SINGLE_SLOT_BITS
+        } card_width_1[0:0];
+`else
         } card_width_1[1:0];
+`endif
     } MMC_CTYPE @ 0x18;
 
     reg {
@@ -336,7 +449,11 @@ Data sheet 12.4.4 MMC_INTMASK (offset 0x24, printed page 12-94, `Hi3518EV20X-Hi3
             hw = r;
             encode = MMC_INTMASK_sdio_int_mask_enum;
             reset = 0x0;
+`ifdef DWMMC_SINGLE_SLOT_BITS
+        } sdio_int_mask[16:16];
+`else
         } sdio_int_mask[17:16];
+`endif
 
         enum MMC_INTMASK_int_mask_enum {
             MASKED = 0x0 { name = "Masked"; desc = "masked"; };
@@ -345,12 +462,16 @@ Data sheet 12.4.4 MMC_INTMASK (offset 0x24, printed page 12-94, `Hi3518EV20X-Hi3
 
         field {
             name = "int_mask";
-            desc = "Interrupt mask";
+            desc = "Interrupt mask (bit 0, the card-detect interrupt, is reserved on Hi3511/Hi3515/Hi3520 V100; there the Hi3515 data sheet names the bits ebe/acd/sbe/hle/frun/hto/drto/rto/dcrc/rcrc/rxdr/txdr/dto/cd/re_int_mask in the same positions)";
             sw = rw;
             hw = r;
             encode = MMC_INTMASK_int_mask_enum;
             reset = 0x0;
+`ifdef DWMMC_GEN1
+        } int_mask[15:1];
+`else
         } int_mask[15:0];
+`endif
     } MMC_INTMASK @ 0x24;
 
     reg {
@@ -374,6 +495,8 @@ Data sheet 12.4.4 MMC_CMDARG (offset 0x28, printed page 12-95, `Hi3518EV20X-Hi35
 
 Vendor flags (`MCI_CMD_MASK` 0x803FFFFF): START_CMD bit 31, USE_HOLD_REG bit 29 (set in every command by the vendor driver; reset value 1 per the DS Total Reset Value, the bit diagram of the DS shows 0 for it), UP_CLK_ONLY bit 21, CARD_NUM bit 16 (card number field is [20:16]), SEND_INIT, WT_PD_CPT, SEND_AUTO_STOP, DATA_EXPECT, CHECK_RESP_CRC, RESP_LENGTH, RESP_EXPECT bits as in the table.
 
+Other chips: use_hold_reg / volt_switch (bits 29:28) exist from the Hi3518E V20X on (Hi3516C V300, Hi3516A V300, Hi3516A V200, Hi3519: reset 0x20000000); the Hi3516C/Hi3518 V100, Hi3516 V100 and Hi3516A/D V100 data sheets call them reserved (register reset 0); the boot bits 27:24 are additionally reserved on Hi3511/Hi3515/Hi3520 V100.
+
 Data sheet 12.4.4 MMC_CMD (offset 0x2C, printed page 12-96, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 82569).";
 
         enum MMC_CMD_start_cmd_enum {
@@ -390,6 +513,7 @@ Data sheet 12.4.4 MMC_CMD (offset 0x2C, printed page 12-96, `Hi3518EV20X-Hi3516C
             reset = 0x0;
         } start_cmd[31:31];
 
+`ifndef DWMMC_NO_HOLD_REG
         enum MMC_CMD_use_hold_reg_enum {
             CMD_DATA_SIGNALS = 0 { name = "Cmd Data Signals"; desc = "The CMD and DATA signals transmitted to the MMC do not pass through the hold register."; };
             CMD_DATA_SIGNALS_2 = 1 { name = "Cmd Data Signals 2"; desc = "The CMD and DATA signals transmitted to the MMC pass through the hold register."; };
@@ -417,7 +541,9 @@ Data sheet 12.4.4 MMC_CMD (offset 0x2C, printed page 12-96, `Hi3518EV20X-Hi3516C
             encode = MMC_CMD_volt_switch_enum;
             reset = 0x0;
         } volt_switch[28:28];
+`endif
 
+`ifndef DWMMC_GEN1
         enum MMC_CMD_boot_mode_enum {
             BOOT_MODE = 0 { name = "Boot Mode"; desc = "boot mode"; };
             ALTERNATIVE_BOOT_MODE = 1 { name = "Alternative Boot Mode"; desc = "alternative boot mode"; };
@@ -455,6 +581,7 @@ Data sheet 12.4.4 MMC_CMD (offset 0x2C, printed page 12-96, `Hi3518EV20X-Hi3516C
             hw = r;
             reset = 0x0;
         } enable_boot[24:24];
+`endif
 
         enum MMC_CMD_update_clock_registers_only_enum {
             NORMAL_COMMAND_SEQUENCE = 0 { name = "Normal Command Sequence"; desc = "The normal command sequence is used. That is, the values of MMC_CMD, MMC_CMDARG, MMC_TMOUT, MMC_CTYPE, MMC_BLKSIZ, and MMC_BYTCNT are transferred from the BIU to the CIU. The CIU uses the new values of registers when running new commands."; };
@@ -705,7 +832,11 @@ Data sheet 12.4.4 MMC_MINTSTS (offset 0x40, printed page 12-100, `Hi3518EV20X-Hi
             hw = w;
             encode = MMC_MINTSTS_sdio_interrupt_enum;
             reset = 0x0;
+`ifdef DWMMC_SINGLE_SLOT_BITS
+        } sdio_interrupt[16:16];
+`else
         } sdio_interrupt[17:16];
+`endif
 
         field {
             name = "int_status";
@@ -713,7 +844,11 @@ Data sheet 12.4.4 MMC_MINTSTS (offset 0x40, printed page 12-100, `Hi3518EV20X-Hi
             sw = r;
             hw = w;
             reset = 0x0;
+`ifdef DWMMC_GEN1
+        } int_status[15:1];
+`else
         } int_status[15:0];
+`endif
     } MMC_MINTSTS @ 0x40;
 
     reg {
@@ -735,7 +870,11 @@ Data sheet 12.4.4 MMC_RINTSTS (offset 0x44, printed page 12-101, `Hi3518EV20X-Hi
             onwrite = woclr;
             encode = MMC_RINTSTS_sdio_interrupt_enum;
             reset = 0x0;
+`ifdef DWMMC_SINGLE_SLOT_BITS
+        } sdio_interrupt[16:16];
+`else
         } sdio_interrupt[17:16];
+`endif
 
         field {
             name = "int_status";
@@ -744,7 +883,11 @@ Data sheet 12.4.4 MMC_RINTSTS (offset 0x44, printed page 12-101, `Hi3518EV20X-Hi
             hw = w;
             onwrite = woclr;
             reset = 0x0;
+`ifdef DWMMC_GEN1
+        } int_status[15:1];
+`else
         } int_status[15:0];
+`endif
     } MMC_RINTSTS @ 0x44;
 
     reg {
@@ -753,7 +896,27 @@ Data sheet 12.4.4 MMC_RINTSTS (offset 0x44, printed page 12-101, `Hi3518EV20X-Hi
 
 FIFO_COUNT lives in bits 29:17 (vendor `FIFO_COUNT_MASK` 0x1FFF, shift 17). Reset 0x106 = data_3_status (card present) 1, fifo_empty 1, fifo_tx_watermark 1.
 
+Other chips: Hi3511/Hi3515/Hi3520 V100 add the external-DMAC handshake bits dma_req [31] and dma_ack [30] and print the total reset as 0 (the FIFO-empty/TX-watermark bits are nevertheless 1 after reset in every dw_mmc). The Hi3516C V300 / Hi3516A V300 / Hi3516A V200 / Hi3519 data sheets call bit 8 data_3_status reserved (reset still 0x106).
+
 Data sheet 12.4.4 MMC_STATUS (offset 0x48, printed page 12-102, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 82951).";
+
+`ifdef DWMMC_GEN1
+        field {
+            name = "dma_req";
+            desc = "DMA request status (external DMAC handshake): 0 = the controller is not requesting a DMA transfer, 1 = the controller is requesting a DMA transfer.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } dma_req[31:31];
+
+        field {
+            name = "dma_ack";
+            desc = "DMA acknowledge status: 0 = the DMAC has not cleared the request, 1 = the DMAC has cleared the request.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } dma_ack[30:30];
+`endif
 
         field {
             name = "fifo_count";
@@ -904,6 +1067,8 @@ Data sheet 12.4.4 MMC_STATUS (offset 0x48, printed page 12-102, `Hi3518EV20X-Hi3
 
 The DS Total Reset Value is 0x60FF0000 (Multiple_Transaction_Size 6 = 128-transfer burst, rx_wmark 0xFF, tx_wmark 0); the bit diagram of the DS shows 0 for the burst field, the header value is used. The vendor driver programs burst 8 (`BURST_SIZE` = 0x2 << 28 -> 8 transfers), rx_wmark 7 and tx_wmark 8 (`RX_WMARK`, `TX_WMARK`).
 
+Other chips: reset 0x00FF0000 on Hi3516C/Hi3518 V100, Hi3516 V100 (bits 30:28 reserved there) and Hi3516A V300 (DWMMC_FIFOTH_MSIZE0); reset 0 with the burst field named burst_size on Hi3511/Hi3515/Hi3520 V100 (same encoding, 1/4/8/16/32/64/128/256 words per external-DMAC burst).
+
 Data sheet 12.4.4 MMC_FIFOTH (offset 0x4C, printed page 12-104, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 83041).";
 
         enum MMC_FIFOTH_Multiple_Transaction_Size_enum {
@@ -923,7 +1088,11 @@ Data sheet 12.4.4 MMC_FIFOTH (offset 0x4C, printed page 12-104, `Hi3518EV20X-Hi3
             sw = rw;
             hw = r;
             encode = MMC_FIFOTH_Multiple_Transaction_Size_enum;
+`ifdef DWMMC_FIFOTH_MSIZE0
+            reset = 0x0;
+`else
             reset = 0x6;
+`endif
         } Multiple_Transaction_Size[30:28];
 
         field {
@@ -931,7 +1100,11 @@ Data sheet 12.4.4 MMC_FIFOTH (offset 0x4C, printed page 12-104, `Hi3518EV20X-Hi3
             desc = "FIFO threshold during data read. If the data amount in the FIFO is above the threshold, a DMA request is enabled. After a data transfer, a DMA request is raised for transferring the remaining data no matter whether the threshold is reached. In non-DMA mode, the RXDR interrupt is enabled. If the data amount in the FIFO is not above the threshold after a data transfer, no interrupt is generated. In this case, the software needs to read the remaining data by querying the DTD interrupt. If a data transfer is complete in DMA mode, the DMA raises a single transfer request to read data until the DTD interrupt is generated even though the remaining data amount is below the threshold. Restriction: RX_WMark <= FIFO_DEPTH - 2 Recommendation: A request is raised when the value of [(FIFO_DEPTH/2) - 1] is above the threshold.";
             sw = rw;
             hw = r;
+`ifdef DWMMC_GEN1
+            reset = 0x0;
+`else
             reset = 0xFF;
+`endif
         } rx_wmark[27:16];
 
         field {
@@ -943,9 +1116,27 @@ Data sheet 12.4.4 MMC_FIFOTH (offset 0x4C, printed page 12-104, `Hi3518EV20X-Hi3
         } tx_wmark[11:0];
     } MMC_FIFOTH @ 0x4C;
 
+`ifdef DWMMC_GEN1
+`ifdef DWMMC_CARDSTATUS
+    reg {
+        name = "Card detection status register";
+        desc = "MMC_CARDSTATUS is the card detection status register (Hi3515 data sheet 8.7, offset 0x050, reset 0x1). The same bit as MMC_CDETECT[card_detect_n] of the later generations; the Hi3511 and Hi3520 V100 data sheets list 0x50 as reserved.";
+
+        field {
+            name = "card_detctor";
+            desc = "Card detection status of the MMC interface (data sheet spelling): 0 = a card is inserted, 1 = no card is inserted.";
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } card_detctor[0:0];
+    } MMC_CARDSTATUS @ 0x50;
+`endif
+`else
     reg {
         name = "Card detection register";
         desc = "MMC_CDETECT is a card detection register.
+
+Reset: 1 (no card) in the Hi3518E V20X, Hi3516A/D V100, Hi3516C V300, Hi3516A V300, Hi3516A V200 and Hi3519 data sheets; the Hi3516C/Hi3518 V100 and Hi3516 V100 data sheets print 0 (DWMMC_CDETECT_RESET0).
 
 Data sheet 12.4.4 MMC_CDETECT (offset 0x50, printed page 12-105, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 83117).";
 
@@ -954,10 +1145,16 @@ Data sheet 12.4.4 MMC_CDETECT (offset 0x50, printed page 12-105, `Hi3518EV20X-Hi
             desc = "Card detection signal The value depends on the SDIO_CARD_DETECT pin.";
             sw = r;
             hw = w;
+`ifdef DWMMC_CDETECT_RESET0
+            reset = 0x0;
+`else
             reset = 0x1;
+`endif
         } card_detect_n[0:0];
     } MMC_CDETECT @ 0x50;
+`endif
 
+`ifndef DWMMC_NO_WRTPRT
     reg {
         name = "Card write protection register";
         desc = "MMC_WRTPRT is a card write protection register.
@@ -972,6 +1169,7 @@ Data sheet 12.4.4 MMC_WRTPRT (offset 0x54, printed page 12-106, `Hi3518EV20X-Hi3
             reset = 0x0;
         } write_protect[0:0];
     } MMC_WRTPRT @ 0x54;
+`endif
 
     reg {
         name = "Count of bytes transmitted to the card register";
@@ -1003,6 +1201,7 @@ Data sheet 12.4.4 MMC_TBBCNT (offset 0x60, printed page 12-106, `Hi3518EV20X-Hi3
         } trans_fifo_byte_count[31:0];
     } MMC_TBBCNT @ 0x60;
 
+`ifndef DWMMC_FIFO_0x100
     reg {
         name = "Dejitter count register";
         desc = "MMC_DEBNCE is a dejitter count register.
@@ -1038,7 +1237,11 @@ Data sheet 12.4.4 MMC_UHS_REG (offset 0x74, printed page 12-107, `Hi3518EV20X-Hi
             hw = r;
             encode = MMC_UHS_REG_ddr_reg_enum;
             reset = 0x0;
+`ifdef DWMMC_SINGLE_SLOT_BITS
+        } ddr_reg[16:16];
+`else
         } ddr_reg[17:16];
+`endif
 
         enum MMC_UHS_REG_volt_reg_enum {
             V_3_3_V = 0 { name = "V 3 3 V"; desc = "3.3 V"; };
@@ -1052,9 +1255,15 @@ Data sheet 12.4.4 MMC_UHS_REG (offset 0x74, printed page 12-107, `Hi3518EV20X-Hi
             hw = r;
             encode = MMC_UHS_REG_volt_reg_enum;
             reset = 0x0;
+`ifdef DWMMC_SINGLE_SLOT_BITS
+        } volt_reg[0:0];
+`else
         } volt_reg[1:0];
+`endif
     } MMC_UHS_REG @ 0x74;
+`endif
 
+`ifndef DWMMC_NO_CARD_RSTN
     reg {
         name = "EMMC reset control register";
         desc = "MMC_CARD_RSTN is an eMMC reset control register.
@@ -1066,6 +1275,16 @@ Data sheet 12.4.4 MMC_CARD_RSTN (offset 0x78, printed page 12-108, `Hi3518EV20X-
             DEASSERT_RESET = 1 { name = "Deassert Reset"; desc = "deassert reset"; };
         };
 
+`ifdef DWMMC_SINGLE_SLOT_BITS
+        field {
+            name = "card_reset";
+            desc = "eMMC hardware reset (RST_n pin CARD_RESET): 0 = reset asserted, 1 = reset deasserted. Reset value 1 (Hi3516C V300, Hi3516A V300, Hi3516A V200, Hi3519 data sheets: bit 0).";
+            sw = rw;
+            hw = r;
+            encode = MMC_CARD_RSTN_card_reset_enum;
+            reset = 0x1;
+        } card_reset[0:0];
+`else
         field {
             name = "card_reset";
             desc = "eMMC reset. The control pin is CARD_RESET.";
@@ -1082,8 +1301,11 @@ Data sheet 12.4.4 MMC_CARD_RSTN (offset 0x78, printed page 12-108, `Hi3518EV20X-
             hw = r;
             reset = 0x1;
         } card_reset_slot0[0:0];
+`endif
     } MMC_CARD_RSTN @ 0x78;
+`endif
 
+`ifndef DWMMC_GEN1
     reg {
         name = "Bus mode register";
         desc = "MMC_BMOD is a bus mode register.
@@ -1197,7 +1419,39 @@ Data sheet 12.4.4 MMC_DBADDR (offset 0x88, printed page 12-110, `Hi3518EV20X-Hi3
         name = "IDMAC status register";
         desc = "MMC_IDSTS is an IDMAC status register.
 
-Data sheet 12.4.4 MMC_IDSTS (offset 0x8C, printed page 12-110, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 83435).";
+Data sheet 12.4.4 MMC_IDSTS (offset 0x8C, printed page 12-110, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 83435). Bits 29:17 (DWMMC_ADMA3) are the ADMA3 command-queue status of the Hi3516A V200 / Hi3519 V101 (data sheet 12.5, MMC_IDSTS).";
+
+`ifdef DWMMC_ADMA3
+        field { name = "cmd_lock_err"; desc = "Command conflict: 1 = command conflicts occurred. Write 1 to clear."; sw = rw; hw = w; onwrite = woclr; reset = 0x0; } cmd_lock_err[29:29];
+        field { name = "ids_ownbit_err"; desc = "Integrated-descriptor own-bit error. Write 1 to clear."; sw = rw; hw = w; onwrite = woclr; reset = 0x0; } ids_ownbit_err[28:28];
+        field { name = "ids_queue_overflow"; desc = "Integrated-descriptor queue overflow. Write 1 to clear."; sw = rw; hw = w; onwrite = woclr; reset = 0x0; } ids_queue_overflow[27:27];
+        field { name = "resp_check_err"; desc = "Response error detected by the ADMA3 response check. Write 1 to clear."; sw = rw; hw = w; onwrite = woclr; reset = 0x0; } resp_check_err[26:26];
+        field { name = "packet_int"; desc = "Multi-packet interrupt. Write 1 to clear."; sw = rw; hw = w; onwrite = woclr; reset = 0x0; } packet_int[25:25];
+        field { name = "packet_timeout_int"; desc = "Multi-packet timeout interrupt (ADMA_TIMEOUT). Write 1 to clear."; sw = rw; hw = w; onwrite = woclr; reset = 0x0; } packet_timeout_int[24:24];
+        field { name = "auto_stop_err"; desc = "Hardware auto-stop error. Write 1 to clear."; sw = rw; hw = w; onwrite = woclr; reset = 0x0; } auto_stop_err[23:23];
+        field { name = "ids_queue_full"; desc = "Integrated-descriptor queue full. Write 1 to clear."; sw = rw; hw = w; onwrite = woclr; reset = 0x0; } ids_queue_full[22:22];
+        field { name = "ids_queue_empty"; desc = "Integrated-descriptor queue empty. Write 1 to clear."; sw = rw; hw = w; onwrite = woclr; reset = 0x0; } ids_queue_empty[21:21];
+
+        enum MMC_IDSTS_adma3_fsm_enum {
+            ADMA3_IDLE = 0 { name = "Adma3 Idle"; desc = "ADMA3_IDLE"; };
+            ADMA3_FIDS = 1 { name = "Adma3 Fids"; desc = "ADMA3_FIDS (fetch integrated descriptor)"; };
+            ADMA3_SREG = 2 { name = "Adma3 Sreg"; desc = "ADMA3_SREG (set registers)"; };
+            ADMA3_CMD = 3 { name = "Adma3 Cmd"; desc = "ADMA3_CMD"; };
+            ADMA3_TRANS = 4 { name = "Adma3 Trans"; desc = "ADMA3_TRANS"; };
+            ADMA3_DESC_CLOSE = 5 { name = "Adma3 Desc Close"; desc = "ADMA3_DESC_CLOSE"; };
+            ADMA3_AUTO_STOP = 6 { name = "Adma3 Auto Stop"; desc = "ADMA3_AUTO_STOP"; };
+            ADMA3_WAIT = 7 { name = "Adma3 Wait"; desc = "ADMA3_WAIT; other values reserved"; };
+        };
+
+        field {
+            name = "adma3_fsm";
+            desc = "Current state of the ADMA3 state machine";
+            sw = r;
+            hw = w;
+            encode = MMC_IDSTS_adma3_fsm_enum;
+            reset = 0x0;
+        } adma3_fsm[20:17];
+`endif
 
         enum MMC_IDSTS_fsm_enum {
             DMA_IDLE = 0 { name = "Dma Idle"; desc = "DMA_IDLE"; };
@@ -1302,7 +1556,19 @@ Data sheet 12.4.4 MMC_IDSTS (offset 0x8C, printed page 12-110, `Hi3518EV20X-Hi35
         name = "IDMAC interrupt enable register";
         desc = "MMC_IDINTEN is an IDMAC interrupt enable register.
 
-Data sheet 12.4.4 MMC_IDINTEN (offset 0x90, printed page 12-112, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 83520).";
+Data sheet 12.4.4 MMC_IDINTEN (offset 0x90, printed page 12-112, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 83520). Bits 29:21 (DWMMC_ADMA3) enable the ADMA3 interrupts of the Hi3516A V200 / Hi3519 V101 (data sheet 12.5, MMC_IDINTEN; bits 20:10 reserved RO there).";
+
+`ifdef DWMMC_ADMA3
+        field { name = "cmd_lock_err"; desc = "Command conflict interrupt enable"; sw = rw; hw = r; reset = 0x0; } cmd_lock_err[29:29];
+        field { name = "ids_ownbit_err"; desc = "Own-bit error interrupt enable"; sw = rw; hw = r; reset = 0x0; } ids_ownbit_err[28:28];
+        field { name = "ids_queue_overflow"; desc = "Queue overflow interrupt enable"; sw = rw; hw = r; reset = 0x0; } ids_queue_overflow[27:27];
+        field { name = "resp_check_err"; desc = "Response error detection interrupt enable"; sw = rw; hw = r; reset = 0x0; } resp_check_err[26:26];
+        field { name = "packet_int"; desc = "Multi-packet interrupt enable"; sw = rw; hw = r; reset = 0x0; } packet_int[25:25];
+        field { name = "packet_timeout_int"; desc = "Timeout interrupt enable"; sw = rw; hw = r; reset = 0x0; } packet_timeout_int[24:24];
+        field { name = "auto_stop_err"; desc = "Hardware stop error detection interrupt enable"; sw = rw; hw = r; reset = 0x0; } auto_stop_err[23:23];
+        field { name = "ids_queue_full"; desc = "Queue full interrupt enable"; sw = rw; hw = r; reset = 0x0; } ids_queue_full[22:22];
+        field { name = "ids_queue_empty"; desc = "Queue empty interrupt enable"; sw = rw; hw = r; reset = 0x0; } ids_queue_empty[21:21];
+`endif
 
         enum MMC_IDINTEN_ai_enum {
             DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
@@ -1432,7 +1698,51 @@ Data sheet 12.4.4 MMC_BUFADDR (offset 0x98, printed page 12-113, `Hi3518EV20X-Hi
             reset = 0x0;
         } hba[31:0];
     } MMC_BUFADDR @ 0x98;
+`endif
 
+`ifdef DWMMC_ADMA3
+    reg {
+        name = "ADMA3 control register";
+        desc = "ADMA_CONTROL is the ADMA3 (command queue / integrated descriptor) control register of the Hi3516A V200 / Hi3519 V101 (data sheet 12.5, offset 0xB0, reset 0). The ADMA3 engine fetches integrated descriptors (command + data descriptor pairs) from the queue at ADMA_IDS_ADDR and issues the commands without CPU intervention.";
+        field { name = "resp_check_en"; desc = "Response error detection enable"; sw = rw; hw = r; reset = 0x0; } resp_check_en[4:4];
+        field { name = "soft_change_rdptr_en"; desc = "Software rewrite of the logic read pointer (ADMA_ID_RDPTR) enable"; sw = rw; hw = r; reset = 0x0; } soft_change_rdptr_en[3:3];
+        field { name = "packet_int_en"; desc = "Multi-packet interrupt enable"; sw = rw; hw = r; reset = 0x0; } packet_int_en[2:2];
+        field { name = "adma3_restart"; desc = "ADMA3 restart"; sw = rw; hw = r; reset = 0x0; } adma3_restart[1:1];
+        field { name = "adma3_enable"; desc = "ADMA3 enable"; sw = rw; hw = r; reset = 0x0; } adma3_enable[0:0];
+    } ADMA_CONTROL @ 0xB0;
+
+    reg {
+        name = "ADMA3 queue start address register";
+        desc = "ADMA_IDS_ADDR: start address of the integrated descriptor queue (Hi3516A V200 / Hi3519 V101 data sheet 12.5, offset 0xB4).";
+        field { name = "ids_start_addr"; desc = "Start address of the integrated descriptors"; sw = rw; hw = r; reset = 0x0; } ids_start_addr[31:0];
+    } ADMA_IDS_ADDR @ 0xB4;
+
+    reg {
+        name = "ADMA3 queue depth register";
+        desc = "ADMA_DEEPTH (data sheet spelling): depth of the integrated descriptor queue (offset 0xB8).";
+        field { name = "ids_deepth"; desc = "Depth of the integrated descriptor queue"; sw = rw; hw = r; reset = 0x0; } ids_deepth[31:0];
+    } ADMA_DEEPTH @ 0xB8;
+
+    reg {
+        name = "ADMA3 queue read pointer register";
+        desc = "ADMA_ID_RDPTR: read pointer of the integrated descriptor queue (offset 0xBC); software may rewrite it when ADMA_CONTROL[soft_change_rdptr_en] is set.";
+        field { name = "ids_rdptr"; desc = "Read pointer of the integrated descriptors"; sw = rw; hw = r; reset = 0x0; } ids_rdptr[31:0];
+    } ADMA_ID_RDPTR @ 0xBC;
+
+    reg {
+        name = "ADMA3 queue write pointer register";
+        desc = "ADMA_ID_WRPTR: write pointer of the integrated descriptor queue (offset 0xC0).";
+        field { name = "ids_wrptr"; desc = "Write pointer of the integrated descriptors"; sw = rw; hw = r; reset = 0x0; } ids_wrptr[31:0];
+    } ADMA_ID_WRPTR @ 0xC0;
+
+    reg {
+        name = "ADMA3 timeout configuration register";
+        desc = "ADMA_TIMEOUT: timeout count for the multi-packet timeout interrupt MMC_IDSTS[packet_timeout_int] (offset 0xC4).";
+        field { name = "timeout_count"; desc = "Timeout count for the multi-packet timeout interrupt"; sw = rw; hw = r; reset = 0x0; } timeout_count[31:0];
+    } ADMA_TIMEOUT @ 0xC4;
+`endif
+
+`ifndef DWMMC_FIFO_0x100
     reg {
         name = "Threshold control register";
         desc = "MMC_CARDTHRCTL is a threshold control register.
@@ -1498,6 +1808,8 @@ Data sheet 12.4.4 MMC_CARDTHRCTL (offset 0x100, printed page 12-114, `Hi3518EV20
 
 Vendor driver tuning: clk_drv_phase_ctrl (bits 25:23, `DRV_PHASE_MASK` 0x7 << 23) and clk_smpl_phase_ctrl (bits 18:16, `SMPL_PHASE_MASK` 0x7 << 16); the driver writes drive phase 2 (90 degrees) and sample phase 2 on Hi3518EV200 (sample phase 0 on Hi3516CV300 / Hi3519 / Hi3516AV200), then tunes the sample phase for HS200.
 
+Hi3516A V200 / Hi3519 V101 (DWMMC_ADMA3): both fields are 4 bits wide, [26:23] and [19:16], in 22.5-degree steps (drive phase 0x4 = 90, 0x5 = 112.5, 0x6 = 135 degrees, other values reserved; sample phase 0x0 = 0 .. 0xF = 337.5 degrees). Hi3516A/D V100 and Hi3516C V300: 3-bit fields as here.
+
 Data sheet 12.4.4 MMC_UHS_REG_EXT (offset 0x108, printed page 12-115, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 83665).";
 
         enum MMC_UHS_REG_EXT_clk_drv_phase_ctrl_enum {
@@ -1511,6 +1823,15 @@ Data sheet 12.4.4 MMC_UHS_REG_EXT (offset 0x108, printed page 12-115, `Hi3518EV2
             V_315 = 7 { name = "V 315"; desc = "315°"; };
         };
 
+`ifdef DWMMC_ADMA3
+        field {
+            name = "clk_drv_phase_ctrl";
+            desc = "clk_in_drv clock phase control: 0x4 = 90 degrees, 0x5 = 112.5 degrees, 0x6 = 135 degrees; other values reserved.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } clk_drv_phase_ctrl[26:23];
+`else
         field {
             name = "clk_drv_phase_ctrl";
             desc = "clk_in_drv clock phase control";
@@ -1519,6 +1840,7 @@ Data sheet 12.4.4 MMC_UHS_REG_EXT (offset 0x108, printed page 12-115, `Hi3518EV2
             encode = MMC_UHS_REG_EXT_clk_drv_phase_ctrl_enum;
             reset = 0x0;
         } clk_drv_phase_ctrl[25:23];
+`endif
 
         enum MMC_UHS_REG_EXT_clk_smpl_phase_ctrl_enum {
             V_0 = 0 { name = "V 0"; desc = "0°"; };
@@ -1531,6 +1853,15 @@ Data sheet 12.4.4 MMC_UHS_REG_EXT (offset 0x108, printed page 12-115, `Hi3518EV2
             V_315 = 7 { name = "V 315"; desc = "315°"; };
         };
 
+`ifdef DWMMC_ADMA3
+        field {
+            name = "clk_smpl_phase_ctrl";
+            desc = "clk_in_sample clock phase control in 22.5-degree steps: 0x0 = 0, 0x1 = 22.5, 0x2 = 45, ... 0x8 = 180, ... 0xF = 337.5 degrees.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } clk_smpl_phase_ctrl[19:16];
+`else
         field {
             name = "clk_smpl_phase_ctrl";
             desc = "clk_in_sample clock phase control";
@@ -1539,6 +1870,7 @@ Data sheet 12.4.4 MMC_UHS_REG_EXT (offset 0x108, printed page 12-115, `Hi3518EV2
             encode = MMC_UHS_REG_EXT_clk_smpl_phase_ctrl_enum;
             reset = 0x0;
         } clk_smpl_phase_ctrl[18:16];
+`endif
     } MMC_UHS_REG_EXT @ 0x108;
 
     reg {
@@ -1608,12 +1940,13 @@ Data sheet 12.4.4 MMC_ENABLE_SHIFT (offset 0x110, printed page 12-117, `Hi3518EV
             reset = 0x0;
         } Register_0[1:0];
     } MMC_ENABLE_SHIFT @ 0x110;
+`endif
 
     reg {
         name = "Data register (entrance address of the FIFO)";
         desc = "MMC_DATA is a data register (entrance address of the FIFO). The FIFO overflow must be read first before the data is read from or written to the FIFO.
 
-FIFO window: the whole range 0x200 .. 0x200 + FIFO depth (256 words) addresses the FIFO (vendor `MCI_FIFO_START` 0x200 for HIMCI_V200).
+FIFO window: the whole range 0x200 .. 0x200 + FIFO depth (256 words) addresses the FIFO (vendor `MCI_FIFO_START` 0x200 for HIMCI_V200). On the Hi3511/Hi3515/Hi3520 V100, Hi3516C/Hi3518 V100 and Hi3516 V100 generations (DWMMC_FIFO_0x100) the FIFO window starts at 0x100 instead (vendor `MCI_FIFO_START` 0x100; the Hi3515 data sheet names the field fifo_entrance).
 
 Data sheet 12.4.4 MMC_DATA (offset 0x200, printed page 12-118, `Hi3518EV20X-Hi3516CV200-Datasheet.txt` line 83808).";
 
@@ -1624,8 +1957,13 @@ Data sheet 12.4.4 MMC_DATA (offset 0x200, printed page 12-118, `Hi3518EV20X-Hi35
             hw = r;
             reset = 0x0;
         } data[31:0];
+`ifdef DWMMC_FIFO_0x100
+    } MMC_DATA @ 0x100;
+`else
     } MMC_DATA @ 0x200;
+`endif
 
+`ifndef DWMMC_GEN1
     reg {
         name = "General purpose input/output register (vendor)";
         desc = "DesignWare-MMC GPIO register at 0x58.
@@ -1681,6 +2019,7 @@ NOT IN THE DATA SHEET: register defined only in the vendor U-Boot 'include/himci
             hw = w;
         } hcon[31:0];
     } MMC_HCON @ 0x70;
+`endif
 
 };
 
