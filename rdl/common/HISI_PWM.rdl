@@ -1,6 +1,19 @@
 `ifndef HISI_PWM_RDL
 `define HISI_PWM_RDL
 
+// Width of the period/duty counters: 26 bits (bit 25) on Hi3520D/Hi3515A/C, Hi3516C/Hi3518 V100, Hi3516A/D V100, Hi3518E V200, Hi3516C V300;
+// 32 bits (bit 31) on Hi3516A V200, Hi3516A V300 and Hi3519 V101: define HISI_PWM_32BIT (the chip's defines.rdl) before including this file.
+`ifdef HISI_PWM_32BIT
+`define HISI_PWM_HI 31
+`else
+`define HISI_PWM_HI 25
+`endif
+
+// Number of PWM channels of one eHISI_PWM_GRP group (channel stride 0x20): 4 by default; the chip's defines.rdl may set it before the include.
+`ifndef HISI_PWM_NCH
+`define HISI_PWM_NCH 4
+`endif
+
 
 regfile eHISI_PWM {
     name = "HiSilicon PWM";
@@ -9,6 +22,10 @@ regfile eHISI_PWM {
     Clock source selectable between 3 MHz and 24 MHz (PERI_CRG14); 26-bit period counter and 26-bit high-level counter; 10-bit pulse counter (max 1023 pulses, or infinite mode).
     Programming sequence (DS 14.8.3): select the clock in PERI_CRG14, wait until PWM0_STATE2[10] is 0 (idle), write PWM0_CFG0 (period), PWM0_CFG1 (high-level count), PWM0_CFG2 (pulse count), then set PWM0_CTRL[0]. Registers are from Hi3520D/Hi3515A/Hi3515C data sheet issue 07, chapter 14.8
     (`datasheet.txt` lines 59404-60060). No vendor driver source exists in the repo trees for this module; not hardware verified.
+
+    One regfile describes one channel (offsets 0x00-0x18); the register and field names carry the channel number 0 whatever the channel (the data sheets print PWMn_* for channel n at base + n*0x20). eHISI_PWM_GRP below is an array of HISI_PWM_NCH such channels at stride 0x20 (instance it as PWM[n]); the Hi3520D/Hi3515 V100 chip files instance eHISI_PWM directly (one channel), the Hi3518E V200/Hi3516C V200 files four times.
+
+    Cross-chip check (2026-11): the 7-register channel (CFG0..2, CTRL, STATE0..2: offsets, fields, access, resets, enums) was compared with the data sheets of Hi3516C V100 (13.9), Hi3518 V100 (13.9), Hi3516A/D V100 (13.9), Hi3516A V200 (12.12), Hi3516A V300 (Chinese, 12.10, watermarked), Hi3516C V300/Hi3516E V100 (12.10) and Hi3519 V101 (12.12) and with the vendor `pwm.c` register maps (openhisilicon): identical except the width of CFG0.pwm0_period, CFG1.pwm0_duty, STATE0.pwm0_period_st and STATE1.pwm0_duty_st, which is 32 bits on Hi3516A V200, Hi3516A V300 and Hi3519 V101 (macro HISI_PWM_32BIT; the Hi3516A V300 sheet feature list still says 26 bit but its register tables say [31:0]; low confidence) and 26 bits elsewhere; the Hi3516C V100 sheet words the duty as `equal to the number of cycles` (always high). Channels, base address and clock select per chip: Hi3516C V100 and Hi3518 V100 3 channels @0x20130000 (clock 3 MHz fixed); Hi3516A/D V100 8 channels, PWM0-3 @0x20130000 and PWM4-7 @0x20131000 (3/24/50 MHz via PERI_CRG14 and PERI_CRG65[10]); Hi3516A V200 and Hi3519 V101 8 channels @0x12130000 (3/24/50 MHz, PERI_CRG55); Hi3516C V300 4 channels @0x12130000 (PERI_CRG14); Hi3516A V300 2 channels @0x12070000 (PERI_CRG111[9:8]). No data sheet gives the PWM an interrupt. Hi3511, Hi3515 V100 and Hi3520 V100 have no PWM chapter. Hi3516 V100 has a different, older PWM (16-bit CFG, stride 0x10): see HISI_PWM_V1.rdl.
     ";
 
     reg {
@@ -23,7 +40,7 @@ Data sheet 14.8.4 PWM0_CFG0 (offset 0x0, printed page 14-138, `datasheet.txt` li
             sw = rw;
             hw = r;
             reset = 0x18F;
-        } pwm0_period[25:0];
+        } pwm0_period[`HISI_PWM_HI:0];
     } PWM0_CFG0 @ 0x0;
 
     reg {
@@ -38,7 +55,7 @@ Data sheet 14.8.4 PWM0_CFG1 (offset 0x4, printed page 14-139, `datasheet.txt` li
             sw = rw;
             hw = r;
             reset = 0xC7;
-        } pwm0_duty[25:0];
+        } pwm0_duty[`HISI_PWM_HI:0];
     } PWM0_CFG1 @ 0x4;
 
     reg {
@@ -117,7 +134,7 @@ Data sheet 14.8.4 PWM0_STATE0 (offset 0x10, printed page 14-140, `datasheet.txt`
             sw = r;
             hw = w;
             reset = 0x0;
-        } pwm0_period_st[25:0];
+        } pwm0_period_st[`HISI_PWM_HI:0];
     } PWM0_STATE0 @ 0x10;
 
     reg {
@@ -132,7 +149,7 @@ Data sheet 14.8.4 PWM0_STATE1 (offset 0x14, printed page 14-141, `datasheet.txt`
             sw = r;
             hw = w;
             reset = 0x0;
-        } pwm0_duty_st[25:0];
+        } pwm0_duty_st[`HISI_PWM_HI:0];
     } PWM0_STATE1 @ 0x14;
 
     reg {
@@ -186,6 +203,14 @@ Data sheet 14.8.4 PWM0_STATE2 (offset 0x18, printed page 14-141, `datasheet.txt`
         } pwm0_period_st[9:0];
     } PWM0_STATE2 @ 0x18;
 
+};
+
+// Group of HISI_PWM_NCH channels, stride 0x20 (data sheet PWMn base = group base + n * 0x20).
+regfile eHISI_PWM_GRP {
+    name = "HiSilicon PWM group";
+    desc = "HISI_PWM_NCH (default 4) PWM channels, each an eHISI_PWM at base + n * 0x20; see eHISI_PWM.";
+
+    eHISI_PWM PWM[`HISI_PWM_NCH] @ 0x0 += 0x20;
 };
 
 `endif

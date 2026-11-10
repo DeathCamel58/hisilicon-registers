@@ -1,0 +1,106 @@
+`ifndef HISI_PWM_V1_RDL
+`define HISI_PWM_V1_RDL
+
+// Old PWM of the Hi3516 V100 (ARM926): 16-bit period and duty in one CFG register, three channels per module at stride 0x10.
+
+regfile eHISI_PWM_V1 {
+    name = "HiSilicon PWM channel (V1)";
+    desc = "
+    One channel of the Hi3516 V100 PWM module (the chip has two modules, PWM0 @0x201D0000 and PWM1 @0x201E0000, each with three channels PWM0..PWM2 at stride 0x10, i.e. six outputs; instance eHISI_PWM_V1_GRP once per module). Internal working clock 54 MHz; 16-bit period and 16-bit high-level counters, both configured as n and used as n + 1; no pulse counter and no infinite/keep mode (unlike eHISI_PWM, which is the later 26/32-bit IP with PWM0_CFG0..2). The register and field names carry the channel number 0 whatever the channel (the data sheet prints PWMn_* for channel n).
+
+    Programming sequence (DS 10.5.3): compute the period and high-level counts, write PWM0_CFG, clear PWM0_CTRL[0], set PWM0_CTRL[0], read PWM0_STATE back.
+
+    Registers are from the Hi3516 data sheet issue 00B60 (Chinese, 10.5, `hi3516v100--Hi3516-Datasheet.txt` lines 61536-61870, printed pages 10-79 .. 10-84). Channels 1 and 2 print identical tables (checked: same fields and resets). No other data sheet has this IP; not hardware verified. No interrupt is documented. The data sheet lists the CTRL reserved field [31:2] as RW (reset 0); it is not modelled.
+    ";
+
+    reg {
+        name = "PWM0 configuration register";
+        desc = "PWM0_CFG is the PWM0 configuration register.
+
+Data sheet 10.5.5 PWM0_CFG (offset 0x0, printed page 10-81, `hi3516v100--Hi3516-Datasheet.txt` line 61624).";
+
+        field {
+            name = "pwm0_duty";
+            desc = "Number of high-level beats of PWM0 is n + 1. If it is greater than or equal to the number of cycles, the output is always high.";
+            sw = rw;
+            hw = r;
+            reset = 0xC7;
+        } pwm0_duty[31:16];
+
+        field {
+            name = "pwm0_period";
+            desc = "Number of cycles of PWM0: the period is n + 1.";
+            sw = rw;
+            hw = r;
+            reset = 0x18F;
+        } pwm0_period[15:0];
+    } PWM0_CFG @ 0x0;
+
+    reg {
+        name = "PWM0 control register";
+        desc = "PWM0_CTRL is the PWM0 control register.
+
+Data sheet 10.5.5 PWM0_CTRL (offset 0x4, printed page 10-81, `hi3516v100--Hi3516-Datasheet.txt` line 61647).";
+
+        enum PWM0_CTRL_pwm0_inv_enum {
+            NORMAL = 0 { name = "Normal"; desc = "normal output"; };
+            INVERTED = 1 { name = "Inverted"; desc = "inverted output"; };
+        };
+
+        field {
+            name = "pwm0_inv";
+            desc = "Output control.";
+            sw = rw;
+            hw = r;
+            encode = PWM0_CTRL_pwm0_inv_enum;
+            reset = 0x0;
+        } pwm0_inv[1:1];
+
+        enum PWM0_CTRL_pwm0_enable_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "pwm0_enable";
+            desc = "PWM0 enable.";
+            sw = rw;
+            hw = r;
+            encode = PWM0_CTRL_pwm0_enable_enum;
+            reset = 0x0;
+        } pwm0_enable[0:0];
+    } PWM0_CTRL @ 0x4;
+
+    reg {
+        name = "PWM0 status register";
+        desc = "PWM0_STATE is the PWM0 status register.
+
+Data sheet 10.5.5 PWM0_STATE (offset 0x8, printed page 10-82, `hi3516v100--Hi3516-Datasheet.txt` line 61687).";
+
+        field {
+            name = "pwm0_duty_st";
+            desc = "Number of high-level beats used by the internal module of PWM0 (n + 1).";
+            sw = r;
+            hw = w;
+            reset = 0xC7;
+        } pwm0_duty_st[31:16];
+
+        field {
+            name = "pwm0_period_st";
+            desc = "Number of count cycles used by the internal module of PWM0 (n + 1).";
+            sw = r;
+            hw = w;
+            reset = 0x18F;
+        } pwm0_period_st[15:0];
+    } PWM0_STATE @ 0x8;
+};
+
+// One PWM module: three channels at stride 0x10 (data sheet PWMn_CFG at 0x10 * n).
+regfile eHISI_PWM_V1_GRP {
+    name = "HiSilicon PWM module (V1)";
+    desc = "Three eHISI_PWM_V1 channels at base + n * 0x10 (Hi3516 V100: two modules).";
+
+    eHISI_PWM_V1 PWM[3] @ 0x0 += 0x10;
+};
+
+`endif

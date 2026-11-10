@@ -1,0 +1,519 @@
+`ifndef HISI_IR_V1_RDL
+`define HISI_IR_V1_RDL
+
+// Old (mode-0-only) IR block of the Hi3511/Hi3512, Hi3515 and Hi3520 V100 generation.
+// IR_CFG reset: define HISI_IR_V1_CFG_RESET_1F0B (rdl/hi3511v100/defines.rdl) for the Hi3511/Hi3512 value 0x00001F0B (ir_bits 0x1F, ir_freq 0xB);
+// without it the Hi3515/Hi3520 value 0x00000000 is used.
+
+regfile eHISI_IR_V1 {
+    name = "HiSilicon IR receiver (V1, mode 0 only)";
+    desc = "
+    HiSilicon infrared (IR) receiver of the first IP generation: same register offsets as eHISI_IR (HISI_IR.rdl, Hi3520D and later), but without the symbol-width mode 1: IR_CFG has no ir_max_level_width[31:16] and no ir_mode[7] (both reserved), IR_INT_MASK/IR_INT_STATUS/IR_INT_CLR have only the four mode 0 interrupts (release, overflow, framerr, rcv: bits [3:0], status [19:16]) and IR_B0 is 7 bits wide per field ([22:16], [6:0]). NEC (simple / full repeat code), SONY and TC9012 frames are decoded with error detection and key-release detection. The reference clock may be 1-128 MHz (ir_freq divides it by ir_freq + 1).
+
+    Checked against the Hi3511/Hi3512 data sheet issue 06 (Chinese, chapter 11.4, `hi3511v100--Hi3511-Datasheet.txt` lines 41468-42260; base 0x101E9000, interrupt 9), the Hi3515 data sheet (English, 11.4, lines 50415-51200; base 0x20070000, interrupt 9) and the Hi3520 data sheet issue 02 (Chinese, 11.4, lines 55700-56480; base 0x20070000, interrupt 9). Register names, offsets, access and field layout agree in all three; no vendor driver and no hardware read exist for these three chips.
+
+    !!! NOTE
+        Data sheet inconsistency (low confidence): IR_CFG reset is 0x0000_1F0B in the Hi3511 data sheet but 0x0000_0000 in the Hi3515 and Hi3520 data sheets (header and bit row); every later chip documents 0x1F0B (low half), so the zero may be a copy error. The default of this regfile is the Hi3515/Hi3520 value (two data sheets, one of them Chinese); define HISI_IR_V1_CFG_RESET_1F0B for Hi3511/Hi3512. The same applies to the IR_LEADS/IR_SLEADE bit rows of the Hi3515 English data sheet (all zero, header 0x033C03CC / 0x00CF00F3): the headers (and the Chinese sheets) are used. The IR_B0 7-bit field width is printed identically in all three data sheets and its bit row reset (0x2D / 0x43) fits it.
+    ";
+
+    reg {
+        name = "IR receive enable control register";
+        desc = "IR receive enable control register.
+
+Data sheet 11.4.7 IR_EN (offset 0x0): Hi3520 printed page 11-84, `hi3520v100--Hi3520-Datasheet.txt` line 55767; Hi3515 page 11-86, `hi3515v100--Hi3515-Datasheet.txt` line 50478; Hi3511 page 11-85, `hi3511v100--Hi3511-Datasheet.txt` line 41536.";
+
+        enum IR_EN_ir_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled."; };
+        };
+
+        field {
+            name = "ir_en";
+            desc = "IR receive module enable.";
+            sw = rw;
+            hw = r;
+            encode = IR_EN_ir_en_enum;
+            reset = 0x0;
+        } ir_en[0:0];
+    } IR_EN @ 0x0;
+
+    reg {
+        name = "IR configuration register";
+        desc = "IR configuration register.
+
+Data sheet 11.4.7 IR_CFG (offset 0x4): Hi3520 printed page 11-85, `hi3520v100--Hi3520-Datasheet.txt` line 55824; Hi3515 page 11-87, `hi3515v100--Hi3515-Datasheet.txt` line 50541; Hi3511 page 11-86, `hi3511v100--Hi3511-Datasheet.txt` line 41598.";
+
+        enum IR_CFG_ir_format_enum {
+            NEC_SIMPLE_REPEAT = 0x0 { desc = "NEC with simple repeat code"; };
+            TC9012 = 0x1 { desc = "TC9012"; };
+            NEC_FULL_REPEAT = 0x2 { desc = "NEC with full repeat code"; };
+            SONY = 0x3 { desc = "SONY"; };
+        };
+
+        field {
+            name = "ir_format";
+            desc = "Indicates the data code format. 00: NEC with simple repeat code 01: TC9012 code 10: NEC with full repeat code 11: SONY code For details about the relationship between code types and code formats, see the code type tables in data sheet 11.4.4.";
+            encode = IR_CFG_ir_format_enum;
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ir_format[15:14];
+
+        field {
+            name = "ir_bits";
+            desc = "Indicates the number of data bits in a frame. 0x00-0x2F: 1-48 data bits in a frame 0x30-0x3F: reserved If ir_bits is set to a value ranging from 0x30 to 0x3F by using software, the setting has no effect and the original value is retained.";
+            sw = rw;
+            hw = r;
+`ifdef HISI_IR_V1_CFG_RESET_1F0B
+            reset = 0x1F;
+`else
+            reset = 0x0;
+`endif
+        } ir_bits[13:8];
+
+        field {
+            name = "ir_freq";
+            desc = "Frequency divider of the working clock. 0x00-0x7F: correspond to the working clock divider 1-128 respectively.";
+            sw = rw;
+            hw = r;
+`ifdef HISI_IR_V1_CFG_RESET_1F0B
+            reset = 0xB;
+`else
+            reset = 0x0;
+`endif
+        } ir_freq[6:0];
+    } IR_CFG @ 0x4;
+
+    reg {
+        name = "Lead code start bit margin configuration register";
+        desc = "Lead code start bit margin configuration register.
+
+Data sheet 11.4.7 IR_LEADS (offset 0x8): Hi3520 printed page 11-86, `hi3520v100--Hi3520-Datasheet.txt` line 55896; Hi3515 page 11-88, `hi3515v100--Hi3515-Datasheet.txt` line 50615; Hi3511 page 11-87, `hi3511v100--Hi3511-Datasheet.txt` line 41665.";
+
+        field {
+            name = "cnt_leads_min";
+            desc = "Minimum pulse width of the start bit of the lead code. 0x000-0x007: reserved";
+            sw = rw;
+            hw = r;
+            reset = 0x33C;
+        } cnt_leads_min[25:16];
+
+        field {
+            name = "cnt_leads_max";
+            desc = "Maximum pulse width of the start bit of the lead code. 0x000-0x007: reserved";
+            sw = rw;
+            hw = r;
+            reset = 0x3CC;
+        } cnt_leads_max[9:0];
+    } IR_LEADS @ 0x8;
+
+    reg {
+        name = "Lead code end bit margin configuration register";
+        desc = "Lead code end bit margin configuration register.
+
+Data sheet 11.4.7 IR_LEADE (offset 0xC): Hi3520 printed page 11-87, `hi3520v100--Hi3520-Datasheet.txt` line 55956; Hi3515 page 11-89, `hi3515v100--Hi3515-Datasheet.txt` line 50680; Hi3511 page 11-88, `hi3511v100--Hi3511-Datasheet.txt` line 41724.";
+
+        field {
+            name = "cnt_leade_min";
+            desc = "Minimum pulse width of the end bit of the lead code. 0x000-0x007: reserved";
+            sw = rw;
+            hw = r;
+            reset = 0x19E;
+        } cnt_leade_min[24:16];
+
+        field {
+            name = "cnt_leade_max";
+            desc = "Maximum pulse width of the end bit of the lead code. 0x000-0x007: reserved";
+            sw = rw;
+            hw = r;
+            reset = 0x1E6;
+        } cnt_leade_max[8:0];
+    } IR_LEADE @ 0xC;
+
+    reg {
+        name = "Simple lead code end bit margin configuration register";
+        desc = "Simple lead code end bit margin configuration register.
+
+Data sheet 11.4.7 IR_SLEADE (offset 0x10): Hi3520 printed page 11-88, `hi3520v100--Hi3520-Datasheet.txt` line 56016; Hi3515 page 11-90, `hi3515v100--Hi3515-Datasheet.txt` line 50743; Hi3511 page 11-89, `hi3511v100--Hi3511-Datasheet.txt` line 41784.";
+
+        field {
+            name = "cnt_sleade_min";
+            desc = "Minimum pulse width of the end bit of the simple lead code. 0x000-0x007: reserved";
+            sw = rw;
+            hw = r;
+            reset = 0xCF;
+        } cnt_sleade_min[24:16];
+
+        field {
+            name = "cnt_sleade_max";
+            desc = "Maximum pulse width of the start bit of the simple lead code. 0x000-0x007: reserved";
+            sw = rw;
+            hw = r;
+            reset = 0xF3;
+        } cnt_sleade_max[8:0];
+    } IR_SLEADE @ 0x10;
+
+    reg {
+        name = "Data 0 level judge margin configuration register";
+        desc = "IR_B0 is the data 0 level judge margin configuration register. Before setting it, set IR_BUSY[ir_busy] to 0 and IR_EN[ir_en] to 1, otherwise the previous value is kept. The margins for bit0 and bit1 must not overlap; a margin is about 20% of the typical value of the code type and cnt0_b_max must be >= cnt0_b_min.
+
+Data sheet 11.4.7 IR_B0 (offset 0x14): Hi3520 printed page 11-89, `hi3520v100--Hi3520-Datasheet.txt` line 56074; Hi3515 page 11-91, `hi3515v100--Hi3515-Datasheet.txt` line 50805; Hi3511 page 11-90, `hi3511v100--Hi3511-Datasheet.txt` line 41842. The field widths are 7 bits ([22:16] and [6:0]) in the Hi3511/Hi3515/Hi3520 data sheets (9 bits in the Hi3520D and later IP). Reset 0x002D0043 as in the header and bit row of these data sheets.";
+
+        field {
+            name = "cnt0_b_min";
+            desc = "Minimum pulse width of the level for judging bit0. 0x000-0x007: reserved";
+            sw = rw;
+            hw = r;
+            reset = 0x2D;
+        } cnt0_b_min[22:16];
+
+        field {
+            name = "cnt0_b_max";
+            desc = "Maximum pulse width of the level for judging bit0. 0x000-0x007: reserved";
+            sw = rw;
+            hw = r;
+            reset = 0x43;
+        } cnt0_b_max[6:0];
+    } IR_B0 @ 0x14;
+
+    reg {
+        name = "Data 1 level judge margin configuration register";
+        desc = "IR_B1 is the data 1 level judge margin configuration register. Before setting it, set IR_BUSY[ir_busy] to 0 and IR_EN[ir_en] to 1, otherwise the previous value is kept. The margins for bit0 and bit1 must not overlap; a margin is about 20% of the typical value of the code type and cnt1_b_max must be >= cnt1_b_min.
+
+Data sheet 11.4.7 IR_B1 (offset 0x18): Hi3520 printed page 11-90, `hi3520v100--Hi3520-Datasheet.txt` line 56132; Hi3515 page 11-92, `hi3515v100--Hi3515-Datasheet.txt` line 50862; Hi3511 page 11-91, `hi3511v100--Hi3511-Datasheet.txt` line 41901. Reset 0x008700CB.";
+
+        field {
+            name = "cnt1_b_min";
+            desc = "Minimum pulse width of the level for judging bit1. 0x000-0x007: reserved";
+            sw = rw;
+            hw = r;
+            reset = 0x87;
+        } cnt1_b_min[24:16];
+
+        field {
+            name = "cnt1_b_max";
+            desc = "Maximum pulse width of the level for judging bit1. 0x000-0x007: reserved";
+            sw = rw;
+            hw = r;
+            reset = 0xCB;
+        } cnt1_b_max[8:0];
+    } IR_B1 @ 0x18;
+
+    reg {
+        name = "Configuration busy flag register";
+        desc = "IR_BUSY is a configuration busy flag register.
+
+Data sheet 11.4.7 IR_BUSY (offset 0x1C): Hi3520 printed page 11-90, `hi3520v100--Hi3520-Datasheet.txt` line 56161; Hi3515 page 11-93, `hi3515v100--Hi3515-Datasheet.txt` line 50896; Hi3511 page 11-91, `hi3511v100--Hi3511-Datasheet.txt` line 41930.";
+
+        enum IR_BUSY_ir_busy_enum {
+            IDLE_THIS_CASE = 0 { name = "Idle This Case"; desc = "idle. In this case, software can configure data."; };
+            INDICATES_BUSY_STATE = 1 { name = "Indicates Busy State"; desc = "Indicates the busy state. In this state, software cannot configure data."; };
+        };
+
+        field {
+            name = "ir_busy";
+            desc = "Busy status flag.";
+            sw = r;
+            hw = w;
+            encode = IR_BUSY_ir_busy_enum;
+            reset = 0x0;
+        } ir_busy[0:0];
+    } IR_BUSY @ 0x1C;
+
+    reg {
+        name = "Upper 16-bit IR receive decoded data register";
+        desc = "IR_DATAH is an upper 16-bit IR receive decoded data register. The IR_DATAH register stores the upper 16 bits of the decoded data received by the IR, whereas IR_DATAL stores the lower 32 bits of the decoded data received by the IR. The data bits depend on the valid data bits in a frame and the specific code. For details, see the valid data bits in the code type tables in data sheet 11.4.4. Data is stored as follows: The data is stored in IR_DATAH and IR_DATAL in sequence from MSB to LSB. That is, after IR_DATAL is full, the remaining data is stored in IR_DATAH. The unused upper bits are reserved. Data is read as follows: IR_DATAH and IR_DATAL are read in sequence. The hardware receives all data bits without checking the definition of each data bit. The software is responsible for processing data bits.
+
+Data sheet 11.4.7 IR_DATAH (offset 0x20): Hi3520 printed page 11-91, `hi3520v100--Hi3520-Datasheet.txt` line 56203; Hi3515 page 11-93, `hi3515v100--Hi3515-Datasheet.txt` line 50931; Hi3511 page 11-92, `hi3511v100--Hi3511-Datasheet.txt` line 41976.";
+
+        field {
+            name = "ir_datah";
+            desc = "ir_datah";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } ir_datah[15:0];
+    } IR_DATAH @ 0x20;
+
+    reg {
+        name = "Lower 32-bit IR receive decoded data register";
+        desc = "IR_DATAL is a lower 32-bit IR receive decoded data register.
+
+Data sheet 11.4.7 IR_DATAL (offset 0x24): Hi3520 printed page 11-91, `hi3520v100--Hi3520-Datasheet.txt` line 56224; Hi3515 page 11-94, `hi3515v100--Hi3515-Datasheet.txt` line 50959; Hi3511 page 11-92, `hi3511v100--Hi3511-Datasheet.txt` line 41997.";
+
+        field {
+            name = "ir_datal";
+            desc = "Indicates the lower 32 bits of the decoded data received by the IR module.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } ir_datal[31:0];
+    } IR_DATAL @ 0x24;
+
+    reg {
+        name = "IR interrupt mask register";
+        desc = "IR interrupt mask register.
+
+Data sheet 11.4.7 IR_INT_MASK (offset 0x28): Hi3520 printed page 11-92, `hi3520v100--Hi3520-Datasheet.txt` line 56275; Hi3515 page 11-95, `hi3515v100--Hi3515-Datasheet.txt` line 51017; Hi3511 page 11-93, `hi3511v100--Hi3511-Datasheet.txt` line 42027.";
+
+        enum IR_INT_MASK_intm_release_enum {
+            NOT_MASKED = 0 { name = "Not Masked"; desc = "not masked"; };
+            MASKED = 1 { name = "Masked"; desc = "masked"; };
+        };
+
+        field {
+            name = "intm_release";
+            desc = "Key release interrupt mask.";
+            sw = rw;
+            hw = r;
+            encode = IR_INT_MASK_intm_release_enum;
+            reset = 0x0;
+        } intm_release[3:3];
+
+        enum IR_INT_MASK_intm_overflow_enum {
+            NOT_MASKED = 0 { name = "Not Masked"; desc = "not masked"; };
+            MASKED = 1 { name = "Masked"; desc = "masked"; };
+        };
+
+        field {
+            name = "intm_overflow";
+            desc = "Receive data overflow interrupt mask.";
+            sw = rw;
+            hw = r;
+            encode = IR_INT_MASK_intm_overflow_enum;
+            reset = 0x0;
+        } intm_overflow[2:2];
+
+        enum IR_INT_MASK_intm_framerr_enum {
+            NOT_MASKED = 0 { name = "Not Masked"; desc = "not masked"; };
+            MASKED = 1 { name = "Masked"; desc = "masked"; };
+        };
+
+        field {
+            name = "intm_framerr";
+            desc = "Receive data frame format error interrupt mask.";
+            sw = rw;
+            hw = r;
+            encode = IR_INT_MASK_intm_framerr_enum;
+            reset = 0x0;
+        } intm_framerr[1:1];
+
+        enum IR_INT_MASK_intm_rcv_enum {
+            NOT_MASKED = 0 { name = "Not Masked"; desc = "not masked"; };
+            MASKED = 1 { name = "Masked"; desc = "masked"; };
+        };
+
+        field {
+            name = "intm_rcv";
+            desc = "Receive data frame interrupt mask.";
+            sw = rw;
+            hw = r;
+            encode = IR_INT_MASK_intm_rcv_enum;
+            reset = 0x0;
+        } intm_rcv[0:0];
+    } IR_INT_MASK @ 0x28;
+
+    reg {
+        name = "IR interrupt status register";
+        desc = "IR_INT_STATUS is an IR interrupt status register (bit[19:16] masked interrupt status, bit[3:0] raw interrupt status).
+
+Data sheet 11.4.7 IR_INT_STATUS (offset 0x2C): Hi3520 printed page 11-93, `hi3520v100--Hi3520-Datasheet.txt` line 56328; Hi3515 page 11-95, `hi3515v100--Hi3515-Datasheet.txt` line 51055; Hi3511 page 11-94, `hi3511v100--Hi3511-Datasheet.txt` line 42094.";
+
+        enum IR_INT_STATUS_intms_release_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "intms_release";
+            desc = "Masked key release interrupt status.";
+            sw = r;
+            hw = w;
+            encode = IR_INT_STATUS_intms_release_enum;
+            reset = 0x0;
+        } intms_release[19:19];
+
+        enum IR_INT_STATUS_intms_overflow_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "intms_overflow";
+            desc = "Masked receive data overflow error interrupt status.";
+            sw = r;
+            hw = w;
+            encode = IR_INT_STATUS_intms_overflow_enum;
+            reset = 0x0;
+        } intms_overflow[18:18];
+
+        enum IR_INT_STATUS_intms_framerr_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "intms_framerr";
+            desc = "Masked receive data frame format error interrupt status.";
+            sw = r;
+            hw = w;
+            encode = IR_INT_STATUS_intms_framerr_enum;
+            reset = 0x0;
+        } intms_framerr[17:17];
+
+        enum IR_INT_STATUS_intms_rcv_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "intms_rcv";
+            desc = "Masked receive data frame interrupt status.";
+            sw = r;
+            hw = w;
+            encode = IR_INT_STATUS_intms_rcv_enum;
+            reset = 0x0;
+        } intms_rcv[16:16];
+
+        enum IR_INT_STATUS_intrs_release_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "intrs_release";
+            desc = "Raw key release interrupt status.";
+            sw = r;
+            hw = w;
+            encode = IR_INT_STATUS_intrs_release_enum;
+            reset = 0x0;
+        } intrs_release[3:3];
+
+        enum IR_INT_STATUS_intrs_overflow_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "intrs_overflow";
+            desc = "Raw receive data overflow error interrupt status.";
+            sw = r;
+            hw = w;
+            encode = IR_INT_STATUS_intrs_overflow_enum;
+            reset = 0x0;
+        } intrs_overflow[2:2];
+
+        enum IR_INT_STATUS_intrs_framerr_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "intrs_framerr";
+            desc = "Raw receive data frame format error interrupt status.";
+            sw = r;
+            hw = w;
+            encode = IR_INT_STATUS_intrs_framerr_enum;
+            reset = 0x0;
+        } intrs_framerr[1:1];
+
+        enum IR_INT_STATUS_intrs_rcv_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "intrs_rcv";
+            desc = "Raw receive data frame interrupt status.";
+            sw = r;
+            hw = w;
+            encode = IR_INT_STATUS_intrs_rcv_enum;
+            reset = 0x0;
+        } intrs_rcv[0:0];
+    } IR_INT_STATUS @ 0x2C;
+
+    reg {
+        name = "IR interrupt clear register";
+        desc = "IR_INT_CLR is an IR interrupt clear register (bit[3:0]).
+
+Data sheet 11.4.7 IR_INT_CLR (offset 0x30): Hi3520 printed page 11-94, `hi3520v100--Hi3520-Datasheet.txt` line 56399; Hi3515 page 11-97, `hi3515v100--Hi3515-Datasheet.txt` line 51130; Hi3511 page 11-95, `hi3511v100--Hi3511-Datasheet.txt` line 42165.";
+
+        enum IR_INT_CLR_intc_release_enum {
+            NO_EFFECT = 0 { name = "No Effect"; desc = "no effect"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "intc_release";
+            desc = "This bit indicates whether the key release interrupt request is cleared.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = IR_INT_CLR_intc_release_enum;
+            reset = 0x0;
+        } intc_release[3:3];
+
+        enum IR_INT_CLR_intc_overflow_enum {
+            NO_EFFECT = 0 { name = "No Effect"; desc = "no effect"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "intc_overflow";
+            desc = "This bit indicates whether the receive data overflow error interrupt request is cleared.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = IR_INT_CLR_intc_overflow_enum;
+            reset = 0x0;
+        } intc_overflow[2:2];
+
+        enum IR_INT_CLR_intc_framerr_enum {
+            NO_EFFECT = 0 { name = "No Effect"; desc = "no effect"; };
+            CLEARED = 1 { name = "Cleared"; desc = "cleared"; };
+        };
+
+        field {
+            name = "intc_framerr";
+            desc = "This bit indicates whether the receive data frame format error interrupt request is cleared.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = IR_INT_CLR_intc_framerr_enum;
+            reset = 0x0;
+        } intc_framerr[1:1];
+
+        enum IR_INT_CLR_intc_rcv_enum {
+            NO_EFFECT = 0 { name = "No Effect"; desc = "no effect"; };
+            CLEARED_IF_RECEIVE = 1 { name = "Cleared If Receive"; desc = "cleared If a receive data frame interrupt is generated and the software writes 1 to the bit without reading the data in IR_DATAL, the interrupt cannot be cleared."; };
+        };
+
+        field {
+            name = "intc_rcv";
+            desc = "This bit indicates whether the receive data frame interrupt request is cleared.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = IR_INT_CLR_intc_rcv_enum;
+            reset = 0x0;
+        } intc_rcv[0:0];
+    } IR_INT_CLR @ 0x30;
+
+    reg {
+        name = "IR start configuration register";
+        desc = "IR_START is an IR start configuration register. After other registers are configured, IR_START can be started when any value is written to the corresponding address during the startup of the IR module.
+
+Data sheet 11.4.7 IR_START (offset 0x34): Hi3520 printed page 11-95, `hi3520v100--Hi3520-Datasheet.txt` line 56456; Hi3515 page 11-97, `hi3515v100--Hi3515-Datasheet.txt` line 51173; Hi3511 page 11-96, `hi3511v100--Hi3511-Datasheet.txt` line 42219.";
+
+        field {
+            name = "ir_start";
+            desc = "ir_start";
+            sw = w;
+            hw = r;
+            reset = 0x0;
+        } ir_start[0:0];
+    } IR_START @ 0x34;
+
+};
+
+`endif
