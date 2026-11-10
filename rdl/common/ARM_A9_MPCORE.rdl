@@ -3,8 +3,28 @@
 
 regfile eARM_A9_MPCORE {
     name = "Cortex-A9 MPCore private memory region";
+    // The preprocessor does not see directives inside a string, so the chip-specific text selects a whole desc
+    // (define A9_MPCORE_HI3516V100 in rdl/hi3516v100/defines.rdl; without it the Hi3520D/Hi3515A/Hi3515C text is shown).
+`ifdef A9_MPCORE_HI3516V100
     desc = "
-    The 64 KB window at 0x20300000 'Internal registers of ARM watchdog (WDG), timer or global interrupt controller (GIC)' (DS Table 1-1) is the Cortex-A9 MPCore private memory region: Snoop Control
+    **Hi3516 V100.** The 64 KB window at 0x20300000 'ARM wdg/timer/gic 等内部寄存器' (original Chinese data sheet Table 1-1, `hi3516v100--Hi3516-Datasheet.txt` line 957) is the
+    Cortex-A9 MPCore private memory region of the single Cortex-A9 core (DS 3.11.1): Snoop Control Unit at +0x000, GIC CPU interface at +0x100, global timer at +0x200,
+    private timer at +0x600, private watchdog at +0x620 and the GIC distributor at +0x1000. These offsets are the architectural Cortex-A9 MPCore ones (the same as the
+    Hi3520D vendor `platform.h` uses); no Hi3516 vendor code is in the tree, so they are not vendor- or hardware-verified for this chip.
+
+    **Interrupt sources (DS 3.3 表3-19 `A9 中断源分配表`, lines 12437-12530; GIC IDs):** 0-31 A9 internal (SGI/PPI), 32 COMMTX, 33 COMMRX (CPU debug), 34 WatchDog, 35 Timer0/1,
+    36 Timer2/3, 37 GPIO0, 38 GPIO1, 39 GPIO2, 40 GPIO3, 41 GPIO4, 42 GPIO5, 43 GPIO6, 44 GPIO7, 45 I2C, 46 UART0, 47 UART1, 48 UART2, 49 UART3, 50 VICAP, 51 VEDU, 52 VOU,
+    53 TDE, 54 JPEG, 55 MD, 56 VAPU, 57 SIO0, 58 SIO1, 59 SIO2, 60 GMAC, 61 Cipher, 62 IR, 63 NandC, 64 SFC (SPI flash controller), 65 SSP0, 66 SSP1, 67 DMAC, 68 USB0_EHCI,
+    69 USB0_OHCI, 70 SDIO0, 71 SDIO1, 72 L2CHAE_CHK0_INT, 73 L2CHAE_CHK1_INT (sic, the L2 cache check interrupts). The DS text says the GIC supports at most 64 interrupt
+    sources (3.3, line 12434); with 32 internal IDs that is 96 lines (`ICDICTR.itlinesnumber` = 2), the same configuration as the Hi3520D, but it is not hardware verified here.
+
+    **The data sheet does not document these registers.** The SCU, timer, watchdog and GIC register layouts below are from the ARM Cortex-A9 MPCore and GIC (PL390)
+    technical reference manuals; reset values are the architectural ones, not read on a Hi3516. Hi3520D hardware facts quoted in the register descriptions (docs/TODO.md,
+    nvr0408 reads) are not Hi3516 measurements.
+    ";
+`else
+    desc = "
+    **Hi3520D/Hi3515A/Hi3515C.** The 64 KB window at 0x20300000 'Internal registers of ARM watchdog (WDG), timer or global interrupt controller (GIC)' (DS Table 1-1) is the Cortex-A9 MPCore private memory region: Snoop Control
     Unit at +0x000, GIC CPU interface at +0x100, global timer at +0x200, private timer at +0x600, private watchdog at +0x620 and the GIC distributor at +0x1000 (vendor `platform.h`:
     `REG_A9_PERI_SCU`, `A9_GIC_OFFSET` = 0x100, `A9_GIC_DIST` = 0x1000, `REG_A9_PERI_GLOBAL_TIMER` = 0x200, `REG_A9_PERI_PRI_TIMER_WDT` = 0x600). One A9 core, 96 interrupt sources of which 64 are
     external (DS 3.10.1 and Table 3-16: 0-31 for A9 internal use, 32-95 peripherals).
@@ -14,6 +34,7 @@ regfile eARM_A9_MPCORE {
     Cortex-A9 MPCore and GIC (PL390) technical reference manuals; reset values are the architectural ones. The Hi3520D uses the SP804 timers (not the A9 private timers) as system timers; the private
     timer / watchdog and global timer are not used by the vendor kernel. Not hardware verified beyond the GIC base addresses and interrupt count.
     ";
+`endif
 
     regfile {
         name = "Snoop Control Unit";
@@ -104,7 +125,7 @@ Cortex-A9 MPCore TRM (ARM DDI 0407) section 2.4.2";
 
         field {
             name = "cpu_number";
-            desc = "Number of CPUs minus 1 (0 for the single Hi3520D core).";
+            desc = "Number of CPUs minus 1 (0 on the single-core Hi3520D/Hi3515A/Hi3515C and Hi3516 V100).";
             sw = r;
             hw = w;
         } cpu_number[1:0];

@@ -3,8 +3,30 @@
 
 regfile eHISI_L2CACHE_V200 {
     name = "HiSilicon L2 cache controller v200";
+    // The preprocessor does not see directives inside a string, so the chip-specific text selects a whole desc
+    // (define HISI_L2CACHE_HI3516V100 in rdl/hi3516v100/defines.rdl; without it the Hi3520D/Hi3515A/Hi3515C text is shown).
+`ifdef HISI_L2CACHE_HI3516V100
     desc = "
-    HiSilicon \"L2 cache v200\" outer cache controller (vendor `CONFIG_CACHE_HIL2V200`), 128 KB on the Hi3520D/Hi3515A/Hi3515C (256 KB on other SoCs using the same driver), 8 ways, 32-byte lines
+    **Hi3516 V100.** HiSilicon \"L2 cache v200\" outer cache controller, 256 KB on the Hi3516 (original Chinese data sheet 1.2 line 597 `集成 256KB L2 Cache`, 3.11.2 `L2 Cache`
+    lines 20901-20940 of `hi3516v100--Hi3516-Datasheet.txt`), 8 ways, 32-byte lines. The block is at 0x20700000 (1 MB window, DS Table 1-1 line 934 `L2 CACHE 空间`). It is
+    **not** an ARM PL310 / L2C-310 (the register layout is the HiSilicon one, see the Hi3520D notes in the registers). The DS feature list (3.11.2: physical address and tag,
+    format C lockdown usable as TCM, 32-byte lines with byte writes, write-back/write-through and read/write allocate from the page tables, pipelined tag/data RAM, 3 line fill
+    buffers, 2 line read buffers per slave port, 3 eviction buffers, 3 write buffers, forced write allocate, shared mode, critical word first, atomic sync, pseudo-random
+    replacement, exclusive cache, clean/invalidate by way, way+index or address, 1-bit ECC on tag and data RAM, cache disable/bypass, performance statistics and cluster
+    event counters) is word for word the Hi3520D one, so the register set below (transcribed from the Hi3520D vendor driver `REG_L2_*`/`BIT_L2_*`) is assumed to apply;
+    no Hi3516 vendor code is in the tree and nothing is hardware verified on a Hi3516. Way size is 32 KB (1024 lines per way) if the way count is 8 as on the Hi3520D (not in the DS).
+
+    **The data sheet does not document these registers.** The reset values given in the registers are Hi3520D hardware reads (nvr0408, 2026-11-08), not Hi3516 values.
+    Interrupts (GIC IDs, DS 3.3 表3-19 lines 12521-12530): 72 `L2CHAE_CHK0_INT`, 73 `L2CHAE_CHK1_INT` (the DS spelling); the Hi3520D's third combined interrupt is not
+    listed for the Hi3516.
+
+    Driver sequence (Hi3520D `l2cache_init`, expected to be the same): disable (`L2_CTRL` = 0), set `event_bus_en` and `monitor_en` in `L2_AUCTRL`, write 0 to `L2_INTCLR`,
+    `L2_SPECIAL_CHECK0/1`, write 0x3FFF to `L2_INTMASK`, invalidate all ways with `L2_MAINT_AUTO` (poll `L2_RINT.auto_end`, clear via `L2_INTCLR`), then enable (`L2_CTRL` = 1).
+    Range maintenance writes `address | flag` to `L2_INVALID` / `L2_CLEAN` once per 32-byte line.
+    ";
+`else
+    desc = "
+    **Hi3520D/Hi3515A/Hi3515C.** HiSilicon \"L2 cache v200\" outer cache controller (vendor `CONFIG_CACHE_HIL2V200`), 128 KB on the Hi3520D/Hi3515A/Hi3515C (256 KB on the Hi3516 V100, which uses the same block), 8 ways, 32-byte lines
     (way size 16 KB, 512 lines per way). It is **not** an ARM PL310 / L2C-310: the register layout is unrelated (a mainline `arm,pl310-cache` node hangs in `l2c_enable()`, docs/TODO.md).
     The block is at 0x20700000 (1 MB window, Table 1-1 'L2 Cache Space').
 
@@ -19,6 +41,7 @@ regfile eHISI_L2CACHE_V200 {
     Driver sequence (`l2cache_init`): disable (`L2_CTRL` = 0), set `event_bus_en` and `monitor_en` in `L2_AUCTRL`, write 0 to `L2_INTCLR`, `L2_SPECIAL_CHECK0/1`, write 0x3FFF to `L2_INTMASK`, invalidate all
     ways with `L2_MAINT_AUTO` (poll `L2_RINT.auto_end`, clear via `L2_INTCLR`), then enable (`L2_CTRL` = 1). Range maintenance writes `address | flag` to `L2_INVALID` / `L2_CLEAN` once per 32-byte line.
     ";
+`endif
 
     reg {
         name = "L2 control";
