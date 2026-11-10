@@ -1,0 +1,329 @@
+`ifndef HISI_OTP_KEY_CTRL_RDL
+`define HISI_OTP_KEY_CTRL_RDL
+
+// OTP Key Ctrl (key ladder) of the Hi3516A V200 / Hi3519 V101 / Hi3516C V300 / Hi3516E V100 (English data sheets section 13.5, base 0x12070800, address map entry
+// 'OTP key control register' 0x12070800-0x12077FFF). The three data sheets print the same 11 registers, fields, access types and reset values.
+// Revision of the Hi3518E V20X cipher hash key control block (HISI_KEY_CTRL.rdl, 6 registers): KL_WKEY0..3 and the KL_STA bits [31:27], [1:0] are the same, KL_CTRL has a
+// 3-bit work_mode in place of the cipher_kl_mode / otp_kd_mode / hash_kl_mode bits (and no cipher_key_add), KL_STA adds ctrl_busy2, and KL_STA1 / RBC_WKEY0..3_STA are new.
+// The vendor U-Boot hal_efuse.c (sources/u-boot-vendor-2010.06/product/cipher, EFUSE_REG_BASE_ADDR 0x12070800) still writes the EV200 bit layout to KL_CTRL (otp_kd_mode = bit 2
+// with start = bit 0): in the work_mode encoding bits [3:1] = 0b010 is the same 'burn the key' command, so both layouts agree for burning.
+regfile eHISI_OTP_KEY_CTRL {
+    name = "OTP key control (key ladder)";
+    desc = "
+    The one-time programmable (OTP) key control module programs and reads keys in the OTP: it burns a 128-bit key (KL_WKEY0..3) into one of four OTP key slots (KL_CTRL.otp_key_add),
+    reads back which slots are already burnt (KL_STA1.key_stat), and loads an OTP key into the cipher / RSA key management module or into the HASH module as the HMAC key, so that the
+    key never passes through software. Four operations (data sheet 13.5.1.1-13.5.1.4), each selected with KL_CTRL.work_mode and started by KL_CTRL.start after KL_STA shows the
+    controller ready (ctrl_rdy = 1, ctrl_busy0 = ctrl_busy1 = ctrl_busy2 = 0); completion is polled in KL_STA / KL_STA1. No interrupt.
+
+    * Burn (work_mode 0b010): before burning the OTP bits are 0 and the power pin AVDD18_EFUSE must be stable (remove it again afterwards); write KL_WKEY0..3, otp_key_add, work_mode,
+      start = 1; wait for KL_STA.key_wt_finish = 1. KL_STA.key_wt_error = 1 means the address was burnt before; KL_STA1.rd_back_check_err = 1 means the read-back check failed, the
+      failing bits are in RBC_WKEY0..3_STA.
+    * Read the key lock status (work_mode 0b000): start, wait for KL_STA1.rd_key_st_finish = 1, read KL_STA1.key_stat (bit n = key n burnt). Do this before burning.
+    * Load the key to the cipher or RSA key management module (work_mode 0b001): otp_key_add, start, wait for KL_STA.cipher_rsa_kl_finish = 1.
+    * Load the key to the hash (work_mode 0b100): otp_key_add, start, wait for KL_STA.hash_key_read_busy = 0.
+
+    Register table: Hi3516A V200 data sheet 13.5.2 / 13.5.3 (`hi3516av200--Hi3516AV200-Datasheet.txt` lines 115627-116057), 11 registers transcribed with their fields, access types and reset
+    values; identical in the Hi3519 V101 and Hi3516C V300 / Hi3516E V100 data sheets. Not hardware verified.
+    ";
+
+    reg {
+        name = "Key burning register 0";
+        desc = "KL_WKEY0 is key burning register 0.
+
+Data sheet 13.5.3 KL_WKEY0 (offset 0x0, printed page 13-91, `hi3516av200--Hi3516AV200-Datasheet.txt` line 115664).";
+
+        field {
+            name = "key0";
+            desc = "Key[31:0] that are burnt to the OTP.";
+            sw = w;
+            hw = r;
+            reset = 0x0;
+        } key0[31:0];
+    } KL_WKEY0 @ 0x0;
+
+    reg {
+        name = "Key burning register 1";
+        desc = "KL_WKEY1 is key burning register 1.
+
+Data sheet 13.5.3 KL_WKEY1 (offset 0x4, printed page 13-91).";
+
+        field {
+            name = "key1";
+            desc = "Key[63:32] that are burnt to the OTP.";
+            sw = w;
+            hw = r;
+            reset = 0x0;
+        } key1[31:0];
+    } KL_WKEY1 @ 0x4;
+
+    reg {
+        name = "Key burning register 2";
+        desc = "KL_WKEY2 is key burning register 2.
+
+Data sheet 13.5.3 KL_WKEY2 (offset 0x8, printed page 13-92).";
+
+        field {
+            name = "key2";
+            desc = "Key[95:64] that are burnt to the OTP.";
+            sw = w;
+            hw = r;
+            reset = 0x0;
+        } key2[31:0];
+    } KL_WKEY2 @ 0x8;
+
+    reg {
+        name = "Key burning register 3";
+        desc = "KL_WKEY3 is key burning register 3.
+
+Data sheet 13.5.3 KL_WKEY3 (offset 0xC, printed page 13-92).";
+
+        field {
+            name = "key3";
+            desc = "Key[127:96] that are burnt to the OTP.";
+            sw = w;
+            hw = r;
+            reset = 0x0;
+        } key3[31:0];
+    } KL_WKEY3 @ 0xC;
+
+    reg {
+        name = "Key control register";
+        desc = "KL_CTRL is a key control register. A new operation can be initiated only when KL_STA.ctrl_busy1, ctrl_busy2 and ctrl_busy0 are 0 and ctrl_rdy is 1.
+
+Data sheet 13.5.3 KL_CTRL (offset 0x10, printed page 13-92, `hi3516av200--Hi3516AV200-Datasheet.txt` line 115755).";
+
+        field {
+            name = "otp_key_add";
+            desc = "Address (slot 0-3) of the key in the OTP for burning or loading the key.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } otp_key_add[5:4];
+
+        enum KL_CTRL_work_mode_enum {
+            READ_KEY_LOCK_STATUS = 0 { name = "Read Key Lock Status"; desc = "Reading back the key lock status (result in KL_STA1)."; };
+            LOAD_CIPHER_RSA = 1 { name = "Load Cipher Rsa"; desc = "Loading the key to the cipher or RSA key management module."; };
+            BURN_OTP = 2 { name = "Burn Otp"; desc = "Burning the key to the OTP."; };
+            LOAD_HASH = 4 { name = "Load Hash"; desc = "Loading the key to the hash."; };
+        };
+
+        field {
+            name = "work_mode";
+            desc = "Operating mode select. Other values: reserved.";
+            sw = rw;
+            hw = r;
+            encode = KL_CTRL_work_mode_enum;
+            reset = 0x0;
+        } work_mode[3:1];
+
+        field {
+            name = "start";
+            desc = "Operation start. Writing 1 to this bit starts the operation. Reading back this bit has no effect.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } start[0:0];
+    } KL_CTRL @ 0x10;
+
+    reg {
+        name = "Status indicator register";
+        desc = "KL_STA is a status indicator register.
+
+Completion: key_wt_finish 0 -> 1 (burn), cipher_rsa_kl_finish 0 -> 1 (cipher / RSA load), hash_key_read_busy 1 -> 0 (hash load), KL_STA1.rd_key_st_finish 0 -> 1 (lock status read).
+
+Data sheet 13.5.3 KL_STA (offset 0x14, printed page 13-93, `hi3516av200--Hi3516AV200-Datasheet.txt` line 115806).";
+
+        enum KL_STA_finish_enum {
+            NOT_COMPLETE = 0 { name = "Not Complete"; desc = "not complete"; };
+            COMPLETE = 1 { name = "Complete"; desc = "complete"; };
+        };
+
+        field {
+            name = "key_wt_finish";
+            desc = "Whether the operation of burning the key to the OTP is complete.";
+            sw = r;
+            hw = w;
+            encode = KL_STA_finish_enum;
+            reset = 0x0;
+        } key_wt_finish[31:31];
+
+        enum KL_STA_key_wt_error_enum {
+            NO_ERROR = 0 { name = "No Error"; desc = "No error occurs. The burning is successful."; };
+            ERROR_BURNT_BEFORE = 1 { name = "Error Burnt Before"; desc = "An error occurs. The key address has been burnt before."; };
+        };
+
+        field {
+            name = "key_wt_error";
+            desc = "Whether an error occurs during the operation of burning the key to the OTP.";
+            sw = r;
+            hw = w;
+            encode = KL_STA_key_wt_error_enum;
+            reset = 0x0;
+        } key_wt_error[30:30];
+
+        field {
+            name = "ctrl_busy1";
+            desc = "Controller busy signal 1. A new operation can be initiated only when ctrl_busy1, ctrl_busy2 and ctrl_busy0 are 0 and ctrl_rdy is 1.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } ctrl_busy1[29:29];
+
+        field {
+            name = "ctrl_busy0";
+            desc = "Controller busy signal 0.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } ctrl_busy0[28:28];
+
+        field {
+            name = "ctrl_rdy";
+            desc = "Controller ready signal.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } ctrl_rdy[27:27];
+
+        field {
+            name = "ctrl_busy2";
+            desc = "Controller busy signal 2 (new in this revision of the block; the Hi3518E V20X key control has only busy0 / busy1).";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } ctrl_busy2[11:11];
+
+        enum KL_STA_hash_key_read_busy_enum {
+            COMPLETE = 0 { name = "Complete"; desc = "complete"; };
+            NOT_COMPLETE = 1 { name = "Not Complete"; desc = "not complete. The hash operations can be started only after the loading operation is complete."; };
+        };
+
+        field {
+            name = "hash_key_read_busy";
+            desc = "Whether the operation of loading the key to the hash is complete.";
+            sw = r;
+            hw = w;
+            encode = KL_STA_hash_key_read_busy_enum;
+            reset = 0x0;
+        } hash_key_read_busy[1:1];
+
+        enum KL_STA_cipher_rsa_kl_finish_enum {
+            NOT_COMPLETE = 0 { name = "Not Complete"; desc = "not complete"; };
+            COMPLETE = 1 { name = "Complete"; desc = "complete. The cipher or RSA key management module can be started only after loading is complete."; };
+        };
+
+        field {
+            name = "cipher_rsa_kl_finish";
+            desc = "Whether the operation of loading the key to the cipher or RSA key management module is complete (called cipher_kl_finish on the Hi3518E V20X).";
+            sw = r;
+            hw = w;
+            encode = KL_STA_cipher_rsa_kl_finish_enum;
+            reset = 0x0;
+        } cipher_rsa_kl_finish[0:0];
+    } KL_STA @ 0x14;
+
+    reg {
+        name = "Status indicator register 1";
+        desc = "KL_STA1 is status indicator register 1. Offset 0x18 between KL_STA and KL_STA1 is not documented.
+
+Data sheet 13.5.3 KL_STA1 (offset 0x1C, printed page 13-95, `hi3516av200--Hi3516AV200-Datasheet.txt` line 115876).";
+
+        enum KL_STA1_rd_back_check_err_enum {
+            PASSED = 0 { name = "Passed"; desc = "The key burning is successful and the read back check is passed."; };
+            FAILED = 1 { name = "Failed"; desc = "Errors occur during key burning and the read back check fails (see RBC_WKEY0..3_STA)."; };
+        };
+
+        field {
+            name = "rd_back_check_err";
+            desc = "Check of the key burning result.";
+            sw = r;
+            hw = w;
+            encode = KL_STA1_rd_back_check_err_enum;
+            reset = 0x0;
+        } rd_back_check_err[8:8];
+
+        enum KL_STA1_rd_key_st_finish_enum {
+            NOT_COMPLETE = 0 { name = "Not Complete"; desc = "not complete"; };
+            COMPLETE = 1 { name = "Complete"; desc = "complete"; };
+        };
+
+        field {
+            name = "rd_key_st_finish";
+            desc = "Whether the operation of reading back the key lock indicator status is complete.";
+            sw = r;
+            hw = w;
+            encode = KL_STA1_rd_key_st_finish_enum;
+            reset = 0x0;
+        } rd_key_st_finish[4:4];
+
+        field {
+            name = "key_stat";
+            desc = "Key lock indicator. key_stat[n] indicates the use status of key n (n = 0..3): 0 = the key has not been burnt before, 1 = the key has been burnt.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } key_stat[3:0];
+    } KL_STA1 @ 0x1C;
+
+    reg {
+        name = "Key burning check status register 0";
+        desc = "RBC_WKEY0_STA is key burning check status register 0 (read-back check of KL_WKEY0).
+
+Data sheet 13.5.3 RBC_WKEY0_STA (offset 0x20, printed page 13-95).";
+
+        field {
+            name = "rd_back_check_sta0";
+            desc = "Check status of key bit[31:0]. If the corresponding bit is 1, an error occurs.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } rd_back_check_sta0[31:0];
+    } RBC_WKEY0_STA @ 0x20;
+
+    reg {
+        name = "Key burning check status register 1";
+        desc = "RBC_WKEY1_STA is key burning check status register 1 (read-back check of KL_WKEY1).
+
+Data sheet 13.5.3 RBC_WKEY1_STA (offset 0x24, printed page 13-96).";
+
+        field {
+            name = "rd_back_check_sta1";
+            desc = "Check status of key bit[63:32]. If the corresponding bit is 1, an error occurs.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } rd_back_check_sta1[31:0];
+    } RBC_WKEY1_STA @ 0x24;
+
+    reg {
+        name = "Key burning check status register 2";
+        desc = "RBC_WKEY2_STA is key burning check status register 2 (read-back check of KL_WKEY2).
+
+Data sheet 13.5.3 RBC_WKEY2_STA (offset 0x28, printed page 13-96).";
+
+        field {
+            name = "rd_back_check_sta2";
+            desc = "Check status of key bit[95:64]. If the corresponding bit is 1, an error occurs.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } rd_back_check_sta2[31:0];
+    } RBC_WKEY2_STA @ 0x28;
+
+    reg {
+        name = "Key burning check status register 3";
+        desc = "RBC_WKEY3_STA is key burning check status register 3 (read-back check of KL_WKEY3).
+
+Data sheet 13.5.3 RBC_WKEY3_STA (offset 0x2C, printed page 13-97).";
+
+        field {
+            name = "rd_back_check_sta3";
+            desc = "Check status of key bit[127:96]. If the corresponding bit is 1, an error occurs.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } rd_back_check_sta3[31:0];
+    } RBC_WKEY3_STA @ 0x2C;
+};
+
+`endif

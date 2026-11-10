@@ -1,7 +1,9 @@
 `ifndef HISI_KEY_CTRL_RDL
 `define HISI_KEY_CTRL_RDL
 
-// Cipher hash key control (key ladder) of the Hi3518EV200 / Hi3516CV200 (data sheet 13.5).
+// Cipher hash key control (key ladder) of the Hi3518E V20X / Hi3516C V200 (data sheet 13.5, base 0x20100800). The Hi3516A V200 / Hi3519 V101 / Hi3516C V300 'OTP Key Ctrl'
+// at 0x12070800 is a revision of this block (KL_CTRL.work_mode replaces the three mode bits, KL_STA gains ctrl_busy2, plus KL_STA1 and RBC_WKEY0..3_STA): HISI_OTP_KEY_CTRL.rdl.
+// The vendor U-Boot hal_efuse.c (sources/u-boot-vendor-2010.06/product/cipher, base 0x12070800) programs the EV200 bit layout of KL_CTRL / KL_STA modelled here.
 regfile eHISI_KEY_CTRL {
     name = "Cipher hash key control (key ladder)";
     desc = "
@@ -9,8 +11,12 @@ regfile eHISI_KEY_CTRL {
     KL_WKEY0..3, and loads an OTP key into the CIPHER key RAM (slot cipher_key_add) or into the HASH module as the HMAC key, so that the key never passes through software. Three operations
     (data sheet 13.5.1.1-13.5.1.3), each started by KL_CTRL.start after KL_STA shows the controller ready, completion polled in KL_STA. No interrupt.
 
-    Register table: data sheet 13.5.2 / 13.5.3 (`hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` lines 94879-95100), 6 registers; no vendor source in the local trees, not hardware verified. The data sheet address map lists the block as
+    Register table: data sheet 13.5.2 / 13.5.3 (`hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` lines 94879-95100), 6 registers; not hardware verified. The data sheet address map lists the block as
     `cipher_hash_key_ctrl` at 0x20100800-0x2010FFFF.
+
+    Vendor source: sources/u-boot-vendor-2010.06/product/cipher/hal_efuse.c (written for the 0x12070800 base of the Hi3516A V200 generation) uses exactly this KL_CTRL layout (start bit 0, cipher_kl_mode bit 1,
+    otp_kd_mode bit 2, hash key load 0x8 = bit 3, otp_key_add [5:4], cipher_key_add [10:8]) and KL_STA layout, burns a key with otp_kd_mode + start and waits for key_wt_finish, and names three further words
+    OTP_PGM_TIME (0x18), OTP_RD_TIME (0x1C) and OTP_LOGIC_LEVEL (0x20) that it never accesses; no data sheet documents them (on the AV200 generation 0x1C and 0x20 are KL_STA1 and RBC_WKEY0_STA).
     ";
 
     reg {

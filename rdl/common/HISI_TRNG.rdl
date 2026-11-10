@@ -1,0 +1,268 @@
+`ifndef HISI_TRNG_RDL
+`define HISI_TRNG_RDL
+
+// HISEC_TRNG_CTRL true random number generator of the Hi3516A V200 / Hi3519 V101 / Hi3516C V300 / Hi3516E V100 (English data sheets section 13.3, base 0x120C0000) and
+// of the Hi3516A V300 (Chinese data sheet section 13.2, base 0x10090000): the four data sheets print the same seven registers, fields, access types and reset values.
+// Not the RNG_GEN of the Hi3518E V20X / Hi3516C V200 (HISI_RNG.rdl: RNG_CTRL / RNG_FIFO_DATA / RNG_STAT at 0x0-0x8).
+regfile eHISI_TRNG {
+    name = "HISEC_TRNG_CTRL (true random number generator)";
+    desc = "
+    True random number generator (HISEC_TRNG_CTRL) in compliance with the FIPS 140-1 random test standard: three CPU-selectable random number sources (HISEC_COM_TRNG_CTRL.osc_sel, 0 disables
+    the generator), a choice between the HiSilicon OSC analog entropy source and a ring-oscillator (RO) source (trng_sel), optional pre-processing (filter), dropping, mixing, DRBG and post-processing
+    (mixing depth) stages, a lock bit that freezes the configuration until the next global reset, an output FIFO read through HISEC_COM_TRNG_FIFO_DATA, oscillator health flags and four
+    exception counters. No interrupt.
+
+    The registers start at offset 0x200 of the 64 KB TRNG window; offsets 0x000-0x1FC are not documented.
+
+    **Operation (data sheet 13.3.3):** 1. wait until HISEC_COM_TRNG_DATA_ST.trng_fifo_data_cnt >= 1; 2. read HISEC_COM_TRNG_FIFO_DATA; 3. repeat until enough random numbers have been read.
+
+    Register table: Hi3516A V200 data sheet 13.3.4 / 13.3.5 (`hi3516av200--Hi3516AV200-Datasheet.txt` lines 114763-115059, identical in the Hi3519 V101, Hi3516C V300 and Hi3516A V300 data sheets);
+    no vendor source in the local trees (the vendor U-Boot cipher driver only names the CRG register of the RNG, PERI_CRG56 at 0x120100E0, reset bit 4 and clock bit 5), not hardware verified.
+    ";
+
+    reg {
+        name = "TRNG control register";
+        desc = "HISEC_COM_TRNG_CTRL is a TRNG control register. Total reset value 0x0000_000A: drbg_enable = 1 and osc_sel = 2 (random number source 2).
+
+Data sheet 13.3.5 HISEC_COM_TRNG_CTRL (offset 0x200, printed page 13-75, `hi3516av200--Hi3516AV200-Datasheet.txt` line 114807).";
+
+        enum TRNG_CTRL_lock_enum {
+            UNLOCKED = 0 { name = "Unlocked"; desc = "unlocked"; };
+            LOCKED = 1 { name = "Locked"; desc = "locked"; };
+        };
+
+        field {
+            name = "trng_cfg_lock";
+            desc = "Lock signal of the trng_ctrl configuration (HISEC_COM_TRNG_CTRL[16:0]). The value 0 cannot be written after 1 is written. This bit can be reset only during the global reset.";
+            sw = rw;
+            hw = r;
+            encode = TRNG_CTRL_lock_enum;
+            reset = 0x0;
+        } trng_cfg_lock[17:17];
+
+        enum TRNG_CTRL_trng_sel_enum {
+            OSC = 0 { name = "Osc"; desc = "The HiSilicon OSC analog random source data is selected for output."; };
+            RO = 1 { name = "Ro"; desc = "The RO (ring oscillator) random source data is selected for output."; };
+        };
+
+        field {
+            name = "trng_sel";
+            desc = "Output of the entropy source TRNG.";
+            sw = rw;
+            hw = r;
+            encode = TRNG_CTRL_trng_sel_enum;
+            reset = 0x0;
+        } trng_sel[16:16];
+
+        field {
+            name = "post_process_depth";
+            desc = "Post-processing mixing depth. A larger value indicates a better random effect and lower speed.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } post_process_depth[15:8];
+
+        enum TRNG_CTRL_enable_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "post_process_enable";
+            desc = "Post-processing enable for the random number (the data sheet calls it 'pre-processing enable'). If this function is enabled, the random number generation speed is decreased by the multiple of (post_process_depth + 1).";
+            sw = rw;
+            hw = r;
+            encode = TRNG_CTRL_enable_enum;
+            reset = 0x0;
+        } post_process_enable[7:7];
+
+        field {
+            name = "mix_enable";
+            desc = "Data mixing enable.";
+            sw = rw;
+            hw = r;
+            encode = TRNG_CTRL_enable_enum;
+            reset = 0x0;
+        } mix_enable[6:6];
+
+        field {
+            name = "drop_enable";
+            desc = "Enable for discarding data at different probabilities. If this function is enabled, the random number generation speed is decreased by 1/3.";
+            sw = rw;
+            hw = r;
+            encode = TRNG_CTRL_enable_enum;
+            reset = 0x0;
+        } drop_enable[5:5];
+
+        field {
+            name = "pre_process_enable";
+            desc = "Pre-processing (filtering) enable for the random number. If this function is enabled, the random number generation speed is decreased by 1/4.";
+            sw = rw;
+            hw = r;
+            encode = TRNG_CTRL_enable_enum;
+            reset = 0x0;
+        } pre_process_enable[4:4];
+
+        field {
+            name = "drbg_enable";
+            desc = "DRBG (deterministic random bit generator) post-processing enable.";
+            sw = rw;
+            hw = r;
+            encode = TRNG_CTRL_enable_enum;
+            reset = 0x1;
+        } drbg_enable[3:3];
+
+        field {
+            name = "cleardata";
+            desc = "Writing 1 to this bit clears the random numbers in the FIFO (data sheet access WC).";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            reset = 0x0;
+        } cleardata[2:2];
+
+        enum TRNG_CTRL_osc_sel_enum {
+            RNG_DISABLED = 0 { name = "Rng Disabled"; desc = "RNG is disabled."; };
+            RANDOM_NUMBER_SOURCE_1 = 1 { name = "Random Number Source 1"; desc = "Random number source 1 is used."; };
+            RANDOM_NUMBER_SOURCE_2 = 2 { name = "Random Number Source 2"; desc = "Random number source 2 is used."; };
+            RANDOM_NUMBER_SOURCE_3 = 3 { name = "Random Number Source 3"; desc = "Random number source 3 is used."; };
+        };
+
+        field {
+            name = "osc_sel";
+            desc = "Random number source select.";
+            sw = rw;
+            hw = r;
+            encode = TRNG_CTRL_osc_sel_enum;
+            reset = 0x2;
+        } osc_sel[1:0];
+    } HISEC_COM_TRNG_CTRL @ 0x200;
+
+    reg {
+        name = "TRNG FIFO data register";
+        desc = "HISEC_COM_TRNG_FIFO_DATA is a TRNG FIFO data register.
+
+Data sheet 13.3.5 HISEC_COM_TRNG_FIFO_DATA (offset 0x204, printed page 13-77, `hi3516av200--Hi3516AV200-Datasheet.txt` line 114889).";
+
+        field {
+            name = "trng_fifo_data";
+            desc = "The external interface can directly read this register, and the 32-bit data in the FIFO is returned.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } trng_fifo_data[31:0];
+    } HISEC_COM_TRNG_FIFO_DATA @ 0x204;
+
+    reg {
+        name = "TRNG FIFO data status register";
+        desc = "HISEC_COM_TRNG_DATA_ST is a TRNG FIFO data register status register.
+
+Data sheet 13.3.5 HISEC_COM_TRNG_DATA_ST (offset 0x208, printed page 13-77, `hi3516av200--Hi3516AV200-Datasheet.txt` line 114917).";
+
+        field {
+            name = "trng_fifo_data_cnt";
+            desc = "Number of random numbers in the FIFO.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } trng_fifo_data_cnt[15:8];
+
+        field {
+            name = "low_ro_st1";
+            desc = "If this bit is 1, the low-frequency oscillator clock always outputs 1 (there are 512 consecutive 1s in the hardware RO source during system clock detection). Writing this bit clears it (data sheet access WC).";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            reset = 0x0;
+        } low_ro_st1[3:3];
+
+        field {
+            name = "low_ro_st0";
+            desc = "If this bit is 1, the low-frequency oscillator clock always outputs 0 (there are 512 consecutive 0s in the hardware RO source during system clock detection). Writing this bit clears it.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            reset = 0x0;
+        } low_ro_st0[2:2];
+
+        field {
+            name = "low_osc_st1";
+            desc = "If this bit is 1, the low-frequency oscillator clock always outputs 1. Writing this bit clears it.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            reset = 0x0;
+        } low_osc_st1[1:1];
+
+        field {
+            name = "low_osc_st0";
+            desc = "If this bit is 1, the low-frequency oscillator clock always outputs 0. Writing this bit clears it.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            reset = 0x0;
+        } low_osc_st0[0:0];
+    } HISEC_COM_TRNG_DATA_ST @ 0x208;
+
+    reg {
+        name = "TRNG all-0 detection counter";
+        desc = "HISEC_COM_TRNG_ERR0_CNT is a count register for the number of times that data is detected as all 0s during RNG random number exception detection.
+
+Data sheet 13.3.5 HISEC_COM_TRNG_ERR0_CNT (offset 0x20C, printed page 13-78, `hi3516av200--Hi3516AV200-Datasheet.txt` line 114958).";
+
+        field {
+            name = "rng_err0_cnt";
+            desc = "Number of times that data is detected as all 0s during RNG random number exception detection.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } rng_err0_cnt[15:0];
+    } HISEC_COM_TRNG_ERR0_CNT @ 0x20C;
+
+    reg {
+        name = "TRNG all-1 detection counter";
+        desc = "HISEC_COM_TRNG_ERR1_CNT is a count register for the number of times that data is detected as all 1s during RNG random number exception detection.
+
+Data sheet 13.3.5 HISEC_COM_TRNG_ERR1_CNT (offset 0x210, printed page 13-78, `hi3516av200--Hi3516AV200-Datasheet.txt` line 114988).";
+
+        field {
+            name = "rng_err1_cnt";
+            desc = "Number of times that data is detected as all 1s during RNG random number exception detection.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } rng_err1_cnt[15:0];
+    } HISEC_COM_TRNG_ERR1_CNT @ 0x210;
+
+    reg {
+        name = "TRNG repeated segment detection counter";
+        desc = "HISEC_COM_TRNG_ERR2_CNT is a count register for the number of times that the adjacent data segments are the same during RNG random number exception detection.
+
+Data sheet 13.3.5 HISEC_COM_TRNG_ERR2_CNT (offset 0x214, printed page 13-79, `hi3516av200--Hi3516AV200-Datasheet.txt` line 115011).";
+
+        field {
+            name = "rng_err2_cnt";
+            desc = "Number of times that the adjacent data segments are the same during RNG random number exception detection.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } rng_err2_cnt[15:0];
+    } HISEC_COM_TRNG_ERR2_CNT @ 0x214;
+
+    reg {
+        name = "TRNG repeated low word detection counter";
+        desc = "HISEC_COM_TRNG_ERR3_CNT is a count register for the number of times that the lower 32 bits of the adjacent 256-bit data are the same during RNG random number exception detection.
+
+Data sheet 13.3.5 HISEC_COM_TRNG_ERR3_CNT (offset 0x218, printed page 13-79, `hi3516av200--Hi3516AV200-Datasheet.txt` line 115043).";
+
+        field {
+            name = "rng_err3_cnt";
+            desc = "Number of times that the lower 32 bits of the adjacent 256-bit data are the same during RNG random number exception detection.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } rng_err3_cnt[15:0];
+    } HISEC_COM_TRNG_ERR3_CNT @ 0x218;
+};
+
+`endif

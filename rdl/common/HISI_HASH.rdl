@@ -1,7 +1,11 @@
 `ifndef HISI_HASH_RDL
 `define HISI_HASH_RDL
 
-// HASH (SHA1/SHA256/HMAC) of the Hi3518EV200 / Hi3516CV200 (data sheet 13.2).
+// HASH (SHA1/SHA256/HMAC) of the Hi3518E V20X / Hi3516C V200 (data sheet 13.2, base 0x10070000) and, register for register (same 30 registers, fields, resets), of the
+// Hi3516A V200 / Hi3519 V101 / Hi3516C V300 / Hi3516E V100 (data sheet 13.2, base 0x10090000, no interrupt in either generation). The only difference between the two
+// data sheets is MCU_KEY0..3: RW on the EV200, WO ('reading this register returns 0') on the AV200 generation; `define HASH_MCU_KEY_WO in the chip's defines.rdl selects
+// the write-only variant. The vendor U-Boot driver (sources/u-boot-vendor-2010.06/product/cipher/drv_cipher_reg.h, base 0x10090000) uses the same offsets and names
+// four more words KL_KEY0..3 at 0x80-0x8C (key loaded by the key ladder) that no data sheet documents.
 regfile eHISI_HASH {
     name = "HASH (SHA1 / SHA256 / HMAC)";
     desc = "
@@ -17,8 +21,9 @@ regfile eHISI_HASH {
     from 4 until all data is written; DMA mode: write DMA_START_ADDR then DMA_LEN; 7. wait hash_rdy = 1 and read SHA_OUT1..5 (SHA1) or SHA_OUT1..8 (SHA256). SHA_OUTn are not reset
     (random after power-up).
 
-    Register table: data sheet 13.2.5 / 13.2.6 (`hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` lines 93329-94156), 30 registers; every register, field, access type and reset value is transcribed from it; there is no vendor source for this
-    block in the local trees and nothing is hardware verified.
+    Register table: data sheet 13.2.5 / 13.2.6 (`hi3518ev200--Hi3518EV20X-Hi3516CV200-Datasheet.txt` lines 93329-94156), 30 registers; every register, field, access type and reset value is transcribed from it and
+    agrees with the Hi3516A V200 / Hi3519 V101 / Hi3516C V300 data sheets (section 13.2, base 0x10090000 there) except the MCU_KEY access type (see the header comment). Nothing is hardware verified.
+    The vendor U-Boot driver (product/cipher/hal_cipher.c of the AV200 generation) polls HASH_STATUS, writes TOTAL_LEN1/2, HASH_CTRL, SHA_START and DATA_IN / DMA_START_ADDR + DMA_LEN exactly as described above.
     ";
 
     reg {
@@ -459,8 +464,12 @@ Data sheet 13.2.6 MCU_KEY0 (offset 0x70, printed page 13-49, `hi3518ev200--Hi351
 
         field {
             name = "mcu_key0";
-            desc = "HMAC input key register (bits 0-31, configured by the CPU) This register cannot be read when debug_disable is 1.";
+            desc = "HMAC input key register (bits 0-31, configured by the CPU) This register cannot be read when debug_disable is 1. Write-only on the Hi3516A V200 generation (reading it returns 0).";
+`ifdef HASH_MCU_KEY_WO
+            sw = w;
+`else
             sw = rw;
+`endif
             hw = r;
             reset = 0x0;
         } mcu_key0[31:0];
@@ -474,8 +483,12 @@ Data sheet 13.2.6 MCU_KEY1 (offset 0x74, printed page 13-50, `hi3518ev200--Hi351
 
         field {
             name = "mcu_key1";
-            desc = "HMAC input key register (bits 32-63, configured by the CPU) This register cannot be read when debug_disable is 1.";
+            desc = "HMAC input key register (bits 32-63, configured by the CPU) This register cannot be read when debug_disable is 1. Write-only on the Hi3516A V200 generation (reading it returns 0).";
+`ifdef HASH_MCU_KEY_WO
+            sw = w;
+`else
             sw = rw;
+`endif
             hw = r;
             reset = 0x0;
         } mcu_key1[31:0];
@@ -489,8 +502,12 @@ Data sheet 13.2.6 MCU_KEY2 (offset 0x78, printed page 13-50, `hi3518ev200--Hi351
 
         field {
             name = "mcu_key2";
-            desc = "HMAC input key register (bits 64-95, configured by the CPU) This register cannot be read when debug_disable is 1.";
+            desc = "HMAC input key register (bits 64-95, configured by the CPU) This register cannot be read when debug_disable is 1. Write-only on the Hi3516A V200 generation (reading it returns 0).";
+`ifdef HASH_MCU_KEY_WO
+            sw = w;
+`else
             sw = rw;
+`endif
             hw = r;
             reset = 0x0;
         } mcu_key2[31:0];
@@ -504,8 +521,12 @@ Data sheet 13.2.6 MCU_KEY3 (offset 0x7C, printed page 13-50, `hi3518ev200--Hi351
 
         field {
             name = "mcu_key3";
-            desc = "HMAC input key register (bits 96-127, configured by the CPU) This register cannot be read when debug_disable is 1.";
+            desc = "HMAC input key register (bits 96-127, configured by the CPU) This register cannot be read when debug_disable is 1. Write-only on the Hi3516A V200 generation (reading it returns 0).";
+`ifdef HASH_MCU_KEY_WO
+            sw = w;
+`else
             sw = rw;
+`endif
             hw = r;
             reset = 0x0;
         } mcu_key3[31:0];
