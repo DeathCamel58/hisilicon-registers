@@ -2,880 +2,2033 @@
 `define MISC_RDL
 
 regfile eMISC_CTRL {
-    name = "MISC register";
+    name = "Miscellaneous control (MISC_CTRL), Hi3519 V101";
+    desc = "    MISC_CTRLn miscellaneous control registers at 0x12030000 (offset = n x 4 for the MISC_CTRL registers; the OTP root-key and control-bit programming registers live at 0x3000 and 0x5000 inside the block). Data sheet: Hi3519 V101 Professional HD IP Camera SoC, Issue 01 (2018-07-05), chapter 3.5.5 `Peripheral Control Registers` (3.5.5.1 summary, 3.5.5.2 description); the Hi3516A V200 data sheet has the same chapter register for register (checked 2026-11-10). 63 registers: 53 MISC_CTRLn registers (MISC_CTRL0..MISC_CTRL98 with gaps), 4 OTP_ROOTKEY_AES words and 6 OTP_CTRLBIT registers.
+
+    What the block holds: VICAP/MIPI mode (MISC_CTRL0: MIPI0/1 mode, VICAP input select, VICAP0/VPSS0 online mode); peripheral selects (MISC_CTRL1: SSP2 chip select, DMA request line sharing, SPI chip-select polarity, USB 2.0 PHY control source); MMC power switches (MISC_CTRL3); RAM retention (MISC_CTRL4); AXI QoS: per-bus timeout counters, master/slave priorities (MISC_CTRL5..18, 85..98) and the DDR QoS maps (MISC_CTRL21..28); USB 3.0 controller glue (MISC_CTRL29), USB 2.0 controller glue (MISC_CTRL30..32: chip id host/device, power polarity, AHB burst enables, PHY test channel), COMB PHY (PCIe/USB 3.0) test channel and control (MISC_CTRL33/34); the ACODEC analog block (MISC_CTRL45..48, 0xB4-0xC0) and digital block (MISC_CTRL51..54, 0xCC-0xD8), I2S channel select (MISC_CTRL56); MDDRC scrambling (MISC_CTRL62..64); eMMC DLL control (MISC_CTRL80/81); OTP root key (OTP_ROOTKEY_AES_0..3 at 0x3000, readable only before the CPU clears the remap in secure boot) and control-bit programming (OTP_CTRLBIT_PG_MODE/BUSY/BIT0..3 at 0x5000..0x5014: write the magic value to enter programming mode, then one magic value per control bit JTAG_DISABLE, DDR_CA_EN, SECURE_BOOT_EN, BOOTROM_MASK; these are one-time-programmable fuses, never write them without intent).
+
+    Bring-up notes: the vendor U-Boot 2010.06 (`board/hi3519v101/board.c`, `arch-hi3519v101/platform.h`) only touches MISC_CTRL33 (COMB PHY test channel, offset 0x84, called MISC_STRL33 in the sources) with write sequences such as 0x1506/0x11506/0x1506/0x0 to program the PHY. Registers MISC_CTRL45..54 (ACODEC) are not soft-resettable per the data sheet. Reserved bits whose total reset value (header) is non-zero are modelled as RO reserved_nz_<hi>_<lo> fields so the register reset equals the data sheet header: MISC_CTRL1, 4, 8, 14, 21, 25, 29, 30, 45, 46, 47, 48, 51, 52, 53, 54, 88 and 98.
+
+    Known data sheet errors and decisions (dump `hi3519v101--Hi3519V101-Datasheet.txt`, checked 2026-11-10): the summary table prints truncated names for the OTP rows (OTP_ROOTKE/OTP_CTRLBIT) and omits the OTP_ROOTKEY_AES_0..2 rows; the names of the description blocks are used. The description block of MISC_CTRL32 glues two field names together (usb2_phy_testaddr is the 11-bit address field); MISC_CTRL45 bits 7/6 have wrapped names (acodec_pd_micbias2/1); the extracted descriptions of MISC_CTRL51 are lost in the PDF layout and were rebuilt from the rows; the MISC_CTRL46 LINEINR gain table crosses a page break. The register numbering has gaps (the data sheet documents only MISC_CTRL0-9, 11, 12, 14-16, 18, 21-34, 45-48, 51-54, 56, 62-64, 80, 81, 85, 88, 89, 93-98).
+
+    Sources: HiSilicon's own English data sheet `Hi3519V101-Datasheet.pdf` (not machine translated; no watermark), dump `hi3519v101--Hi3519V101-Datasheet.txt`. Registers, fields and reset values were extracted programmatically and compared with this file.
+    ";
 
     reg {
         name = "VICAP/VPSS/MIPI PHY control register";
+        desc = "MISC_CTRL0 is a VICAP/VPSS/MIPI PHY control register.
+
+VICAP/VPSS and MIPI PHY mode: MIPI0/MIPI1 work mode, VICAP0/1 input select, VICAP0/VPSS0 online mode, shutter/flash trigger source. Reset 0x54: mipi0_work_mode = 1 and mipi1_work_mode = 1 (LVDS), vicap1_input_sel = 1 (MIPI1).
+
+Data sheet 3.5.5.2 MISC_CTRL0 (offset 0x0, printed page 3-74, `hi3519v101--Hi3519V101-Datasheet.txt` line 7819).";
+
+        enum MISC_CTRL0_shutter_flash_trig_sel_enum {
+            OUTPUT_VICAP0 = 0 { name = "Output Vicap0"; desc = "output by VICAP0"; };
+            OUTPUT_VICAP1 = 1 { name = "Output Vicap1"; desc = "output by VICAP1"; };
+        };
+
         field {
             name = "shutter_flash_trig_sel";
+            desc = "Shutter_Trig/Flash_Trig output select";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL0_shutter_flash_trig_sel_enum;
             reset = 0x0;
         } shutter_flash_trig_sel[10:10];
 
+        enum MISC_CTRL0_vicap0_vpss0_online_enum {
+            OFFLINE_MODE = 0 { name = "Offline Mode"; desc = "offline mode"; };
+            ONLINE_MODE = 1 { name = "Online Mode"; desc = "online mode"; };
+        };
+
         field {
             name = "vicap0_vpss0_online";
+            desc = "VICAP0/VPSS0 mode";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL0_vicap0_vpss0_online_enum;
             reset = 0x0;
         } vicap0_vpss0_online[9:9];
 
+        enum MISC_CTRL0_mipi0_work_mode_enum {
+            MIPI_MODE = 0 { name = "Mipi Mode"; desc = "MIPI mode"; };
+            LVDS_MODE = 1 { name = "Lvds Mode"; desc = "LVDS mode"; };
+            CMOS_MODE = 2 { name = "Cmos Mode"; desc = "CMOS mode"; };
+            RESERVED_3 = 3 { name = "Reserved 3"; desc = "reserved"; };
+        };
+
         field {
             name = "mipi0_work_mode";
+            desc = "MIPI0 mode select";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL0_mipi0_work_mode_enum;
             reset = 0x1;
         } mipi0_work_mode[7:6];
 
+        enum MISC_CTRL0_mipi1_work_mode_enum {
+            MIPI_MODE = 0 { name = "Mipi Mode"; desc = "MIPI mode"; };
+            LVDS_MODE = 1 { name = "Lvds Mode"; desc = "LVDS mode"; };
+            CMOS_MODE = 2 { name = "Cmos Mode"; desc = "CMOS mode"; };
+            RESERVED_3 = 3 { name = "Reserved 3"; desc = "reserved"; };
+        };
+
         field {
             name = "mipi1_work_mode";
+            desc = "MIPI1 mode select";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL0_mipi1_work_mode_enum;
             reset = 0x1;
         } mipi1_work_mode[5:4];
 
+        enum MISC_CTRL0_vicap1_input_sel_enum {
+            MIPI0 = 0 { name = "Mipi0"; desc = "MIPI0"; };
+            MIPI1 = 1 { name = "Mipi1"; desc = "MIPI1"; };
+            CMOS0 = 2 { name = "Cmos0"; desc = "CMOS0"; };
+            CMOS1 = 3 { name = "Cmos1"; desc = "CMOS1"; };
+        };
+
         field {
             name = "vicap1_input_sel";
+            desc = "VICAP1 input select";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL0_vicap1_input_sel_enum;
             reset = 0x1;
         } vicap1_input_sel[3:2];
 
+        enum MISC_CTRL0_vicap0_input_sel_enum {
+            MIPI0 = 0 { name = "Mipi0"; desc = "MIPI0"; };
+            MIPI1 = 1 { name = "Mipi1"; desc = "MIPI1"; };
+            CMOS0 = 2 { name = "Cmos0"; desc = "CMOS0"; };
+            CMOS1 = 3 { name = "Cmos1"; desc = "CMOS1"; };
+        };
+
         field {
             name = "vicap0_input_sel";
+            desc = "VICAP0 input select";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL0_vicap0_input_sel_enum;
             reset = 0x0;
         } vicap0_input_sel[1:0];
-    } MISC_CTRL0 @ 0x0000;
-    
+    } MISC_CTRL0 @ 0x0;
+
     reg {
         name = "Peripheral function selection register 0";
+        desc = "MISC_CTRL1 is peripheral function selection register 0.
+
+Peripheral function selection 0: SSP2 chip-select, DMA request line sharing, USB 2.0 PHY control source, SPI chip-select polarity, BOOTROM/BOOTRAM power. The header reset is 0x0000_0003 but the rows add up to 0 (bits [1:0] are reserved in the rows): modelled as reserved_nz_1_0. The field name `Ssp2_cs_sel` is printed with a capital S in the data sheet; lower-cased here.
+
+Data sheet 3.5.5.2 MISC_CTRL1 (offset 0x4, printed page 3-75, `hi3519v101--Hi3519V101-Datasheet.txt` line 7886).";
+
+        enum MISC_CTRL1_ssp2_cs_sel_enum {
+            CS0 = 0 { name = "Cs0"; desc = "CS0"; };
+            CS1 = 1 { name = "Cs1"; desc = "CS1"; };
+            RESERVED_2 = 2 { name = "Reserved 2"; desc = "reserved (data sheet 1X)"; };
+            RESERVED_3 = 3 { name = "Reserved 3"; desc = "reserved (data sheet 1X)"; };
+        };
+
         field {
-            name = "Ssp2_cs_sel";
+            name = "ssp2_cs_sel";
+            desc = "SSP2 output CS select";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL1_ssp2_cs_sel_enum;
             reset = 0x0;
-        } Ssp2_cs_sel[27:26];
+        } ssp2_cs_sel[27:26];
+
+        enum MISC_CTRL1_dma_01_sel_enum {
+            UART0_CONNECTS_DMA = 0 { name = "Uart0 Connects Dma"; desc = "UART0 connects to DMA hardware request lines 0 and 1."; };
+            UART4_CONNECTS_DMA = 1 { name = "Uart4 Connects Dma"; desc = "UART4 connects to DMA hardware request lines 0 and 1."; };
+        };
 
         field {
             name = "dma_01_sel";
+            desc = "Connection select for the DMA hardware request lines 0 and 1";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL1_dma_01_sel_enum;
             reset = 0x0;
         } dma_01_sel[24:24];
 
+        enum MISC_CTRL1_dma_67_sel_enum {
+            UART3 = 0 { name = "Uart3"; desc = "UART3 connects to DMA hardware request lines 6 and 7"; };
+            I2C3 = 1 { name = "I2C3"; desc = "I2C3 connects to DMA hardware request lines 6 and 7"; };
+            SSP3 = 2 { name = "Ssp3"; desc = "SSP3 connects to DMA hardware request lines 6 and 7 (data sheet 1X)"; };
+            SSP3_3 = 3 { name = "Ssp3 3"; desc = "SSP3 connects to DMA hardware request lines 6 and 7 (data sheet 1X)"; };
+        };
+
         field {
             name = "dma_67_sel";
+            desc = "Connection select for the DMA hardware request lines 6 and 7";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL1_dma_67_sel_enum;
             reset = 0x0;
         } dma_67_sel[23:22];
 
+        enum MISC_CTRL1_dma_89_sel_enum {
+            I2C0_CONNECTS_DMA = 0 { name = "I2C0 Connects Dma"; desc = "I2C0 connects to DMA hardware request lines 8 and 9."; };
+            SSP0_CONNECTS_DMA = 1 { name = "Ssp0 Connects Dma"; desc = "SSP0 connects to DMA hardware request lines 8 and 9."; };
+        };
+
         field {
             name = "dma_89_sel";
+            desc = "Connection select for the DMA hardware request lines 8 and 9";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL1_dma_89_sel_enum;
             reset = 0x0;
         } dma_89_sel[21:21];
 
+        enum MISC_CTRL1_dma_ab_sel_enum {
+            I2C1_CONNECTS_DMA = 0 { name = "I2C1 Connects Dma"; desc = "I2C1 connects to DMA hardware request lines 10 and 11."; };
+            SSP1_CONNECTS_DMA = 1 { name = "Ssp1 Connects Dma"; desc = "SSP1 connects to DMA hardware request lines 10 and 11."; };
+        };
+
         field {
             name = "dma_ab_sel";
+            desc = "Connection select for the DMA hardware request lines 10 and 11";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL1_dma_ab_sel_enum;
             reset = 0x0;
         } dma_ab_sel[20:20];
 
+        enum MISC_CTRL1_dma_cd_sel_enum {
+            I2C2_CONNECTS_DMA = 0 { name = "I2C2 Connects Dma"; desc = "I2C2 connects to DMA hardware request lines 12 and 13."; };
+            SSP2_CONNECTS_DMA = 1 { name = "Ssp2 Connects Dma"; desc = "SSP2 connects to DMA hardware request lines 12 and 13."; };
+        };
+
         field {
             name = "dma_cd_sel";
+            desc = "Connection select for the DMA hardware request lines 12 and 13";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL1_dma_cd_sel_enum;
             reset = 0x0;
         } dma_cd_sel[19:19];
 
+        enum MISC_CTRL1_usb2phy_ctrl_sel_enum {
+            USB2_0_CTRL = 0 { name = "Usb2 0 Ctrl"; desc = "USB2.0 Ctrl"; };
+            USB3_0_CTRL = 1 { name = "Usb3 0 Ctrl"; desc = "USB3.0 Ctrl"; };
+        };
+
         field {
             name = "usb2phy_ctrl_sel";
+            desc = "USB 2.0 PHY control source";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL1_usb2phy_ctrl_sel_enum;
             reset = 0x0;
         } usb2phy_ctrl_sel[15:15];
 
+        enum MISC_CTRL1_bootrom_pg_enum {
+            NORMAL_MODE = 0 { name = "Normal Mode"; desc = "normal mode"; };
+            LOW_POWER_MODE = 1 { name = "Low Power Mode"; desc = "low-power mode"; };
+        };
+
         field {
             name = "bootrom_pg";
+            desc = "BOOTROM low-power mode control";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL1_bootrom_pg_enum;
             reset = 0x0;
         } bootrom_pg[13:13];
 
+        enum MISC_CTRL1_spi3_cs0_ctrl_enum {
+            NOT_INVERTED = 0 { name = "Not Inverted"; desc = "not inverted"; };
+            INVERTED = 1 { name = "Inverted"; desc = "inverted"; };
+        };
+
         field {
             name = "spi3_cs0_ctrl";
+            desc = "Phase inversion control for the spi3_cs0 signal";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL1_spi3_cs0_ctrl_enum;
             reset = 0x0;
         } spi3_cs0_ctrl[12:12];
 
+        enum MISC_CTRL1_spi2_cs0_ctrl_enum {
+            NOT_INVERTED = 0 { name = "Not Inverted"; desc = "not inverted"; };
+            INVERTED = 1 { name = "Inverted"; desc = "inverted"; };
+        };
+
         field {
             name = "spi2_cs0_ctrl";
+            desc = "Phase inversion control for the spi2_cs0 signal";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL1_spi2_cs0_ctrl_enum;
             reset = 0x0;
         } spi2_cs0_ctrl[11:11];
 
+        enum MISC_CTRL1_spi2_cs1_ctrl_enum {
+            NOT_INVERTED = 0 { name = "Not Inverted"; desc = "not inverted"; };
+            INVERTED = 1 { name = "Inverted"; desc = "inverted"; };
+        };
+
         field {
             name = "spi2_cs1_ctrl";
+            desc = "Phase inversion control for the spi2_cs1 signal";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL1_spi2_cs1_ctrl_enum;
             reset = 0x0;
         } spi2_cs1_ctrl[10:10];
 
+        enum MISC_CTRL1_spi1_cs0_ctrl_enum {
+            NOT_INVERTED = 0 { name = "Not Inverted"; desc = "not inverted"; };
+            INVERTED = 1 { name = "Inverted"; desc = "inverted"; };
+        };
+
         field {
             name = "spi1_cs0_ctrl";
+            desc = "Phase inversion control for the spi1_cs0 signal";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL1_spi1_cs0_ctrl_enum;
             reset = 0x0;
         } spi1_cs0_ctrl[9:9];
 
+        enum MISC_CTRL1_spi0_cs0_ctrl_enum {
+            NOT_INVERTED = 0 { name = "Not Inverted"; desc = "not inverted"; };
+            INVERTED = 1 { name = "Inverted"; desc = "inverted"; };
+        };
+
         field {
             name = "spi0_cs0_ctrl";
+            desc = "Phase inversion control for the spi0_cs0 signal";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL1_spi0_cs0_ctrl_enum;
             reset = 0x0;
         } spi0_cs0_ctrl[8:8];
 
+        enum MISC_CTRL1_bootram_ck_gt_en_enum {
+            ENABLED = 0 { name = "Enabled"; desc = "enabled"; };
+            DISABLED = 1 { name = "Disabled"; desc = "disabled"; };
+        };
+
         field {
             name = "bootram_ck_gt_en";
+            desc = "BOOTRAM clock enable";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL1_bootram_ck_gt_en_enum;
             reset = 0x0;
         } bootram_ck_gt_en[2:2];
-    } MISC_CTRL1 @ 0x0004;
+
+        field {
+            name = "reserved_nz_1_0";
+            desc = "Reserved in the bit table, but the data sheet total reset value of this register has these bits set (reset 0x3).";
+            sw = r;
+            hw = w;
+            reset = 0x3;
+        } reserved_nz_1_0[1:0];
+    } MISC_CTRL1 @ 0x4;
 
     reg {
         name = "PCIe/USB 3.0 read outstanding limit control register";
+        desc = "MISC_CTRL2 is a PCIe/USB 3.0 read outstanding limit control register.
+
+PCIe/USB 3.0 master read outstanding limit.
+
+Data sheet 3.5.5.2 MISC_CTRL2 (offset 0x8, printed page 3-77, `hi3519v101--Hi3519V101-Datasheet.txt` line 7979).";
+
+        enum MISC_CTRL2_pcie_m_od_bypass_limit_enum {
+            ENABLED = 0 { name = "Enabled"; desc = "enabled"; };
+            DISABLED = 1 { name = "Disabled"; desc = "disabled"; };
+        };
+
         field {
             name = "pcie_m_od_bypass_limit";
+            desc = "PCIe/USB 3.0 master read outstanding limit enable";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL2_pcie_m_od_bypass_limit_enum;
             reset = 0x1;
         } pcie_m_od_bypass_limit[8:8];
 
         field {
             name = "pcie_m_od_max";
+            desc = "Number of PCIe/USB 3.0 master read outstandings. This field cannot be set to 0. The value that takes effect is the configured value plus 1.";
+            sw = rw;
+            hw = r;
             reset = 0x4;
         } pcie_m_od_max[7:0];
-    } MISC_CTRL2 @ 0x0008;
+    } MISC_CTRL2 @ 0x8;
 
     reg {
         name = "Power switch control register";
+        desc = "MISC_CTRL3 is a power switch control register.
+
+Power switch control for the two MMC controllers (SD card voltage/enable); each switch can be driven by the MMC controller or by the register. Reset 0xCA = both sources set to the register, outputs 3.3 V disabled.
+
+Data sheet 3.5.5.2 MISC_CTRL3 (offset 0xC, printed page 3-78, `hi3519v101--Hi3519V101-Datasheet.txt` line 8022).";
+
+        enum MISC_CTRL3_powerswitch1_enable_mux_enum {
+            MMC1_CONTROLLER = 0 { name = "Mmc1 Controller"; desc = "MMC1 controller"; };
+            POWERSWITCH1_ENABLE_REGISTER = 1 { name = "Powerswitch1 Enable Register"; desc = "powerswitch1_enable register"; };
+        };
+
         field {
             name = "powerswitch1_enable_mux";
+            desc = "Power switch 1 enable source select";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL3_powerswitch1_enable_mux_enum;
             reset = 0x1;
         } powerswitch1_enable_mux[7:7];
 
+        enum MISC_CTRL3_powerswitch0_enable_mux_enum {
+            MMC0_CONTROLLER = 0 { name = "Mmc0 Controller"; desc = "MMC0 controller"; };
+            POWERSWITCH0_ENABLE_REGISTER = 1 { name = "Powerswitch0 Enable Register"; desc = "powerswitch0_enable register"; };
+        };
+
         field {
             name = "powerswitch0_enable_mux";
+            desc = "Power switch 0 enable source select";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL3_powerswitch0_enable_mux_enum;
             reset = 0x1;
         } powerswitch0_enable_mux[6:6];
 
+        enum MISC_CTRL3_powerswitch1_enable_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
         field {
             name = "powerswitch1_enable";
+            desc = "Power switch 1 enable (valid only when powerswitch1_enable_mux is 1)";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL3_powerswitch1_enable_enum;
             reset = 0x0;
         } powerswitch1_enable[5:5];
 
+        enum MISC_CTRL3_powerswitch0_enable_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
         field {
             name = "powerswitch0_enable";
+            desc = "Power switch 0 enable (valid only when powerswitch0_enable_mux is 1)";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL3_powerswitch0_enable_enum;
             reset = 0x0;
         } powerswitch0_enable[4:4];
 
+        enum MISC_CTRL3_powerswitch1_sel_mux_enum {
+            MMC1_CONTROLLER = 0 { name = "Mmc1 Controller"; desc = "MMC1 controller"; };
+            POWERSWITCH1_SEL_REGISTER = 1 { name = "Powerswitch1 Sel Register"; desc = "powerswitch1_sel register"; };
+        };
+
         field {
             name = "powerswitch1_sel_mux";
+            desc = "Power switch 1 switch source select";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL3_powerswitch1_sel_mux_enum;
             reset = 0x1;
         } powerswitch1_sel_mux[3:3];
 
+        enum MISC_CTRL3_powerswitch1_sel_enum {
+            VOLT_3P3 = 0 { name = "Volt 3P3"; desc = "3.3 V"; };
+            VOLT_1P8 = 1 { name = "Volt 1P8"; desc = "1.8 V"; };
+        };
+
         field {
             name = "powerswitch1_sel";
+            desc = "Power switch 1 output voltage select (valid only when powerswitch1_sel_mux is 1)";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL3_powerswitch1_sel_enum;
             reset = 0x0;
         } powerswitch1_sel[2:2];
 
+        enum MISC_CTRL3_powerswitch0_sel_mux_enum {
+            MMC0_CONTROLLER = 0 { name = "Mmc0 Controller"; desc = "MMC0 controller"; };
+            POWERSWITCH0_SEL_REGISTER = 1 { name = "Powerswitch0 Sel Register"; desc = "powerswitch0_sel register"; };
+        };
+
         field {
             name = "powerswitch0_sel_mux";
+            desc = "Power switch 0 switch source select";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL3_powerswitch0_sel_mux_enum;
             reset = 0x1;
         } powerswitch0_sel_mux[1:1];
 
+        enum MISC_CTRL3_powerswitch0_sel_enum {
+            VOLT_3P3 = 0 { name = "Volt 3P3"; desc = "3.3 V"; };
+            VOLT_1P8 = 1 { name = "Volt 1P8"; desc = "1.8 V"; };
+        };
+
         field {
             name = "powerswitch0_sel";
+            desc = "Power switch 0 output voltage select (valid only when powerswitch0_sel_mux is 1)";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL3_powerswitch0_sel_enum;
             reset = 0x0;
         } powerswitch0_sel[0:0];
-    } MISC_CTRL3 @ 0x000C;
+    } MISC_CTRL3 @ 0xC;
 
     reg {
         name = "RET1N control register";
+        desc = "MISC_CTRL4 is an RET1N control register.
+
+RET1N (memory retention) control. The header reset is 0xFFFF_FFFF: every reserved bit also resets to 1 and is modelled as reserved_nz fields (low confidence that these bits have any function).
+
+Data sheet 3.5.5.2 MISC_CTRL4 (offset 0x10, printed page 3-79, `hi3519v101--Hi3519V101-Datasheet.txt` line 8098).";
+
+        enum MISC_CTRL4_vedu_ret1n_bypass_enum {
+            ENABLED = 0 { name = "Enabled"; desc = "enabled"; };
+            BYPASSED = 1 { name = "Bypassed"; desc = "bypassed"; };
+        };
+
         field {
             name = "vedu_ret1n_bypass";
+            desc = "Automatic memory RET1N function bypass for the VEDU module";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL4_vedu_ret1n_bypass_enum;
             reset = 0x1;
         } vedu_ret1n_bypass[31:31];
 
         field {
+            name = "reserved_nz_30_8";
+            desc = "Reserved in the bit table, but the data sheet total reset value of this register has these bits set (reset 0x7FFFFF).";
+            sw = r;
+            hw = w;
+            reset = 0x007FFFFF;
+        } reserved_nz_30_8[30:8];
+
+        field {
             name = "emmc_ret1n";
+            desc = "Memory RET1N signal in the MMC2. Set this bit to 1 when the MMC2 is enabled and set this bit to 0 when the MMC2 is disabled to reduce memory power consumption.";
+            sw = rw;
+            hw = r;
             reset = 0x1;
         } emmc_ret1n[7:7];
 
         field {
             name = "sdio1_ret1n";
+            desc = "Memory RET1N signal in the MMC1. Set this bit to 1 when the MMC1 is enabled and set this bit to 0 when the MMC1 is disabled to reduce memory power consumption.";
+            sw = rw;
+            hw = r;
             reset = 0x1;
         } sdio1_ret1n[6:6];
 
         field {
             name = "sdio0_ret1n";
+            desc = "Memory RET1N signal in the MMC0. Set this bit to 1 when the MMC0 is enabled and set this bit to 0 when the MMC0 is disabled to reduce memory power consumption.";
+            sw = rw;
+            hw = r;
             reset = 0x1;
         } sdio0_ret1n[5:5];
 
         field {
             name = "gsf_ret1n";
+            desc = "Memory RET1N signal in the GSF CTRL. Set this bit to 1 when the GSF CTRL is enabled and set this bit to 0 when the GSF CTRL is disabled to reduce memory power consumption.";
+            sw = rw;
+            hw = r;
             reset = 0x1;
         } gsf_ret1n[4:4];
 
         field {
+            name = "reserved_nz_3_3";
+            desc = "Reserved in the bit table, but the data sheet total reset value of this register has these bits set (reset 0x1).";
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } reserved_nz_3_3[3:3];
+
+        field {
+            name = "reserved_nz_2_2";
+            desc = "Reserved in the bit table, but the data sheet total reset value of this register has these bits set (reset 0x1).";
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } reserved_nz_2_2[2:2];
+
+        field {
             name = "cipher_ret1n";
+            desc = "Memory RET1N signal in the cipher. Set this bit to 1 when the cipher is enabled and set this bit to 0 when the cipher is disabled to reduce memory power consumption.";
+            sw = rw;
+            hw = r;
             reset = 0x1;
         } cipher_ret1n[1:1];
 
         field {
             name = "bootram_ret1n";
+            desc = "Memory RET1N signal in the BOOTRAM. Set this bit to 1 when the BOOTRAM is enabled and set this bit to 0 when the BOOTRAM is disabled to reduce memory power consumption.";
+            sw = rw;
+            hw = r;
             reset = 0x1;
         } bootram_ret1n[0:0];
-    } MISC_CTRL4 @ 0x0010;
+    } MISC_CTRL4 @ 0x10;
 
     reg {
         name = "System bus arbitration control register 0";
+        desc = "MISC_CTRL5 is system bus arbitration control register 0.
+
+SYS AXI bus arbitration (timeout) control: M1 (AHB0) and M2 (AHB1) ports. The timeout count is value x 2.
+
+Data sheet 3.5.5.2 MISC_CTRL5 (offset 0x14, printed page 3-80, `hi3519v101--Hi3519V101-Datasheet.txt` line 8158).";
+
+        enum MISC_CTRL5_sysaxi_timeout_en_m2_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
         field {
             name = "sysaxi_timeout_en_m2";
+            desc = "Timeout count enable for the SYS AXI bus M2 port (AHB1)";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL5_sysaxi_timeout_en_m2_enum;
             reset = 0x0;
         } sysaxi_timeout_en_m2[31:31];
 
         field {
             name = "sysaxi_timeout_value_m2";
+            desc = "Timeout count value of the SYS AXI bus M2 port (AHB1) Count value = sysaxi_timeout_value_m2 x 2";
+            sw = rw;
+            hw = r;
             reset = 0x0;
         } sysaxi_timeout_value_m2[30:16];
 
+        enum MISC_CTRL5_sysaxi_timeout_en_m1_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
         field {
             name = "sysaxi_timeout_en_m1";
+            desc = "Timeout count enable for the SYS AXI bus M1 port (AHB0)";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL5_sysaxi_timeout_en_m1_enum;
             reset = 0x0;
         } sysaxi_timeout_en_m1[15:15];
 
         field {
             name = "sysaxi_timeout_value_m1";
+            desc = "Timeout count value of the SYS AXI bus M1 port (AHB0) Count value = sysaxi_timeout_value_m1 x 2";
+            sw = rw;
+            hw = r;
             reset = 0x0;
         } sysaxi_timeout_value_m1[14:0];
-    } MISC_CTRL5 @ 0x0014;
+    } MISC_CTRL5 @ 0x14;
 
     reg {
         name = "System bus arbitration control register 1";
+        desc = "MISC_CTRL6 is system bus arbitration control register 1.
+
+SYS AXI bus arbitration (timeout) control: M3 (USB 3.0/PCIe) port.
+
+Data sheet 3.5.5.2 MISC_CTRL6 (offset 0x18, printed page 3-81, `hi3519v101--Hi3519V101-Datasheet.txt` line 8206).";
+
+        enum MISC_CTRL6_sysaxi_timeout_en_m3_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
         field {
             name = "sysaxi_timeout_en_m3";
+            desc = "Timeout count enable for the SYS AXI bus M3 port (USB3.0_PCIe)";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL6_sysaxi_timeout_en_m3_enum;
             reset = 0x0;
         } sysaxi_timeout_en_m3[15:15];
 
         field {
             name = "sysaxi_timeout_value_m3";
+            desc = "Timeout count value of the SYS AXI bus M3 port (USB3.0_PCIe) Count value = sysaxi_timeout_value_m3 x 2";
+            sw = rw;
+            hw = r;
             reset = 0x0;
         } sysaxi_timeout_value_m3[14:0];
-    } MISC_CTRL6 @ 0x0018;
+    } MISC_CTRL6 @ 0x18;
 
     reg {
         name = "System bus arbitration control register 2";
+        desc = "MISC_CTRL7 is system bus arbitration control register 2.
+
+SYS AXI bus arbitration (timeout) control: M5 (AHB2) port.
+
+Data sheet 3.5.5.2 MISC_CTRL7 (offset 0x1C, printed page 3-82, `hi3519v101--Hi3519V101-Datasheet.txt` line 8253).";
+
+        enum MISC_CTRL7_sysaxi_timeout_en_m5_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
         field {
             name = "sysaxi_timeout_en_m5";
+            desc = "Timeout count enable for the SYS AXI bus M5 port (AHB2)";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL7_sysaxi_timeout_en_m5_enum;
             reset = 0x0;
         } sysaxi_timeout_en_m5[15:15];
 
         field {
             name = "sysaxi_timeout_value_m5";
+            desc = "Timeout count value of the SYS AXI bus M5 port (AHB2) Count value = sysaxi_timeout_value_m5 x 2";
+            sw = rw;
+            hw = r;
             reset = 0x0;
         } sysaxi_timeout_value_m5[14:0];
-    } MISC_CTRL7 @ 0x001C;
+    } MISC_CTRL7 @ 0x1C;
 
     reg {
         name = "System bus priority control register 0";
+        desc = "MISC_CTRL8 is system bus priority control register 0.
+
+SYS AXI master port priorities. Reset header 0x0054_3210: the documented ports M1, M2, M3 and M5 hold 0, 1, 2 and 4; the priority nibbles 3 and 5 of the undocumented ports M4 (bits 14:12) and M6 (bits 22:20) fall into the reserved ranges [15:11] and [31:19] and are modelled as the RO fields reserved_nz_15_11 (0x6) and reserved_nz_31_19 (0xA). 7 is the highest priority.
+
+Data sheet 3.5.5.2 MISC_CTRL8 (offset 0x20, printed page 3-82, `hi3519v101--Hi3519V101-Datasheet.txt` line 8287).";
+
+        field {
+            name = "reserved_nz_31_19";
+            desc = "Reserved in the bit table, but the data sheet total reset value of this register has these bits set (reset 0xA).";
+            sw = r;
+            hw = w;
+            reset = 0xA;
+        } reserved_nz_31_19[31:19];
+
         field {
             name = "sysaxi_port5_pri";
+            desc = "Priority of the SYS AXI bus M5 port (AHB2) The value 7 indicates the highest priority.";
+            sw = rw;
+            hw = r;
             reset = 0x4;
         } sysaxi_port5_pri[18:16];
 
         field {
+            name = "reserved_nz_15_11";
+            desc = "Reserved in the bit table, but the data sheet total reset value of this register has these bits set (reset 0x6).";
+            sw = r;
+            hw = w;
+            reset = 0x6;
+        } reserved_nz_15_11[15:11];
+
+        field {
             name = "sysaxi_port3_pri";
+            desc = "Priority of the SYS AXI bus M3 port (USB3.0_PCIE) The value 7 indicates the highest priority.";
+            sw = rw;
+            hw = r;
             reset = 0x2;
         } sysaxi_port3_pri[10:8];
 
         field {
             name = "sysaxi_port2_pri";
+            desc = "Priority of the SYS AXI bus M2 port (AHB1) The value 7 indicates the highest priority.";
+            sw = rw;
+            hw = r;
             reset = 0x1;
         } sysaxi_port2_pri[6:4];
 
         field {
             name = "sysaxi_port1_pri";
+            desc = "Priority of the SYS AXI bus M1 port (AHB0) The value 7 indicates the highest priority.";
+            sw = rw;
+            hw = r;
             reset = 0x0;
         } sysaxi_port1_pri[2:0];
-    } MISC_CTRL8 @ 0x0020;
+    } MISC_CTRL8 @ 0x20;
 
     reg {
         name = "System bus priority control register 1";
+        desc = "MISC_CTRL9 is system bus priority control register 1.
+
+SYS AXI slave port priorities (S1 MDDRC, S2 peri_axi); 3 is the highest priority.
+
+Data sheet 3.5.5.2 MISC_CTRL9 (offset 0x24, printed page 3-83, `hi3519v101--Hi3519V101-Datasheet.txt` line 8338).";
+
         field {
             name = "sysaxi_slave_priority_s2";
+            desc = "Bus access priority of the SYS AXI s2 (peri_axi) port The value 3 indicates the highest priority.";
+            sw = rw;
+            hw = r;
             reset = 0x1;
         } sysaxi_slave_priority_s2[6:4];
 
         field {
             name = "sysaxi_slave_priority_s1";
+            desc = "Bus access priority of the SYS AXI s1 (MDDRC) port The value 3 indicates the highest priority.";
+            sw = rw;
+            hw = r;
             reset = 0x0;
         } sysaxi_slave_priority_s1[2:0];
-    } MISC_CTRL9 @ 0x0024;
+    } MISC_CTRL9 @ 0x24;
 
     reg {
         name = "Media 0 bus arbitration control register 0";
+        desc = "MISC_CTRL11 is media 0 bus arbitration control register 0.
+
+Data sheet 3.5.5.2 MISC_CTRL11 (offset 0x2C, printed page 3-84, `hi3519v101--Hi3519V101-Datasheet.txt` line 8381).";
+
+        enum MISC_CTRL11_media0axi_timeout_en_m2_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
         field {
             name = "media0axi_timeout_en_m2";
+            desc = "Timeout count enable for the media 0 AXI bus M2 port (GDC)";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL11_media0axi_timeout_en_m2_enum;
             reset = 0x0;
         } media0axi_timeout_en_m2[31:31];
 
         field {
             name = "media0axi_timeout_value_m2";
+            desc = "Timeout count value of the media 0 AXI bus M2 port (GDC) Count value = media0axi_timeout_value_m2 x 2";
+            sw = rw;
+            hw = r;
             reset = 0x0;
         } media0axi_timeout_value_m2[30:16];
 
+        enum MISC_CTRL11_media0axi_timeout_en_m1_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
         field {
             name = "media0axi_timeout_en_m1";
+            desc = "Timeout count enable for the media 0 AXI bus M1 port (VGS)";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL11_media0axi_timeout_en_m1_enum;
             reset = 0x0;
         } media0axi_timeout_en_m1[15:15];
 
         field {
             name = "media0axi_timeout_value_m1";
+            desc = "Timeout count value of the media 0 AXI bus M1 port (VGS) Count value = media0axi_timeout_value_m1 x 2";
+            sw = rw;
+            hw = r;
             reset = 0x0;
         } media0axi_timeout_value_m1[14:0];
-    } MISC_CTRL11 @ 0x002C;
+    } MISC_CTRL11 @ 0x2C;
 
     reg {
         name = "Media 0 bus arbitration control register 1";
+        desc = "MISC_CTRL12 is media 0 bus arbitration control register 1.
+
+Data sheet 3.5.5.2 MISC_CTRL12 (offset 0x30, printed page 3-85, `hi3519v101--Hi3519V101-Datasheet.txt` line 8433).";
+
+        enum MISC_CTRL12_media0axi_timeout_en_m4_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
         field {
             name = "media0axi_timeout_en_m4";
+            desc = "Timeout count enable for the media 0 AXI bus M4 port (IVE)";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL12_media0axi_timeout_en_m4_enum;
             reset = 0x0;
         } media0axi_timeout_en_m4[31:31];
 
         field {
             name = "media0axi_timeout_value_m4";
+            desc = "Timeout count value of the media 0 AXI bus M4 port (IVE) Count value = media0axi_timeout_value_m2 x 2";
+            sw = rw;
+            hw = r;
             reset = 0x0;
         } media0axi_timeout_value_m4[30:16];
-    } MISC_CTRL12 @ 0x0030;
+    } MISC_CTRL12 @ 0x30;
 
     reg {
         name = "Media 0 bus priority control register";
+        desc = "MISC_CTRL14 is a media 0 bus priority control register.
+
+Media 0 AXI bus priorities. Reset header 0x123: bit 8 is reserved in the rows and set in the header (modelled as reserved_nz_10_8, reset 0x1).
+
+Data sheet 3.5.5.2 MISC_CTRL14 (offset 0x38, printed page 3-86, `hi3519v101--Hi3519V101-Datasheet.txt` line 8478).";
+
         field {
             name = "media0axi_port4_pri";
+            desc = "Priority of the media 0 AXI bus M4 port (IVE) The value 3 indicates the highest priority.";
+            sw = rw;
+            hw = r;
             reset = 0x0;
         } media0axi_port4_pri[14:12];
 
         field {
+            name = "reserved_nz_10_8";
+            desc = "Reserved in the bit table, but the data sheet total reset value of this register has these bits set (reset 0x1).";
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } reserved_nz_10_8[10:8];
+
+        field {
             name = "media0axi_port2_pri";
+            desc = "Priority of the media 0 AXI bus M2 port (GDC) The value 3 indicates the highest priority.";
+            sw = rw;
+            hw = r;
             reset = 0x2;
         } media0axi_port2_pri[6:4];
 
         field {
             name = "media0axi_port1_pri";
+            desc = "Priority of the media 0 AXI bus M1 port (VGS) The value 3 indicates the highest priority.";
+            sw = rw;
+            hw = r;
             reset = 0x3;
         } media0axi_port1_pri[2:0];
-    } MISC_CTRL14 @ 0x0038;
+    } MISC_CTRL14 @ 0x38;
 
     reg {
         name = "Media 1 bus arbitration control register 0";
+        desc = "MISC_CTRL15 is media 1 bus arbitration control register 0.
+
+Data sheet 3.5.5.2 MISC_CTRL15 (offset 0x3C, printed page 3-87, `hi3519v101--Hi3519V101-Datasheet.txt` line 8529).";
+
+        enum MISC_CTRL15_media1axi_timeout_en_m2_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
         field {
             name = "media1axi_timeout_en_m2";
+            desc = "Timeout count enable for the media 1 AXI bus M2 port (JPGE)";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL15_media1axi_timeout_en_m2_enum;
             reset = 0x0;
         } media1axi_timeout_en_m2[31:31];
 
         field {
             name = "media1axi_timeout_value_m2";
+            desc = "Timeout count value of the media 1 AXI bus M2 port (JPGE) Count value = media1axi_timeout_value_m2 x 2";
+            sw = rw;
+            hw = r;
             reset = 0x0;
         } media1axi_timeout_value_m2[30:16];
 
+        enum MISC_CTRL15_media1axi_timeout_en_m1_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
         field {
             name = "media1axi_timeout_en_m1";
+            desc = "Timeout count enable for the media 1 AXI bus M1 port (TDE)";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL15_media1axi_timeout_en_m1_enum;
             reset = 0x0;
         } media1axi_timeout_en_m1[15:15];
 
         field {
             name = "media1axi_timeout_value_m1";
+            desc = "Timeout count value of the media 1 AXI bus M1 port (TDE) Count value = media1axi_timeout_value_m1 x 2";
+            sw = rw;
+            hw = r;
             reset = 0x0;
         } media1axi_timeout_value_m1[14:0];
-    } MISC_CTRL15 @ 0x003C;
+    } MISC_CTRL15 @ 0x3C;
 
     reg {
         name = "Media 1 bus arbitration control register 1";
+        desc = "MISC_CTRL16 is media 1 bus arbitration control register 1.
+
+Data sheet 3.5.5.2 MISC_CTRL16 (offset 0x40, printed page 3-88, `hi3519v101--Hi3519V101-Datasheet.txt` line 8577).";
+
+        enum MISC_CTRL16_media1axi_timeout_en_m4_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
         field {
             name = "media1axi_timeout_en_m4";
+            desc = "Timeout count enable for the media 1 AXI bus M4 port (DDRT)";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL16_media1axi_timeout_en_m4_enum;
             reset = 0x0;
         } media1axi_timeout_en_m4[31:31];
 
         field {
             name = "media1axi_timeout_value_m4";
+            desc = "Timeout count value of the media 1 AXI bus M4 port (DDRT) Count value = media1axi_timeout_value_m4 x 2";
+            sw = rw;
+            hw = r;
             reset = 0x0;
         } media1axi_timeout_value_m4[30:16];
 
+        enum MISC_CTRL16_media1axi_timeout_en_m3_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
         field {
             name = "media1axi_timeout_en_m3";
+            desc = "Timeout count enable for the media 1 AXI bus M3 port (GZIP)";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL16_media1axi_timeout_en_m3_enum;
             reset = 0x0;
         } media1axi_timeout_en_m3[15:15];
 
         field {
             name = "media1axi_timeout_value_m3";
+            desc = "Timeout count value of the media 1 AXI bus M3 port (GZIP) Count value = media1axi_timeout_value_m3 x 2";
+            sw = rw;
+            hw = r;
             reset = 0x0;
         } media1axi_timeout_value_m3[14:0];
-    } MISC_CTRL16 @ 0x0040;
+    } MISC_CTRL16 @ 0x40;
 
     reg {
         name = "Media 1 bus priority control register";
+        desc = "MISC_CTRL18 is a media 1 bus priority control register.
+
+Data sheet 3.5.5.2 MISC_CTRL18 (offset 0x48, printed page 3-89, `hi3519v101--Hi3519V101-Datasheet.txt` line 8625).";
+
         field {
             name = "media1axi_port4_pri";
+            desc = "Priority of the media 1 AXI bus M4 port (DDRT) The value 3 indicates the highest priority.";
+            sw = rw;
+            hw = r;
             reset = 0x3;
         } media1axi_port4_pri[14:12];
 
         field {
             name = "media1axi_port3_pri";
+            desc = "Priority of the media 1 AXI bus M3 port (GZIP) The value 3 indicates the highest priority.";
+            sw = rw;
+            hw = r;
             reset = 0x2;
         } media1axi_port3_pri[10:8];
 
         field {
             name = "media1axi_port2_pri";
+            desc = "Priority of the media 1 AXI bus M2 port (JPGE) The value 3 indicates the highest priority.";
+            sw = rw;
+            hw = r;
             reset = 0x1;
         } media1axi_port2_pri[6:4];
 
         field {
             name = "media1axi_port1_pri";
+            desc = "Priority of the media 1 AXI bus M1 port (TDE) The value 3 indicates the highest priority.";
+            sw = rw;
+            hw = r;
             reset = 0x0;
         } media1axi_port1_pri[2:0];
-    } MISC_CTRL18 @ 0x0048;
+    } MISC_CTRL18 @ 0x48;
 
     reg {
         name = "DDR QoS control register 0";
+        desc = "MISC_CTRL21 is DDR QoS control register 0.
+
+DDR QoS value (write, group 0) of CCI, DDRT and GZIP. The reset header 0x7654_3210 holds the nibbles of the unlisted masters in the reserved ranges (modelled as reserved_nz fields).
+
+Data sheet 3.5.5.2 MISC_CTRL21 (offset 0x54, printed page 3-90, `hi3519v101--Hi3519V101-Datasheet.txt` line 8680).";
+
         field {
             name = "cci_w_qosmap";
+            desc = "QoS value of the CCI write command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x7;
         } cci_w_qosmap[31:28];
 
         field {
+            name = "reserved_nz_27_24";
+            desc = "Reserved in the bit table, but the data sheet total reset value of this register has these bits set (reset 0x6).";
+            sw = r;
+            hw = w;
+            reset = 0x6;
+        } reserved_nz_27_24[27:24];
+
+        field {
             name = "ddrt_w_qosmap";
+            desc = "QoS value of the DDRT write command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x5;
         } ddrt_w_qosmap[23:20];
 
         field {
+            name = "reserved_nz_19_12";
+            desc = "Reserved in the bit table, but the data sheet total reset value of this register has these bits set (reset 0x43).";
+            sw = r;
+            hw = w;
+            reset = 0x43;
+        } reserved_nz_19_12[19:12];
+
+        field {
             name = "gzip_qosmap";
+            desc = "QoS value of the GZIP write command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x2;
         } gzip_qosmap[11:8];
-    } MISC_CTRL21 @ 0x0054;
+
+        field {
+            name = "reserved_nz_7_4";
+            desc = "Reserved in the bit table, but the data sheet total reset value of this register has these bits set (reset 0x1).";
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } reserved_nz_7_4[7:4];
+    } MISC_CTRL21 @ 0x54;
 
     reg {
         name = "DDR QoS control register 1";
+        desc = "MISC_CTRL22 is DDR QoS control register 1.
+
+Data sheet 3.5.5.2 MISC_CTRL22 (offset 0x58, printed page 3-90, `hi3519v101--Hi3519V101-Datasheet.txt` line 8706).";
+
         field {
             name = "vicap1_w_qosmap";
+            desc = "QoS value of the VICAP1 write command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x7;
         } vicap1_w_qosmap[31:28];
 
         field {
             name = "hash_w_qosmap";
+            desc = "QoS value of the HASH write command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x6;
         } hash_w_qosmap[27:24];
 
         field {
             name = "ive_w_qosmap";
+            desc = "QoS value of the IVE write command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x5;
         } ive_w_qosmap[23:20];
 
         field {
             name = "aio_w_qosmap";
+            desc = "QoS value of the AIAO write command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x4;
         } aio_w_qosmap[19:16];
 
         field {
             name = "jpge_w_qosmap";
+            desc = "QoS value of the JPGE write command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x3;
         } jpge_w_qosmap[15:12];
 
         field {
             name = "tde_w_qosmap";
+            desc = "QoS value of the TDE write command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x2;
         } tde_w_qosmap[11:8];
 
         field {
             name = "vicap0_w_qosmap";
+            desc = "QoS value of the VICAP0 write command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x1;
         } vicap0_w_qosmap[7:4];
 
         field {
             name = "vdp_w_qosmap";
+            desc = "QoS value of the VDP write command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x0;
         } vdp_w_qosmap[3:0];
-    } MISC_CTRL22 @ 0x0058;
+    } MISC_CTRL22 @ 0x58;
 
     reg {
         name = "DDR QoS control register 2";
+        desc = "MISC_CTRL23 is DDR QoS control register 2.
+
+Data sheet 3.5.5.2 MISC_CTRL23 (offset 0x5C, printed page 3-91, `hi3519v101--Hi3519V101-Datasheet.txt` line 8739).";
+
         field {
             name = "emmc_w_qosmap";
+            desc = "QoS value of the MMC2 write command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x7;
         } emmc_w_qosmap[31:28];
 
         field {
             name = "a17_w_qosmap";
+            desc = "QoS value of the A17 write command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x6;
         } a17_w_qosmap[27:24];
 
         field {
             name = "fmc_w_qosmap";
+            desc = "QoS value of the FMC write command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x5;
         } fmc_w_qosmap[23:20];
 
         field {
             name = "sdio1_w_qosmap";
+            desc = "QoS value of MMC1 write command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x4;
         } sdio1_w_qosmap[19:16];
 
         field {
             name = "sdio0_w_qosmap";
+            desc = "QoS value of MMC0 write command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x3;
         } sdio0_w_qosmap[15:12];
 
         field {
             name = "a7_w_qosmap";
+            desc = "QoS value of the CPU write command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x2;
         } a7_w_qosmap[11:8];
 
         field {
             name = "vpss0_w_qosmap";
+            desc = "QoS value of the VPSS0 write command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x1;
         } vpss0_w_qosmap[7:4];
 
         field {
             name = "vgs_w_qosmap";
+            desc = "QoS value of the VGS write command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x0;
         } vgs_w_qosmap[3:0];
-    } MISC_CTRL23 @ 0x005C;
+    } MISC_CTRL23 @ 0x5C;
 
     reg {
         name = "DDR QoS control register 3";
+        desc = "MISC_CTRL24 is DDR QoS control register 3.
+
+Data sheet 3.5.5.2 MISC_CTRL24 (offset 0x60, printed page 3-91, `hi3519v101--Hi3519V101-Datasheet.txt` line 8767).";
+
         field {
             name = "gdc_w_qosmap";
+            desc = "QoS value of the GDC write command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x7;
         } gdc_w_qosmap[31:28];
 
         field {
             name = "usb3_pcie_w_qosmap";
+            desc = "QoS value of USB 3.0 PCIe write command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x6;
         } usb3_pcie_w_qosmap[27:24];
 
         field {
             name = "vedu_w_qosmap";
+            desc = "QoS value of the VEDU write command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x5;
         } vedu_w_qosmap[23:20];
 
         field {
             name = "usb2_w_qosmap";
+            desc = "QoS value of USB 2.0 write command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x4;
         } usb2_w_qosmap[19:16];
 
         field {
             name = "cipher_w_qosmap";
+            desc = "QoS value of the cipher write command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x3;
         } cipher_w_qosmap[15:12];
 
         field {
             name = "dma2_w_qosmap";
+            desc = "QoS value of DMA2 write command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x2;
         } dma2_w_qosmap[11:8];
 
         field {
             name = "dma1_w_qosmap";
+            desc = "QoS value of DMA1 write command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x1;
         } dma1_w_qosmap[7:4];
 
         field {
             name = "gsf_w_qosmap";
+            desc = "QoS value of the GSF write command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x0;
         } gsf_w_qosmap[3:0];
-    } MISC_CTRL24 @ 0x0060;
+    } MISC_CTRL24 @ 0x60;
 
     reg {
         name = "DDR QoS control register 4";
+        desc = "MISC_CTRL25 is DDR QoS control register 4.
+
+DDR QoS value (read, group 0) of CCI, DDRT and GZIP. The reset header 0x7654_3210 holds the nibbles of the unlisted masters in the reserved ranges (modelled as reserved_nz fields).
+
+Data sheet 3.5.5.2 MISC_CTRL25 (offset 0x64, printed page 3-92, `hi3519v101--Hi3519V101-Datasheet.txt` line 8806).";
+
         field {
             name = "cci_r_qosmap";
+            desc = "QoS value of the CCI read command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x7;
         } cci_r_qosmap[31:28];
 
         field {
+            name = "reserved_nz_27_24";
+            desc = "Reserved in the bit table, but the data sheet total reset value of this register has these bits set (reset 0x6).";
+            sw = r;
+            hw = w;
+            reset = 0x6;
+        } reserved_nz_27_24[27:24];
+
+        field {
             name = "ddrt_r_qosmap";
+            desc = "QoS value of the DDRT read command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x5;
         } ddrt_r_qosmap[23:20];
 
         field {
+            name = "reserved_nz_19_12";
+            desc = "Reserved in the bit table, but the data sheet total reset value of this register has these bits set (reset 0x43).";
+            sw = r;
+            hw = w;
+            reset = 0x43;
+        } reserved_nz_19_12[19:12];
+
+        field {
             name = "gzip_r_qosmap";
+            desc = "QoS value of the GZIP read command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x2;
         } gzip_r_qosmap[11:8];
-    } MISC_CTRL25 @ 0x0064;
+
+        field {
+            name = "reserved_nz_7_4";
+            desc = "Reserved in the bit table, but the data sheet total reset value of this register has these bits set (reset 0x1).";
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } reserved_nz_7_4[7:4];
+    } MISC_CTRL25 @ 0x64;
 
     reg {
         name = "DDR QoS control register 5";
+        desc = "MISC_CTRL26 is DDR QoS control register 5.
+
+Data sheet 3.5.5.2 MISC_CTRL26 (offset 0x68, printed page 3-92, `hi3519v101--Hi3519V101-Datasheet.txt` line 8830).";
+
         field {
             name = "vicap1_r_qosmap";
+            desc = "QoS value of the VICAP1 read command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x7;
         } vicap1_r_qosmap[31:28];
 
         field {
             name = "hash_r_qosmap";
+            desc = "QoS value of the HASH read command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x6;
         } hash_r_qosmap[27:24];
 
         field {
             name = "ive_r_qosmap";
+            desc = "QoS value of the IVE read command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x5;
         } ive_r_qosmap[23:20];
 
         field {
             name = "aio_r_qosmap";
+            desc = "QoS value of the AIAO read command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x4;
         } aio_r_qosmap[19:16];
 
         field {
             name = "jpge_r_qosmap";
+            desc = "QoS value of the JPGE read command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x3;
         } jpge_r_qosmap[15:12];
 
         field {
             name = "tde_r_qosmap";
+            desc = "QoS value of the TDE read command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x2;
         } tde_r_qosmap[11:8];
 
         field {
             name = "vicap0_r_qosmap";
+            desc = "QoS value of the VICAP0 read command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x1;
         } vicap0_r_qosmap[7:4];
 
         field {
             name = "vdp_r_qosmap";
+            desc = "QoS value of the VDP read command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x0;
         } vdp_r_qosmap[3:0];
-    } MISC_CTRL26 @ 0x0068;
+    } MISC_CTRL26 @ 0x68;
 
     reg {
         name = "DDR QoS control register 6";
+        desc = "MISC_CTRL27 is DDR QoS control register 6.
+
+Data sheet 3.5.5.2 MISC_CTRL27 (offset 0x6C, printed page 3-93, `hi3519v101--Hi3519V101-Datasheet.txt` line 8869).";
+
         field {
             name = "emmc_r_qosmap";
+            desc = "QoS value of the MMC2 read command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x7;
         } emmc_r_qosmap[31:28];
 
         field {
             name = "a17_r_qosmap";
+            desc = "QoS value of the A17 read command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x6;
         } a17_r_qosmap[27:24];
 
         field {
             name = "fmc_r_qosmap";
+            desc = "QoS value of the FMC read command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x5;
         } fmc_r_qosmap[23:20];
 
         field {
             name = "sdio1_r_qosmap";
+            desc = "QoS value of the MMC1 read command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x4;
         } sdio1_r_qosmap[19:16];
 
         field {
             name = "sdio0_r_qosmap";
+            desc = "QoS value of the MMC0 read command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x3;
         } sdio0_r_qosmap[15:12];
 
         field {
             name = "a7_r_qosmap";
+            desc = "QoS value of the A7 read command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x2;
         } a7_r_qosmap[11:8];
 
         field {
             name = "vpss0_r_qosmap";
+            desc = "QoS value of the VPSS0 read command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x1;
         } vpss0_r_qosmap[7:4];
 
         field {
             name = "vgs_r_qosmap";
+            desc = "QoS value of the VGS read command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x0;
         } vgs_r_qosmap[3:0];
-    } MISC_CTRL27 @ 0x006C;
+    } MISC_CTRL27 @ 0x6C;
 
     reg {
         name = "DDR QoS control register 7";
+        desc = "MISC_CTRL28 is DDR QoS control register 7.
+
+Data sheet 3.5.5.2 MISC_CTRL28 (offset 0x70, printed page 3-94, `hi3519v101--Hi3519V101-Datasheet.txt` line 8907).";
+
         field {
             name = "gdc_r_qosmap";
+            desc = "QoS value of the GDC read command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x7;
         } gdc_r_qosmap[31:28];
 
         field {
             name = "usb3_pcie_r_qosmap";
+            desc = "QoS value of the USB3.0_PCIe read command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x6;
         } usb3_pcie_r_qosmap[27:24];
 
         field {
             name = "vedu_r_qosmap";
+            desc = "QoS value of the VEDU read command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x5;
         } vedu_r_qosmap[23:20];
 
         field {
             name = "usb2_r_qosmap";
+            desc = "QoS value of the USB 2.0 read command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x4;
         } usb2_r_qosmap[19:16];
 
         field {
             name = "cipher_r_qosmap";
+            desc = "QoS value of the cipher read command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x3;
         } cipher_r_qosmap[15:12];
 
         field {
             name = "dma2_r_qosmap";
+            desc = "QoS value of the DMA2 read command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x2;
         } dma2_r_qosmap[11:8];
 
         field {
             name = "dma1_r_qosmap";
+            desc = "QoS value of the DMA1 read command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x1;
         } dma1_r_qosmap[7:4];
 
         field {
             name = "gsf_r_qosmap";
+            desc = "QoS value of the GSF read command in the MDDRC";
+            sw = rw;
+            hw = r;
             reset = 0x0;
         } gsf_r_qosmap[3:0];
-    } MISC_CTRL28 @ 0x0070;
+    } MISC_CTRL28 @ 0x70;
 
     reg {
         name = "USB 3.0 control register";
+        desc = "MISC_CTRL29 is a USB 3.0 control register.
+
+USB 3.0 controller glue. Header reset 0x0004_0FD0: bit 7 is reserved in the rows and set in the header (modelled as reserved_nz_7_7).
+
+Data sheet 3.5.5.2 MISC_CTRL29 (offset 0x74, printed page 3-95, `hi3519v101--Hi3519V101-Datasheet.txt` line 8946).";
+
         field {
             name = "usb3_host_current_belt";
+            desc = "Current BELT value of USB 3.0 This signal indicates the minimum value of all received BELT values and the BELT that is set by the Set LTV command. This signal is valid only in host mode.";
             sw = r;
             hw = w;
             reset = 0x0;
         } usb3_host_current_belt[31:20];
 
+        enum MISC_CTRL29_usb3_host_port_power_control_present_enum {
+            PORT_HAS_NO = 0 { name = "Port Has No"; desc = "The port has no power control switch, and USB device is always supplied with power."; };
+            PORT_HAS_POWER = 1 { name = "Port Has Power"; desc = "The port has a power control switch to control the power supplied to the USB device."; };
+        };
+
         field {
             name = "usb3_host_port_power_control_present";
+            desc = "Whether the USB 3.0 port has a power control switch";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL29_usb3_host_port_power_control_present_enum;
             reset = 0x0;
         } usb3_host_port_power_control_present[19:19];
 
         field {
             name = "usb3_fladj_30mhz_reg";
+            desc = "HS clock jitter control";
+            sw = rw;
+            hw = r;
             reset = 0x20;
         } usb3_fladj_30mhz_reg[18:13];
 
+        enum MISC_CTRL29_usb3_host_msi_enable_enum {
+            LEVEL_TYPE = 0 { name = "Level Type"; desc = "level type"; };
+            PULSE_TYPE = 1 { name = "Pulse Type"; desc = "pulse type"; };
+        };
+
         field {
             name = "usb3_host_msi_enable";
+            desc = "Interrupt type of the USB 3.0 port";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL29_usb3_host_msi_enable_enum;
             reset = 0x0;
         } usb3_host_msi_enable[12:12];
 
         field {
             name = "usb3_bus_filter_bypass";
+            desc = "USB 3.0 bus filter bypass. This field must be set to 4'b1111.";
+            sw = rw;
+            hw = r;
             reset = 0xF;
         } usb3_bus_filter_bypass[11:8];
 
         field {
+            name = "reserved_nz_7_7";
+            desc = "Reserved in the bit table, but the data sheet total reset value of this register has these bits set (reset 0x1).";
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } reserved_nz_7_7[7:7];
+
+        enum MISC_CTRL29_usb3_port_pwren_pol_enum {
+            ACTIVE_LOW = 0 { name = "Active Low"; desc = "active low"; };
+            ACTIVE_HIGH = 1 { name = "Active High"; desc = "active high"; };
+        };
+
+        field {
             name = "usb3_port_pwren_pol";
+            desc = "Power enable polarity control for the USB 3.0 port";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL29_usb3_port_pwren_pol_enum;
             reset = 0x1;
         } usb3_port_pwren_pol[6:6];
 
+        enum MISC_CTRL29_usb3_port_pwr_ctrl_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled (output by the USB 3.0 controller)"; };
+        };
+
         field {
             name = "usb3_port_pwr_ctrl_en";
+            desc = "USB 3.0 port power enable";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL29_usb3_port_pwr_ctrl_en_enum;
             reset = 0x1;
         } usb3_port_pwr_ctrl_en[4:4];
 
+        enum MISC_CTRL29_usb3_host_u3_port_disable_enum {
+            ENABLED = 0 { name = "Enabled"; desc = "enabled"; };
+            DISABLED = 1 { name = "Disabled"; desc = "disabled"; };
+        };
+
         field {
             name = "usb3_host_u3_port_disable";
+            desc = "USB 3.0 (SS) port disable";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL29_usb3_host_u3_port_disable_enum;
             reset = 0x0;
         } usb3_host_u3_port_disable[3:3];
 
+        enum MISC_CTRL29_usb3_host_u2_port_disable_enum {
+            ENABLED = 0 { name = "Enabled"; desc = "enabled"; };
+            DISABLED = 1 { name = "Disabled"; desc = "disabled"; };
+        };
+
         field {
             name = "usb3_host_u2_port_disable";
+            desc = "USB 2.0 (HS) port disable";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL29_usb3_host_u2_port_disable_enum;
             reset = 0x0;
         } usb3_host_u2_port_disable[2:2];
 
+        enum MISC_CTRL29_usb3_hub_port_perm_attach_enum {
+            NO = 0 { name = "No"; desc = "no"; };
+            YES = 1 { name = "Yes"; desc = "yes"; };
+        };
+
         field {
             name = "usb3_hub_port_perm_attach";
+            desc = "Whether the downstream port device is permanently attached to the USB 3.0 port.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL29_usb3_hub_port_perm_attach_enum;
             reset = 0x0;
         } usb3_hub_port_perm_attach[1:0];
-    } MISC_CTRL29 @ 0x0074;
+    } MISC_CTRL29 @ 0x74;
 
     reg {
         name = "USB 2.0 control register 0";
+        desc = "MISC_CTRL30 is USB 2.0 control register 0.
+
+USB 2.0 controller control register 0. Header reset 0x0003_13A0: bits 17 and 5 are reserved in the rows and set in the header (modelled as reserved_nz fields). The vendor U-Boot keeps these defaults.
+
+Data sheet 3.5.5.2 MISC_CTRL30 (offset 0x78, printed page 3-96, `hi3519v101--Hi3519V101-Datasheet.txt` line 9032).";
+
+        enum MISC_CTRL30_usb_chipid_enum {
+            HOST = 0 { name = "Host"; desc = "host"; };
+            DEVICE = 1 { name = "Device"; desc = "device"; };
+        };
+
         field {
             name = "usb_chipid";
+            desc = "USB2.0 host and device switching control";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL30_usb_chipid_enum;
             reset = 0x0;
         } usb_chipid[31:31];
 
+        enum MISC_CTRL30_ss_scaledown_mode_enum {
+            SCALE_DOWN_OFF = 0 { name = "Scale Down Off"; desc = "scale-down disabled for all timings, the actual timings are used"; };
+            ALL_EXCEPT_SUSPEND_RESUME = 1 { name = "All Except Suspend Resume"; desc = "scale-down enabled for all timings except the suspended and resumed timings in device mode"; };
+            SUSPEND_RESUME_ONLY = 2 { name = "Suspend Resume Only"; desc = "scale-down enabled only for the suspended and resumed timings in device mode"; };
+            ALL_TIMINGS = 3 { name = "All Timings"; desc = "scale-down timings of bit 0 and bit 1 are both enabled"; };
+        };
+
         field {
             name = "ss_scaledown_mode";
+            desc = "Scale-down mode";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL30_ss_scaledown_mode_enum;
             reset = 0x0;
         } ss_scaledown_mode[25:24];
 
+        enum MISC_CTRL30_ss_hubsetup_min_i_enum {
+            FIVE_IDLE_FULL = 0 { name = "Five Idle Full"; desc = "five idle full-speed cycles"; };
+            FOUR_FULL_SPEED = 1 { name = "Four Full Speed"; desc = "four full-speed idle cycles"; };
+        };
+
         field {
             name = "ss_hubsetup_min_i";
+            desc = "Number of idle cycles after the full-speed preamble packet";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL30_ss_hubsetup_min_i_enum;
             reset = 0x0;
         } ss_hubsetup_min_i[22:22];
 
         field {
+            name = "reserved_nz_21_17";
+            desc = "Reserved in the bit table, but the data sheet total reset value of this register has these bits set (reset 0x1).";
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } reserved_nz_21_17[21:17];
+
+        enum MISC_CTRL30_usbpwr_pctrl_enum {
+            ACTIVE_LOW = 0 { name = "Active Low"; desc = "active low"; };
+            ACTIVE_HIGH = 1 { name = "Active High"; desc = "active high"; };
+        };
+
+        field {
             name = "usbpwr_pctrl";
+            desc = "USB 2.0 PHY power shutdown polarity";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL30_usbpwr_pctrl_enum;
             reset = 0x1;
         } usbpwr_pctrl[16:16];
 
+        enum MISC_CTRL30_port_pwr_en_enum {
+            POWER_SHUT_DOWN = 0 { name = "Power Shut Down"; desc = "The power is shut down."; };
+            ENABLED = 1 { name = "Enabled"; desc = "The controller power output is enabled."; };
+        };
+
         field {
             name = "port_pwr_en";
+            desc = "USB 2.0 PHY power shutdown control";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL30_port_pwr_en_enum;
             reset = 0x1;
         } port_pwr_en[12:12];
 
+        enum MISC_CTRL30_ss_ena_incr16_i_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled (default)"; };
+        };
+
         field {
             name = "ss_ena_incr16_i";
+            desc = "AHB burst16 enable";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL30_ss_ena_incr16_i_enum;
             reset = 0x1;
         } ss_ena_incr16_i[9:9];
 
+        enum MISC_CTRL30_ss_ena_incr8_i_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled (default)"; };
+        };
+
         field {
             name = "ss_ena_incr8_i";
+            desc = "AHB burst8 enable";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL30_ss_ena_incr8_i_enum;
             reset = 0x1;
         } ss_ena_incr8_i[8:8];
 
+        enum MISC_CTRL30_ss_ena_incr4_i_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled (default)"; };
+        };
+
         field {
             name = "ss_ena_incr4_i";
+            desc = "AHB burst4 enable";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL30_ss_ena_incr4_i_enum;
             reset = 0x1;
         } ss_ena_incr4_i[7:7];
 
+        enum MISC_CTRL30_ss_ena_incr_align_i_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled (default)"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
         field {
             name = "ss_ena_incr_align_i";
+            desc = "Burst alignment enable";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL30_ss_ena_incr_align_i_enum;
             reset = 0x0;
         } ss_ena_incr_align_i[6:6];
 
         field {
+            name = "reserved_nz_5_3";
+            desc = "Reserved in the bit table, but the data sheet total reset value of this register has these bits set (reset 0x4).";
+            sw = r;
+            hw = w;
+            reset = 0x4;
+        } reserved_nz_5_3[5:3];
+
+        enum MISC_CTRL30_app_start_clk_i_enum {
+            OHCI_WORKS_NORMALLY = 0 { name = "Ohci Works Normally"; desc = "The OHCI works normally. (default)"; };
+            ENABLED = 1 { name = "Enabled"; desc = "The OHCI clock is enabled in suspend mode."; };
+        };
+
+        field {
             name = "app_start_clk_i";
+            desc = "Open host controller interface (OHCI) clock control";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL30_app_start_clk_i_enum;
             reset = 0x0;
         } app_start_clk_i[2:2];
 
         field {
             name = "ohci_susp_lgcy_i";
+            desc = "Strap input signal when the OHCI is suspended";
+            sw = rw;
+            hw = r;
             reset = 0x0;
         } ohci_susp_lgcy_i[1:1];
 
+        enum MISC_CTRL30_ss_word_if_i_enum {
+            WIDTH_8 = 0 { name = "Width 8"; desc = "8 bits (default)"; };
+            WIDTH_16 = 1 { name = "Width 16"; desc = "16 bits"; };
+        };
+
         field {
             name = "ss_word_if_i";
+            desc = "Data bit width select for the UTMI interface";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL30_ss_word_if_i_enum;
             reset = 0x0;
         } ss_word_if_i[0:0];
-    } MISC_CTRL30 @ 0x0078;
+    } MISC_CTRL30 @ 0x78;
 
     reg {
         name = "Test clock and USB 2.0 PHY access test channel mode selection register";
+        desc = "MISC_CTRL31 is a test clock and USB 2.0 PHY access test channel mode selection register.
+
+Data sheet 3.5.5.2 MISC_CTRL31 (offset 0x7C, printed page 3-98, `hi3519v101--Hi3519V101-Datasheet.txt` line 9125).";
+
+        enum MISC_CTRL31_test_clk_sel_enum {
+            PLL_TEST_OUT_0 = 0 { name = "Pll Test Out 0"; desc = "pll_test_out[0]"; };
+            PLL_TEST_OUT_1 = 1 { name = "Pll Test Out 1"; desc = "pll_test_out[1]"; };
+            PLL_TEST_OUT_2 = 2 { name = "Pll Test Out 2"; desc = "pll_test_out[2]"; };
+            PLL_TEST_OUT_3 = 3 { name = "Pll Test Out 3"; desc = "pll_test_out[3]"; };
+            PLL_TEST_OUT_4 = 4 { name = "Pll Test Out 4"; desc = "pll_test_out[4]"; };
+            CLK_TEST_OUT_0 = 5 { name = "Clk Test Out 0"; desc = "clk_test_out[0]"; };
+            CLK_TEST_OUT_1 = 6 { name = "Clk Test Out 1"; desc = "clk_test_out[1]"; };
+            CLK_TEST_OUT_2 = 7 { name = "Clk Test Out 2"; desc = "clk_test_out[2]"; };
+            CLK_24M = 8 { name = "Clk 24M"; desc = "clk_24m"; };
+            CLK_RTC_OUT = 9 { name = "Clk Rtc Out"; desc = "clk_rtc_out"; };
+            RTC_ISO = 10 { name = "Rtc Iso"; desc = "rtc_iso"; };
+            AUDIO_CODEC_MCLK = 11 { name = "Audio Codec Mclk"; desc = "audio_codec_mclk"; };
+            COMBO_PHY_REFCLK = 12 { name = "Combo Phy Refclk"; desc = "combo_phy_refclk"; };
+            RESERVED_13 = 13 { name = "Reserved 13"; desc = "reserved"; };
+            RESERVED_14 = 14 { name = "Reserved 14"; desc = "reserved"; };
+            RESERVED_15 = 15 { name = "Reserved 15"; desc = "reserved"; };
+        };
+
         field {
             name = "test_clk_sel";
+            desc = "Test clock select. Other values are reserved.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL31_test_clk_sel_enum;
             reset = 0x3;
         } test_clk_sel[3:0];
-    } MISC_CTRL31 @ 0x007C;
+    } MISC_CTRL31 @ 0x7C;
 
     reg {
         name = "USB 2.0 PHY test channel register";
+        desc = "MISC_CTRL32 is a USB 2.0 PHY test channel register.
+
+USB 2.0 PHY test channel: usb2_phy_testaddr [18:8] (the extractor glued the name of the next row, usb2_phy_testdatain, onto it; the bit table names the 11-bit address field usb2_phy_testaddr).
+
+Data sheet 3.5.5.2 MISC_CTRL32 (offset 0x80, printed page 3-99, `hi3519v101--Hi3519V101-Datasheet.txt` line 9171).";
+
         field {
             name = "usb2_phy_testdataout";
+            desc = "USB 2.0 PHY read test data bus";
             sw = r;
             hw = w;
             reset = 0x0;
         } usb2_phy_testdataout[31:24];
 
+        enum MISC_CTRL32_usb2_phy_test_rstn_enum {
+            RESET = 0 { name = "Reset"; desc = "reset"; };
+            NOT_RESET = 1 { name = "Not Reset"; desc = "not reset"; };
+        };
+
         field {
             name = "usb2_phy_test_rstn";
+            desc = "USB 2.0 PHY read test interface reset";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL32_usb2_phy_test_rstn_enum;
             reset = 0x0;
         } usb2_phy_test_rstn[23:23];
 
         field {
             name = "usb2_phy_wren";
+            desc = "Read/Write control signal of the USB 2.0 PHY test interface register. If the value is changed from 0 to 1, the write operation is performed; if the value is 0, the read operation is performed.";
+            sw = rw;
+            hw = r;
             reset = 0x0;
         } usb2_phy_wren[21:21];
 
         field {
             name = "usb2_phy_testaddr";
+            desc = "Address for the USB 2.0 PHY test interface register";
+            sw = rw;
+            hw = r;
             reset = 0x0;
         } usb2_phy_testaddr[18:8];
 
         field {
             name = "usb2_phy_testdatain";
+            desc = "USB 2.0 PHY write test data bus";
+            sw = rw;
+            hw = r;
             reset = 0x0;
         } usb2_phy_testdatain[7:0];
-    } MISC_CTRL32 @ 0x0080;
+    } MISC_CTRL32 @ 0x80;
 
     reg {
         name = "COMB PHY test channel register";
+        desc = "MISC_CTRL33 is a COMB PHY test channel register.
+
+COMB PHY test channel (write [16], address [12:8], write data [3:0], read data [7:4]). The vendor U-Boot (board/hi3519v101/board.c) writes sequences such as 0x1506, 0x11506, 0x1506, 0x0 (address 0x15, data 6, pulse of the write bit) to program the PHY.
+
+Data sheet 3.5.5.2 MISC_CTRL33 (offset 0x84, printed page 3-100, `hi3519v101--Hi3519V101-Datasheet.txt` line 9221).";
+
+        enum MISC_CTRL33_comb_phy_test_write_enum {
+            READ_ENABLE = 0 { name = "Read Enable"; desc = "read enable"; };
+            WRITE_ENABLE = 1 { name = "Write Enable"; desc = "write enable"; };
+        };
+
         field {
             name = "comb_phy_test_write";
+            desc = "Read/Write control for the COMB PHY test register";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL33_comb_phy_test_write_enum;
             reset = 0x0;
         } comb_phy_test_write[16:16];
 
         field {
             name = "comb_phy_test_addr";
+            desc = "Address of the COMB PHY test register";
+            sw = rw;
+            hw = r;
             reset = 0x0;
         } comb_phy_test_addr[12:8];
 
         field {
             name = "comb_phy_test_o";
+            desc = "Read data of the COMB PHY test register";
             sw = r;
             hw = w;
             reset = 0x0;
@@ -883,604 +2036,1676 @@ regfile eMISC_CTRL {
 
         field {
             name = "comb_phy_test_i";
+            desc = "Write data of the COMB PHY test register";
+            sw = rw;
+            hw = r;
             reset = 0x0;
         } comb_phy_test_i[3:0];
-    } MISC_CTRL33 @ 0x0084;
+    } MISC_CTRL33 @ 0x84;
 
     reg {
         name = "PCIe and USB 3.0 PHY control register";
+        desc = "MISC_CTRL34 is a PCIe and USB 3.0 PHY control register.
+
+Data sheet 3.5.5.2 MISC_CTRL34 (offset 0x88, printed page 3-100, `hi3519v101--Hi3519V101-Datasheet.txt` line 9260).";
+
+        enum MISC_CTRL34_combo_phy_tx_deemp_enum {
+            DB_M6 = 0 { name = "Db M6"; desc = "-6 dB"; };
+            DB_M3P5 = 1 { name = "Db M3P5"; desc = "-3.5 dB"; };
+            DB_0 = 2 { name = "Db 0"; desc = "-0 dB"; };
+            DB_M5P5 = 3 { name = "Db M5P5"; desc = "-5.5 dB"; };
+            DB_M6P5 = 4 { name = "Db M6P5"; desc = "-6.5 dB"; };
+            DB_M4 = 5 { name = "Db M4"; desc = "-4 dB"; };
+            DB_M1 = 6 { name = "Db M1"; desc = "-1 dB"; };
+            DB_M3 = 7 { name = "Db M3"; desc = "-3 dB"; };
+        };
+
         field {
             name = "combo_phy_tx_deemp";
+            desc = "Select of the COMBO PHY transmitter de-emphasis";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL34_combo_phy_tx_deemp_enum;
             reset = 0x0;
         } combo_phy_tx_deemp[14:12];
 
+        enum MISC_CTRL34_combo_phy_tx_deemp_sel_enum {
+            CONTROLLER = 0 { name = "Controller"; desc = "combo_phy_tx_deemp comes from the USB 3.0/PCIe controller"; };
+            REGISTER = 1 { name = "Register"; desc = "combo_phy_tx_deemp comes from the register field"; };
+        };
+
         field {
             name = "combo_phy_tx_deemp_sel";
+            desc = "combo_phy_tx_deemp input";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL34_combo_phy_tx_deemp_sel_enum;
             reset = 0x0;
         } combo_phy_tx_deemp_sel[11:11];
 
+        enum MISC_CTRL34_pcie_clkreq_filter_bypass_enum {
+            ENABLED = 0 { name = "Enabled"; desc = "enabled"; };
+            DISABLED = 1 { name = "Disabled"; desc = "disabled"; };
+        };
+
         field {
             name = "pcie_clkreq_filter_bypass";
+            desc = "PCIe_clk_req input filtering control";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL34_pcie_clkreq_filter_bypass_enum;
             reset = 0x1;
         } pcie_clkreq_filter_bypass[9:9];
 
+        enum MISC_CTRL34_usb3_phy_rx_standby_enum {
+            PHY_RX_ACTIVE = 0 { name = "Phy Rx Active"; desc = "The PHY RX is in active status."; };
+            PHY_RX_STANDBY = 1 { name = "Phy Rx Standby"; desc = "The PHY RX is in standby status."; };
+        };
+
         field {
             name = "usb3_phy_rx_standby";
+            desc = "USB 3.0 PHY RX status";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL34_usb3_phy_rx_standby_enum;
             reset = 0x0;
         } usb3_phy_rx_standby[5:5];
 
+        enum MISC_CTRL34_usb3_phy_bypass_codec_enum {
+            NORMAL = 0 { name = "Normal"; desc = "The 8b/10b encoding/decoding function is normally implemented."; };
+            BYPASSED = 1 { name = "Bypassed"; desc = "The 8b/10b encoding/decoding function is bypassed."; };
+        };
+
         field {
             name = "usb3_phy_bypass_codec";
+            desc = "USB 3.0 PHY BYPASS_CODEC control";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL34_usb3_phy_bypass_codec_enum;
             reset = 0x0;
         } usb3_phy_bypass_codec[4:4];
 
+        enum MISC_CTRL34_pcie_phy_rx_standby_enum {
+            PHY_RX_ACTIVE = 0 { name = "Phy Rx Active"; desc = "The PHY RX is in active status."; };
+            PHY_RX_STANDBY = 1 { name = "Phy Rx Standby"; desc = "The PHY RX is in standby status."; };
+        };
+
         field {
             name = "pcie_phy_rx_standby";
+            desc = "PCIe PHY RX status in P0/P0s mode";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL34_pcie_phy_rx_standby_enum;
             reset = 0x0;
         } pcie_phy_rx_standby[1:1];
 
+        enum MISC_CTRL34_pcie_phy_bypass_codec_enum {
+            NORMAL = 0 { name = "Normal"; desc = "The 8b/10b encoding/decoding function is normally implemented."; };
+            BYPASSED = 1 { name = "Bypassed"; desc = "The 8b/10b encoding/decoding function is bypassed."; };
+        };
+
         field {
             name = "pcie_phy_bypass_codec";
+            desc = "PCIe PHY BYPASS_CODEC control";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL34_pcie_phy_bypass_codec_enum;
             reset = 0x0;
         } pcie_phy_bypass_codec[0:0];
-    } MISC_CTRL34 @ 0x0088;
+    } MISC_CTRL34 @ 0x88;
 
     reg {
         name = "Audio CODEC ANA register 0";
+        desc = "MISC_CTRL45 is audio CODEC ANA register 0 (this register cannot be soft reset).
+
+ACODEC analog register 0 (not soft-resettable). Bits [7] and [6] are acodec_pd_micbias2 and acodec_pd_micbias1 in the description (the extractor's name wrapped across lines at dump lines 9466-9474). The row for bit 1 says `this bit is set to 1 in normal mode`, but the header reset 0x6405_FCFD has bit 1 = 0; the header was followed (low confidence). Header-only bits 30, 29, 26, 15 and 10 are modelled as reserved_nz fields.
+
+Data sheet 3.5.5.2 MISC_CTRL45 (offset 0xB4, printed page 3-102, `hi3519v101--Hi3519V101-Datasheet.txt` line 9343).";
+
+        field {
+            name = "reserved_nz_31_19";
+            desc = "Reserved in the bit table, but the data sheet total reset value of this register has these bits set (reset 0xC80).";
+            sw = r;
+            hw = w;
+            reset = 0xC80;
+        } reserved_nz_31_19[31:19];
+
+        enum MISC_CTRL45_acodec_dacl_pop_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "The pop tone removal function is disabled."; };
+            ENABLED = 1 { name = "Enabled"; desc = "The pop tone removal function is enabled."; };
+        };
+
         field {
             name = "acodec_dacl_pop_en";
+            desc = "Audio-left channel pop circuit enable Note: acodec_dacl_pop_en must be set to 1 only during the power-on/power-off pop suppression process and be set to 0 when the DAC channel works properly.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL45_acodec_dacl_pop_en_enum;
             reset = 0x1;
         } acodec_dacl_pop_en[18:18];
 
+        enum MISC_CTRL45_acodec_dacr_pop_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "The pop tone removal function is disabled."; };
+            ENABLED = 1 { name = "Enabled"; desc = "The pop tone removal function is enabled."; };
+        };
+
         field {
             name = "acodec_dacr_pop_en";
+            desc = "Audio-right channel pop circuit enable Note: acodec_dacr_pop_en must be set to 1 only during the power-on/power-off pop suppression process and be set to 0 when the DAC channel works properly.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL45_acodec_dacr_pop_en_enum;
             reset = 0x1;
         } acodec_dacr_pop_en[16:16];
 
         field {
+            name = "reserved_nz_15_15";
+            desc = "Reserved in the bit table, but the data sheet total reset value of this register has these bits set (reset 0x1).";
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } reserved_nz_15_15[15:15];
+
+        enum MISC_CTRL45_acodec_mute_dacr_enum {
+            NORMAL = 0 { name = "Normal"; desc = "The DAC audio-right channel works properly."; };
+            MUTED = 1 { name = "Muted"; desc = "The DAC audio-right channel is muted."; };
+        };
+
+        field {
             name = "acodec_mute_dacr";
+            desc = "Mute control for the DAC audio-right channel";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL45_acodec_mute_dacr_enum;
             reset = 0x1;
         } acodec_mute_dacr[14:14];
 
+        enum MISC_CTRL45_acodec_mute_dacl_enum {
+            NORMAL = 0 { name = "Normal"; desc = "The DAC audio-left channel works properly."; };
+            MUTED = 1 { name = "Muted"; desc = "The DAC audio-left channel is muted."; };
+        };
+
         field {
             name = "acodec_mute_dacl";
+            desc = "Mute control for the DAC audio-left channel";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL45_acodec_mute_dacl_enum;
             reset = 0x1;
         } acodec_mute_dacl[13:13];
 
+        enum MISC_CTRL45_acodec_pd_dacr_enum {
+            NORMAL = 0 { name = "Normal"; desc = "The analog DACR works properly."; };
+            POWERED_DOWN = 1 { name = "Powered Down"; desc = "The analog DACR is powered down."; };
+        };
+
         field {
             name = "acodec_pd_dacr";
+            desc = "Power-down control for the DAC audio-right channel (DACR)";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL45_acodec_pd_dacr_enum;
             reset = 0x1;
         } acodec_pd_dacr[12:12];
 
+        enum MISC_CTRL45_acodec_pd_dacl_enum {
+            NORMAL = 0 { name = "Normal"; desc = "The analog DACL works properly."; };
+            POWERED_DOWN = 1 { name = "Powered Down"; desc = "The analog DACL is powered down."; };
+        };
+
         field {
             name = "acodec_pd_dacl";
+            desc = "Power-down control for the DAC audio-left channel (DACL)";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL45_acodec_pd_dacl_enum;
             reset = 0x1;
         } acodec_pd_dacl[11:11];
 
         field {
+            name = "reserved_nz_10_10";
+            desc = "Reserved in the bit table, but the data sheet total reset value of this register has these bits set (reset 0x1).";
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } reserved_nz_10_10[10:10];
+
+        enum MISC_CTRL45_acodec_pd_dacr_dff_enum {
+            NORMAL = 0 { name = "Normal"; desc = "The DACR D trigger works properly."; };
+            POWERED_DOWN = 1 { name = "Powered Down"; desc = "The DACR D trigger is powered down."; };
+        };
+
+        field {
             name = "acodec_pd_dacr_dff";
+            desc = "Power-down control for the DACR D trigger";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL45_acodec_pd_dacr_dff_enum;
             reset = 0x0;
         } acodec_pd_dacr_dff[9:9];
 
+        enum MISC_CTRL45_acodec_pd_dacl_dff_enum {
+            NORMAL = 0 { name = "Normal"; desc = "The DACL D trigger works properly."; };
+            POWERED_DOWN = 1 { name = "Powered Down"; desc = "The DACL D trigger is powered down."; };
+        };
+
         field {
             name = "acodec_pd_dacl_dff";
+            desc = "Power-down control for the DACL D trigger";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL45_acodec_pd_dacl_dff_enum;
             reset = 0x0;
         } acodec_pd_dacl_dff[8:8];
 
+        enum MISC_CTRL45_acodec_pd_micbias2_enum {
+            NORMAL = 0 { name = "Normal"; desc = "The MICBIAS2 works properly."; };
+            POWERED_DOWN = 1 { name = "Powered Down"; desc = "The MICBIAS2 is powered down."; };
+        };
+
         field {
             name = "acodec_pd_micbias2";
+            desc = "Power down control for the MICBIAS2";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL45_acodec_pd_micbias2_enum;
             reset = 0x1;
         } acodec_pd_micbias2[7:7];
 
+        enum MISC_CTRL45_acodec_pd_micbias1_enum {
+            NORMAL = 0 { name = "Normal"; desc = "The MICBIAS1 works properly."; };
+            POWERED_DOWN = 1 { name = "Powered Down"; desc = "The MICBIAS1 is powered down."; };
+        };
+
         field {
             name = "acodec_pd_micbias1";
+            desc = "Power down control for the MICBIAS1";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL45_acodec_pd_micbias1_enum;
             reset = 0x1;
         } acodec_pd_micbias1[6:6];
 
+        enum MISC_CTRL45_acodec_pd_linein_r_enum {
+            NORMAL = 0 { name = "Normal"; desc = "The LINEIN_R works properly."; };
+            POWERED_DOWN = 1 { name = "Powered Down"; desc = "The LINEIN_R is powered down."; };
+        };
+
         field {
             name = "acodec_pd_linein_r";
+            desc = "LINEIN_R power-down control";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL45_acodec_pd_linein_r_enum;
             reset = 0x1;
         } acodec_pd_linein_r[5:5];
 
+        enum MISC_CTRL45_acodec_pd_linein_l_enum {
+            NORMAL = 0 { name = "Normal"; desc = "The LINEIN_L works properly."; };
+            POWERED_DOWN = 1 { name = "Powered Down"; desc = "The LINEIN_L is powered down."; };
+        };
+
         field {
             name = "acodec_pd_linein_l";
+            desc = "LINEIN_L power-down control";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL45_acodec_pd_linein_l_enum;
             reset = 0x1;
         } acodec_pd_linein_l[4:4];
 
+        enum MISC_CTRL45_acodec_pd_adcr_enum {
+            NORMAL = 0 { name = "Normal"; desc = "The digital and analog ADCRs work properly."; };
+            POWERED_DOWN = 1 { name = "Powered Down"; desc = "The digital and analog ADCRs are powered down."; };
+        };
+
         field {
             name = "acodec_pd_adcr";
+            desc = "Power down control for the ADC audio-right channel (ADCR)";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL45_acodec_pd_adcr_enum;
             reset = 0x1;
         } acodec_pd_adcr[3:3];
 
+        enum MISC_CTRL45_acodec_pd_adcl_enum {
+            NORMAL = 0 { name = "Normal"; desc = "The digital and analog ADCLs work properly."; };
+            POWERED_DOWN = 1 { name = "Powered Down"; desc = "The digital and analog ADCLs are powered down."; };
+        };
+
         field {
             name = "acodec_pd_adcl";
+            desc = "Power down control for the ADC audio-left channel (ADCL)";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL45_acodec_pd_adcl_enum;
             reset = 0x1;
         } acodec_pd_adcl[2:2];
 
+        enum MISC_CTRL45_acodec_pd_vref_enum {
+            NORMAL = 0 { name = "Normal"; desc = "The reference voltage works properly."; };
+            POWERED_DOWN = 1 { name = "Powered Down"; desc = "The reference voltage is powered down."; };
+        };
+
         field {
             name = "acodec_pd_vref";
+            desc = "Power-down control for the reference voltage";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL45_acodec_pd_vref_enum;
             reset = 0x1;
         } acodec_pd_vref[0:0];
-    } MISC_CTRL45 @ 0x00B4;
+    } MISC_CTRL45 @ 0xB4;
 
     reg {
         name = "Audio CODEC ANA register 1";
+        desc = "MISC_CTRL46 is audio CODEC ANA register 1 (this register cannot be soft reset).
+
+ACODEC analog register 1 (not soft-resettable): line-in select, gain and mute. Header bit 2 (reserved in the rows) is modelled as the RO field reserved_nz_3_0 (reset 0x4). The LINEINR gain table is split across a page break in the dump (dump lines 9548-9570); the 0x05..0x10 rows belong to acodec_linein_r_gain_codec and are the same as the LINEINL table. The data sheet writes the last gain step as -1.5 dB (0x10), which is out of sequence; it is kept as printed (low confidence).
+
+Data sheet 3.5.5.2 MISC_CTRL46 (offset 0xB8, printed page 3-104, `hi3519v101--Hi3519V101-Datasheet.txt` line 9456).";
+
+        enum MISC_CTRL46_acodec_linein_r_sel_enum {
+            IN0R_IN0L_DIFFERENTIAL = 0 { name = "In0R In0L Differential"; desc = "IN0R (positive end)/IN0L (negative end) differential input"; };
+            IN0R_SINGLE_ENDED = 1 { name = "In0R Single Ended"; desc = "IN0R single-ended input"; };
+            IN0R_IN1R_DIFFERENTIAL = 2 { name = "In0R In1R Differential"; desc = "IN0R (positive end)/IN1R (negative end) differential input"; };
+            IN1R_SINGLE_ENDED = 3 { name = "In1R Single Ended"; desc = "IN1R single-ended input"; };
+            IN1R_IN1L_DIFFERENTIAL = 4 { name = "In1R In1L Differential"; desc = "IN1R (positive end)/IN1L (negative end) differential input"; };
+            RESERVED_5 = 5 { name = "Reserved 5"; desc = "reserved"; };
+            RESERVED_6 = 6 { name = "Reserved 6"; desc = "reserved"; };
+            RESERVED_7 = 7 { name = "Reserved 7"; desc = "reserved"; };
+            RESERVED_8 = 8 { name = "Reserved 8"; desc = "reserved"; };
+            RESERVED_9 = 9 { name = "Reserved 9"; desc = "reserved"; };
+            RESERVED_10 = 10 { name = "Reserved 10"; desc = "reserved"; };
+            RESERVED_11 = 11 { name = "Reserved 11"; desc = "reserved"; };
+            RESERVED_12 = 12 { name = "Reserved 12"; desc = "reserved"; };
+            RESERVED_13 = 13 { name = "Reserved 13"; desc = "reserved"; };
+            RESERVED_14 = 14 { name = "Reserved 14"; desc = "reserved"; };
+            RESERVED_15 = 15 { name = "Reserved 15"; desc = "reserved"; };
+        };
+
         field {
             name = "acodec_linein_r_sel";
+            desc = "Input signal select for the line-in right channel. Other values are reserved.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL46_acodec_linein_r_sel_enum;
             reset = 0x0;
         } acodec_linein_r_sel[31:28];
 
+        enum MISC_CTRL46_acodec_linein_l_sel_enum {
+            IN0L_IN0R_DIFFERENTIAL = 0 { name = "In0L In0R Differential"; desc = "IN0L (positive end)/IN0R (negative end) differential input"; };
+            IN0L_SINGLE_ENDED = 1 { name = "In0L Single Ended"; desc = "IN0L single-ended input"; };
+            IN0L_IN1L_DIFFERENTIAL = 2 { name = "In0L In1L Differential"; desc = "IN0L (positive end)/IN1L (negative end) differential input"; };
+            IN1L_SINGLE_ENDED = 3 { name = "In1L Single Ended"; desc = "IN1L single-ended input"; };
+            IN1L_IN1R_DIFFERENTIAL = 4 { name = "In1L In1R Differential"; desc = "IN1L (positive end)/IN1R (negative end) differential input"; };
+            RESERVED_5 = 5 { name = "Reserved 5"; desc = "reserved"; };
+            RESERVED_6 = 6 { name = "Reserved 6"; desc = "reserved"; };
+            RESERVED_7 = 7 { name = "Reserved 7"; desc = "reserved"; };
+            RESERVED_8 = 8 { name = "Reserved 8"; desc = "reserved"; };
+            RESERVED_9 = 9 { name = "Reserved 9"; desc = "reserved"; };
+            RESERVED_10 = 10 { name = "Reserved 10"; desc = "reserved"; };
+            RESERVED_11 = 11 { name = "Reserved 11"; desc = "reserved"; };
+            RESERVED_12 = 12 { name = "Reserved 12"; desc = "reserved"; };
+            RESERVED_13 = 13 { name = "Reserved 13"; desc = "reserved"; };
+            RESERVED_14 = 14 { name = "Reserved 14"; desc = "reserved"; };
+            RESERVED_15 = 15 { name = "Reserved 15"; desc = "reserved"; };
+        };
+
         field {
             name = "acodec_linein_l_sel";
+            desc = "Input signal select for the line-in left channel. Other values are reserved.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL46_acodec_linein_l_sel_enum;
             reset = 0x0;
         } acodec_linein_l_sel[27:24];
 
+        enum MISC_CTRL46_acodec_adcr_gain_boost_enum {
+            DB_0 = 0 { name = "Db 0"; desc = "0 dB"; };
+            DB_20 = 1 { name = "Db 20"; desc = "20 dB"; };
+        };
+
         field {
             name = "acodec_adcr_gain_boost";
+            desc = "ADCR gain boost control";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL46_acodec_adcr_gain_boost_enum;
             reset = 0x0;
         } acodec_adcr_gain_boost[22:22];
 
+        enum MISC_CTRL46_acodec_linein_r_gain_codec_enum {
+            DB_0 = 0x0 { name = "Db 0"; desc = "0 dB"; };
+            DB_2 = 0x1 { name = "Db 2"; desc = "2 dB"; };
+            DB_4 = 0x2 { name = "Db 4"; desc = "4 dB"; };
+            DB_6 = 0x3 { name = "Db 6"; desc = "6 dB"; };
+            DB_8 = 0x4 { name = "Db 8"; desc = "8 dB"; };
+            DB_10 = 0x5 { name = "Db 10"; desc = "10 dB"; };
+            DB_12 = 0x6 { name = "Db 12"; desc = "12 dB"; };
+            DB_14 = 0x7 { name = "Db 14"; desc = "14 dB"; };
+            DB_16 = 0x8 { name = "Db 16"; desc = "16 dB"; };
+            DB_18 = 0x9 { name = "Db 18"; desc = "18 dB"; };
+            DB_20 = 0xA { name = "Db 20"; desc = "20 dB"; };
+            DB_22 = 0xB { name = "Db 22"; desc = "22 dB"; };
+            DB_24 = 0xC { name = "Db 24"; desc = "24 dB"; };
+            DB_26 = 0xD { name = "Db 26"; desc = "26 dB"; };
+            DB_28 = 0xE { name = "Db 28"; desc = "28 dB"; };
+            DB_30 = 0xF { name = "Db 30"; desc = "30 dB"; };
+            DB_M1P5 = 0x10 { name = "Db M1P5"; desc = "-1.5 dB"; };
+            RESERVED_17 = 0x11 { name = "Reserved 17"; desc = "reserved"; };
+            RESERVED_18 = 0x12 { name = "Reserved 18"; desc = "reserved"; };
+            RESERVED_19 = 0x13 { name = "Reserved 19"; desc = "reserved"; };
+            RESERVED_20 = 0x14 { name = "Reserved 20"; desc = "reserved"; };
+            RESERVED_21 = 0x15 { name = "Reserved 21"; desc = "reserved"; };
+            RESERVED_22 = 0x16 { name = "Reserved 22"; desc = "reserved"; };
+            RESERVED_23 = 0x17 { name = "Reserved 23"; desc = "reserved"; };
+            RESERVED_24 = 0x18 { name = "Reserved 24"; desc = "reserved"; };
+            RESERVED_25 = 0x19 { name = "Reserved 25"; desc = "reserved"; };
+            RESERVED_26 = 0x1A { name = "Reserved 26"; desc = "reserved"; };
+            RESERVED_27 = 0x1B { name = "Reserved 27"; desc = "reserved"; };
+            RESERVED_28 = 0x1C { name = "Reserved 28"; desc = "reserved"; };
+            RESERVED_29 = 0x1D { name = "Reserved 29"; desc = "reserved"; };
+            RESERVED_30 = 0x1E { name = "Reserved 30"; desc = "reserved"; };
+            RESERVED_31 = 0x1F { name = "Reserved 31"; desc = "reserved"; };
+        };
+
         field {
             name = "acodec_linein_r_gain_codec";
+            desc = "LINEINR input gain control. Other values are reserved.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL46_acodec_linein_r_gain_codec_enum;
             reset = 0x0;
         } acodec_linein_r_gain_codec[20:16];
 
+        enum MISC_CTRL46_acodec_adcl_gain_boost_enum {
+            DB_0 = 0 { name = "Db 0"; desc = "0 dB"; };
+            DB_20 = 1 { name = "Db 20"; desc = "20 dB"; };
+        };
+
         field {
             name = "acodec_adcl_gain_boost";
+            desc = "ADCL gain boost control";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL46_acodec_adcl_gain_boost_enum;
             reset = 0x0;
         } acodec_adcl_gain_boost[14:14];
 
+        enum MISC_CTRL46_acodec_linein_l_gain_code_enum {
+            DB_0 = 0x0 { name = "Db 0"; desc = "0 dB"; };
+            DB_2 = 0x1 { name = "Db 2"; desc = "2 dB"; };
+            DB_4 = 0x2 { name = "Db 4"; desc = "4 dB"; };
+            DB_6 = 0x3 { name = "Db 6"; desc = "6 dB"; };
+            DB_8 = 0x4 { name = "Db 8"; desc = "8 dB"; };
+            DB_10 = 0x5 { name = "Db 10"; desc = "10 dB"; };
+            DB_12 = 0x6 { name = "Db 12"; desc = "12 dB"; };
+            DB_14 = 0x7 { name = "Db 14"; desc = "14 dB"; };
+            DB_16 = 0x8 { name = "Db 16"; desc = "16 dB"; };
+            DB_18 = 0x9 { name = "Db 18"; desc = "18 dB"; };
+            DB_20 = 0xA { name = "Db 20"; desc = "20 dB"; };
+            DB_22 = 0xB { name = "Db 22"; desc = "22 dB"; };
+            DB_24 = 0xC { name = "Db 24"; desc = "24 dB"; };
+            DB_26 = 0xD { name = "Db 26"; desc = "26 dB"; };
+            DB_28 = 0xE { name = "Db 28"; desc = "28 dB"; };
+            DB_30 = 0xF { name = "Db 30"; desc = "30 dB"; };
+            DB_M1P5 = 0x10 { name = "Db M1P5"; desc = "-1.5 dB"; };
+            RESERVED_17 = 0x11 { name = "Reserved 17"; desc = "reserved"; };
+            RESERVED_18 = 0x12 { name = "Reserved 18"; desc = "reserved"; };
+            RESERVED_19 = 0x13 { name = "Reserved 19"; desc = "reserved"; };
+            RESERVED_20 = 0x14 { name = "Reserved 20"; desc = "reserved"; };
+            RESERVED_21 = 0x15 { name = "Reserved 21"; desc = "reserved"; };
+            RESERVED_22 = 0x16 { name = "Reserved 22"; desc = "reserved"; };
+            RESERVED_23 = 0x17 { name = "Reserved 23"; desc = "reserved"; };
+            RESERVED_24 = 0x18 { name = "Reserved 24"; desc = "reserved"; };
+            RESERVED_25 = 0x19 { name = "Reserved 25"; desc = "reserved"; };
+            RESERVED_26 = 0x1A { name = "Reserved 26"; desc = "reserved"; };
+            RESERVED_27 = 0x1B { name = "Reserved 27"; desc = "reserved"; };
+            RESERVED_28 = 0x1C { name = "Reserved 28"; desc = "reserved"; };
+            RESERVED_29 = 0x1D { name = "Reserved 29"; desc = "reserved"; };
+            RESERVED_30 = 0x1E { name = "Reserved 30"; desc = "reserved"; };
+            RESERVED_31 = 0x1F { name = "Reserved 31"; desc = "reserved"; };
+        };
+
         field {
             name = "acodec_linein_l_gain_code";
+            desc = "LINEINL input gain control. Other values are reserved.";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL46_acodec_linein_l_gain_code_enum;
             reset = 0x0;
         } acodec_linein_l_gain_code[12:8];
 
+        enum MISC_CTRL46_acodec_mute_lineinr_enum {
+            NORMAL = 0 { name = "Normal"; desc = "The right channel LINEINR works properly."; };
+            MUTED = 1 { name = "Muted"; desc = "The right channel LINEINR is muted."; };
+        };
+
         field {
             name = "acodec_mute_lineinr";
+            desc = "LINEINR mute control of the right channel";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL46_acodec_mute_lineinr_enum;
             reset = 0x1;
         } acodec_mute_lineinr[5:5];
 
+        enum MISC_CTRL46_acodec_mute_lineinl_enum {
+            NORMAL = 0 { name = "Normal"; desc = "The left channel LINEINL works properly."; };
+            MUTED = 1 { name = "Muted"; desc = "The left channel LINEINL is muted."; };
+        };
+
         field {
             name = "acodec_mute_lineinl";
+            desc = "LINEINL mute control of the left channel";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL46_acodec_mute_lineinl_enum;
             reset = 0x1;
         } acodec_mute_lineinl[4:4];
-    } MISC_CTRL46 @ 0x00B8;
+
+        field {
+            name = "reserved_nz_3_0";
+            desc = "Reserved in the bit table, but the data sheet total reset value of this register has these bits set (reset 0x4).";
+            sw = r;
+            hw = w;
+            reset = 0x4;
+        } reserved_nz_3_0[3:0];
+    } MISC_CTRL46 @ 0xB8;
 
     reg {
         name = "Audio CODEC ANA register 2";
+        desc = "MISC_CTRL47 is audio CODEC ANA register 2 (this register cannot be soft reset).
+
+ACODEC analog register 2 (not soft-resettable): acodec_rst [23]. The header reset 0x4018_008D carries the ACODEC analog defaults in the reserved bits (bits 30, 20, 19, 7, 3, 2, 0); bit 30 is a read-write reserved row (`this bit is set to 0 in normal mode`) and is modelled as reserved_nz.
+
+Data sheet 3.5.5.2 MISC_CTRL47 (offset 0xBC, printed page 3-106, `hi3519v101--Hi3519V101-Datasheet.txt` line 9585).";
+
+        field {
+            name = "reserved_nz_30_30";
+            desc = "Reserved in the bit table, but the data sheet total reset value of this register has these bits set (reset 0x1).";
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } reserved_nz_30_30[30:30];
+
+        enum MISC_CTRL47_acodec_rst_enum {
+            DEASSERT_RESET = 0 { name = "Deassert Reset"; desc = "reset deasserted"; };
+            RESET = 1 { name = "Reset"; desc = "reset"; };
+        };
+
         field {
             name = "acodec_rst";
+            desc = "Analog signal reset";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL47_acodec_rst_enum;
             reset = 0x0;
         } acodec_rst[23:23];
-    } MISC_CTRL47 @ 0x00BC;
+
+        field {
+            name = "reserved_nz_22_0";
+            desc = "Reserved in the bit table, but the data sheet total reset value of this register has these bits set (reset 0x18008D).";
+            sw = r;
+            hw = w;
+            reset = 0x0018008D;
+        } reserved_nz_22_0[22:0];
+    } MISC_CTRL47 @ 0xBC;
 
     reg {
         name = "Audio CODEC ANA register 3";
+        desc = "MISC_CTRL48 is audio CODEC ANA register 3 (this register cannot be soft reset).
+
+ACODEC analog register 3 (not soft-resettable). Header reset 0x20: bit 5 is reserved in the rows and set in the header (modelled as reserved_nz).
+
+Data sheet 3.5.5.2 MISC_CTRL48 (offset 0xC0, printed page 3-107, `hi3519v101--Hi3519V101-Datasheet.txt` line 9626).";
+
+        enum MISC_CTRL48_acodec_vref_exmode_enum {
+            PULL_DOWN_NORMAL = 0 { name = "Pull Down Normal"; desc = "pull-down, normal PD"; };
+            NO_PULL_DOWN = 1 { name = "No Pull Down"; desc = "no pull-down. The external VREF is supported."; };
+        };
+
         field {
             name = "acodec_vref_exmode";
+            desc = "VREF PD";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL48_acodec_vref_exmode_enum;
             reset = 0x0;
         } acodec_vref_exmode[7:7];
 
         field {
+            name = "reserved_nz_6_5";
+            desc = "Reserved in the bit table, but the data sheet total reset value of this register has these bits set (reset 0x1).";
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } reserved_nz_6_5[6:5];
+
+        enum MISC_CTRL48_acodec_pop_res_sel_enum {
+            OHM_100 = 0 { name = "Ohm 100"; desc = "100 Ω"; };
+            OHM_1K = 1 { name = "Ohm 1K"; desc = "1 kΩ"; };
+            OHM_10K = 2 { name = "Ohm 10K"; desc = "10 kΩ"; };
+            OHM_100K = 3 { name = "Ohm 100K"; desc = "100 kΩ"; };
+        };
+
+        field {
             name = "acodec_pop_res_sel";
+            desc = "Resistance of the resistor between the pop-free circuit and the main output";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL48_acodec_pop_res_sel_enum;
             reset = 0x0;
         } acodec_pop_res_sel[4:3];
-    } MISC_CTRL48 @ 0x00C0;
+    } MISC_CTRL48 @ 0xC0;
 
     reg {
         name = "Audio CODEC DIG control register 0";
+        desc = "MISC_CTRL51 is audio CODEC DIG control register 0 (this register cannot be soft reset).
+
+ACODEC digital control 0 (not soft-resettable): DAC/ADC reset (active low, 0 = valid) and enable, and the I2S sampling rate select. The data sheet descriptions of fields [30:24] and [17:13] are lost in the PDF layout; the text is from the dump rows around lines 9722-9790 and the bit table. Header reset 0x00F3_5A4A holds defaults in the reserved bit ranges (bits 23:20, 12, 11, 9, 6, 3, 1; modelled as reserved_nz fields).
+
+Data sheet 3.5.5.2 MISC_CTRL51 (offset 0xCC, printed page 3-107, `hi3519v101--Hi3519V101-Datasheet.txt` line 9666).";
+
+        enum MISC_CTRL51_dacl_rst_n_enum {
+            VALID = 0 { name = "Valid"; desc = "valid (reset active)"; };
+            INVALID = 1 { name = "Invalid"; desc = "invalid (reset released)"; };
+        };
+
         field {
             name = "dacl_rst_n";
+            desc = "DACL reset (active low)";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL51_dacl_rst_n_enum;
             reset = 0x0;
         } dacl_rst_n[31:31];
 
+        enum MISC_CTRL51_dacr_rst_n_enum {
+            VALID = 0 { name = "Valid"; desc = "valid (reset active)"; };
+            INVALID = 1 { name = "Invalid"; desc = "invalid (reset released)"; };
+        };
+
         field {
             name = "dacr_rst_n";
+            desc = "DACR reset (active low)";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL51_dacr_rst_n_enum;
             reset = 0x0;
         } dacr_rst_n[30:30];
 
+        enum MISC_CTRL51_adcl_rst_n_enum {
+            VALID = 0 { name = "Valid"; desc = "valid (reset active)"; };
+            INVALID = 1 { name = "Invalid"; desc = "invalid (reset released)"; };
+        };
+
         field {
             name = "adcl_rst_n";
+            desc = "ADCL reset (active low)";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL51_adcl_rst_n_enum;
             reset = 0x0;
         } adcl_rst_n[29:29];
 
+        enum MISC_CTRL51_adcr_rst_n_enum {
+            VALID = 0 { name = "Valid"; desc = "valid (reset active)"; };
+            INVALID = 1 { name = "Invalid"; desc = "invalid (reset released)"; };
+        };
+
         field {
             name = "adcr_rst_n";
+            desc = "ADCR reset (active low)";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL51_adcr_rst_n_enum;
             reset = 0x0;
         } adcr_rst_n[28:28];
 
+        enum MISC_CTRL51_dacl_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
         field {
             name = "dacl_en";
+            desc = "DACL enable";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL51_dacl_en_enum;
             reset = 0x0;
         } dacl_en[27:27];
 
+        enum MISC_CTRL51_dacr_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
         field {
             name = "dacr_en";
+            desc = "DACR enable";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL51_dacr_en_enum;
             reset = 0x0;
         } dacr_en[26:26];
 
+        enum MISC_CTRL51_adcl_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
         field {
             name = "adcl_en";
+            desc = "ADCL enable";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL51_adcl_en_enum;
             reset = 0x0;
         } adcl_en[25:25];
 
+        enum MISC_CTRL51_adcr_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
         field {
             name = "adcr_en";
+            desc = "ADCR enable";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL51_adcr_en_enum;
             reset = 0x0;
         } adcr_en[24:24];
 
         field {
+            name = "reserved_nz_23_18";
+            desc = "Reserved in the bit table, but the data sheet total reset value of this register has these bits set (reset 0x3C).";
+            sw = r;
+            hw = w;
+            reset = 0x3C;
+        } reserved_nz_23_18[23:18];
+
+        enum MISC_CTRL51_i2s1_fs_sel_enum {
+            MCLK_DIV_512_2 = 0x18 { name = "Mclk Div 512 2"; desc = "mclk/512/2"; };
+            MCLK_DIV_256_2 = 0x19 { name = "Mclk Div 256 2"; desc = "mclk/256/2"; };
+            MCLK_DIV_128_2 = 0x1A { name = "Mclk Div 128 2"; desc = "mclk/128/2 (reset default)"; };
+            MCLK_DIV_64_2 = 0x1B { name = "Mclk Div 64 2"; desc = "mclk/64/2"; };
+            MCLK_DIV_32_2_28 = 0x1C { name = "Mclk Div 32 2 28"; desc = "mclk/32/2 (data sheet 111xx)"; };
+            MCLK_DIV_32_2_29 = 0x1D { name = "Mclk Div 32 2 29"; desc = "mclk/32/2 (data sheet 111xx)"; };
+            MCLK_DIV_32_2_30 = 0x1E { name = "Mclk Div 32 2 30"; desc = "mclk/32/2 (data sheet 111xx)"; };
+            MCLK_DIV_32_2_31 = 0x1F { name = "Mclk Div 32 2 31"; desc = "mclk/32/2 (data sheet 111xx)"; };
+        };
+
+        field {
             name = "i2s1_fs_sel";
+            desc = "Sampling rate of the I2S channel";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL51_i2s1_fs_sel_enum;
             reset = 0x1A;
         } i2s1_fs_sel[17:13];
-    } MISC_CTRL51 @ 0x00CC;
+
+        field {
+            name = "reserved_nz_12_0";
+            desc = "Reserved in the bit table, but the data sheet total reset value of this register has these bits set (reset 0x1A4A).";
+            sw = r;
+            hw = w;
+            reset = 0x1A4A;
+        } reserved_nz_12_0[12:0];
+    } MISC_CTRL51 @ 0xCC;
 
     reg {
         name = "Audio CODEC DIG control register 1";
+        desc = "MISC_CTRL52 is audio CODEC DIG control register 1 (this register cannot be soft reset).
+
+ACODEC digital control 1 (not soft-resettable): DAC soft mute/unmute and rate. Header reset 0x1: bit 0 is reserved in the rows and set in the header (modelled as reserved_nz).
+
+Data sheet 3.5.5.2 MISC_CTRL52 (offset 0xD0, printed page 3-109, `hi3519v101--Hi3519V101-Datasheet.txt` line 9741).";
+
+        enum MISC_CTRL52_smutel_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
         field {
             name = "smutel";
+            desc = "DACL soft mute control";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL52_smutel_enum;
             reset = 0x0;
         } smutel[31:31];
 
+        enum MISC_CTRL52_smuter_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
         field {
             name = "smuter";
+            desc = "DACR soft mute control";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL52_smuter_enum;
             reset = 0x0;
         } smuter[30:30];
 
+        enum MISC_CTRL52_sunmutel_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
         field {
             name = "sunmutel";
+            desc = "DACL soft unmute control";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL52_sunmutel_enum;
             reset = 0x0;
         } sunmutel[29:29];
 
+        enum MISC_CTRL52_sunmuter_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
         field {
             name = "sunmuter";
+            desc = "DACR soft unmute control";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL52_sunmuter_enum;
             reset = 0x0;
         } sunmuter[28:28];
 
+        enum MISC_CTRL52_dacvu_enum {
+            NOT_UPDATED = 0 { name = "Not Updated"; desc = "not updated"; };
+            UPDATED = 1 { name = "Updated"; desc = "updated"; };
+        };
+
         field {
             name = "dacvu";
+            desc = "DAC volume update control";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL52_dacvu_enum;
             reset = 0x0;
         } dacvu[27:27];
 
+        enum MISC_CTRL52_mutel_rate_enum {
+            FS_2 = 0 { name = "Fs 2"; desc = "fs/2"; };
+            FS_8 = 1 { name = "Fs 8"; desc = "fs/8"; };
+            FS_32 = 2 { name = "Fs 32"; desc = "fs/32"; };
+            FS_64 = 3 { name = "Fs 64"; desc = "fs/64"; };
+        };
+
         field {
             name = "mutel_rate";
+            desc = "DACL soft mute rate control";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL52_mutel_rate_enum;
             reset = 0x0;
         } mutel_rate[26:25];
 
+        enum MISC_CTRL52_muter_rate_enum {
+            FS_2 = 0 { name = "Fs 2"; desc = "fs/2"; };
+            FS_8 = 1 { name = "Fs 8"; desc = "fs/8"; };
+            FS_32 = 2 { name = "Fs 32"; desc = "fs/32"; };
+            FS_64 = 3 { name = "Fs 64"; desc = "fs/64"; };
+        };
+
         field {
             name = "muter_rate";
+            desc = "DACR soft mute rate control";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL52_muter_rate_enum;
             reset = 0x0;
         } muter_rate[24:23];
-    } MISC_CTRL52 @ 0x00D0;
+
+        field {
+            name = "reserved_nz_22_0";
+            desc = "Reserved in the bit table, but the data sheet total reset value of this register has these bits set (reset 0x1).";
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } reserved_nz_22_0[22:0];
+    } MISC_CTRL52 @ 0xD0;
 
     reg {
         name = "Audio CODEC DIG control register 2";
+        desc = "MISC_CTRL53 is audio CODEC DIG control register 2 (this register cannot be soft reset).
+
+ACODEC digital control 2: DAC digital volume ((6 - value) dB: 0x00 = 6 dB down to 0x7E = -120 dB, 0x7F = muted; reset value 6 = 0 dB) and digital mute. Header reset 0x0606_2424: bits 13, 10, 5 and 2 are reserved in the rows and set in the header (modelled as reserved_nz).
+
+Data sheet 3.5.5.2 MISC_CTRL53 (offset 0xD4, printed page 3-110, `hi3519v101--Hi3519V101-Datasheet.txt` line 9797).";
+
+        enum MISC_CTRL53_dacl_mute_enum {
+            NORMAL_MODE = 0 { name = "Normal Mode"; desc = "normal mode"; };
+            MUTED = 1 { name = "Muted"; desc = "muted"; };
+        };
+
         field {
             name = "dacl_mute";
+            desc = "DACL digital mute control";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL53_dacl_mute_enum;
             reset = 0x0;
         } dacl_mute[31:31];
 
         field {
             name = "dacl_vol";
+            desc = "DACL digital volume control The volume is calculated as follows: (6 - dacl_vol x 1) dB 0x00: 6 dB 0x01: 5 dB 0x02: 4 dB … 0x7E: -120 dB 0x7F: muted";
+            sw = rw;
+            hw = r;
             reset = 0x6;
         } dacl_vol[30:24];
 
+        enum MISC_CTRL53_dacr_mute_enum {
+            NORMAL_MODE = 0 { name = "Normal Mode"; desc = "normal mode"; };
+            MUTED = 1 { name = "Muted"; desc = "muted"; };
+        };
+
         field {
             name = "dacr_mute";
+            desc = "DACR digital mute control";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL53_dacr_mute_enum;
             reset = 0x0;
         } dacr_mute[23:23];
 
         field {
             name = "dacr_vol";
+            desc = "DACR digital volume control The volume is calculated as follows: (6 - dacr_vol x 1) dB 0x00: 6 dB 0x01: 5 dB 0x02: 4 dB … 0x7E: -120 dB 0x7F: muted";
+            sw = rw;
+            hw = r;
             reset = 0x6;
         } dacr_vol[22:16];
-    } MISC_CTRL53 @ 0x00D4;
+
+        field {
+            name = "reserved_nz_15_0";
+            desc = "Reserved in the bit table, but the data sheet total reset value of this register has these bits set (reset 0x2424).";
+            sw = r;
+            hw = w;
+            reset = 0x2424;
+        } reserved_nz_15_0[15:0];
+    } MISC_CTRL53 @ 0xD4;
 
     reg {
         name = "Audio CODEC DIG control register 3";
+        desc = "MISC_CTRL54 is audio CODEC DIG control register 3 (this register cannot be soft reset).
+
+ACODEC digital control 3: ADC digital volume, mute and high-pass filter enable. Header reset 0x1E1E_0001: bit 0 is reserved in the rows and set in the header (modelled as reserved_nz).
+
+Data sheet 3.5.5.2 MISC_CTRL54 (offset 0xD8, printed page 3-111, `hi3519v101--Hi3519V101-Datasheet.txt` line 9854).";
+
+        enum MISC_CTRL54_adcl_mute_enum {
+            UNMUTED = 0 { name = "Unmuted"; desc = "unmuted"; };
+            MUTED = 1 { name = "Muted"; desc = "muted"; };
+        };
+
         field {
             name = "adcl_mute";
+            desc = "ADCL digital mute control";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL54_adcl_mute_enum;
             reset = 0x0;
         } adcl_mute[31:31];
 
         field {
             name = "adcl_vol";
+            desc = "ADCL volume control The volume is calculated as follows: (30 - adcl_vol x 1) dB 00: 30 dB 01: 29 dB 02: 28 dB … 7E: -96 dB 7F: -97 dB";
+            sw = rw;
+            hw = r;
             reset = 0x1E;
         } adcl_vol[30:24];
 
+        enum MISC_CTRL54_adcr_mute_enum {
+            UNMUTED = 0 { name = "Unmuted"; desc = "unmuted"; };
+            MUTED = 1 { name = "Muted"; desc = "muted"; };
+        };
+
         field {
             name = "adcr_mute";
+            desc = "ADCR digital mute control";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL54_adcr_mute_enum;
             reset = 0x0;
         } adcr_mute[23:23];
 
         field {
             name = "adcr_vol";
+            desc = "ADCR volume control The volume is calculated as follows: (30 - adcr_vol x 1) dB 00: 30 dB 01: 29 dB 02: 28 dB … 7E: -96 dB 7F: -97 dB";
+            sw = rw;
+            hw = r;
             reset = 0x1E;
         } adcr_vol[22:16];
 
+        enum MISC_CTRL54_adcl_hpf_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
         field {
             name = "adcl_hpf_en";
+            desc = "ADCL high-pass filter enable";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL54_adcl_hpf_en_enum;
             reset = 0x0;
         } adcl_hpf_en[15:15];
 
+        enum MISC_CTRL54_adcr_hpf_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
         field {
             name = "adcr_hpf_en";
+            desc = "ADCR high-pass filter enable";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL54_adcr_hpf_en_enum;
             reset = 0x0;
         } adcr_hpf_en[14:14];
-    } MISC_CTRL54 @ 0x00D8;
+
+        field {
+            name = "reserved_nz_13_0";
+            desc = "Reserved in the bit table, but the data sheet total reset value of this register has these bits set (reset 0x1).";
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } reserved_nz_13_0[13:0];
+    } MISC_CTRL54 @ 0xD8;
 
     reg {
         name = "I2S channel selection control register";
+        desc = "MISC_CTRL56 is an I2S channel selection control register (this register cannot be soft reset).
+
+Data sheet 3.5.5.2 MISC_CTRL56 (offset 0xE0, printed page 3-112, `hi3519v101--Hi3519V101-Datasheet.txt` line 9917).";
+
+        enum MISC_CTRL56_i2s_pad_mclk_sel_enum {
+            AIAO_I2S_RX = 0 { name = "Aiao I2S Rx"; desc = "aiao_i2s_rx_mclk"; };
+            AIAO_I2S_TX = 1 { name = "Aiao I2S Tx"; desc = "aiao_i2s_tx_mclk"; };
+        };
+
         field {
             name = "i2s_pad_mclk_sel";
+            desc = "mclk selection for the I2S interface of the chip";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL56_i2s_pad_mclk_sel_enum;
             reset = 0x0;
         } i2s_pad_mclk_sel[3:3];
 
+        enum MISC_CTRL56_i2s_pad_enable_enum {
+            CHIP_HAS_NO_OUTPUT = 0 { name = "Chip Has No Output"; desc = "The channel between the I2S interface of the chip and AIAO is disabled, and the I2S interface of the chip has no output."; };
+            CONNECTS_I2S_INTERFACE_AIAO = 1 { name = "Connects I2S Interface Aiao"; desc = "The channel between the I2S interface of the chip and AIAO is enabled, and the I2S interface of the chip connects to the I2S interface of the AIAO."; };
+        };
+
         field {
             name = "i2s_pad_enable";
+            desc = "Enable for the channel between the I2S interface of the chip and Note: i2s_pad_enable and audio_enable cannot be 1 at the same time. AIAO";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL56_i2s_pad_enable_enum;
             reset = 0x0;
         } i2s_pad_enable[1:1];
 
+        enum MISC_CTRL56_audio_enable_enum {
+            CODEC_HAS_NO_OUTPUT = 0 { name = "Codec Has No Output"; desc = "The channel between the I2S interface of the internal audio CODEC and AIAO is disabled, and the I2S interface of the internal audio CODEC has no output."; };
+            CONNECTS_I2S_INTERFACE_AIAO = 1 { name = "Connects I2S Interface Aiao"; desc = "The channel between the I2S interface of the internal audio CODEC and AIAO is enabled, and the I2S interface of internal audio CODEC connects to the I2S interface of the AIAO."; };
+        };
+
         field {
             name = "audio_enable";
+            desc = "Enable for the channel between the I2S interface of the internal Note: i2s_pad_enable and audio_enable cannot be 1 at the same time. audio CODEC and AIAO";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL56_audio_enable_enum;
             reset = 0x0;
         } audio_enable[0:0];
-    } MISC_CTRL56 @ 0x00E0;
+    } MISC_CTRL56 @ 0xE0;
 
     reg {
         name = "MDDRC scrambling random seed lower 32 bits register";
+        desc = "MISC_CTRL62 is an MDDRC scrambling random seed lower 32 bits register.
+
+Data sheet 3.5.5.2 MISC_CTRL62 (offset 0xF8, printed page 3-113, `hi3519v101--Hi3519V101-Datasheet.txt` line 9972).";
+
         field {
             name = "mddrca_random_low";
+            desc = "Lower 32 bits of the MDDRC scrambling random seed";
+            sw = rw;
+            hw = r;
             reset = 0x0;
         } mddrca_random_low[31:0];
-    } MISC_CTRL62 @ 0x00F8;
+    } MISC_CTRL62 @ 0xF8;
 
     reg {
         name = "MDDRC scrambling random seed upper 32 bits register";
+        desc = "MISC_CTRL63 is an MDDRC scrambling random seed upper 32 bits register.
+
+Data sheet 3.5.5.2 MISC_CTRL63 (offset 0xFC, printed page 3-113, `hi3519v101--Hi3519V101-Datasheet.txt` line 9993).";
+
         field {
             name = "mddrca_random_high";
+            desc = "Upper 32 bits of the MDDRC scrambling random seed";
+            sw = rw;
+            hw = r;
             reset = 0x0;
         } mddrca_random_high[31:0];
-    } MISC_CTRL63 @ 0x00FC;
+    } MISC_CTRL63 @ 0xFC;
 
     reg {
         name = "MDDRC scrambling control register";
+        desc = "MISC_CTRL64 is an MDDRC scrambling control register.
+
+Data sheet 3.5.5.2 MISC_CTRL64 (offset 0x100, printed page 3-114, `hi3519v101--Hi3519V101-Datasheet.txt` line 10021).";
+
         field {
             name = "mddrca_update";
+            desc = "Update of MDDRC scrambling parameters. To update related parameters to the MDDRC, write 0 and then 1 to this bit.";
+            sw = rw;
+            hw = r;
             reset = 0x0;
         } mddrca_update[4:4];
 
         field {
             name = "mddrca_en";
+            desc = "MDDRC scrambling control 4'b0101: Bypass the MDDRCA function. 4'bxxx0: Enable the MDDRCA function. 4'bxx11: Output all-1 data. 4'bx001: Output all-0 data. 4'b1101: Output all-1 data.";
+            sw = rw;
+            hw = r;
             reset = 0x5;
         } mddrca_en[3:0];
-    } MISC_CTRL64 @ 0x0100;
+    } MISC_CTRL64 @ 0x100;
 
     reg {
-        name = "eMMC DLL control register 0";
+        name = "EMMC DLL control register 0";
+        desc = "MISC_CTRL80 is eMMC DLL control register 0.
+
+Data sheet 3.5.5.2 MISC_CTRL80 (offset 0x140, printed page 3-114, `hi3519v101--Hi3519V101-Datasheet.txt` line 10057).";
+
         field {
             name = "emmc_dll_ssel";
+            desc = "DLL ssel signal of the eMMC interface for selecting the number of initial delay levels of the DLL slave line";
+            sw = rw;
+            hw = r;
             reset = 0x0;
         } emmc_dll_ssel[15:8];
 
+        enum MISC_CTRL80_emmc_dll_mode_enum {
+            NORMAL_MODE = 0 { name = "Normal Mode"; desc = "normal mode"; };
+            SLAVE_LINE_CONTROLLED = 1 { name = "Slave Line Controlled"; desc = "The slave line is controlled by dll_dllssel."; };
+        };
+
         field {
             name = "emmc_dll_mode";
+            desc = "DLL mode signal of the eMMC interface";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL80_emmc_dll_mode_enum;
             reset = 0x0;
         } emmc_dll_mode[7:7];
 
+        enum MISC_CTRL80_emmc_dll_stop_enum {
+            ENABLED = 0 { name = "Enabled"; desc = "The clock detection is enabled."; };
+            DISABLED = 1 { name = "Disabled"; desc = "The clock detection is disabled."; };
+        };
+
         field {
             name = "emmc_dll_stop";
+            desc = "DLL stop signal of the eMMC interface";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL80_emmc_dll_stop_enum;
             reset = 0x0;
         } emmc_dll_stop[6:6];
 
+        enum MISC_CTRL80_emmc_dll_bypass_enum {
+            NORMAL_MODE_PHASE = 0 { name = "Normal Mode Phase"; desc = "normal mode. The phase shift of the output clock relative to the input clock is 90°."; };
+            BYPASSED_PHASE_OUTPUT = 1 { name = "Bypassed Phase Output"; desc = "bypassed. The phase of the output clock is not shifted."; };
+        };
+
         field {
             name = "emmc_dll_bypass";
+            desc = "DLL bypass signal of the eMMC interface";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL80_emmc_dll_bypass_enum;
             reset = 0x0;
         } emmc_dll_bypass[5:5];
 
+        enum MISC_CTRL80_emmc_dll_slave_en_enum {
+            SLAVE_LINE_STOPS = 0 { name = "Slave Line Stops"; desc = "The slave line stops working."; };
+            SLAVE_LINE_STARTS = 1 { name = "Slave Line Starts"; desc = "The slave line starts working."; };
+        };
+
         field {
             name = "emmc_dll_slave_en";
+            desc = "DLL slave_en signal of the eMMC interface";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL80_emmc_dll_slave_en_enum;
             reset = 0x0;
         } emmc_dll_slave_en[4:4];
 
         field {
             name = "emmc_dll_tune";
+            desc = "DLL tune signal of the eMMC interface, for DLL slave tapE calibration 0x0: no tuning 0x1: increase the delay by 1 level 0x2: increase the delay by 2 levels 0x3: increase the delay by 3 levels … 0x7: increase the delay by 7 levels 0x8: no tuning 0x9: decrease the delay by 1 level 0xA: decrease the delay by 2 levels 0xB: decrease the delay by 3 levels … 0xF: decrease the delay by 7 levels";
+            sw = rw;
+            hw = r;
             reset = 0x0;
         } emmc_dll_tune[3:0];
-    } MISC_CTRL80 @ 0x0140;
+    } MISC_CTRL80 @ 0x140;
 
     reg {
-        name = "eMMC DLL control register 1";
+        name = "EMMC DLL control register 1";
+        desc = "MISC_CTRL81 is eMMC DLL control register 1.
+
+Data sheet 3.5.5.2 MISC_CTRL81 (offset 0x144, printed page 3-116, `hi3519v101--Hi3519V101-Datasheet.txt` line 10135).";
+
+        enum MISC_CTRL81_emmc_dll_lock_enum {
+            UNLOCKED = 0 { name = "Unlocked"; desc = "unlocked"; };
+            LOCKED = 1 { name = "Locked"; desc = "locked"; };
+        };
+
         field {
             name = "emmc_dll_lock";
+            desc = "DLL lock signal of the eMMC interface";
             sw = r;
             hw = w;
+            encode = MISC_CTRL81_emmc_dll_lock_enum;
             reset = 0x0;
         } emmc_dll_lock[10:10];
 
+        enum MISC_CTRL81_emmc_dll_ready_enum {
+            NOT_READY = 0 { name = "Not Ready"; desc = "not ready"; };
+            READY = 1 { name = "Ready"; desc = "ready"; };
+        };
+
         field {
             name = "emmc_dll_ready";
+            desc = "DLL ready signal of the eMMC interface";
             sw = r;
             hw = w;
+            encode = MISC_CTRL81_emmc_dll_ready_enum;
             reset = 0x0;
         } emmc_dll_ready[9:9];
 
+        enum MISC_CTRL81_emmc_dll_overflow_enum {
+            NO_OVERFLOW = 0 { name = "No Overflow"; desc = "no overflow"; };
+            OVERFLOW = 1 { name = "Overflow"; desc = "overflow"; };
+        };
+
         field {
             name = "emmc_dll_overflow";
+            desc = "DLL overflow signal of the eMMC interface";
             sw = r;
             hw = w;
+            encode = MISC_CTRL81_emmc_dll_overflow_enum;
             reset = 0x0;
         } emmc_dll_overflow[8:8];
 
         field {
             name = "emmc_dll_mdly_tap";
+            desc = "DLL mdly_tap signal of the eMMC interface DLL mater line tap value";
             sw = r;
             hw = w;
             reset = 0x0;
         } emmc_dll_mdly_tap[7:0];
-    } MISC_CTRL81 @ 0x0144;
+    } MISC_CTRL81 @ 0x144;
 
     reg {
-        name = "Peripheral bus arbitration control register";
+        name = "Peripheral bus arbitration control register 0";
+        desc = "MISC_CTRL85 is peripheral bus arbitration control register 0.
+
+Data sheet 3.5.5.2 MISC_CTRL85 (offset 0x154, printed page 3-117, `hi3519v101--Hi3519V101-Datasheet.txt` line 10186).";
+
+        enum MISC_CTRL85_periaxi_timeout_en_m2_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
         field {
             name = "periaxi_timeout_en_m2";
+            desc = "Timeout count enable for the peripheral AXI bus port M2 (SYSAXI_S2)";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL85_periaxi_timeout_en_m2_enum;
             reset = 0x0;
         } periaxi_timeout_en_m2[31:31];
 
         field {
             name = "periaxi_timeout_value_m2";
+            desc = "Timeout count value of the peripheral AXI bus port M2 (SYSAXI_S2) Count value = periaxi_timeout_value_m2 x 2";
+            sw = rw;
+            hw = r;
             reset = 0x0;
         } periaxi_timeout_value_m2[30:16];
 
+        enum MISC_CTRL85_periaxi_timeout_en_m1_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
         field {
             name = "periaxi_timeout_en_m1";
+            desc = "Timeout count enable for the peripheral AXI bus port M1 (CCI_M0)";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL85_periaxi_timeout_en_m1_enum;
             reset = 0x0;
         } periaxi_timeout_en_m1[15:15];
 
         field {
             name = "periaxi_timeout_value_m1";
+            desc = "Timeout count value of the peripheral AXI bus port M1 (CCI_M0) Count value = periaxi_timeout_value_m1 x 2";
+            sw = rw;
+            hw = r;
             reset = 0x0;
         } periaxi_timeout_value_m1[14:0];
-    } MISC_CTRL85 @ 0x0154;
+    } MISC_CTRL85 @ 0x154;
 
     reg {
-        name = "Peripheral bus priority control register";
+        name = "Peripheral bus priority control register 0";
+        desc = "MISC_CTRL88 is peripheral bus priority control register 0.
+
+Peripheral AXI master priorities. Header reset 0x123: bit 8 is reserved in the rows and set in the header (modelled as reserved_nz).
+
+Data sheet 3.5.5.2 MISC_CTRL88 (offset 0x160, printed page 3-118, `hi3519v101--Hi3519V101-Datasheet.txt` line 10240).";
+
+        field {
+            name = "reserved_nz_31_7";
+            desc = "Reserved in the bit table, but the data sheet total reset value of this register has these bits set (reset 0x2).";
+            sw = r;
+            hw = w;
+            reset = 0x2;
+        } reserved_nz_31_7[31:7];
+
         field {
             name = "periaxi_port2_pri";
+            desc = "Priority of the peripheral AXI bus port M2 (SYSAXI_S2) The value 3 indicates the highest priority.";
+            sw = rw;
+            hw = r;
             reset = 0x2;
         } periaxi_port2_pri[6:4];
 
         field {
             name = "periaxi_port1_pri";
+            desc = "Priority of the peripheral AXI bus port M1 (CCI_M0) The value 3 indicates the highest priority.";
+            sw = rw;
+            hw = r;
             reset = 0x3;
         } periaxi_port1_pri[2:0];
-    } MISC_CTRL88 @ 0x0160;
+    } MISC_CTRL88 @ 0x160;
 
     reg {
-        name = "Peripheral bus priority control register";
+        name = "Peripheral bus priority control register 1";
+        desc = "MISC_CTRL89 is peripheral bus priority control register 1.
+
+Data sheet 3.5.5.2 MISC_CTRL89 (offset 0x164, printed page 3-118, `hi3519v101--Hi3519V101-Datasheet.txt` line 10272).";
+
         field {
             name = "periaxi_slave_priority_s5";
+            desc = "Bus access priority of the peripheral AXI S5 (pcie_slave) port The value 7 indicates the highest priority.";
+            sw = rw;
+            hw = r;
             reset = 0x0;
         } periaxi_slave_priority_s5[18:16];
 
         field {
             name = "periaxi_slave_priority_s4";
+            desc = "Bus access priority of the peripheral AXI S4 (GIC) port The value 7 indicates the highest priority.";
+            sw = rw;
+            hw = r;
             reset = 0x1;
         } periaxi_slave_priority_s4[14:12];
 
         field {
             name = "periaxi_slave_priority_s3";
+            desc = "Bus access priority of the peripheral AXI S3 (ahb_cfg) port The value 7 indicates the highest priority.";
+            sw = rw;
+            hw = r;
             reset = 0x2;
         } periaxi_slave_priority_s3[10:8];
 
         field {
             name = "periaxi_slave_priority_s2";
+            desc = "Bus access priority of the peripheral AXI S2 (media_apb) port The value 7 indicates the highest priority.";
+            sw = rw;
+            hw = r;
             reset = 0x3;
         } periaxi_slave_priority_s2[6:4];
 
         field {
             name = "periaxi_slave_priority_s1";
+            desc = "Bus access priority of the peripheral AXI S1 (sys_apb) port The value 7 indicates the highest priority.";
+            sw = rw;
+            hw = r;
             reset = 0x4;
         } periaxi_slave_priority_s1[2:0];
-    } MISC_CTRL89 @ 0x0164;
+    } MISC_CTRL89 @ 0x164;
 
     reg {
         name = "VDP_AIAO bus arbitration control register";
+        desc = "MISC_CTRL93 is a VDP_AIAO bus arbitration control register.
+
+Data sheet 3.5.5.2 MISC_CTRL93 (offset 0x174, printed page 3-119, `hi3519v101--Hi3519V101-Datasheet.txt` line 10332).";
+
+        enum MISC_CTRL93_vdp_aiao_axi_timeout_en_m2_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
         field {
             name = "vdp_aiao_axi_timeout_en_m2";
+            desc = "Timeout count enable for the VDP_AIAO AXI bus port M2 (AIAO)";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL93_vdp_aiao_axi_timeout_en_m2_enum;
             reset = 0x0;
         } vdp_aiao_axi_timeout_en_m2[31:31];
 
         field {
             name = "vdp_aiao_axi_timeout_value_m2";
+            desc = "Timeout count value of the VDP_AIAO AXI bus port M2 (AIAO) Count value = vpssaxi_timeout_value_m2 x 2";
+            sw = rw;
+            hw = r;
             reset = 0x0;
         } vdp_aiao_axi_timeout_value_m2[30:16];
 
+        enum MISC_CTRL93_vdp_aiao_axi_timeout_en_m1_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
         field {
             name = "vdp_aiao_axi_timeout_en_m1";
+            desc = "Timeout count enable for the VDP_AIAO AXI bus port M1 (VDP)";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL93_vdp_aiao_axi_timeout_en_m1_enum;
             reset = 0x0;
         } vdp_aiao_axi_timeout_en_m1[15:15];
 
         field {
             name = "vdp_aiao_axi_timeout_value_m1";
+            desc = "Timeout count value of the VDP_AIAO AXIbus port M1 (VDP) Count value = vpssaxi_timeout_value_m1 x 2";
+            sw = rw;
+            hw = r;
             reset = 0x0;
         } vdp_aiao_axi_timeout_value_m1[14:0];
-    } MISC_CTRL93 @ 0x0174;
+    } MISC_CTRL93 @ 0x174;
 
     reg {
         name = "VO_AIO bus priority control register";
+        desc = "MISC_CTRL94 is a VO_AIO bus priority control register.
+
+Data sheet 3.5.5.2 MISC_CTRL94 (offset 0x178, printed page 3-120, `hi3519v101--Hi3519V101-Datasheet.txt` line 10383).";
+
         field {
             name = "vdp_aiao_axi_port2_pri";
+            desc = "Priority of the VDP_AIAO AXI bus port M2 (AIAO) The value 1 indicates the highest priority.";
+            sw = rw;
+            hw = r;
             reset = 0x0;
         } vdp_aiao_axi_port2_pri[6:4];
 
         field {
             name = "vdp_aiao_axi_port1_pri";
+            desc = "Priority of the VDP_AIAO AXI bus port M1 (VDP) The value 1 indicates the highest priority.";
+            sw = rw;
+            hw = r;
             reset = 0x1;
         } vdp_aiao_axi_port1_pri[2:0];
-    } MISC_CTRL94 @ 0x0178;
+    } MISC_CTRL94 @ 0x178;
 
     reg {
         name = "VICAP bus arbitration control register";
+        desc = "MISC_CTRL95 is a VICAP bus arbitration control register.
+
+Data sheet 3.5.5.2 MISC_CTRL95 (offset 0x17C, printed page 3-121, `hi3519v101--Hi3519V101-Datasheet.txt` line 10428).";
+
+        enum MISC_CTRL95_vicapaxi_timeout_en_m2_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
         field {
             name = "vicapaxi_timeout_en_m2";
+            desc = "Timeout count enable for the VICAP AXI bus port M2 (VICAP1)";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL95_vicapaxi_timeout_en_m2_enum;
             reset = 0x0;
         } vicapaxi_timeout_en_m2[31:31];
 
         field {
             name = "vicapaxi_timeout_value_m2";
+            desc = "Timeout count value of the VICAP AXI bus port M2 (VICAP1) Count value = vicapaxi_timeout_value_m2 x 2";
+            sw = rw;
+            hw = r;
             reset = 0x0;
         } vicapaxi_timeout_value_m2[30:16];
 
+        enum MISC_CTRL95_vicapaxi_timeout_en_m1_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
         field {
             name = "vicapaxi_timeout_en_m1";
+            desc = "Timeout count enable for the VICAP AXI bus port M1 (VICAP0)";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL95_vicapaxi_timeout_en_m1_enum;
             reset = 0x0;
         } vicapaxi_timeout_en_m1[15:15];
 
         field {
             name = "vicapaxi_timeout_value_m1";
+            desc = "Timeout count value of the VICAP AXI bus port M1 (VICAP0) Count value = vicapaxi_timeout_value_m1 x 2";
+            sw = rw;
+            hw = r;
             reset = 0x0;
         } vicapaxi_timeout_value_m1[14:0];
-    } MISC_CTRL95 @ 0x017C;
+    } MISC_CTRL95 @ 0x17C;
 
     reg {
         name = "VICAP bus priority control register";
+        desc = "MISC_CTRL96 is a VICAP bus priority control register.
+
+Data sheet 3.5.5.2 MISC_CTRL96 (offset 0x180, printed page 3-122, `hi3519v101--Hi3519V101-Datasheet.txt` line 10480).";
+
         field {
             name = "vicapaxi_port2_pri";
+            desc = "Priority of the VICAP AXI bus port M2 (VICAP1) The value 1 indicates the highest priority.";
+            sw = rw;
+            hw = r;
             reset = 0x0;
         } vicapaxi_port2_pri[6:4];
 
         field {
             name = "vicapaxi_port1_pri";
+            desc = "Priority of the VICAP AXI bus port M1 (VICAP0) The value 1 indicates the highest priority.";
+            sw = rw;
+            hw = r;
             reset = 0x1;
         } vicapaxi_port1_pri[2:0];
-    } MISC_CTRL96 @ 0x0180;
+    } MISC_CTRL96 @ 0x180;
 
     reg {
         name = "IOCO bus arbitration control register";
+        desc = "MISC_CTRL97 is an IOCO bus arbitration control register.
+
+Data sheet 3.5.5.2 MISC_CTRL97 (offset 0x184, printed page 3-123, `hi3519v101--Hi3519V101-Datasheet.txt` line 10523).";
+
+        enum MISC_CTRL97_iocoaxi_timeout_en_m2_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
         field {
             name = "iocoaxi_timeout_en_m2";
+            desc = "Timeout count enable for the IOCO AXI bus port M2 (GSF)";
+            sw = rw;
+            hw = r;
+            encode = MISC_CTRL97_iocoaxi_timeout_en_m2_enum;
             reset = 0x0;
         } iocoaxi_timeout_en_m2[31:31];
 
         field {
             name = "iocoaxi_timeout_value_m2";
+            desc = "Timeout count value of the IOCO AXI bus port M2 (GSF) Count value = iocoaxi_timeout_value_m2 x 2";
+            sw = rw;
+            hw = r;
             reset = 0x0;
         } iocoaxi_timeout_value_m2[30:16];
-    } MISC_CTRL97 @ 0x0184;
+    } MISC_CTRL97 @ 0x184;
 
     reg {
         name = "IOCO bus priority control register";
+        desc = "MISC_CTRL98 is an IOCO bus priority control register.
+
+IOCO AXI priority. Header reset 0x1: bit 0 is reserved in the rows and set in the header (modelled as reserved_nz).
+
+Data sheet 3.5.5.2 MISC_CTRL98 (offset 0x18C, printed page 3-124, `hi3519v101--Hi3519V101-Datasheet.txt` line 10568).";
+
         field {
             name = "iocoaxi_port2_pri";
+            desc = "Priority of the IOCO AXI bus port M2 (GSF) The value 1 indicates the highest priority.";
+            sw = rw;
+            hw = r;
             reset = 0x0;
         } iocoaxi_port2_pri[6:4];
-    } MISC_CTRL98 @ 0x018C;
+
+        field {
+            name = "reserved_nz_2_0";
+            desc = "Reserved in the bit table, but the data sheet total reset value of this register has these bits set (reset 0x1).";
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } reserved_nz_2_0[2:0];
+    } MISC_CTRL98 @ 0x18C;
 
     reg {
-        name = "rootkey_aes lower 32 bits register";
+        name = "Rootkey_aes lower 32 bits register Y_AES_0";
+        desc = "OTP_ROOTKEY_AES_0 is a rootkey_aes lower 32 bits register.
+
+Data sheet 3.5.5.2 OTP_ROOTKEY_AES_0 (offset 0x3000, printed page 3-124, `hi3519v101--Hi3519V101-Datasheet.txt` line 10598).";
+
         field {
             name = "otp_rootkey_aes_0";
+            desc = "rootkey_aes bit[31:0]. The value of this field can be read only when the CPU does not clear the remapping status in secure boot mode. In other cases, the field value is 0.";
             sw = r;
             hw = w;
             reset = 0x0;
@@ -1488,9 +3713,14 @@ regfile eMISC_CTRL {
     } OTP_ROOTKEY_AES_0 @ 0x3000;
 
     reg {
-        name = "rootkey_aes bits 63–32 register";
+        name = "Rootkey_aes bits 63-32 register Y_AES_1";
+        desc = "OTP_ROOTKEY_AES_1 is a rootkey_aes bits 63-32 register.
+
+Data sheet 3.5.5.2 OTP_ROOTKEY_AES_1 (offset 0x3004, printed page 3-125, `hi3519v101--Hi3519V101-Datasheet.txt` line 10628).";
+
         field {
             name = "otp_rootkey_aes_1";
+            desc = "rootkey_aes bit[63:32]. The value of this field can be read only when the CPU does not clear the remapping status in secure boot mode. In other cases, the field value is 0.";
             sw = r;
             hw = w;
             reset = 0x0;
@@ -1498,9 +3728,14 @@ regfile eMISC_CTRL {
     } OTP_ROOTKEY_AES_1 @ 0x3004;
 
     reg {
-        name = "rootkey_aes bits 95–64 register";
+        name = "Rootkey_aes bits 95-64 register Y_AES_2";
+        desc = "OTP_ROOTKEY_AES_2 is a rootkey_aes bits 95-64 register.
+
+Data sheet 3.5.5.2 OTP_ROOTKEY_AES_2 (offset 0x3008, printed page 3-125, `hi3519v101--Hi3519V101-Datasheet.txt` line 10648).";
+
         field {
             name = "otp_rootkey_aes_2";
+            desc = "rootkey_aes bit[95:64]. The value of this field can be read only when the CPU does not clear the remapping status in secure boot mode. In other cases, the field value is 0.";
             sw = r;
             hw = w;
             reset = 0x0;
@@ -1508,9 +3743,14 @@ regfile eMISC_CTRL {
     } OTP_ROOTKEY_AES_2 @ 0x3008;
 
     reg {
-        name = "rootkey_aes bits 127–96 register";
+        name = "Rootkey_aes bits 127-96 register Y_AES_3";
+        desc = "OTP_ROOTKEY_AES_3 is a rootkey_aes bits 127-96 register.
+
+Data sheet 3.5.5.2 OTP_ROOTKEY_AES_3 (offset 0x300C, printed page 3-125, `hi3519v101--Hi3519V101-Datasheet.txt` line 10668).";
+
         field {
             name = "otp_rootkey_aes_3";
+            desc = "rootkey_aes bit[127:96]. The value of this field can be read only when the CPU does not clear the remapping status in secure boot mode. In other cases, the field value is 0.";
             sw = r;
             hw = w;
             reset = 0x0;
@@ -1518,55 +3758,101 @@ regfile eMISC_CTRL {
     } OTP_ROOTKEY_AES_3 @ 0x300C;
 
     reg {
-        name = "OTP ctrlbit programming mode control register";
+        name = "OTP ctrlbit programming mode control _PG_MODE register";
+        desc = "OTP_CTRLBIT_PG_MODE is an OTP ctrlbit programming mode control register.
+
+Data sheet 3.5.5.2 OTP_CTRLBIT_PG_MODE (offset 0x5000, printed page 3-126, `hi3519v101--Hi3519V101-Datasheet.txt` line 10694).";
+
         field {
             name = "otp_ctrlbit_pg_mode";
+            desc = "OTP ctrlbit programming mode control. Writing 0x12345678 indicates applying for entering the programming mode, and writing 0x87654321 indicates applying for exiting the programming mode. If the read back value is 1, the programming mode is entered. If the read back value is 0, the current mode is the non-programming mode.";
+            sw = rw;
+            hw = r;
             reset = 0x0;
         } otp_ctrlbit_pg_mode[31:0];
     } OTP_CTRLBIT_PG_MODE @ 0x5000;
 
     reg {
-        name = "OTP ctrlbit programming mode status register";
+        name = "OTP ctrlbit programming mode status _PG_BUSY register";
+        desc = "OTP_CTRLBIT_PG_BUSY is an OTP ctrlbit programming mode status register.
+
+Data sheet 3.5.5.2 OTP_CTRLBIT_PG_BUSY (offset 0x5004, printed page 3-126, `hi3519v101--Hi3519V101-Datasheet.txt` line 10719).";
+
+        enum OTP_CTRLBIT_PG_BUSY_otp_ctrlbit_pg_busy_enum {
+            PROGRAMMING_COMPLETE = 0 { name = "Programming Complete"; desc = "Programming is complete."; };
+            PROGRAMMING_PROGRESS = 1 { name = "Programming Progress"; desc = "Programming is in progress."; };
+        };
+
         field {
             name = "otp_ctrlbit_pg_busy";
+            desc = "OTP ctrlbit programming status";
             sw = r;
             hw = w;
+            encode = OTP_CTRLBIT_PG_BUSY_otp_ctrlbit_pg_busy_enum;
             reset = 0x0;
         } otp_ctrlbit_pg_busy[0:0];
-
     } OTP_CTRLBIT_PG_BUSY @ 0x5004;
 
     reg {
-        name = "OTP ctrlbit bit 0 programming control register";
+        name = "OTP ctrlbit bit 0 programming control _PG_BIT0 register";
+        desc = "OTP_CTRLBIT_PG_BIT0 is an OTP ctrlbit bit 0 programming control register.
+
+Data sheet 3.5.5.2 OTP_CTRLBIT_PG_BIT0 (offset 0x5008, printed page 3-127, `hi3519v101--Hi3519V101-Datasheet.txt` line 10756).";
+
         field {
             name = "otp_ctrlbit_pg_bit0";
+            desc = "OTP ctrlbit bit 0 programming control. Writing 0xFAF0005F indicates applying for programming bit 0 (JTAG_DISABLE). Reading back this field has no effect.";
+            sw = rw;
+            hw = r;
             reset = 0x0;
         } otp_ctrlbit_pg_bit0[31:0];
     } OTP_CTRLBIT_PG_BIT0 @ 0x5008;
 
     reg {
-        name = "OTP ctrlbit bit 1 programming control register";
+        name = "OTP ctrlbit bit 1 programming control _PG_BIT1 register";
+        desc = "OTP_CTRLBIT_PG_BIT1 is an OTP ctrlbit bit 1 programming control register.
+
+Data sheet 3.5.5.2 OTP_CTRLBIT_PG_BIT1 (offset 0x500C, printed page 3-127, `hi3519v101--Hi3519V101-Datasheet.txt` line 10776).";
+
         field {
             name = "otp_ctrlbit_pg_bit1";
+            desc = "OTP ctrlbit bit 1 programming control. Writing 0xFAF0105F indicates applying for programming bit 1 (DDR_CA_EN). Reading back this field has no effect.";
+            sw = rw;
+            hw = r;
             reset = 0x0;
         } otp_ctrlbit_pg_bit1[31:0];
     } OTP_CTRLBIT_PG_BIT1 @ 0x500C;
 
     reg {
-        name = "OTP ctrlbit bit 2 programming control register";
+        name = "OTP ctrlbit bit 2 programming control _PG_BIT2 register";
+        desc = "OTP_CTRLBIT_PG_BIT2 is an OTP ctrlbit bit 2 programming control register.
+
+Data sheet 3.5.5.2 OTP_CTRLBIT_PG_BIT2 (offset 0x5010, printed page 3-128, `hi3519v101--Hi3519V101-Datasheet.txt` line 10806).";
+
         field {
             name = "otp_ctrlbit_pg_bit2";
+            desc = "OTP ctrlbit bit 2 programming control. Writing 0xFAF0205F indicates applying for programming bit 2 (SECURE_BOOT_EN). Reading back this field has no effect.";
+            sw = rw;
+            hw = r;
             reset = 0x0;
         } otp_ctrlbit_pg_bit2[31:0];
     } OTP_CTRLBIT_PG_BIT2 @ 0x5010;
 
     reg {
-        name = "OTP ctrlbit bit 3 programming control register";
+        name = "OTP ctrlbit bit 3 programming control _PG_BIT3 register";
+        desc = "OTP_CTRLBIT_PG_BIT3 is an OTP ctrlbit bit 3 programming control register.
+
+Data sheet 3.5.5.2 OTP_CTRLBIT_PG_BIT3 (offset 0x5014, printed page 3-128, `hi3519v101--Hi3519V101-Datasheet.txt` line 10826).";
+
         field {
             name = "otp_ctrlbit_pg_bit3";
+            desc = "OTP ctrlbit bit 3 programming control. Writing 0xFAF0305F indicates applying for programming bit 3 (BOOTROM_MASK). Reading back this field has no effect.";
+            sw = rw;
+            hw = r;
             reset = 0x0;
         } otp_ctrlbit_pg_bit3[31:0];
     } OTP_CTRLBIT_PG_BIT3 @ 0x5014;
 
 };
+
 `endif
