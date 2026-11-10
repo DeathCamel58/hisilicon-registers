@@ -11,7 +11,7 @@ regfile eCRG {
     Clock facts used by the bring-up code: ARM926 runs from the 24 MHz crystal after reset (cpu_sc_sel = 0); bus/APB mux PERI_CRG12 bit 0 (24 MHz / 198 MHz, APB = /4);
     UART mux PERI_CRG57 [20:19] (APB / 24 MHz / 6 MHz); timers use 3 MHz or the APB clock (SYS_CTRL SC_CTRL).
     Vendor clock tree (clk-hi3518ev20x.c, `hisilicon,hi3518ev20x-clock`): sysapb = bus mux / 4 (6 or 49.5 MHz, parent of the I2Cs, GPIOs and timers); SSP0/SSP1 (PERI_CRG57 bits 13/14)
-    are clocked from the bus mux itself (24 or 198 MHz), DMAC (PERI_CRG54 bit 5) from a fixed 50 MHz, FMC from the PERI_CRG48 mux, ETH from the PERI_CRG59 mux, SDIO0/1 from the PERI_CRG49 muxes.
+    are clocked from the bus mux itself (24 or 198 MHz), DMAC (PERI_CRG54 bit 5) from a fixed 50 MHz (the data sheet SPI chapter, line 80003, says the SPI reference clock is the APB bus clock, 49.5 MHz at bus_sc_sel = 1, with SPI_CLK <= 24.75 MHz, so the vendor parent `sysapb_mux` for SSP is probably the wrong node; crg-hi3516cv200.c in the same tree uses a fixed 50 MHz and different mmc/eth/usb offsets that contradict both the data sheet and the vendor U-Boot, so it is not used as evidence), FMC from the PERI_CRG48 mux, ETH from the PERI_CRG59 mux, SDIO0/1 from the PERI_CRG49 muxes.
 
     Sources: HiSilicon's own English data sheet (issue 02, 2017-06-12; the `Hi3518E` data sheet issue 03 of 2015 in the same dump folder is the Hi3518E V100, SC_SYSID 0x3518_0100, and
     does not apply). No Chinese original of the Hi3518E V20X/Hi3516C V200 data sheet is available locally, so disputed values were settled with the vendor U-Boot
@@ -719,6 +719,8 @@ Data sheet 3.2.7 PERI_CRG11 (offset 0x2C, printed page 3-18, `hi3518ev200-datash
         desc = "PERI_CRG12 is an SoC clock selection register.
 
 Vendor U-Boot (start.S/platform.h `REG_CRG12 0x30`) and the vendor Linux clock driver (clk-hi3518ev20x.c, `sysapb_mux` at 0x30 bit 0) agree with this layout: bus_sc_sel = 0 selects 24 MHz, 1 selects 198 MHz; the system APB clock (UART/timer/GPIO/WDG parent) is that clock divided by 4 (6 MHz or 49.5 MHz).
+
+Mode switching: the data sheet (Table 3-5) knows a Normal mode (ARM clocks from the PLL) and a Slow mode (24 MHz crystal, APLL off), but this chip has no mode field in SYS_CTRL SC_CTRL; the mode is just cpu_sc_sel / bus_sc_sel here, and PERI_CRG55 clk_cpu_seled / clk_bus_seled report when a switch has completed. Change the APLL only with cpu_sc_sel = 0, wait for PERI_CRG58 apll_lock, then set cpu_sc_sel = 1.
 
 Data sheet 3.2.7 PERI_CRG12 (offset 0x30, printed page 3-20, `hi3518ev200-datasheet.txt` line 23241).";
 
@@ -1437,7 +1439,7 @@ Data sheet 3.2.7 PERI_CRG35 (offset 0x8C, printed page 3-30, `hi3518ev200-datash
         name = "USB clock and soft reset control register";
         desc = "PERI_CRG46 is a USB2.0 clock and soft reset control register.
 
-USB 2.0 host/device clock and reset. Reset deassert order (DS 12.7.3): wait >= 10 us, clear usb_phy_port0_treq, clear usb_phy_req, wait 250 us, clear usb_ctrl_utmi0_req, clear usb_hrst_req. The vendor U-Boot driver (hiusb-3518ev200.c, `REG_CRG46 0xb8`) and the vendor U-Boot platform.h use PERI_CRG46 at 0xB8 as the data sheet does; the vendor Linux clock driver (clk-hi3518ev20x.c) uses offset 0xB4 (= PERI_CRG45, undocumented) for `usb2_cttl_utmi0_req` bit 5 and `usb2_hrst_req` bit 0 (see docs/UPSTREAM-PR-NOTES.md); 0xB8 is modelled (data sheet + U-Boot, 2 sources against 1). Reset: the header total reset value 0xA7 is modelled (clock on, ctrl/phy/bus in reset); the data sheet bit row prints 1 for all of bits 7:0 (0xFF, i.e. also for the reserved bits 6, 4, 3).
+USB 2.0 host/device clock and reset. Reset deassert order (DS 12.7.3): wait >= 10 us, clear usb_phy_port0_treq, clear usb_phy_req, wait 250 us, clear usb_ctrl_utmi0_req, clear usb_hrst_req. The vendor U-Boot driver (hiusb-3518ev200.c, `REG_CRG46 0xb8`) and the vendor U-Boot platform.h use PERI_CRG46 at 0xB8 as the data sheet does; the vendor Linux clock driver (clk-hi3518ev20x.c) uses offset 0xB4 (= PERI_CRG45, undocumented) for `usb2_cttl_utmi0_req` bit 5 and `usb2_hrst_req` bit 0 (see docs/UPSTREAM-PR-NOTES.md); 0xB8 is modelled (data sheet + U-Boot, 2 sources against 1). The vendor U-Boot driver also sets and clears bit 4 (`USB_CTRL_HUB_REG`, a hub/controller reset) although the bit table lists [4:3] as reserved (reset 0); DS 12.7.3 additionally names a `usb_otg_phy_srst_req` that is not in the bit table (probably the same bit 3 or 4; unresolved). Reset: the header total reset value 0xA7 is modelled (clock on, ctrl/phy/bus in reset); the data sheet bit row prints 1 for all of bits 7:0 (0xFF, i.e. also for the reserved bits 6, 4, 3).
 
 Data sheet 3.2.7 PERI_CRG46 (offset 0xB8, printed page 3-31, `hi3518ev200-datasheet.txt` line 23857).";
 
