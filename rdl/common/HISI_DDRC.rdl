@@ -10,6 +10,16 @@ regfile eDDRC {
         Hi3516 V100 edition (`DDRC_HI3516V100`, original Chinese data sheet 4.1.5, Table 4-8, base 0x2011_0000, 49 registers): the same controller core as the Hi3518 / Hi3516C V100 and Hi3520D (STATUS, SREFCTRL, INITCTRL, EMRS, CMDCFG/CMDEXE/RNKCFG, TIMING0-4 and the DTR gate-training registers are identical to the Hi3518 tables), with four AXI ports (AXISTATUS bits 3:0, one FIFO level per port in QOSCFG0), a per-rank ODT bitmap in ODTCFG, QoS ID registers at 0x110 with aging / priority adaptation, no BASEADDR / FLUX / TEST registers, and its own DDR PHY control block inside the same window: PHYCFG/PHYNEG/PHYSEL (0x200-0x218), command- and data-lane DLL configuration (CDLLCFG 0x228, QDLLCFG[4] 0x230), DDR3 write leveling (LVL* 0x260-0x2D4), DQS fine tuning (0x2F0/0x2F4) and IO configuration / compensation (0x360-0x388). The data sheet marks many fields 'reserved, not supported in this version' (ECC, exclusive address, extra ranks). The address map (Table 1-1 line 1008) lists the DDRC window as 64 KB at 0x2011_0000; 0x2012_0000 is reserved (no separate PHY window as on the Hi3518).
    ";
 `else
+`ifdef DDRC_HI3515V100
+    desc = "
+        DDRC (DDR2 SDRAM controller) of the Hi3515 (data sheet 4.1.5, Table 4-5, base 0x2011_0000, 28 registers): the Hi3520 V100 DDR2 edition (STATUS/CTRL, EMRS01/23, CONFIG, TIMING0-3, ODT_CONFIG 0x94, QOS_CONFIG 0x104, QOS[16] 0x108) plus a self-test / ECC status in STATUS and CTRL, DQS gate training (DTR_CTRL/PRD/GATE/LAT 0x3C-0x48, PHY_STATUS/ADDR/DATA0-3 0x4C-0x60), IF_STATUS 0x90, QOS_CTRL 0x100 and the PHY_CONFIG / DLL_STATUS / DLL_CONFIG / IO_CTRL block at 0x270-0x27C; it has no DLL_CONTROL / DLL_SRST / IO_CONFIG (0x240-0x268). English data sheet only.
+   ";
+`else
+`ifdef DDRC_HI3511V100
+    desc = "
+        DDRC (DDR2 SDRAM controller) of the Hi3511 / Hi3512 (original Chinese data sheet 4.1.5, Table 4-4, base 0x1015_0000, 13 registers): the oldest edition of the Hi3520 V100 DDR2 controller. STATUS (total reset 0xD), CTRL, raw EMRS01 / EMRS23 (summary name DDRC_DDRCONFIG), CONFIG (reset 0x7022: 32-bit DDR2), TIMING0-3 (TIMING1 has trl instead of trdlat/trtw), ODT_CONFIG at 0x40, DLL_STATUS 0x78, DLL_CONFIG 0x7C and the per-channel DDRC_CHn_QOS[8] at 0x98. No QoS ID map / priority registers, no DLL_CONTROL / DLL_SRST / IO_CONFIG.
+   ";
+`else
     desc = "
         DDRC (DDR2/3 SDRAM Controller) realizes the access control to the dynamic memory DDR2/3 SDRAM. In the following, DDRn SDRAM will be used instead of DDR2/3 SDRAM.
 `ifdef DDRC_16_BIT_ONLY
@@ -18,6 +28,8 @@ regfile eDDRC {
             This version only supports 16bit DDR bit width.
 `endif
    ";
+`endif
+`endif
 `endif
 
     /* Useful enums to keep from having to keep copying them */
@@ -79,8 +91,13 @@ regfile eDDRC {
 
         field {
             name = "test_pass";
-            desc = "Self-test status.";
+            desc = "Self-test status (Hi3515 data sheet DDRC_STATUS, dump line 16516; the total reset value 0x0000_004D gives this bit 1 after reset).";
             encode = DDRC_STATUS_test_pass_enum;
+            sw = r;
+            hw = w;
+`ifdef DDRC_RESET_G3
+            reset = 0x1;
+`endif
         } test_pass[6:6];
 `endif
 
@@ -92,8 +109,12 @@ regfile eDDRC {
 
         field {
             name = "ecc_serr";
-            desc = "Single-bit error indicator through ECC.";
+            desc = "Single-bit error indicator through ECC (data sheet access RC: cleared by reading).";
             encode = DDRC_STATUS_ecc_serr_enum;
+            sw = r;
+            hw = w;
+            onread = rclr;
+            reset = 0x0;
         } ecc_serr[5:5];
 `endif
 
@@ -105,8 +126,12 @@ regfile eDDRC {
 
         field {
             name = "ecc_derr";
-            desc = "Multi-bit error indicator through ECC.";
+            desc = "Multi-bit error indicator through ECC (data sheet access RC: cleared by reading).";
             encode = DDRC_STATUS_ecc_derr_enum;
+            sw = r;
+            hw = w;
+            onread = rclr;
+            reset = 0x0;
         } ecc_derr[4:4];
 `endif
 
@@ -139,6 +164,8 @@ regfile eDDRC {
         } in_init[3:3];
 
 `ifdef DDRC_RESET_G3
+`ifndef DDRC_TEST_PASS_FIELD   // Hi3515: bit 6 is test_pass (reset 1); Hi3511: total reset 0xD, bit 6 reads 0
+`ifndef DDRC_HI3511V100
         field {
             name = "reserved_nz";
             desc = "Reserved in the bit table ([31:4] RO reserved), but the Hi3520 V100 data sheet total reset value is 0x0000_004D, so bit 6 reads 1 after reset (original Chinese data sheet 4.1.7 DDRC_STATUS, `hi3520v100--Hi3520-Datasheet.txt` line 20606).";
@@ -146,6 +173,8 @@ regfile eDDRC {
             hw = na;
             reset = 0x1;
         } reserved_nz[6:6];
+`endif
+`endif
 `endif
 
         enum DDRC_STATUS_in_sr_enum {
@@ -190,14 +219,15 @@ regfile eDDRC {
 
 `ifdef DDRC_SREF_TEST_REQ_FIELD
         enum DDRC_SREFCTRL_sref_test_req_enum {
-            NO_ERR = 0x0 { desc = "No multi bit errors."; };
-            ERROR  = 0x1 { desc = "A multi bit errors."; };
+            NORMAL     = 0x0 { desc = "Normal operating mode."; };
+            START_TEST = 0x1 { desc = "The self-test starts; the bit is cleared automatically when the test completes."; };
         };
 
         field {
             name = "sref_test_req";
-            desc = "Read/write data channel test of the controller and PHY.";
+            desc = "Read/write data channel test of the controller and PHY (Hi3515 data sheet DDRC_CTRL, dump line 16572; the result is DDRC_STATUS.test_pass).";
             encode = DDRC_SREFCTRL_sref_test_req_enum;
+            reset = 0x0;
         } sref_test_req[4:4];
 `endif
 
@@ -205,18 +235,19 @@ regfile eDDRC {
         field {
             name = "ecc_en";
             desc = "
-            CCC enable.
+            ECC enable (the data sheet prints 'CCC enable').
 
             !!! NOTE
                 Not supported.
             ";
+            reset = 0x0;
         } ecc_en[3:3];
 `endif
 
 `ifdef DDRC_SREFCTRL_RATIO_FIELD
-        enum DDRC_STATUS_clk_ratio_enum {
-            NO_ERR = 0x0 { desc = "The controller and PHY work in 1:2 mode."; };
-            ERROR  = 0x1 { desc = "The controller and PHY work in 1:1 mode."; };
+        enum DDRC_SREFCTRL_clk_ratio_enum {
+            RATIO_1_2 = 0x0 { desc = "The controller and PHY work in 1:2 mode."; };
+            RATIO_1_1 = 0x1 { desc = "The controller and PHY work in 1:1 mode."; };
         };
 
         field {
@@ -228,6 +259,7 @@ regfile eDDRC {
                 Only the `1:1` mode is supported
             ";
             encode = DDRC_SREFCTRL_clk_ratio_enum;
+            reset = 0x0;
         } clk_ratio[2:2];
 `endif
 
@@ -283,6 +315,24 @@ regfile eDDRC {
 `endif
 
 `ifdef DDRC_EMRS01_0X08_REG
+`ifdef DDRC_HI3511V100
+    reg {
+        name = "DDR2 SDRAM mode register 01";
+        desc = "Hi3511 DDRC_EMRS01: the low 16 bits of the DDR2 SDRAM MRS and EMRS1 mode registers, written raw (the data sheet does not decode the fields as the Hi3520 V100 one does). Original Chinese data sheet 4.1.5 (`hi3511v100--Hi3511-Datasheet.txt` line 14160, total reset 0x0000_0000).";
+
+        field {
+            name = "emrs1";
+            desc = "DDR2 SDRAM extended mode register 1 (low 16 bits of EMRS1).";
+            reset = 0x0;
+        } emrs1[31:16];
+
+        field {
+            name = "mrs";
+            desc = "DDR2 SDRAM mode register (low 16 bits of MRS).";
+            reset = 0x0;
+        } mrs[15:0];
+    } DDRC_EMRS01 @ 0x0008;
+`else
     reg {
         name = "Mode configuration register for DDR";
         desc = "Hi3520 V100 DDR2 mode register 1 (DDRC_EMRS01). Bits [31:23] and [15:12] are reserved and must be written as 0. Original Chinese data sheet 4.1.7 (`hi3520v100--Hi3520-Datasheet.txt` line 20686), total reset 0x0000_0000.";
@@ -403,10 +453,14 @@ regfile eDDRC {
 
     } DDRC_EMRS01 @ 0x0008;
 `endif
+`endif
 
 `ifdef DDRC_EMRS23_0x0C_REG
     reg {
         name = "Extended Mode Configuration Register for DDR";
+`ifdef DDRC_HI3511V100
+        desc = "Hi3511: the low 16 bits of the DDR2 SDRAM EMRS2 / EMRS3 mode registers. The data sheet summary table (表4-4) calls this register DDRC_DDRCONFIG; the description block calls it DDRC_EMRS23 (original Chinese data sheet 4.1.5, `hi3511v100--Hi3511-Datasheet.txt` line 14193, total reset 0x0000_0000).";
+`endif
 
         field {
             name = "emrs3";
@@ -478,9 +532,13 @@ regfile eDDRC {
         } init_arefnum[31:28];
 
         field {
+`ifdef DDRC_HI3511V100
+            name = "pd_prd";
+`else
             name = "pr_prd";
+`endif
             desc = "
-                Count of wait CLKs for automatic power down. When the controller does not receive any request for a period, it disables the CKE of the DDR2 SDRAM.
+                Count of wait CLKs for automatic power down. (Hi3511 data sheet name pd_prd, Hi3520 V100 pr_prd.) When the controller does not receive any request for a period, it disables the CKE of the DDR2 SDRAM.
 
                 * `0x00`: When pd_en is valid and the controller does not receive any request at the next clock cycle, the DDR2 SDRAM enters the low- power mode automatically.
                 * `0x01`ΓÇô`0xn`: When pd_en is valid and the controller does not receive any request within n clock cycles, the DDR2 SDRAM enters the low-power mode automatically.
@@ -489,7 +547,11 @@ regfile eDDRC {
                     For example, 0x03 indicates that the DDR2 SDRAM enters the low-power mode automatically if it does not receive any request within three clock cycles.
             ";
             reset = 0x0;
+`ifdef DDRC_HI3511V100
+        } pd_prd[27:20];
+`else
         } pr_prd[27:20];
+`endif
 
         field {
             name = "sr_cc";
@@ -517,9 +579,13 @@ regfile eDDRC {
 
         field {
             name = "mem_type";
-            desc = "External memory type (the data sheet documents only 0x6 and 0x7, other values reserved).";
+            desc = "External memory type (the data sheet documents only 0x6 and 0x7, other values reserved). Resets to 0x6 (16-bit) on the Hi3520 V100 (total 0x0000_6022) and 0x7 (32-bit) on the Hi3511 (total 0x0000_7022).";
             encode = DDRC_CONFIG_mem_type_enum;
+`ifdef DDRC_HI3511V100
+            reset = 0x7;
+`else
             reset = 0x6;
+`endif
         } mem_type[15:12];
 
         enum DDRC_CONFIG_ap_enum {
@@ -1206,6 +1272,20 @@ regfile eDDRC {
             reset = 0xFF;
         } tsre[31:24];
 
+`ifdef DDRC_HI3511V100
+        enum DDRC_TIMING1_trl_enum {
+            CYCLE_3 = 0x2 { desc = "3 clock cycles (default)."; };
+            CYCLE_4 = 0x3 { desc = "4 clock cycles."; };
+            CYCLE_5 = 0x5 { desc = "5 clock cycles."; };
+        };
+
+        field {
+            name = "trl";
+            desc = "Read data latency, configured for the delay caused by the board and other external factors: 0b010 when the board delay is below one cycle, otherwise according to the delay. Other values reserved. Hi3511 data sheet DDRC_TIMING1 (`hi3511v100--Hi3511-Datasheet.txt` line 14511, total reset 0xFF02_23FF; bits [23:19] reserved, no trdlat).";
+            encode = DDRC_TIMING1_trl_enum;
+            reset = 0x2;
+        } trl[18:16];
+`else
         field {
             name = "trdlat";
             desc = "
@@ -1225,6 +1305,7 @@ regfile eDDRC {
             ";
             reset = 0x1;
         } trtw[18:16];
+`endif
 
         field {
             name = "twl";
@@ -1439,11 +1520,19 @@ regfile eDDRC {
         };
 
         field {
+`ifdef DDRC_HI3511V100
+            name = "tanod_taofd";
+`else
             name = "taond";
-            desc = "ODT (on-die termination) turn-on / turn-off period (tAOND / tAOFD) in clock cycles.";
+`endif
+            desc = "ODT (on-die termination) turn-on / turn-off period (tAOND / tAOFD) in clock cycles. (Hi3511 data sheet name tanod_taofd, Hi3520 V100 taond.)";
             encode = DDRC_TIMING3_taond_enum;
             reset = 0x0;
+`ifdef DDRC_HI3511V100
+        } tanod_taofd[21:20];
+`else
         } taond[21:20];
+`endif
 
         field {
             name = "txard";
@@ -1628,8 +1717,9 @@ regfile eDDRC {
 
         field {
             name = "itm_rst";
-            desc = "ITM reset signal of the PHY.";
+            desc = "ITM reset signal of the PHY: 0: reset asserted (valid); 1: reset released. Resets to 1 (Hi3515 data sheet DDRC_DTR_CTRL total reset 0x0000_0001, dump line 17139).";
             encode = DDRC_DTRCTRL_itm_rst_enum;
+            reset = 0x1;
         } itm_rst[0:0];
 `endif
 
@@ -1660,8 +1750,9 @@ regfile eDDRC {
 
             * 0x0: The controller initiates a dummy read if there is no read operation in one auto-refresh clock cycle.
             * 0x1: The controller initiates a dummy read if there is no read operation in two auto-refresh clock cycles.
-            * 0x2ΓÇô0x7FF: The controller initiates a dummy read if there is no read operation in n+1 auto-refresh clock cycles.
+            * 0x2-0x7FF: The controller initiates a dummy read if there is no read operation in n+1 auto-refresh clock cycles.
             ";
+            reset = 0x0;
         } track_prd[19:0];
 
     } DDRC_DTR_PRD @ 0x0040;
@@ -1731,63 +1822,73 @@ regfile eDDRC {
 
 `ifdef DDRC_DTR_LAT_0x48_REG
     reg {
-        name = "DDRC Data Training Gating Register";
+        name = "DDRC data training gating latency register";
+        desc = "Gating delay in clock cycles per DDR SDRAM byte (the earlier RDL copied the DTR_GATE phase layout here; corrected against the Hi3515 data sheet 4.1.5 DDRC_DTR_LAT, offset 0x48, printed page 4-26, dump line 17307, total reset 0x0000_0000). Bits 31, 27, 23, 19, 15, 11, 7 and 3 are reserved. The data sheet misspells byte 1 'thpy_rden1'.";
 
-        // TODO: Finish this reg
-        enum DDRC_DDRC_DTR_LAT_tphy_rden_enum {
-            NONE        = 0x0 { desc = "0┬░"; };
-            NINETY      = 0x1 { desc = "90┬░"; };
-            ONE_EIGHTY  = 0x2 { desc = "180┬░"; };
-            TWO_SEVENTY = 0x3 { desc = "270┬░"; };
+        enum DDRC_DTR_LAT_tphy_rden_enum {
+            CYCLE_0 = 0x0 { desc = "0 clock cycles"; };
+            CYCLE_1 = 0x1 { desc = "1 clock cycle"; };
+            CYCLE_2 = 0x2 { desc = "2 clock cycles"; };
+            CYCLE_3 = 0x3 { desc = "3 clock cycles"; };
+            CYCLE_4 = 0x4 { desc = "4 clock cycles"; };
+            CYCLE_5 = 0x5 { desc = "5 clock cycles"; };
         };
 
         field {
             name = "tphy_rden7";
-            desc = "Gating delay phase of DDR SDRAM byte 7.";
-            encode = DDRC_DDRC_DTR_LAT_tphy_rden_enum;
-        } tphy_rden7[15:14];
+            desc = "Gating delay cycle of DDR SDRAM byte 7 (values 6-7 reserved).";
+            encode = DDRC_DTR_LAT_tphy_rden_enum;
+            reset = 0x0;
+        } tphy_rden7[30:28];
 
         field {
             name = "tphy_rden6";
-            desc = "Gating delay phase of DDR SDRAM byte 6.";
-            encode = DDRC_DDRC_DTR_LAT_tphy_rden_enum;
-        } tphy_rden6[13:12];
+            desc = "Gating delay cycle of DDR SDRAM byte 6 (values 6-7 reserved).";
+            encode = DDRC_DTR_LAT_tphy_rden_enum;
+            reset = 0x0;
+        } tphy_rden6[26:24];
 
         field {
             name = "tphy_rden5";
-            desc = "Gating delay phase of DDR SDRAM byte 5.";
-            encode = DDRC_DDRC_DTR_LAT_tphy_rden_enum;
-        } tphy_rden5[11:10];
+            desc = "Gating delay cycle of DDR SDRAM byte 5 (values 6-7 reserved).";
+            encode = DDRC_DTR_LAT_tphy_rden_enum;
+            reset = 0x0;
+        } tphy_rden5[22:20];
 
         field {
             name = "tphy_rden4";
-            desc = "Gating delay phase of DDR SDRAM byte 4.";
-            encode = DDRC_DDRC_DTR_LAT_tphy_rden_enum;
-        } tphy_rden4[9:8];
+            desc = "Gating delay cycle of DDR SDRAM byte 4 (values 6-7 reserved).";
+            encode = DDRC_DTR_LAT_tphy_rden_enum;
+            reset = 0x0;
+        } tphy_rden4[18:16];
 
         field {
             name = "tphy_rden3";
-            desc = "Gating delay phase of DDR SDRAM byte 3.";
-            encode = DDRC_DDRC_DTR_LAT_tphy_rden_enum;
-        } tphy_rden3[7:6];
+            desc = "Gating delay cycle of DDR SDRAM byte 3 (values 6-7 reserved).";
+            encode = DDRC_DTR_LAT_tphy_rden_enum;
+            reset = 0x0;
+        } tphy_rden3[14:12];
 
         field {
             name = "tphy_rden2";
-            desc = "Gating delay phase of DDR SDRAM byte 2.";
-            encode = DDRC_DDRC_DTR_LAT_tphy_rden_enum;
-        } tphy_rden2[5:4];
+            desc = "Gating delay cycle of DDR SDRAM byte 2 (values 6-7 reserved).";
+            encode = DDRC_DTR_LAT_tphy_rden_enum;
+            reset = 0x0;
+        } tphy_rden2[10:8];
 
         field {
             name = "tphy_rden1";
-            desc = "Gating delay phase of DDR SDRAM byte 1.";
-            encode = DDRC_DDRC_DTR_LAT_tphy_rden_enum;
-        } tphy_rden1[3:2];
+            desc = "Gating delay cycle of DDR SDRAM byte 1 (values 6-7 reserved).";
+            encode = DDRC_DTR_LAT_tphy_rden_enum;
+            reset = 0x0;
+        } tphy_rden1[6:4];
 
         field {
             name = "tphy_rden0";
-            desc = "Gating delay phase of DDR SDRAM byte 0.";
-            encode = DDRC_DDRC_DTR_LAT_tphy_rden_enum;
-        } tphy_rden0[1:0];
+            desc = "Gating delay cycle of DDR SDRAM byte 0 (values 6-7 reserved).";
+            encode = DDRC_DTR_LAT_tphy_rden_enum;
+            reset = 0x0;
+        } tphy_rden0[2:0];
 
     } DDRC_DTR_LAT @ 0x0048;
 `endif
@@ -2180,6 +2281,28 @@ regfile eDDRC {
         } twlmrd[5:0];
 
     } DDRC_TIMING4 @ 0x0060;
+`endif
+
+`ifdef DDRC_ODT_CONFIG_0x40_REG
+    reg {
+        name = "DDR ODT Feature Configuration Register";
+        desc = "Hi3511 DDRC_ODT_CONFIG at 0x40 (original Chinese data sheet 4.1.5, `hi3511v100--Hi3511-Datasheet.txt` line 14712, total reset 0x0000_0001): read ODT enable (0: close the DDR2 SDRAM ODT during reads; 1: open it) and write ODT enable. Same layout as the Hi3520 V100 / Hi3515 register at 0x94. Bits [31:2] are reserved.";
+
+        field {
+            name = "rodt";
+            desc = "Read ODT enable.";
+            encode = DDRC_enabled_enum;
+            reset = 0x0;
+        } rodt[1:1];
+
+        field {
+            name = "wodt";
+            desc = "Write ODT enable.";
+            encode = DDRC_enabled_enum;
+            reset = 0x1;
+        } wodt[0:0];
+
+    } DDRC_ODT_CONFIG @ 0x0040;
 `endif
 
 `ifdef DDRC_ODT_CONFIG_0x94_REG
@@ -3157,6 +3280,7 @@ regfile eDDRC {
 `endif
 
 `ifdef DDRC_RESET_G3
+`ifndef DDRC_HI3511V100
     reg {
         name = "DDRC command priority configuration register";
         desc = "One register per QoS ID, n = 0..15 (0x108 + 0x4 x n). Original Chinese data sheet 4.1.7 DDRC_QOS (`hi3520v100--Hi3520-Datasheet.txt` line 21269, total reset 0x0000_0000; the register is missing from the summary table 4-6). Bits [31:17] (RO), [15:14] and 3 are reserved.";
@@ -3193,6 +3317,7 @@ regfile eDDRC {
         } pri[2:0];
 
     } DDRC_QOS[16] @ 0x0108 += 0x4;
+`endif
 `endif
 
 `ifdef DDRC_QOS_0x150_REG
@@ -3807,6 +3932,382 @@ regfile eDDRC {
             reset = 0x0;
         } ctl_core[13:0];
     } DDRC_CMPSTATUS1 @ 0x0388;
+`endif
+
+`ifdef DDRC_HI3515V100
+    // Hi3515 edition: registers that exist only in this chip's DDRC (data sheet 4.1.5, Table 4-5, base
+    // 0x2011_0000, `hi3515v100--Hi3515-Datasheet.txt` lines 16421-18010): DQS gate-training status and
+    // training address/data (0x4C-0x60), interface status (0x90), QoS control (0x100) and the PHY/DLL/IO
+    // control registers (0x270-0x27C). The rest of the Hi3515 set is the Hi3520 V100 edition.
+
+    enum DDRC_PHY_STATUS_phase_enum {
+        SHIFT_0   = 0x0 { desc = "Shift 0 degrees."; };
+        SHIFT_90  = 0x1 { desc = "Shift 90 degrees."; };
+        SHIFT_180 = 0x2 { desc = "Shift 180 degrees."; };
+        SHIFT_270 = 0x3 { desc = "Shift 270 degrees."; };
+    };
+
+    reg {
+        name = "DDRC PHY status register";
+        desc = "DQS gate-training status per byte. Data sheet 4.1.5 DDRC_PHY_STATUS (offset 0x4C, printed page 4-28, dump line 17435, total reset 0x0000_0000).";
+
+        field {
+            name = "dtr_status";
+            desc = "Phase-shift status of the byte gating position, two bits per byte (bits [2n+17:2n+16] = byte n): 00: shift 0 degrees; 01: 90; 10: 180; 11: 270.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } dtr_status[31:16];
+
+        field {
+            name = "dtr_err";
+            desc = "Auto-tracking error status of the gating position, one bit per byte: 0: no error occurred during tracking; 1: an error occurred during tracking.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } dtr_err[15:8];
+
+        field {
+            name = "dtr_ok";
+            desc = "Gating training status, one bit per byte: 0: an error occurred during training; 1: no error occurred during training.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } dtr_ok[7:0];
+    } DDRC_PHY_STATUS @ 0x004C;
+
+    reg {
+        name = "DDRC PHY training address register";
+        desc = "DDR2 SDRAM address used for gate training. Data sheet 4.1.5 DDRC_PHY_ADDR (offset 0x50, printed page 4-29, dump line 17476, total reset 0x0000_0000).";
+
+        field {
+            name = "train_row";
+            desc = "Gating training position: row address of the DDR2 SDRAM. When the row address is narrower than 16 bits the upper bits are stuffed with 0s.";
+            reset = 0x0;
+        } train_row[31:16];
+
+        field {
+            name = "train_bank";
+            desc = "Gating training position: bank address of the DDR2 SDRAM. When the bank address is narrower than three bits the upper bits are stuffed with 0s.";
+            reset = 0x0;
+        } train_bank[15:13];
+
+        field {
+            name = "train_col";
+            desc = "Gating training position: column address of the DDR2 SDRAM. When the column address is narrower than 13 bits the upper bits are stuffed with 0s.";
+            reset = 0x0;
+        } train_col[12:0];
+    } DDRC_PHY_ADDR @ 0x0050;
+
+    reg {
+        name = "DDRC PHY training data register 0";
+        desc = "Data sheet 4.1.5 DDRC_PHY_DATA0 (offset 0x54, printed page 4-29, dump line 17508, total reset 0xEE11_DD22).";
+
+        field {
+            name = "dt_data0";
+            desc = "DQS gating training data 0.";
+            reset = 0xEE11DD22;
+        } dt_data0[31:0];
+    } DDRC_PHY_DATA0 @ 0x0054;
+
+    reg {
+        name = "DDRC PHY training data register 1";
+        desc = "Data sheet 4.1.5 DDRC_PHY_DATA1 (offset 0x58, printed page 4-30, dump line 17539, total reset 0xCC33_BB44).";
+
+        field {
+            name = "dt_data1";
+            desc = "DQS gating training data 1.";
+            reset = 0xCC33BB44;
+        } dt_data1[31:0];
+    } DDRC_PHY_DATA1 @ 0x0058;
+
+    reg {
+        name = "DDRC PHY training data register 2";
+        desc = "Data sheet 4.1.5 DDRC_PHY_DATA2 (offset 0x5C, printed page 4-30, dump line 17558, total reset 0x44BB_33CC).";
+
+        field {
+            name = "dt_data2";
+            desc = "DQS gating training data 2.";
+            reset = 0x44BB33CC;
+        } dt_data2[31:0];
+    } DDRC_PHY_DATA2 @ 0x005C;
+
+    reg {
+        name = "DDRC PHY training data register 3";
+        desc = "Data sheet 4.1.5 DDRC_PHY_DATA3 (offset 0x60, printed page 4-30, dump line 17577, total reset 0x22DD_11EE).";
+
+        field {
+            name = "dt_data3";
+            desc = "DQS gating training data 3.";
+            reset = 0x22DD11EE;
+        } dt_data3[31:0];
+    } DDRC_PHY_DATA3 @ 0x0060;
+
+    reg {
+        name = "DDRC interface status register";
+        desc = "Data sheet 4.1.5 DDRC_IF_STATUS (offset 0x90, printed page 4-31, dump line 17604, total reset 0x0000_0000); bits [31:2] reserved.";
+
+        field {
+            name = "axistatus";
+            desc = "Status of the DDRC bus interfaces, one bit per interface: 0: idle; 1: a command is being executed. For example 0x01 means there is data in the buffer of the ahb0 interface (data sheet wording).";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } axistatus[1:0];
+    } DDRC_IF_STATUS @ 0x0090;
+
+    reg {
+        name = "DDRC QoS control register";
+        desc = "Data sheet 4.1.5 DDRC_QOS_CTRL (offset 0x100, printed page 4-32, dump line 17674, total reset 0x0000_0888); bits [31:27] and [16:12] reserved.";
+
+        field {
+            name = "adp_cnt";
+            desc = "Priority adaptation cycle. Every adp_cnt cycles after a command in the DMC times out, the absolute priority of that command is raised by one level until it reaches the highest priority. 0x0: disabled; 0x1-0x3FF: enabled.";
+            reset = 0x0;
+        } adp_cnt[26:17];
+
+        field {
+            name = "dmc_fifo_lvl";
+            desc = "Depth of the command register FIFO in the DMC: 0x0-0x1: depth of one command; 0x2-0x8: depth of n commands; other values reserved.";
+            reset = 0x8;
+        } dmc_fifo_lvl[11:8];
+
+        field {
+            name = "axi1_fifo_lvl";
+            desc = "Command-full threshold of AXI interface 1 (flow control of the interface commands): 0x0-0x1: depth of one command; 0x2-0x8: depth of n commands; other values reserved.";
+            reset = 0x8;
+        } axi1_fifo_lvl[7:4];
+
+        field {
+            name = "axi0_fifo_lvl";
+            desc = "Command-full threshold of AXI interface 0 (flow control of the interface commands): 0x0-0x1: depth of one command; 0x2-0x8: depth of n commands; other values reserved.";
+            reset = 0x8;
+        } axi0_fifo_lvl[3:0];
+    } DDRC_QOS_CTRL @ 0x0100;
+
+    enum DDRC_PHY_CONFIG_ioodt_enum {
+        DISABLED = 0x0 { desc = "IO ODT disabled."; };
+        OHM_75   = 0x1 { desc = "75 ohm."; };
+        OHM_150  = 0x2 { desc = "150 ohm."; };
+        RESERVED = 0x3 { desc = "Reserved."; };
+    };
+
+    reg {
+        name = "DDRC PHY configuration register";
+        desc = "Data sheet 4.1.5 DDRC_PHY_CONFIG (offset 0x270, printed page 4-34, dump line 17805, total reset 0x0000_0000); bits [31:4] reserved (RW).";
+
+        field {
+            name = "ioodt";
+            desc = "ODT configuration of the DDR2 IO.";
+            encode = DDRC_PHY_CONFIG_ioodt_enum;
+            reset = 0x0;
+        } ioodt[3:2];
+
+        field {
+            name = "ck1_dis";
+            desc = "DDR CK1 low-power control: 0: do not disable the CK1 clock output; 1: disable the CK1 clock output.";
+            reset = 0x0;
+        } ck1_dis[1:1];
+
+        field {
+            name = "ck0_dis";
+            desc = "DDR CK0 low-power control: 0: do not disable the CK0 clock output; 1: disable the CK0 clock output.";
+            reset = 0x0;
+        } ck0_dis[0:0];
+    } DDRC_PHY_CONFIG @ 0x0270;
+
+    reg {
+        name = "DDRC DLL status register";
+        desc = "Data sheet 4.1.5 DDRC_DLL_STATUS (offset 0x274, printed page 4-35, dump line 17850, total reset 0x0000_00F0); bits [31:12] and [3:2] reserved.";
+
+        field {
+            name = "dll_mdly_tap";
+            desc = "Valid delay-unit level of the master DLL: the number of DLL delay units needed to delay one clock cycle.";
+            sw = r;
+            hw = w;
+            reset = 0xF;
+        } dll_mdly_tap[11:4];
+
+        field {
+            name = "overflow";
+            desc = "DLL overflow indicator: the total delay of all delay units is less than one clock cycle. 0: no DLL overflow; 1: DLL overflow.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } overflow[1:1];
+
+        field {
+            name = "locked";
+            desc = "DLL lock indicator: 0: unlocked; 1: locked.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } locked[0:0];
+    } DDRC_DLL_STATUS @ 0x0274;
+
+    reg {
+        name = "DDRC DLL configuration register";
+        desc = "Data sheet 4.1.5 DDRC_DLL_CONFIG (offset 0x278, printed page 4-35, dump line 17884, total reset 0x0000_0009); bits [31:16] and 7 reserved.";
+
+        field {
+            name = "dll_slave_sel";
+            desc = "Delay level of the slave DLL (maximum 0x2D); valid when dll_mode is 1.";
+            reset = 0x0;
+        } dll_slave_sel[15:8];
+
+        field {
+            name = "dll_mode";
+            desc = "Operating mode of the slave DLL: 0: the delay level of the slave DLL is controlled by the master DLL automatically; 1: the delay level of the slave DLL equals dll_slave_sel (the data sheet calls it DLL_SDLY_SEL).";
+            reset = 0x0;
+        } dll_mode[6:6];
+
+        field {
+            name = "cali_en";
+            desc = "DLL re-calibration enable (for frequency switching).";
+            encode = DDRC_enabled_enum;
+            reset = 0x0;
+        } cali_en[5:5];
+
+        field {
+            name = "stop";
+            desc = "DLL stop-tracking control: 0: the DLL tracks dynamically; 1: the DLL stops tracking.";
+            reset = 0x0;
+        } stop[4:4];
+
+        field {
+            name = "tune";
+            desc = "DLL delay tune: bit 3: 0: increase the DLL delay; 1: decrease the DLL delay; bits [2:0]: number of delay units (000: 0 ... 111: 7). Resets to 0x9 (decrease by one unit).";
+            reset = 0x9;
+        } tune[3:0];
+    } DDRC_DLL_CONFIG @ 0x0278;
+
+    enum DDRC_IO_CTRL_drv_enum {
+        SSTL18_FULL = 0x0 { desc = "SSTL18 full strength."; };
+        SSTL18_HALF = 0x1 { desc = "SSTL18 half strength."; };
+    };
+
+    reg {
+        name = "DDRC IO control register";
+        desc = "Data sheet 4.1.5 DDRC_IO_CTRL (offset 0x27C, printed page 4-36, dump line 17947, total reset 0x0001_0001); bits [31:18], [15:13], [11:10], [7:6] and [3:2] reserved.";
+
+        field {
+            name = "pwd_inout";
+            desc = "Power-down control of the DDR IOs (DQ and DQS): 0: power down invalid; 1: power down valid.";
+            reset = 0x0;
+        } pwd_inout[17:17];
+
+        field {
+            name = "pwd_out";
+            desc = "Power-down control of the DDR outputs (CK, CMD, ADDR and DM): 0: power down invalid; 1: power down valid.";
+            reset = 0x1;
+        } pwd_out[16:16];
+
+        field {
+            name = "lvcmos";
+            desc = "IO level: 0: SSTL18, DDR2 mode; 1: 1.8 V mobile DDR mode. Must be 0 on the Hi3515 (mobile DDR is not supported).";
+            reset = 0x0;
+        } lvcmos[12:12];
+
+        field {
+            name = "drv_ck";
+            desc = "Drive capability of the CK pins (S0, S1), DDR2 mode; values 2-3 reserved.";
+            encode = DDRC_IO_CTRL_drv_enum;
+            reset = 0x0;
+        } drv_ck[9:8];
+
+        field {
+            name = "drv_cmd";
+            desc = "Drive capability of the CMD and ADDR pins (S0, S1), DDR2 mode (lvcmos = 0); values 2-3 reserved.";
+            encode = DDRC_IO_CTRL_drv_enum;
+            reset = 0x0;
+        } drv_cmd[5:4];
+
+        field {
+            name = "drv_data";
+            desc = "Drive capability of the DQ, DM and DQS pins (S0, S1), DDR2 mode (lvcmos = 0); values 2-3 reserved.";
+            encode = DDRC_IO_CTRL_drv_enum;
+            reset = 0x1;
+        } drv_data[1:0];
+    } DDRC_IO_CTRL @ 0x027C;
+`endif
+
+`ifdef DDRC_HI3511V100
+    // Hi3511 / Hi3512 edition: registers that exist only in this chip's DDRC (original Chinese data sheet
+    // 4.1.5, Table 4-4, base 0x1015_0000, `hi3511v100--Hi3511-Datasheet.txt` lines 13984-14887).
+
+    reg {
+        name = "DDRC DLL status register";
+        desc = "Original Chinese data sheet 4.1.5 DDRC_DLL_STATUS (offset 0x78, dump line 14740, total reset 0x0000_0000; the bit table prints both flags as RW, modelled read-only); bits [31:2] reserved.";
+
+        field {
+            name = "overflow";
+            desc = "DLL overflow flag: 0: the DLL has not overflowed; 1: the DLL overflowed.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } overflow[1:1];
+
+        field {
+            name = "dll_locked";
+            desc = "DLL lock flag: 0: not locked; 1: locked.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } dll_locked[0:0];
+    } DDRC_DLL_STATUS @ 0x0078;
+
+    reg {
+        name = "DDRC DLL configuration register";
+        desc = "Original Chinese data sheet 4.1.5 DDRC_DLL_CONFIG (offset 0x7C, dump line 14778, total reset 0x0000_0009); bits [31:6] reserved. The DDR frequency-switching sequence (DS 4.1.4) sets dll_cali_en = 1, waits, then clears it; the data sheet recommends the default tune value.";
+
+        field {
+            name = "dll_cali_en";
+            desc = "Frequency-switching enable: re-calibrates the DLL after a frequency switch. 0: disabled; 1: enabled.";
+            reset = 0x0;
+        } dll_cali_en[5:5];
+
+        field {
+            name = "stop";
+            desc = "DLL stop: 0: the DLL works; 1: the DLL is stopped.";
+            reset = 0x0;
+        } stop[4:4];
+
+        field {
+            name = "tune";
+            desc = "DLL delay fine tune: bit 3: 0: add delay units; 1: remove delay units; bits [2:0]: number of delay units added or removed. The data sheet recommends the default (0x9).";
+            reset = 0x9;
+        } tune[3:0];
+    } DDRC_DLL_CONFIG @ 0x007C;
+
+    enum DDRC_CHN_QOS_pri_enum {
+        HIGHEST = 0x0 { desc = "Highest priority."; };
+        LOWEST  = 0x7 { desc = "Lowest priority."; };
+    };
+
+    reg {
+        name = "DDRC channel QoS configuration register";
+        desc = "One register per bus channel, n = 0..7 (0x98 + 0x4 x n, DS name DDRC_CHn_QOS, summary row 0x098-0x0B4). Original Chinese data sheet 4.1.5 (dump line 14846, total reset 0x0000_0000); bits [31:17], [15:14] and 3 reserved.";
+
+        field {
+            name = "qos_en";
+            desc = "QoS enable: 0: QoS disabled; 1: QoS enabled.";
+            encode = DDRC_enabled_enum;
+            reset = 0x0;
+        } qos_en[16:16];
+
+        field {
+            name = "qos";
+            desc = "Channel aging time; the recommended range is 0x002-0x3FF.";
+            reset = 0x0;
+        } qos[13:4];
+
+        field {
+            name = "pri";
+            desc = "Channel priority (the smaller the value the higher the priority): 000 highest, 001 second highest ... 111 lowest.";
+            encode = DDRC_CHN_QOS_pri_enum;
+            reset = 0x0;
+        } pri[2:0];
+    } DDRC_CHN_QOS[8] @ 0x0098 += 0x4;
 `endif
 
 `ifdef DDRC_FLUX_0x200_REG
