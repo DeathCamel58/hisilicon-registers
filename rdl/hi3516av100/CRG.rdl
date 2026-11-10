@@ -10,6 +10,7 @@ regfile eCRG {
 
     Clock facts for the bring-up code:
     - A7 (Cortex-A7): PERI_CRG12 cpu_sc_sel [9:8], reset 00 = APLL FOUTPOSTDIV (reset 24 MHz x 50 / 1 = 1200 MHz VCO, /2 = 600 MHz); 01 = 500 MHz, 10 = 400 MHz, 11 = BPLL FOUTPOSTDIV.
+      The system controller powers up in slow mode (SYS_CTRL SC_CTRL reset 0x212, modectrl = 010), so the A7 runs from the 24 MHz crystal until software writes modectrl = 100 (normal), whatever cpu_sc_sel says.
       PERI_CRG10 cpuclk_skipcfg/cpuclk_loaden gives 1/32 step frequency scaling on top. APLL: PERI_CRG0/1; change it only in slow mode (the system controller mode), the PLL is
       stable 0.1 ms after a change, check PERI_CRG58 apll_lock. BPLL is powered down at reset. VPLL (1188 MHz VCO, 594/297/148.5/99/74.25 MHz) and EPLL (1000 MHz VCO, 500/250/125 MHz)
       are fixed in practice (spread spectrum in PERI_CRG67/68/70).
@@ -881,7 +882,7 @@ Data sheet 3.2.7 PERI_CRG11 (offset 0x2C, printed page 3-21, `hi3516av100--Hi351
         name = "SoC clock selection register";
         desc = "PERI_CRG12 is an SoC clock selection register.
 
-SoC clock selection. A7: cpu_sc_sel [9:8] (reset 00 = APLL_FOUTPOSTDIV = 600 MHz at reset); the vendor Linux clock driver (crg-hi3516av100.c a7_mux, offset 0x30 bits 9:8, table {apll 0, 500m 1, 400m 2}) and the vendor U-Boot (lowlevel_init_svb.c CPU_MASK 0x300) agree. DS section 3.2.5 table 3-4 prints `bit[8:7]` for cpu_sc_sel, the register table [9:8] is right. DS 3.2.5 `Precautions` says the A7 runs from the crystal after power on, but the register reset (00 = APLL), figure 3-3 (`A7 (default)` on the APLL output) and the vendor code say the APLL postdiv output; the 24 MHz `slow mode` is a system controller mode (SC_CTRL), not a CRG mux. DDR: ddr_sc_sel [5:4] (vendor U-Boot DDR_MASK 0x30; reset 297 MHz). Bus: sysaxi_sc_sel [3] (vendor Linux sysaxi_mux 0x30 bit 3: 198m / 148.5m) -> system APB clock = sysaxi / 4 = 49.5 MHz (37.125 MHz when 148.5 MHz is selected); the vendor Linux driver calls the APB clock `50 MHz` and uses a fixed 50m parent for the UART/DMAC gates. The data sheet describes mda_sc_sel [19:12] and bus_sc_sel [3:0] as single fields containing several sub-selectors; this file splits them into the individual 2/1-bit selectors (avc/vgs/vpss/vedu_sc_sel, sysaxi/mda1axi/mda0axi_sc_sel) so that every selector has its own enum.
+SoC clock selection. A7: cpu_sc_sel [9:8] (reset 00 = APLL_FOUTPOSTDIV = 600 MHz at reset); the vendor Linux clock driver (crg-hi3516av100.c a7_mux, offset 0x30 bits 9:8, table {apll 0, 500m 1, 400m 2}) and the vendor U-Boot (lowlevel_init_svb.c CPU_MASK 0x300) agree. DS section 3.2.5 table 3-4 prints `bit[8:7]` for cpu_sc_sel, the register table [9:8] is right. DS 3.2.5 `Precautions` says the A7 runs from the crystal after power on while this register resets to cpu_sc_sel = 00 (APLL_FOUTPOSTDIV); both are right: the system controller powers up in slow mode (SYS_CTRL SC_CTRL total reset 0x212 = modectrl 010 `slow`, modestatus 0x2; data sheet lines 20808, 20886), in which the ARM subsystem is clocked from the 24 MHz crystal regardless of this mux, and only after software writes modectrl = 100 (normal) does cpu_sc_sel choose the PLL clock (600 MHz APLL at reset). The slow/normal switch is a SYS_CTRL mode, not a CRG mux. DDR: ddr_sc_sel [5:4] (vendor U-Boot DDR_MASK 0x30; reset 297 MHz). Bus: sysaxi_sc_sel [3] (vendor Linux sysaxi_mux 0x30 bit 3: 198m / 148.5m) -> system APB clock = sysaxi / 4 = 49.5 MHz (37.125 MHz when 148.5 MHz is selected); the vendor Linux driver calls the APB clock `50 MHz` and uses a fixed 50m parent for the UART/DMAC gates. The data sheet describes mda_sc_sel [19:12] and bus_sc_sel [3:0] as single fields containing several sub-selectors; this file splits them into the individual 2/1-bit selectors (avc/vgs/vpss/vedu_sc_sel, sysaxi/mda1axi/mda0axi_sc_sel) so that every selector has its own enum.
 
 Data sheet 3.2.7 PERI_CRG12 (offset 0x30, printed page 3-22, `hi3516av100--Hi3516A-Hi3516D-Datasheet.txt` line 18999).";
 
@@ -974,7 +975,7 @@ Data sheet 3.2.7 PERI_CRG12 (offset 0x30, printed page 3-22, `hi3516av100--Hi351
 
         field {
             name = "ddr_sc_sel";
-            desc = "DDR clock select. The data sheet calls code 01 reserved; the vendor U-Boot (lowlevel_init_svb.c, DDR PMC setup) treats 01 as 400 MHz (`ddr=400`), low confidence.";
+            desc = "DDR clock select. The data sheet calls code 01 reserved (line 19057); the vendor U-Boot (lowlevel_init_svb.c config_zone_pmc, lines 358-367) only reads this field and picks the PMC voltage profile commented `ddr=400` when it finds 01; it never writes 01, so whether the mux has a 400 MHz input is unconfirmed (low confidence).";
             sw = rw;
             hw = r;
             encode = PERI_CRG12_ddr_sc_sel_enum;
