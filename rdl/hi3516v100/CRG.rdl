@@ -4,7 +4,7 @@
 regfile eCRG {
     name = "Clock and reset generator (CRG), Hi3516 V100";
     desc = "
-    PERI_CRG0..PERI_CRG43 clock/reset block at 0x20030000 (41 registers are implemented; PERI_CRG9, 40, 41 do not exist). The Hi3516 V100 is a single-chip Full-HD IP-camera SoC (one Cortex-A9, 800/750 MHz max). This file follows the ORIGINAL CHINESE data sheet (Hi3516 Full-HD IP-Cam SOC user guide, document version 00B60, 2011-08-12), chapter 3.2 (clock) and 3.2.5 (register description); names and descriptions are translated to English. Data sheet checked 2026-11-09. The register layout is NOT the Hi3520D one: the PLL blocks and the PERI_CRG numbering look alike but offsets and contents differ (here: 4 PLLs, A9 mode at PERI_CRG8, PLL lock bits at PERI_CRG43/0xAC, SFC at PERI_CRG25/0x64). The vendor Hi3520D U-Boot (`arch-hi3520d/platform.h`) in fact uses exactly this Hi3516 layout (REG_CRG0/1/6/7 values, CRG8 A9 mode bits, CRG10 DDR ratio, CRG43 lock mask 0xF) and confirms the APLL/EPLL reset values below. No vendor Hi3516 V100 clock driver exists in the local OpenIPC trees.
+    PERI_CRG0..PERI_CRG43 clock/reset block at 0x20030000 (41 registers are implemented; PERI_CRG9, 40, 41 do not exist). The Hi3516 V100 is a single-chip Full-HD IP-camera SoC (one Cortex-A9, 800/750 MHz max). This file follows the ORIGINAL CHINESE data sheet (Hi3516 Full-HD IP-Cam SOC user guide, document version 00B60, 2011-08-12), chapter 3.2 (clock) and 3.2.5 (register description); names and descriptions are translated to English. Data sheet checked 2026-11-09. The register layout is NOT the Hi3520D one: the PLL blocks and the PERI_CRG numbering look alike but offsets and contents differ (here: 4 PLLs, A9 mode at PERI_CRG8, PLL lock bits at PERI_CRG43/0xAC, SFC at PERI_CRG25/0x64). The vendor U-Boot header `arch-hi3520d/platform.h` (4e4o-hi3520d-uboot tree; identical copies in arch-godarm, arch-godnet) carries exactly this Hi3516 layout (REG_CRG0/1/6/7 values, CRG8 A9 mode bits, CRG10 DDR ratio, CRG43 lock mask 0xF), which matches the reset values below. That header is an unused leftover inherited from a Hi3516-family template: no code in the tree references those macros, and the real Hi3520D vendor code uses the Hi3520D layout instead (U-Boot board/hi3520d/board.c uses PERI_CRG57; the vendor kernel mach-hi3520d/core.c reads the A9:AXI mode at CRG+0x28 bits 3:2 and its platform.h has no CRG macros besides the base). It is evidence about the Hi3516 template, not about the Hi3520D. No vendor Hi3516 V100 clock driver exists in the local OpenIPC trees.
 
     Clock sources: XIN (fixed 24 MHz crystal, the PLL reference), VIU0_CLK/VIU1_CLK (video input clocks), RGMII_RXCK/RGMII_TXCK (GMAC interface clocks). Four PLLs with two registers each: APLL = PERI_CRG0/1 (A9, DDR controller and bus clocks), VPLL0 = PERI_CRG2/3 (VOSD), VPLL1 = PERI_CRG4/5 (VOHD), EPLL = PERI_CRG6/7 (GMAC/PCIE). VCO = 24 MHz x (fbdiv + frac/2^24) / refdiv, which must be within 800 MHz..2.4 GHz.
 
@@ -21,7 +21,7 @@ regfile eCRG {
         name = "APLL configuration register 0";
         desc = "PERI_CRG0 is the APLL configuration register 0.
 
-APLL (PERI_CRG0/1) feeds the A9, the DDR controller and the bus clocks. Reset: postdiv2 = 1, postdiv1 = 1, refdiv = 3, fbdiv = 100 -> VCO 24 x 100 / 3 = 800 MHz, POSTDIV output 800 MHz, which is the A9 clock in `max 800 MHz` mode (PERI_CRG8 a9_max_freq_mode = 0). For 750 MHz mode (a9_max_freq_mode = 1) FOUTPOSTDIV must be 1500 MHz (data sheet 3.2.3). Reset 0x89000000 equals the value the vendor Hi3520D U-Boot (platform.h REG_CRG0_VALUE) writes to this address. PLL arithmetic (data sheet 3.2.3, Tables 3-2 and 3-3): the reference clock is XIN, a fixed 24 MHz crystal; FOUTVCO = 24 MHz x (fbdiv + frac/2^24) / refdiv and must be >= 800 MHz and <= 2.4 GHz; FOUTPOSTDIV = FOUTVCO / (postdiv1 x postdiv2) (the data sheet prints `FOUTVCO / pstdiv1 * pstdiv2`, a typo for the product); FOUT1PH0 = FOUTVCO / (pd1 x pd2 x 2); FOUT2 = /(pd1 x pd2 x 4); FOUT3 = /(pd1 x pd2 x 6); FOUT4 = /(pd1 x pd2 x 8). The *_pd, *_foutvcopd, *_postdivpd and *_fout4phasepd bits are output enables (1 = running, 0 = powered down). A PLL configuration may only be changed in SLOW mode (the A9 then runs from the 24 MHz crystal); wait 0.1 ms and check the lock bit in PERI_CRG43 before switching back to NORMAL.
+APLL (PERI_CRG0/1) feeds the A9, the DDR controller and the bus clocks. Reset: postdiv2 = 1, postdiv1 = 1, refdiv = 3, fbdiv = 100 -> VCO 24 x 100 / 3 = 800 MHz, POSTDIV output 800 MHz, which is the A9 clock in `max 800 MHz` mode (PERI_CRG8 a9_max_freq_mode = 0). For 750 MHz mode (a9_max_freq_mode = 1) FOUTPOSTDIV must be 1500 MHz (data sheet 3.2.3). Reset 0x89000000 is the REG_CRG0_VALUE constant in the vendor U-Boot header arch-hi3520d/platform.h (an unused Hi3516-template leftover, see the block description). PLL arithmetic (data sheet 3.2.3, Tables 3-2 and 3-3): the reference clock is XIN, a fixed 24 MHz crystal; FOUTVCO = 24 MHz x (fbdiv + frac/2^24) / refdiv and must be >= 800 MHz and <= 2.4 GHz; FOUTPOSTDIV = FOUTVCO / (postdiv1 x postdiv2) (the data sheet prints `FOUTVCO / pstdiv1 * pstdiv2`, a typo for the product); FOUT1PH0 = FOUTVCO / (pd1 x pd2 x 2); FOUT2 = /(pd1 x pd2 x 4); FOUT3 = /(pd1 x pd2 x 6); FOUT4 = /(pd1 x pd2 x 8). The *_pd, *_foutvcopd, *_postdivpd and *_fout4phasepd bits are output enables (1 = running, 0 = powered down). A PLL configuration may only be changed in SLOW mode (the A9 then runs from the 24 MHz crystal); wait 0.1 ms and check the lock bit in PERI_CRG43 before switching back to NORMAL.
 
 Data sheet 3.2.5 PERI_CRG0 (offset 0x0, printed page 3-16, `hi3516v100--Hi3516-Datasheet.txt` line 10200).";
 
@@ -76,7 +76,7 @@ Data sheet 3.2.5 PERI_CRG0 (offset 0x0, printed page 3-16, `hi3516v100--Hi3516-D
         name = "APLL configuration register 1";
         desc = "PERI_CRG1 is the APLL configuration register 1.
 
-Reset 0x006C3064 equals the vendor Hi3520D U-Boot value REG_CRG1_VALUE (platform.h). Reset gives refdiv 3, fbdiv 100 (VCO 800 MHz, see PERI_CRG0). Bit 22 reads 1 at reset although the bit table calls it reserved. To stop the APLL write bit 21 = 0 (data sheet 3.10.4).
+Reset 0x006C3064 equals REG_CRG1_VALUE in the vendor U-Boot header arch-hi3520d/platform.h (unused Hi3516-template leftover). Reset gives refdiv 3, fbdiv 100 (VCO 800 MHz, see PERI_CRG0). Bit 22 reads 1 at reset although the bit table calls it reserved. [inferred] The Hi3520D/Hi3518 PLL registers have dsmpd at this bit (1 = integer mode, reset 1) and dacpd at bit 23; this data sheet documents neither, so treat bit 22 as probably dsmpd and leave it at 1. To stop the APLL write bit 21 = 0 (data sheet 3.10.4).
 
 Data sheet 3.2.5 PERI_CRG1 (offset 0x4, printed page 3-17, `hi3516v100--Hi3516-Datasheet.txt` line 10246).";
 
@@ -220,7 +220,7 @@ Data sheet 3.2.5 PERI_CRG2 (offset 0x8, printed page 3-18, `hi3516v100--Hi3516-D
         name = "VPLL0 configuration register 1";
         desc = "PERI_CRG3 is the VPLL0 configuration register 1.
 
-Reset 0x006C102D: refdiv 1, fbdiv 45 (VCO 1080 MHz), the VCO output enable (bit 20) is 0 at reset. Bit 22 reads 1 at reset although the bit table calls it reserved. Lock status: PERI_CRG43 bit 1. To stop VPLL0 write bit 21 = 0.
+Reset 0x006C102D: refdiv 1, fbdiv 45 (VCO 1080 MHz), the VCO output enable (bit 20) is 0 at reset. Bit 22 reads 1 at reset although the bit table calls it reserved. [inferred] The Hi3520D/Hi3518 PLL registers have dsmpd at this bit (1 = integer mode, reset 1) and dacpd at bit 23; this data sheet documents neither, so treat bit 22 as probably dsmpd and leave it at 1. Lock status: PERI_CRG43 bit 1. To stop VPLL0 write bit 21 = 0.
 
 Data sheet 3.2.5 PERI_CRG3 (offset 0xC, printed page 3-18, `hi3516v100--Hi3516-Datasheet.txt` line 10338).";
 
@@ -364,7 +364,7 @@ Data sheet 3.2.5 PERI_CRG4 (offset 0x10, printed page 3-19, `hi3516v100--Hi3516-
         name = "VPLL1 configuration register 1";
         desc = "PERI_CRG5 is the VPLL1 configuration register 1.
 
-Reset 0x007C2063: refdiv 2, fbdiv 99. Bit 22 reads 1 at reset although the bit table calls it reserved. Lock status: PERI_CRG43 bit 2. To stop VPLL1 write bit 21 = 0.
+Reset 0x007C2063: refdiv 2, fbdiv 99. Bit 22 reads 1 at reset although the bit table calls it reserved. [inferred] The Hi3520D/Hi3518 PLL registers have dsmpd at this bit (1 = integer mode, reset 1) and dacpd at bit 23; this data sheet documents neither, so treat bit 22 as probably dsmpd and leave it at 1. Lock status: PERI_CRG43 bit 2. To stop VPLL1 write bit 21 = 0.
 
 Data sheet 3.2.5 PERI_CRG5 (offset 0x14, printed page 3-20, `hi3516v100--Hi3516-Datasheet.txt` line 10439).";
 
@@ -508,7 +508,7 @@ Data sheet 3.2.5 PERI_CRG6 (offset 0x18, printed page 3-21, `hi3516v100--Hi3516-
         name = "EPLL configuration register 1";
         desc = "PERI_CRG7 is the EPLL configuration register 1.
 
-Reset 0x007C207D equals the vendor Hi3520D U-Boot REG_CRG7_VALUE (platform.h). Bit 22 reads 1 at reset although the bit table calls it reserved. Lock status: PERI_CRG43 bit 3. To stop EPLL write bit 21 = 0.
+Reset 0x007C207D equals REG_CRG7_VALUE in the vendor U-Boot header arch-hi3520d/platform.h (unused Hi3516-template leftover). Bit 22 reads 1 at reset although the bit table calls it reserved. [inferred] The Hi3520D/Hi3518 PLL registers have dsmpd at this bit (1 = integer mode, reset 1) and dacpd at bit 23; this data sheet documents neither, so treat bit 22 as probably dsmpd and leave it at 1. Lock status: PERI_CRG43 bit 3. To stop EPLL write bit 21 = 0.
 
 Data sheet 3.2.5 PERI_CRG7 (offset 0x1C, printed page 3-22, `hi3516v100--Hi3516-Datasheet.txt` line 10538).";
 
@@ -597,7 +597,7 @@ Data sheet 3.2.5 PERI_CRG7 (offset 0x1C, printed page 3-22, `hi3516v100--Hi3516-
         name = "A9 frequency mode and reset configuration register";
         desc = "PERI_CRG8 is the A9 frequency mode and reset configuration register.
 
-A9 frequency (data sheet 3.2.3, Table 3-4): a9_max_freq_mode selects the maximum frequency mode (0: A9 max 800 MHz with APLL FOUTPOSTDIV = 800 MHz; 1: A9 max 750 MHz with APLL FOUTPOSTDIV = 1500 MHz). It cannot be switched dynamically and may only be written before the SLOW -> NORMAL switch. a9_axi_freq_mode sets the A9:AXI ratio and can be switched dynamically; 4:1 is not supported when a9_max_freq_mode = 1. The A9 runs from XIN (24 MHz) after reset (SLOW mode). The vendor Hi3520D U-Boot (platform.h REG_CRG8_OFFSET, BITOFFSET_A9_MAX_FREQUENCY, BITOFFSET_A9_AXI_FRE_SCALE) uses this very layout (bit 0, bits 2:1). Reset value 0x10: cpu__srst_req (bit 4) is the only set bit. Low confidence: the data sheet names this bit `cpu__srst_req` (double underscore), resets it to 1 and says it is only valid in slave-load mode; the Hi3520D data sheet has the equivalent field one bit higher and a read-only reserved bit 4 that reads 1 on real hardware, so this bit probably does not hold the running CPU in reset. Preserve bit 4 on writes.
+A9 frequency (data sheet 3.2.3, Table 3-4): a9_max_freq_mode selects the maximum frequency mode (0: A9 max 800 MHz with APLL FOUTPOSTDIV = 800 MHz; 1: A9 max 750 MHz with APLL FOUTPOSTDIV = 1500 MHz). It cannot be switched dynamically and may only be written before the SLOW -> NORMAL switch. a9_axi_freq_mode sets the A9:AXI ratio and can be switched dynamically; 4:1 is not supported when a9_max_freq_mode = 1. The A9 runs from XIN (24 MHz) after reset (SLOW mode). The vendor U-Boot header arch-hi3520d/platform.h (REG_CRG8_OFFSET, BITOFFSET_A9_MAX_FREQUENCY, BITOFFSET_A9_AXI_FRE_SCALE; unused Hi3516-template leftover) uses this very layout (bit 0, bits 2:1). Reset value 0x10: cpu__srst_req (bit 4) is the only set bit. Low confidence: the data sheet names this bit `cpu__srst_req` (double underscore), resets it to 1 and says it is only valid in slave-load mode; the Hi3520D data sheet has the equivalent field one bit higher and a read-only reserved bit 4 that reads 1 on real hardware, so this bit probably does not hold the running CPU in reset. Preserve bit 4 on writes.
 
 Data sheet 3.2.5 PERI_CRG8 (offset 0x20, printed page 3-23, `hi3516v100--Hi3516-Datasheet.txt` line 10593).";
 
@@ -720,7 +720,7 @@ Data sheet 3.2.5 PERI_CRG8 (offset 0x20, printed page 3-23, `hi3516v100--Hi3516-
         name = "DDR clock and soft reset control register";
         desc = "PERI_CRG10 is the DDR clock and soft reset control register.
 
-The Hi3516 register only holds the DDR PHY:AXI frequency ratio (no DDR soft reset bits). The vendor Hi3520D U-Boot (platform.h REG_CRG10_OFFSET, REG_DDR_FRE_SCALE_VALUE) uses the same bit.
+The Hi3516 register only holds the DDR PHY:AXI frequency ratio (no DDR soft reset bits). The vendor U-Boot header arch-hi3520d/platform.h (REG_CRG10_OFFSET, REG_DDR_FRE_SCALE_VALUE; unused Hi3516-template leftover) uses the same bit. Note the real Hi3520D vendor kernel (mach-hi3520d/core.c A9_AXI_SCALE_REG) reads CRG+0x28 bits 3:2, which is the Hi3520D layout, not this one.
 
 Data sheet 3.2.5 PERI_CRG10 (offset 0x28, printed page 3-24, `hi3516v100--Hi3516-Datasheet.txt` line 10675).";
 
@@ -2871,7 +2871,7 @@ Data sheet 3.2.5 PERI_CRG42 (offset 0xA8, printed page 3-55, `hi3516v100--Hi3516
         name = "CRG status register";
         desc = "PERI_CRG43 is the CRG status register.
 
-PLL lock status; must be 1 before the system may switch to NORMAL (PLL) mode. The vendor Hi3520D U-Boot reads this register at 0xAC with mask 0xF (platform.h REG_CRG43_OFFSET / REG_CRG43_MASK). The summary table row of the data sheet wraps the offset (`0x000000 / AC`); the block header says 0x00AC.
+PLL lock status; must be 1 before the system may switch to NORMAL (PLL) mode. The vendor U-Boot header arch-hi3520d/platform.h defines this register at 0xAC with mask 0xF (REG_CRG43_OFFSET / REG_CRG43_MASK; unused Hi3516-template leftover). The summary table row of the data sheet wraps the offset (`0x000000 / AC`); the block header says 0x00AC.
 
 Data sheet 3.2.5 PERI_CRG43 (offset 0xAC, printed page 3-55, `hi3516v100--Hi3516-Datasheet.txt` line 12385).";
 
