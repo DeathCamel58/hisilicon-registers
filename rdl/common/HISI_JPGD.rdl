@@ -3,7 +3,9 @@
 
 regfile eHISI_JPGD {
     name = "HiSilicon JPEG decoder";
-    desc = "Partly described: offsets of all 27 registers (incl. the 5 table memories) are exact (taken from the vendor U-Boot JPEG decoder headers and code); the bit meanings are known only where that code shows them (PICSIZE, SAMPLINGFACTOR, QUANT packing, START and INT bit 0, the values written to RESUME/SCALE/OUTTYPE/INTMASK). NOT known: bit layouts of RESUME, PICVLDNUM, PICTYPE, SCALE, OUTTYPE, DEBUG, the individual INT error bits, the INTMASK polarity, which STRIDE half is luma or chroma; and no register has a reset value (never read on hardware). Registers and fields whose meaning is guessed from names or comments say \"Meaning unverified\". Not in the data sheet.
+    desc = "Partly described: offsets of all 27 registers (incl. the 5 table memories) are exact (taken from the vendor U-Boot JPEG decoder headers and code); the bit meanings are known only where that code shows them (PICSIZE, SAMPLINGFACTOR, QUANT packing, START and INT bit 0, the values written to RESUME/SCALE/OUTTYPE/INTMASK). NOT known: bit layouts of RESUME, PICVLDNUM, PICTYPE, SCALE, OUTTYPE, DEBUG, the individual INT error bits, the INTMASK polarity, which STRIDE half is luma or chroma; and no register has a reset value (never read on hardware). Registers and fields whose meaning is guessed from names or comments say \"Meaning unverified\". The data sheet has no register description for this block (audited 2026-11-10 against the Chinese Hi3520D/Hi3515A/Hi3515C user guide, chapter 7.2).
+
+    Data sheet facts (chapter 7.2, Table 1-1, Table 3-16, PERI_CRG25; all consistent with this block): window 0x20670000-0x2067FFFF (64 KB), GIC interrupt 74, AXI master (DDR access priority via DDRC media0 port 2, out-of-order enable bit `jpgd_ctrl`), interrupt-driven or polled. Partial ITU-T T.81 baseline: sequential DCT, 8-bit precision, three components (Y/U/V) with YUV 4:0:0, 4:2:0, 4:2:2 1x2, 4:2:2 2x1 and 4:4:4, interleaved scans, up to 2 DC + 2 AC Huffman tables and 3 quantization tables; frequency-domain downscale 1/2, 1/4, 1/8; 1x1 to 8192x8192 pixels (semi-planar output up to 8192x8192); segmented stream input; 40 Mpixel/s or 3 channels of D1 Motion-JPEG at 30 fps. Software parses everything above the scan header (markers, tables, frame size, restart interval) and programs the registers; hardware parses the entropy-coded segments and RSTn markers. Per picture there are three interrupt causes: picture done, stream segment consumed with an error (decode stops), stream segment consumed and more data needed (software writes the next STADDR/ENDADDR window and writes 1 to the register the data sheet calls JPGD_RESUME_START, presumably `JPGD_RESUME` at 0x4; each (re)start needs at least 64 bytes of stream). Reset values of the registers are not given.
 
     HiSilicon JPEG decoder (JPGD) at 0x20670000, GIC interrupt ID 74; clock and reset in PERI_CRG25 (0x20030064: bit 1 clock enable, bit 0 soft reset; U-Boot `JPGD_CLOCK_ON 0x2`, `JPGD_RESET_REG_VALUE 0x1`). The Hi3520D data sheet only has the overview (chapter 7.2, no register description; Table 1-1 lists the 64 KB window), so this block is transcribed from the vendor U-Boot JPEG decoder (`product/hiosd/dec/`, a baseline-JPEG boot-logo decoder). The register offsets, the access sequence and the written values are exact; bit meanings are given where the code makes them evident, everything else is a plain 32-bit register. The same offsets are used by the Hi3535 build of that driver (same base 0x20670000); the Hi3531/Hi3520A family has the JPGD at 0x10170000. Software window per the vendor header: `JPGD_REG_LENGTH 0x6BF`. Reset values: unknown (not read on hardware).
 
@@ -33,7 +35,7 @@ Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_
 
     reg {
         name = "Continue-stream register";
-        desc = "`JPGD_REG_RESUME`: U-Boot writes 0x02 before start (stream resume / buffer control); the bit meaning is not documented.
+        desc = "`JPGD_REG_RESUME`: U-Boot writes 0x02 before start (stream resume / buffer control); the bit meaning is not documented. The data sheet (7.2.3.3, continue-stream procedure) says software restarts the decoder after the stream-consumed interrupt by writing 1 to a register it names JPGD_RESUME_START (no offset or bit given); this is probably this register, but U-Boot writes 0x2 (not 0x1), so the bit position is unconfirmed.
 
 Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
 
@@ -131,7 +133,7 @@ Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_
 
     reg {
         name = "Stream buffer start address (hardware window, 128-byte aligned)";
-        desc = "Stream buffer start address (hardware window, 128-byte aligned): `JPGD_REG_STADDR`.
+        desc = "Stream buffer start address (hardware window, 128-byte aligned): `JPGD_REG_STADDR`. The data sheet (7.2.3.3) says software gives the decoder one contiguous stream segment (physical start and end address in bytes) per start, and a (re)start needs at least 64 bytes of stream.
 
 Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
 
