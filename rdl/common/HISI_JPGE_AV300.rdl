@@ -1,0 +1,567 @@
+`ifndef HISI_JPGE_AV300_RDL
+`define HISI_JPGE_AV300_RDL
+
+regfile eHISI_JPGE_AV300 {
+    name = "HiSilicon JPEG encoder (JPGE), Hi3516A V300 generation (vendor-derived stubs)";
+    desc = "
+    VENDOR-DERIVED STUBS, CONFIDENCE LOW, NOT VERIFIED ON HARDWARE. The Hi3516A V300 data sheet (Chinese user guide) lists the JPGE window (0x11220000, 64 KB, interrupt 68, clock gate PERI_CRG44 bit 1 jpge_cken, soft reset bit 0 jpge_srst_req, clock 396 MHz) and a feature list only; it has NO register table. Every register below was found by static analysis (objdump, never executed) of the vendor kernel module open_jpege.ko from the OpenIPC Hi3516AV300 nightly firmware (Linux 4.9.37, 2026-11-10; symbols kept): functions jpege_drv_write_regs (all per-frame register writes, called from jpege_config_regs), jpege_drv_read_regs (interrupt path), jpege_drv_set_osd (OSD block) and jpege_drv_set_quant_table (quantization table). Each register is named UNK_<offset> (no name exists in the module) and described with the access seen, the bit layout the code composes and the configuration-structure offsets it is composed from; the text 'same offset is X in the older generation' is an INFERENCE from the Hi3520D-generation layout (eHISI_JPGE, confidence LOW) and no more.
+
+    This layout is NOT the layout of eHISI_JPGE (Hi3520D, Hi3516A V100 and the other chips of that family): the offsets differ (picture configuration at 0x30 instead of 0x10, image size at 0x34 with 16 bit fields instead of 0x20 with 13 bit fields, quantization table at 0x800 as 23 bit reciprocals (0x800000 / quantizer) instead of the 48 packed words at 0x1000, extra register groups at 0x200..0x21C, 0x300.. and 0x320..0x334); the interrupt-status offsets 0x00/0x04/0x08 and the eight-region OSD concept are shared with the older generation. Probably the same JPEG core as the Hi3516C V500 / Hi3516D V300 generation (an assumption from the module name hi3516cv500_jpege in the OpenHarmony and tekuconcept SDK trees, not verified).
+
+    NOT FOUND in this module (so NOT in this file, open): the START register, the interrupt clear register and the stream buffer address / length / write-pointer registers. The module has no ioremap of its own (the register base is handed over by the sys/venc modules; the constant 0x11220000 appears in open_venc.ko, not analyzed) and the start / acknowledge sequence probably lives in open_chnl.ko / open_venc.ko. The quantization table (UNK_0800) was analyzed only for the three 64 entry runs and one computed run; coverage of all 256 words is not confirmed. Next step if the register map is wanted: analyze open_venc.ko / open_chnl.ko (jpege start path), then a hardware read of offset 0xFC and 0x00 on the Hi3516A V300 (no such board here).
+    ";
+
+    reg {
+        name = "UNK_0000";
+        desc = "Read by jpege_drv_read_regs (the interrupt service path): bit 0 and bit 1 are extracted and stored as two separate flags of the channel status (bit 0 = frame finished, bit 1 = second flag, probably stream buffer full: inferred only from the Hi3520D-generation JPGE_INTSTAT bits 0/1 at the same offset, LOW). Access observed: read. Same offset is JPGE_INTSTAT (bit 0 end of picture, bit 1 stream buffer full) in the older generation (eHISI_JPGE), inferred, LOW. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout, if any, is in the register description). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = r;
+            hw = r;
+        } value[31:0];
+    } UNK_0000 @ 0x0;
+
+    reg {
+        name = "UNK_0004";
+        desc = "Written with the value 0x3 (bit 6 explicitly cleared) at the start of every jpege_drv_write_regs call. Access observed: written. Same offset is JPGE_INTMASK in the older generation (written 3 there too), inferred, LOW. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout, if any, is in the register description). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_0004 @ 0x4;
+
+    reg {
+        name = "UNK_0008";
+        desc = "Read by jpege_drv_read_regs (conditionally, after the first read): bit 3 and bit 2 are extracted and OR-ed into one error flag of the channel status. Access observed: read. Same offset is JPGE_RAWINT in the older generation (bit 2 time-out, bit 3 configuration error there), inferred, LOW. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout, if any, is in the register description). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = r;
+            hw = r;
+        } value[31:0];
+    } UNK_0008 @ 0x8;
+
+    reg {
+        name = "UNK_0024";
+        desc = "Written by jpege_drv_write_regs (called per frame by jpege_config_regs): bits [7:0] = a byte from the channel configuration (offset 0x80), bit 8 = a flag (offset 0x7c). Access observed: written. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout, if any, is in the register description). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_0024 @ 0x24;
+
+    reg {
+        name = "UNK_0030";
+        desc = "Written by jpege_drv_write_regs (called per frame by jpege_config_regs) with several fields: [1:0] = 0 or 3 (from a configuration word, offset 0xb4c), bit 2 cleared, [4:3] = 0 or 1 (input pixel format code in {25, 26, 28, 29, 40} of configuration word 4 selects the value; the same selection also sets [27:20] to 0 or 1), bit 16 cleared, bit 18 cleared, [15:8] = configuration word 0 (looks like the channel number), bit 19 = 1 when configuration word 0xb40 equals 1. Access observed: written. Corresponds by position of its role to JPGE_PICFG (0x10, older generation; channel number at [11:4] there, [15:8] here): inferred, LOW. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout, if any, is in the register description). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_0030 @ 0x30;
+
+    reg {
+        name = "UNK_0034";
+        desc = "Written by jpege_drv_write_regs (called per frame by jpege_config_regs): [15:0] = configuration word 2 (offset 8), [31:16] = configuration word 3 (offset 12); 16 bit fields (the older generation has 13 bit fields at 0x20). Looks like picture width and height. Access observed: written. Role similar to JPGE_VEDIMGSIZE (0x20, older generation): inferred, LOW. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout, if any, is in the register description). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_0034 @ 0x34;
+
+    reg {
+        name = "UNK_0038";
+        desc = "Written with the constant 0x3F by jpege_drv_write_regs (called per frame by jpege_config_regs). Access observed: written. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout, if any, is in the register description). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_0038 @ 0x38;
+
+    reg {
+        name = "UNK_0040";
+        desc = "Written by jpege_drv_write_regs (called per frame by jpege_config_regs): bit 0 = configuration word at offset 0x98, [23:4] = configuration word at offset 0x9c. Access observed: written. Role similar to JPGE_ECSCFG (0x14, older generation: bit 0 and [20:1]): inferred, LOW. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout, if any, is in the register description). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_0040 @ 0x40;
+
+    reg {
+        name = "UNK_0044";
+        desc = "Written 0 by jpege_drv_write_regs (called per frame by jpege_config_regs) (two 10 bit fields [9:0] and [25:16] are composed from zeros). Access observed: written. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout, if any, is in the register description). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_0044 @ 0x44;
+
+    reg {
+        name = "UNK_0048";
+        desc = "Written 0 by jpege_drv_write_regs (called per frame by jpege_config_regs) (two 10 bit fields [9:0] and [25:16] are composed from zeros). Access observed: written. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout, if any, is in the register description). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_0048 @ 0x48;
+
+    reg {
+        name = "UNK_004C";
+        desc = "Written with the constant 0x000FFFFF by jpege_drv_write_regs (called per frame by jpege_config_regs). Access observed: written. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout, if any, is in the register description). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_004C @ 0x4C;
+
+    reg {
+        name = "UNK_0054";
+        desc = "Written by jpege_drv_write_regs (called per frame by jpege_config_regs): bit 1 = configuration word at offset 0xb50, [17:16] = configuration word at offset 0xb58. Access observed: written. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout, if any, is in the register description). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_0054 @ 0x54;
+
+    reg {
+        name = "UNK_0058";
+        desc = "Written with the constant 0x5AAB249C by jpege_drv_write_regs (called per frame by jpege_config_regs). Access observed: written. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout, if any, is in the register description). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_0058 @ 0x58;
+
+    reg {
+        name = "UNK_005C";
+        desc = "Written with the constant 0x22A2A20D by jpege_drv_write_regs (called per frame by jpege_config_regs). Access observed: written. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout, if any, is in the register description). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_005C @ 0x5C;
+
+    reg {
+        name = "UNK_0060";
+        desc = "Written by jpege_drv_write_regs (called per frame by jpege_config_regs) from a configuration word at offset 0x60; value not determined. Access observed: written. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout, if any, is in the register description). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_0060 @ 0x60;
+
+    reg {
+        name = "UNK_0064";
+        desc = "Written 0 (bit 0 cleared from a zero base) by jpege_drv_write_regs (called per frame by jpege_config_regs). Access observed: written. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout, if any, is in the register description). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_0064 @ 0x64;
+
+    reg {
+        name = "UNK_0100";
+        desc = "Written by jpege_drv_set_osd (called from jpege_drv_write_regs, which jpege_config_regs calls per frame): read-modify-write; bits [1:0] = a code 0..3 selected from an attribute value (values 9, 11, 12 give 1, 2, 3; probably the OSD pixel format), bits [31:16] = sixteen single-bit fields (two per region, eight regions) written from two per-region on/off arrays. Access observed: written. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout, if any, is in the register description). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_0100 @ 0x100;
+
+    reg {
+        name = "UNK_0104";
+        desc = "Written by jpege_drv_set_osd: four bytes taken from the 0x60 byte region structures of regions 0 and 1: [7:0] = region 0 offset 0x34, [15:8] = region 0 offset 0x30, [23:16] = region 1 offset 0x34, [31:24] = region 1 offset 0x30. Access observed: written. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout, if any, is in the register description). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_0104 @ 0x104;
+
+    reg {
+        name = "UNK_0108";
+        desc = "Written by jpege_drv_set_osd: same composition as UNK_0104 for regions 2 (low half) and 3 (high half). Access observed: written. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout, if any, is in the register description). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_0108 @ 0x108;
+
+    reg {
+        name = "UNK_010C";
+        desc = "Written by jpege_drv_set_osd: same composition as UNK_0104 for regions 4 and 5. Access observed: written. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout, if any, is in the register description). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_010C @ 0x10C;
+
+    reg {
+        name = "UNK_0110";
+        desc = "Written by jpege_drv_set_osd: same composition as UNK_0104 for regions 6 and 7. Access observed: written. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout, if any, is in the register description). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_0110 @ 0x110;
+
+    reg {
+        name = "UNK_0114";
+        desc = "Written by jpege_drv_set_osd: one byte per region from offset 0x2c of the region structures of regions 0..3 (bytes [7:0] .. [31:24]). Access observed: written. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout, if any, is in the register description). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_0114 @ 0x114;
+
+    reg {
+        name = "UNK_0118";
+        desc = "Written by jpege_drv_set_osd: one byte per region from offset 0x2c of the region structures of regions 4..7. Access observed: written. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout, if any, is in the register description). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_0118 @ 0x118;
+
+    reg {
+        name = "UNK_011C (array of 8)";
+        desc = "Array of 8 words written by jpege_drv_set_osd, one per OSD region: [15:0] and [31:16] = two 16 bit values of the region structure (offsets 0x18 and 0x1c; looks like x/y position). Access observed: written. Compare the 8 region position words JPGE_VPP_OSD_POS at 0x530 (older generation): inferred, LOW. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value per entry. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_011C[8] @ 0x11C += 0x4;
+
+    reg {
+        name = "UNK_013C (array of 8)";
+        desc = "Array of 8 words written by jpege_drv_set_osd, one per OSD region: [15:0] and [31:16] = two 16 bit values of the region structure (offsets 0x20 and 0x24) minus 1 (looks like width-1 and height-1). Access observed: written. Compare VPP_OSD_SIZE at 0x550 (older generation): inferred, LOW. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value per entry. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_013C[8] @ 0x13C += 0x4;
+
+    reg {
+        name = "UNK_015C";
+        desc = "Written by jpege_drv_set_osd: eight 3 bit values at bit positions 0, 4, 8, ... 28 (one per OSD region). Access observed: written. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout, if any, is in the register description). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_015C @ 0x15C;
+
+    reg {
+        name = "UNK_0164";
+        desc = "Written by jpege_drv_write_regs (called per frame by jpege_config_regs): [15:0] = configuration word at offset 0x40, [31:16] = configuration word at offset 0x44. Access observed: written. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout, if any, is in the register description). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_0164 @ 0x164;
+
+    reg {
+        name = "UNK_0168";
+        desc = "Written by jpege_drv_write_regs (called per frame by jpege_config_regs): [1:0] = configuration word at offset 0x50. Access observed: written. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout, if any, is in the register description). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_0168 @ 0x168;
+
+    reg {
+        name = "UNK_016C (array of 8)";
+        desc = "Array of 8 words written by jpege_drv_set_osd, one per OSD region: [15:0] = a 16 bit value of the region structure (offset 0x40 within a 0x60 byte stride; looks like a stride). Access observed: written. Compare VPP_OSD_STRIDE at 0x590 (older generation): inferred, LOW. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value per entry. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_016C[8] @ 0x16C += 0x4;
+
+    reg {
+        name = "UNK_018C (array of 8)";
+        desc = "Array of 8 words written by jpege_drv_set_osd, one per OSD region: [14:0] and [30:16] = two 15 bit values (region structure offsets 0x68 and 0x6a). Access observed: written. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value per entry. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_018C[8] @ 0x18C += 0x4;
+
+    reg {
+        name = "UNK_0200";
+        desc = "Written by jpege_drv_write_regs (called per frame by jpege_config_regs) from a configuration word (offset 0x20); a 32 bit value, probably an address. Access observed: written. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout, if any, is in the register description). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_0200 @ 0x200;
+
+    reg {
+        name = "UNK_0204";
+        desc = "Written by jpege_drv_write_regs (called per frame by jpege_config_regs) from a configuration word (offset 0x28); a 32 bit value, probably an address. Access observed: written. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout, if any, is in the register description). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_0204 @ 0x204;
+
+    reg {
+        name = "UNK_0208";
+        desc = "Written by jpege_drv_write_regs (called per frame by jpege_config_regs) from a configuration word (offset 0x10); a 32 bit value, probably an address. Access observed: written. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout, if any, is in the register description). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_0208 @ 0x208;
+
+    reg {
+        name = "UNK_020C";
+        desc = "Written by jpege_drv_write_regs (called per frame by jpege_config_regs) from a configuration word (offset 0x18); a 32 bit value, probably an address. Access observed: written. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout, if any, is in the register description). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_020C @ 0x20C;
+
+    reg {
+        name = "UNK_0210";
+        desc = "Written by jpege_drv_write_regs (called per frame by jpege_config_regs) from a configuration word (offset 0x58); a 32 bit value. Access observed: written. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout, if any, is in the register description). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_0210 @ 0x210;
+
+    reg {
+        name = "UNK_0214";
+        desc = "Written by jpege_drv_write_regs (called per frame by jpege_config_regs) from a configuration word (offset 0x68); a 32 bit value. Access observed: written. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout, if any, is in the register description). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_0214 @ 0x214;
+
+    reg {
+        name = "UNK_0218";
+        desc = "Written by jpege_drv_write_regs (called per frame by jpege_config_regs) from a configuration word (offset 0x70); a 32 bit value. Access observed: written. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout, if any, is in the register description). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_0218 @ 0x218;
+
+    reg {
+        name = "UNK_021C";
+        desc = "Written by jpege_drv_write_regs (called per frame by jpege_config_regs) from a configuration word (offset 0x88); a 32 bit value. Access observed: written. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout, if any, is in the register description). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_021C @ 0x21C;
+
+    reg {
+        name = "UNK_0300 (array of 8)";
+        desc = "Array of 8 words written by jpege_drv_set_osd, one per OSD region (32 bit value of the region structure; probably the region data address). Access observed: written. Compare VPP_OSD_ADDR (0x570, older generation): inferred, LOW. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value per entry. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_0300[8] @ 0x300 += 0x4;
+
+    reg {
+        name = "UNK_0320";
+        desc = "Written by jpege_drv_write_regs (called per frame by jpege_config_regs) from a configuration word (offset 0x90); a 32 bit value. Access observed: written. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout, if any, is in the register description). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_0320 @ 0x320;
+
+    reg {
+        name = "UNK_0324";
+        desc = "Written by jpege_drv_write_regs (called per frame by jpege_config_regs) from a configuration word (offset 0x94); a 32 bit value. Access observed: written. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout, if any, is in the register description). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_0324 @ 0x324;
+
+    reg {
+        name = "UNK_0328";
+        desc = "Written 0 by jpege_drv_write_regs (called per frame by jpege_config_regs). Access observed: written. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout, if any, is in the register description). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_0328 @ 0x328;
+
+    reg {
+        name = "UNK_032C";
+        desc = "Written 0 by jpege_drv_write_regs (called per frame by jpege_config_regs). Access observed: written. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout, if any, is in the register description). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_032C @ 0x32C;
+
+    reg {
+        name = "UNK_0330";
+        desc = "Written 0 by jpege_drv_write_regs (called per frame by jpege_config_regs). Access observed: written. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout, if any, is in the register description). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_0330 @ 0x330;
+
+    reg {
+        name = "UNK_0334";
+        desc = "Written 0 by jpege_drv_write_regs (called per frame by jpege_config_regs). Access observed: written. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout, if any, is in the register description). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_0334 @ 0x334;
+
+    reg {
+        name = "UNK_0800 (quantization reciprocal table, array of 256)";
+        desc = "Written by jpege_drv_set_quant_table at word index 512 + n (offset 0x800 + 4n): the value written is 0x800000 divided by a quantizer byte (23 bit reciprocal, the quantizer clamped to 1..255 for the computed run); three runs of 64 entries (n = 0..63, 64..127, 128..191) are filled from three 64 byte tables of the channel structure (offsets 0x15c, 0x19c, 0x1dc) and a further run of 64 entries (n = 0..63 of a second pass, index base 512 again) is computed from a table with a rounding adjustment that depends on a quality value (below/above 79). Whether the hardware has 192 or 256 entries and which run is luma/chroma is not determined. Access observed: written. Compare JPGE_QPT (0x1000, 48 packed words, older generation): different format, inferred only that it is the quantization table. Unknown purpose beyond that, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit reciprocal value. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_0800[256] @ 0x800 += 0x4;
+};
+
+`endif
