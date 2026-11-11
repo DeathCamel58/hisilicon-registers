@@ -22,6 +22,7 @@ regfile eHISI_RTC_SPI {
     | Hi3518A / Hi3518C V100 (3.9, `hi3518v100--Hi3518-Datasheet.txt` lines 24082-26410) | 0x20060000 | `eHISI_RTC_SPI_INTERNAL` with `HISI_RTC_SPI_NO_SDM` (no `sdm_sel`, no 0x51/0x52; LUT defaults as the Hi3520D) |
     | Hi3516C V100 (3.9, `hi3516cv100--Hi3516C-Datasheet.txt` lines 18112-20450) | 0x20060000 | `eHISI_RTC_SPI_INTERNAL` with `HISI_RTC_SPI_NO_SDM` and `HISI_RTC_SPI_LUT_G2` (different LUT1..47 power-on defaults) |
     | Hi3516A / Hi3516D V100 (3.10, `hi3516av100--Hi3516A-Hi3516D-Datasheet.txt` lines 28074-30560) | 0x20060000 | `eHISI_RTC_SPI_INTERNAL` with `HISI_RTC_SPI_LORD_LOCK` (rtc_lock / rtc_lock_bypass), `HISI_RTC_SPI_ANA_CTRL` (RTC_ANA_CTRL 0x1B) and `HISI_RTC_SPI_USER_REGS` (USER_REGISTER1-8 0x53-0x5A) |
+    | Hi3518E V100 (3.9, `hi3518ev200--Hi3518E-Datasheet.txt` lines 16159-18950; no chip folder yet) | 0x20060000 | as Hi3518A / Hi3518C V100 (`HISI_RTC_SPI_NO_SDM`): compared register by register, 90 of 90 identical |
     | Hi3518E V20X / Hi3516C V200 (3.9) | 0x20060000 | `eHISI_RTC_SPI_INTERNAL_V2` (HISI_RTC_SPI_V2.rdl: 0x00-0x18 and 0x51-0x5A, no temperature compensation) |
     | Hi3516A V200, Hi3519 V101 (3.9) | 0x12090000 | `eHISI_RTC_SPI_INTERNAL_V3` (HISI_RTC_SPI_V3.rdl: the V2 map plus battery low-voltage detection: RTC_UV_CTRL 0x1A, `*_uv` interrupt bits) |
     | Hi3516C V300 / Hi3516E V100 (3.9) | 0x12090000 | `eHISI_RTC_SPI_INTERNAL_V3` |
@@ -31,6 +32,21 @@ regfile eHISI_RTC_SPI {
 
     The RTC alarm interrupt is GIC interrupt ID 39 (SPI 7); the temperature sensor capture interrupt is ID 89 (`TEM_CAP_INT`, SPI 57) (DS Table 3-16). The clock gate and soft reset are the
     RTC bits of PERI_CRG57.
+
+    **Per-generation differences of the APB part and of the access protocol** (scripted data-sheet pass 2026-11-11, docs/rdl-campaign/rtc-spi.md; the register layout itself is identical everywhere):
+
+    | SoC | Interrupt | SPI clock limit / recommended (bus clock in the DS example) | Wait around RTC_LORD.rtc_load (DS initialization steps) |
+    | --- | --- | --- | --- |
+    | Hi3520D / Hi3515A / Hi3515C | GIC ID 39, TEM_CAP ID 89 | 20 MHz / 12 MHz (APB 120 MHz) | none printed (the Linux driver polls RTC_LORD until the hardware clears it: board-tested) |
+    | Hi3518A/C V100, Hi3518E V100, Hi3516C V100 | VIC 2 (shared with COMMRX, selected by PERI_CTRL0 bit 31), Temper_Cap VIC 10 | 20 MHz / 12 MHz (APB 120 MHz) | none printed |
+    | Hi3516A / Hi3516D V100 | GIC ID 39 | 20 MHz / 12 MHz (120 MHz) | wait 5 ms **before** setting rtc_load (steps 6, 7) |
+    | Hi3518E V20X / Hi3516C V200 | VIC 2 shared with the temperature capture interrupt (\"RTC/Temper_Cap\") | 20 MHz / 12 MHz (120 MHz) | wait 5 ms **after** setting rtc_load |
+    | Hi3516A V200, Hi3519 V101 | GIC ID 33 shared with TEM_CAP (\"RTC/TEM_CAP\") | **5 MHz / 5 MHz (50 MHz)** | wait 5 ms after |
+    | Hi3516C V300, Hi3516E V100 | VIC 2 | **5 MHz / 5 MHz (50 MHz)** | wait 5 ms after |
+    | Hi3516A V300 (Chinese guide) | GIC ID 37 | **5 MHz / 5 MHz (50 MHz)** | wait 10 ms after |
+
+    The SPI_CLK_DIV reset value is 0x3B on every chip, so after reset the SPI clock is bus clock / 120: 1 MHz at 120 MHz, but 417 kHz at 50 MHz, i.e. valid on all of them. The field descriptions below quote the Hi3520D-generation
+    wording (20 MHz limit); the five chips in bold above print a 5 MHz limit.
 
     Source: Hi3520D/Hi3515A/Hi3515C data sheet issue 07, section 3.8 (printed pages 3-141 .. 3-189, `datasheet.txt` lines 15150-18170): 3.8.5 register summary (APB: Table 3-22,
     internal: Table 3-23), 3.8.6 APB register description, 3.8.7 internal register description. The block is present in all three SoCs of the data sheet (Table 1-1 lists the RTC for
@@ -44,6 +60,8 @@ regfile eHISI_RTC_SPI {
         desc = "SPI_CLK_DIV is the SPI clock divider register.
 
 Example in the data sheet 3.8.4.5: APB clock 120 MHz, SPI clock 12 MHz -> (120/12)/2 - 1 = 4. The reset value 0x3B (59) is the data sheet value.
+
+SPI clock limit per chip: 20 MHz absolute maximum and 12 MHz recommended on the Hi3520D, Hi3515A/C, Hi3518, Hi3516C V100, Hi3516A/D V100, Hi3518E V20X and Hi3516C V200 data sheets; **5 MHz maximum and recommended (bus clock 50 MHz, example value 4)** on the Hi3516A V200, Hi3519 V101, Hi3516C V300, Hi3516E V100 and Hi3516A V300 data sheets (the field text below is the Hi3520D wording). The Linux driver uses the 12 MHz limit on the Hi3520D (board-tested).
 
 Data sheet 3.8.6 SPI_CLK_DIV (printed page 3-151, `datasheet.txt` line 15604).";
 
