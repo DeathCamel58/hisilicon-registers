@@ -1,0 +1,318 @@
+`ifndef HISI_SCD_AV300_RDL
+`define HISI_SCD_AV300_RDL
+
+regfile eHISI_SCD_AV300 {
+    name = "HiSilicon SCD start-code detector, Hi3516A V300 generation (UNVERIFIED, vendor-derived)";
+    desc = "
+    UNVERIFIED, vendor-derived. Stream context decoder / start-code detector (SCD) of the Hi3516A V300: it finds the start codes of an H.264/H.265 stream and hands the segment list to the VFMW software and the VEDU decoder (data sheet 6.x: 'the stream buffer comes from the output of the SCD'; the V300 decodes only its own encoder's streams, slice header and above in software, slice data in the VEDU). Data sheet facts (Chinese user guide 2019-09-15): memory map row 'SCD register 64 KB' at 0x1003_0000, interrupt ID 99, DDR QoS groups scd_w_qos / scd_r_qos, secure-access bits scd_slv_sec_acc_dis / scd_mst_sec_acc in MISC_CTRL; NO SCD register table and NO SCD clock/reset register (PERI_CRG50 is not in the data sheet). The OpenIPC device tree has scd@10030000 (reg 0x10030000 + 0x10000, SPI 67 = ID 99).
+
+    WHERE THE REGISTERS ARE: this regfile is instantiated at 0x1003C000, i.e. window offset 0xC000, not at the window base. open_vfmw.ko ioremaps the device-tree resource 'scd' (0x10030000, 64 KB) in hi35xx_vfmw_probe into g_vdm_reg_addr and scd_hal_open stores g_vdm_reg_addr + 0xC000 (and a 4 KB size) as the SCD register base; every scd_hal_* access is relative to it. The Hi3520D layout has the SCD at its window base. The other 48 KB below (window offsets 0..0xBFFF) are not touched by this module.
+
+    Source of every register: static analysis (objdump, never executed) of open_vfmw.ko of the OpenIPC Hi3516AV300 nightly firmware (Linux 4.9.37, 2026-11-10; symbols kept; functions scd_hal_open / start / reset / enable / disable / enable_int / clear_int / check_int / write_reg / read_reg / set_reg). Interrupt ID 99 is the default of pdt_get_scd_int (the module falls back to 99 when the device tree gives none) and equals the data-sheet table. Clock and reset: PERI_CRG50 (0x120100C8, not in the data sheet): scd_hal_open / pdt_open_hardware clear bit 0 and set bit 1 (clock on, reset released); scd_hal_reset sets bit 0, spins 10000 loops, clears it; scd_hal_disable sets bit 0, spins, clears bit 1 and sets bit 0 again. Same bit layout as the Hi3520D VDH CRG registers (cken [1], srst [0]). The module is reference counted (pdt_open_hardware).
+
+    Layout vs the Hi3520D eHISI_SCD: identical at 0x00-0x24 (START, LIST_ADDRESS, UP_ADDRESS, UP_LEN, BUFFER_FIRST/LAST/INI, INT_MASK, PROTOCOL, INI_CLR), 0x40 (OVER), 0x4C-0x54 (NUM, ROLL_ADDR, SRC_EATEN). Different: 0x44 (Hi3520D read-only interrupt state, V300 a written and read configuration register), plus three registers the Hi3520D RDL does not have: 0x3C (r/w), 0x48 (r), 0x5C (r). Names that exist in the Hi3520D RDL are inherited at matching offsets; the module has no register names. UNK_<offset> = access seen, purpose unknown.
+
+    Details: docs/rdl-campaign/video-codec-crosschip.md.
+    ";
+
+    reg {
+        name = "SCD start";
+        desc = "scd_hal_start writes 0, then 1 (two stores, each followed by a barrier call). Same sequence as the Hi3520D (write 0, then start & 1).
+
+Source: vendor module static analysis (open_vfmw.ko, scd_hal_start, offset 0x0), confidence HIGH for the accesses, MEDIUM for the field (inherited from the Hi3520D). Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no SCD register table).";
+
+        field {
+            name = "start";
+            desc = "Write 1 to start start-code detection of one stream segment.";
+            sw = rw;
+            hw = r;
+        } start[0:0];
+
+    } SCD_START @ 0x0;
+
+    reg {
+        name = "Segment list address";
+        desc = "scd_hal_write_reg stores the physical address of the segment (start code position) list buffer: channel structure word +0x7C, which scd_hal_set_reg copies from the stream device (+0x2C, the 0x7000 byte buffer allocated in scd_hal_open). Name inherited from the Hi3520D.
+
+Source: vendor module static analysis (open_vfmw.ko, scd_hal_write_reg, scd_hal_set_reg, offset 0x4), confidence HIGH for the write, MEDIUM for the meaning. Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no SCD register table).";
+
+        field {
+            name = "list_address";
+            desc = "Physical DDR address.";
+            sw = rw;
+            hw = r;
+        } list_address[31:0];
+
+    } LIST_ADDRESS @ 0x4;
+
+    reg {
+        name = "Up-message buffer address";
+        desc = "scd_hal_write_reg stores the physical address of the up message buffer (+0x80 from the stream device +0x38). Name inherited from the Hi3520D.
+
+Source: vendor module static analysis (open_vfmw.ko, scd_hal_write_reg, scd_hal_set_reg, offset 0x8), confidence HIGH for the write, MEDIUM for the meaning. Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no SCD register table).";
+
+        field {
+            name = "up_address";
+            desc = "Physical DDR address.";
+            sw = rw;
+            hw = r;
+        } up_address[31:0];
+
+    } UP_ADDRESS @ 0x8;
+
+    reg {
+        name = "Up-message buffer length";
+        desc = "Written from channel structure word +0x8C = min(free segment slots, 2048) * 2 (scd_hal_set_reg); read back by scd_hal_read_reg (the value is kept in the channel structure). Name inherited from the Hi3520D.
+
+Source: vendor module static analysis (open_vfmw.ko, scd_hal_write_reg, scd_hal_read_reg, scd_hal_set_reg, offset 0xC), confidence HIGH for the accesses, MEDIUM for the unit. Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no SCD register table).";
+
+        field {
+            name = "up_len";
+            desc = "Up message length (unit as in the Hi3520D, unknown).";
+            sw = rw;
+            hw = r;
+        } up_len[31:0];
+
+    } UP_LEN @ 0xC;
+
+    reg {
+        name = "Stream buffer start";
+        desc = "Start of the circular stream buffer (channel structure +0x68 = stream channel word +0x0C, the buffer base). Name inherited from the Hi3520D.
+
+Source: vendor module static analysis (open_vfmw.ko, scd_hal_write_reg, scd_hal_set_reg, offset 0x10), confidence HIGH for the write, MEDIUM for the meaning. Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no SCD register table).";
+
+        field {
+            name = "buffer_first";
+            desc = "Physical DDR address.";
+            sw = rw;
+            hw = r;
+        } buffer_first[31:0];
+
+    } BUFFER_FIRST @ 0x10;
+
+    reg {
+        name = "Stream buffer end";
+        desc = "End of the circular stream buffer (+0x6C = base + length, stream channel words +0x0C and +0x14). Name inherited from the Hi3520D.
+
+Source: vendor module static analysis (open_vfmw.ko, scd_hal_write_reg, scd_hal_set_reg, offset 0x14), confidence HIGH for the write, MEDIUM for the meaning. Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no SCD register table).";
+
+        field {
+            name = "buffer_last";
+            desc = "Physical DDR address.";
+            sw = rw;
+            hw = r;
+        } buffer_last[31:0];
+
+    } BUFFER_LAST @ 0x14;
+
+    reg {
+        name = "Stream buffer scan start";
+        desc = "Address where scanning starts (+0x70; word-aligned write pointer rounded up to 4 when the stream channel word +0x28 == 1, else stream channel word +0x2C). Name inherited from the Hi3520D.
+
+Source: vendor module static analysis (open_vfmw.ko, scd_hal_write_reg, scd_hal_set_reg, offset 0x18), confidence HIGH for the write, MEDIUM for the meaning. Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no SCD register table).";
+
+        field {
+            name = "buffer_ini";
+            desc = "Physical DDR address.";
+            sw = rw;
+            hw = r;
+        } buffer_ini[31:0];
+
+    } BUFFER_INI @ 0x18;
+
+    reg {
+        name = "SCD interrupt mask";
+        desc = "scd_hal_enable_int writes 0 (unmask). Name and polarity inherited from the Hi3520D (polarity inferred there).
+
+Source: vendor module static analysis (open_vfmw.ko, scd_hal_enable_int, offset 0x1C), confidence HIGH for the write of 0, LOW for the polarity. Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no SCD register table).";
+
+        field {
+            name = "mask";
+            desc = "0 = interrupt enabled (inferred).";
+            sw = rw;
+            hw = r;
+        } mask[0:0];
+
+    } SCD_INT_MASK @ 0x1C;
+
+    reg {
+        name = "SCD protocol select";
+        desc = "scd_hal_write_reg composes the word from five channel-structure fields: bit 4 = slice-check flag (set when the standard code is 3 or 4: scd_hal_slice_check), the protocol code ORed unshifted into the low bits (the standard code, mapped 1 and 0x11 -> 0), plus byte fields at bit 0, bit 7 and bit 13 which scd_hal_set_reg always sets to 0. The Hi3520D uses (slice_check << 4 & 0x10) | (protocol & 0xF); the V300 has the same low part and two extra forced-zero bits (the Hi3520D RDL names bit 7 / bit 8 of the Huawei V400 driver as secure / low delay).
+
+Source: vendor module static analysis (open_vfmw.ko, scd_hal_write_reg, scd_hal_set_reg, scd_hal_std_type, scd_hal_slice_check, offset 0x20), confidence HIGH for the composition, MEDIUM for the names. Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no SCD register table).";
+
+        field {
+            name = "unk13";
+            desc = "Written 0 by the driver (structure byte +0x60); purpose unknown.";
+            sw = rw;
+            hw = r;
+        } unk13[13:13];
+
+        field {
+            name = "unk7";
+            desc = "Written 0 by the driver (structure byte +0x63); purpose unknown (the Huawei V400 driver has a secure bit at 7).";
+            sw = rw;
+            hw = r;
+        } unk7[7:7];
+
+        field {
+            name = "slice_check";
+            desc = "Slice-check flag (standard code 3 or 4).";
+            sw = rw;
+            hw = r;
+        } slice_check[4:4];
+
+        field {
+            name = "protocol";
+            desc = "Protocol code (low bits; width inferred from the Hi3520D).";
+            sw = rw;
+            hw = r;
+        } protocol[3:0];
+
+    } SCD_PROTOCOL @ 0x20;
+
+    reg {
+        name = "SCD interrupt clear";
+        desc = "scd_hal_clear_int writes 1 (acknowledge). Name inherited from the Hi3520D (SCD_INI_CLR).
+
+Source: vendor module static analysis (open_vfmw.ko, scd_hal_clear_int, offset 0x24), confidence HIGH for the write, MEDIUM for the name. Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no SCD register table).";
+
+        field {
+            name = "clr";
+            desc = "Write 1 to clear the SCD interrupt.";
+            sw = w;
+            hw = r;
+        } clr[0:0];
+
+    } SCD_INI_CLR @ 0x24;
+
+    reg {
+        name = "Unknown register 0x3C";
+        desc = "NOT in the Hi3520D RDL. Written from channel structure word +0x98 (= stream channel word +0x20, copied in scd_hal_set_reg) and read back into the same word by scd_hal_read_reg. Purpose unknown; by the position between SCD_INI_CLR and SCD_OVER probably a stream channel parameter (a roll-back address or a limit).
+
+Source: vendor module static analysis (open_vfmw.ko, scd_hal_write_reg, scd_hal_read_reg, offset 0x3C), confidence HIGH for the accesses, unknown purpose. Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no SCD register table).";
+
+        field {
+            name = "value";
+            desc = "Unknown, read/write 32 bit.";
+            sw = rw;
+            hw = r;
+        } value[31:0];
+
+    } UNK_3C @ 0x3C;
+
+    reg {
+        name = "SCD over / interrupt flag";
+        desc = "scd_hal_check_int returns bit 0 of this register (it is the interrupt-pending test of the stream interrupt service routine); scd_hal_read_reg stores the low byte. In the Hi3520D RDL this is SCD_OVER (bit 0 = detection finished, bit 1 polled low by ResetSCD).
+
+Source: vendor module static analysis (open_vfmw.ko, scd_hal_check_int, scd_hal_read_reg, offset 0x40), confidence HIGH for the read of bit 0, MEDIUM for the name. Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no SCD register table).";
+
+        field {
+            name = "over";
+            desc = "Detection finished / interrupt pending (V300: the interrupt check reads it).";
+            sw = r;
+            hw = w;
+        } over[0:0];
+
+    } SCD_OVER @ 0x40;
+
+    reg {
+        name = "Unknown register 0x44";
+        desc = "DIFFERENCE to the Hi3520D, where 0x44 is the read-only interrupt state (SCD_INT, pending bit 0). On the V300 the driver WRITES it (channel structure word +0x9C = stream channel word +0x24, scd_hal_write_reg) and reads it back (scd_hal_read_reg); interrupt checking uses 0x40 instead. So 0x44 is a configuration register here (pair of 0x3C), purpose unknown.
+
+Source: vendor module static analysis (open_vfmw.ko, scd_hal_write_reg, scd_hal_read_reg, offset 0x44), confidence HIGH for the accesses, unknown purpose. Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no SCD register table).";
+
+        field {
+            name = "value";
+            desc = "Unknown, read/write 32 bit.";
+            sw = rw;
+            hw = r;
+        } value[31:0];
+
+    } UNK_44 @ 0x44;
+
+    reg {
+        name = "Unknown register 0x48";
+        desc = "NOT in the Hi3520D RDL. Read by scd_hal_read_reg into channel structure word +0xA0; never written. Purpose unknown (a status or count register).
+
+Source: vendor module static analysis (open_vfmw.ko, scd_hal_read_reg, offset 0x48), confidence HIGH for the read, unknown purpose. Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no SCD register table).";
+
+        field {
+            name = "value";
+            desc = "Unknown, read-only 32 bit.";
+            sw = r;
+            hw = w;
+        } value[31:0];
+
+    } UNK_48 @ 0x48;
+
+    reg {
+        name = "SCD segment count";
+        desc = "Read twice by scd_hal_read_reg: the full word and bits [21:0] (stored separately, +0xA4 and +0xA8). Same register and field split as the Hi3520D SCD_NUM (scd_num [21:0], short count [31:22] there).
+
+Source: vendor module static analysis (open_vfmw.ko, scd_hal_read_reg, offset 0x4C), confidence HIGH for the accesses, MEDIUM for the meaning of the upper field. Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no SCD register table).";
+
+        field {
+            name = "short_scd_num";
+            desc = "Short start-code segment count (Hi3520D meaning).";
+            sw = r;
+            hw = w;
+        } short_scd_num[31:22];
+
+        field {
+            name = "scd_num";
+            desc = "Detected segment count (bits [21:0] read separately).";
+            sw = r;
+            hw = w;
+        } scd_num[21:0];
+
+    } SCD_NUM @ 0x4C;
+
+    reg {
+        name = "Rollback address";
+        desc = "Read by scd_hal_read_reg into channel structure +0x74. Same offset and role as the Hi3520D ROLL_ADDR.
+
+Source: vendor module static analysis (open_vfmw.ko, scd_hal_read_reg, offset 0x50), confidence HIGH for the read, MEDIUM for the meaning. Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no SCD register table).";
+
+        field {
+            name = "roll_addr";
+            desc = "Physical DDR address.";
+            sw = r;
+            hw = w;
+        } roll_addr[31:0];
+
+    } ROLL_ADDR @ 0x50;
+
+    reg {
+        name = "Source bytes consumed";
+        desc = "Read by scd_hal_read_reg into channel structure +0xAC (scd_hal_src_eaten later masks the top two bits: a 30 bit count). Same offset and role as the Hi3520D SRC_EATEN.
+
+Source: vendor module static analysis (open_vfmw.ko, scd_hal_read_reg, scd_hal_src_eaten, offset 0x54), confidence HIGH for the read, MEDIUM for the meaning. Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no SCD register table).";
+
+        field {
+            name = "src_eaten";
+            desc = "Bytes consumed (30 bit count; top two bits masked by software).";
+            sw = r;
+            hw = w;
+        } src_eaten[31:0];
+
+    } SRC_EATEN @ 0x54;
+
+    reg {
+        name = "Unknown register 0x5C";
+        desc = "NOT in the Hi3520D RDL (the Huawei V400R004 map names 0x5C PART_DEC_OVER_INT_LEVEL; no evidence the V300 has that meaning). Read by scd_hal_read_reg into channel structure +0x78; never written.
+
+Source: vendor module static analysis (open_vfmw.ko, scd_hal_read_reg, offset 0x5C), confidence HIGH for the read, unknown purpose. Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no SCD register table).";
+
+        field {
+            name = "value";
+            desc = "Unknown, read-only 32 bit.";
+            sw = r;
+            hw = w;
+        } value[31:0];
+
+    } UNK_5C @ 0x5C;
+
+};
+
+`endif
