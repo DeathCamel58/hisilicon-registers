@@ -24,6 +24,8 @@ regfile eHISI_IVE {
     | Hi3516A V300 | 0x11230000 | GIC 69 | no register summary in the data sheet; registers inferred |
 
     Hi3511, Hi3515 and Hi3520 V100 have no IVE.
+
+    VENDOR MODULES (2026-11-11, docs/rdl-campaign/ive-vendor.md; static analysis of hi3520D_ive.ko, hi3518_ive.ko, hi3516a_ive.ko, hi3518e_ive.ko, hi3519v101_ive.ko, hi3516cv300_ive.ko, open_ive.ko, nothing executed): the vendor driver touches only the 7 data-sheet registers plus a handful of the 0x30-0x6C block, so the data-sheet control path is confirmed on all chips with a module (INT_EN written 2 on the older generation Hi3520D/Hi3518 and 6 on the newer one, INT_RW cleared with 3 or 7, LIST_POINTER then START, IVE_TASK_ID read in the interrupt handler). Newer generation additions found in the code and modelled under IVE_EXT_REGS: bit 2 (timeout interrupt) in INT_EN/INT_RW/INT_STATUS, the overtime threshold at 0x60, clock gating bit 0 at 0x34, and two utilization counters at 0x84/0x88 that no data sheet lists. The Hi3516A V300 module also writes 0x54 (AXI outstanding), 0x8C and 0x90 (memory speed), modelled under IVE_AV300_REGS. Registers the vendor code never touches (0x30, 0x40-0x50, 0x64-0x6C) keep their data-sheet-summary-only descriptions.
     ";
 
     reg {
@@ -74,6 +76,16 @@ Data sheet 10.5 INT_EN (offset 0x4, printed page 10-26, `datasheet.txt` line 326
             encode = INT_EN_node_int_en_enum;
             reset = 0x0;
         } node_int_en[0:0];
+
+`ifdef IVE_EXT_REGS
+
+        field {
+            name = "timeout_int_en";
+            desc = "Timeout (overtime) interrupt enable, newer IVE generation only. Not in any data sheet bit table. The vendor modules for Hi3516A/D, Hi3518E V200, Hi3516A V200/Hi3519, Hi3516C V300/Hi3516E V100 and Hi3516A V300 write INT_EN = 6 (this bit and list_int_en) in IVE_DRV_EnInt; the older generation writes 2. Source: vendor module hi3516a_ive.ko, hi3518e_ive.ko, hi3519v101_ive.ko, hi3516cv300_ive.ko, open_ive.ko (IVE_DRV_EnInt / drv_ive_en_int), confidence MEDIUM (bit meaning from the name of the consumer IVE_DRV_IsIveTimeoutInt), not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } timeout_int_en[2:2];
+`endif
     } INT_EN @ 0x4;
 
     reg {
@@ -109,6 +121,16 @@ Data sheet 10.5 INT_RW (offset 0x8, printed page 10-26, `datasheet.txt` line 326
             encode = INT_RW_node_int_rw_enum;
             reset = 0x0;
         } node_int_rw[0:0];
+
+`ifdef IVE_EXT_REGS
+
+        field {
+            name = "timeout_int_rw";
+            desc = "Timeout interrupt raw bit, newer generation only (not in any data sheet bit table); the vendor interrupt handler clears all interrupts by writing 7 here (older generation: 3), IVE_DRV_ClearInt. Source: vendor module hi3516a_ive.ko, hi3518e_ive.ko, hi3519v101_ive.ko, hi3516cv300_ive.ko, open_ive.ko, confidence MEDIUM, not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } timeout_int_rw[2:2];
+`endif
     } INT_RW @ 0x8;
 
     reg {
@@ -144,6 +166,16 @@ Data sheet 10.5 INT_STATUS (offset 0xC, printed page 10-27, `datasheet.txt` line
             encode = INT_STATUS_node_int_status_enum;
             reset = 0x0;
         } node_int_status[0:0];
+
+`ifdef IVE_EXT_REGS
+
+        field {
+            name = "timeout_int_status";
+            desc = "Timeout interrupt status, newer generation only (not in any data sheet bit table). IVE_DRV_IsIveTimeoutInt tests (value & 4) and IVE_DRV_IsIveListInt tests bit 1 (list_int_status) of the word IVE_DRV_GetIntStatus read from 0xC. Source: vendor module hi3516a_ive.ko, hi3518e_ive.ko, hi3519v101_ive.ko, hi3516cv300_ive.ko, open_ive.ko, confidence HIGH for the bit position, MEDIUM for the meaning, not verified on hardware.";
+            sw = r;
+            hw = w;
+        } timeout_int_status[2:2];
+`endif
     } INT_STATUS @ 0xC;
 
     reg {
@@ -210,7 +242,7 @@ Data sheet 10.5 IVE_TASK_ID (offset 0x18, printed page 10-29, `datasheet.txt` li
 
     reg {
         name = "Internal clock gating";
-        desc = "CLK_GT_EN: clock gating of the IVE internal modules (data sheet summary only; bit layout and reset not published).";
+        desc = "CLK_GT_EN: clock gating of the IVE internal modules (data sheet summary only; bit layout and reset not published). Vendor-derived: IVE_DRV_EnIveClkGt (drv_ive_en_clk_gt) sets bit 0 by read-modify-write at init; no other bit is touched. Source: vendor module hi3516a_ive.ko, hi3518e_ive.ko, hi3519v101_ive.ko, hi3516cv300_ive.ko, hi3521a_ive.ko, open_ive.ko, confidence HIGH, not verified on hardware.";
         field { name = "clk_gt_en"; desc = "Clock gating enables of the IVE internal modules (layout not published)."; sw = rw; hw = r; } clk_gt_en[31:0];
     } CLK_GT_EN @ 0x34;
 
@@ -248,13 +280,13 @@ Data sheet 10.5 IVE_TASK_ID (offset 0x18, printed page 10-29, `datasheet.txt` li
 
     reg {
         name = "AXI outstanding configuration";
-        desc = "AXI_INFO: read and write outstanding number register (data sheet summary only; bit layout and reset not published).";
+        desc = "AXI_INFO: read and write outstanding number register (data sheet summary only; bit layout and reset not published). Vendor-derived: only the Hi3516A V300 module touches it (drv_ive_set_outstanding): bits [3:0] set to 7 and bits [11:8] set to 0xF by two read-modify-writes. The other modules never write it. Source: vendor module open_ive.ko, confidence MEDIUM (field meaning by the function name), not verified on hardware.";
         field { name = "axi_info"; desc = "AXI read/write outstanding numbers (layout not published)."; sw = rw; hw = r; } axi_info[31:0];
     } AXI_INFO @ 0x54;
 
     reg {
         name = "Overtime interrupt threshold";
-        desc = "IVE_OVER_TIME_THR: overtime interrupt threshold register (data sheet summary only; bit layout and reset not published).";
+        desc = "IVE_OVER_TIME_THR: overtime interrupt threshold register (data sheet summary only; bit layout and reset not published). Vendor-derived: IVE_DRV_WriteTimeOutRegs writes the whole word once at init (after enabling the interrupts): 0x0DB58580 (230000000) in hi3516a_ive.ko, 0x0CCCCB60 (214747000) in hi3518e_ive.ko; the same call is in hi3519v101_ive.ko, hi3516cv300_ive.ko and open_ive.ko. Source: vendor module those modules, confidence HIGH, not verified on hardware.";
         field { name = "ive_over_time_thr"; desc = "Operator overtime interrupt threshold in clock cycles (layout not published)."; sw = rw; hw = r; } ive_over_time_thr[31:0];
     } IVE_OVER_TIME_THR @ 0x60;
 
@@ -275,6 +307,62 @@ Data sheet 10.5 IVE_TASK_ID (offset 0x18, printed page 10-29, `datasheet.txt` li
         desc = "CHAIN_CYCLE_CNT: register for the counting number of the current linked list cycles (data sheet summary only).";
         field { name = "chain_cycle_cnt"; desc = "Running count of the current linked list cycles (layout not published)."; sw = r; hw = w; } chain_cycle_cnt[31:0];
     } CHAIN_CYCLE_CNT @ 0x6C;
+
+    reg {
+        name = "IVE utilization busy counter";
+        desc = "Not in any data sheet. Vendor-derived: IVE_DRV_GetUtili (drv_ive_get_utili, the 'IVE UTILI INFO' proc page) reads this word as the numerator and UTILI_TOTAL_CNT (0x88) as the divisor and computes a percentage (value * 100 / total); a guard on bit 1 of the word at offset 0 and on the divisor avoids division by zero. Read only. Source: vendor module hi3518e_ive.ko, hi3519v101_ive.ko, hi3516cv300_ive.ko, open_ive.ko (hi3516a_ive.ko and hi3521a_ive.ko have the function as a stub returning 0), confidence MEDIUM (roles inferred from the arithmetic and the proc text), not verified on hardware.";
+
+        field {
+            name = "utili_busy_cnt";
+            desc = "Busy-cycle count used as the numerator of the utilization percentage (inferred, MEDIUM).";
+            sw = r;
+            hw = w;
+        } utili_busy_cnt[31:0];
+    } UTILI_BUSY_CNT @ 0x84;
+
+    reg {
+        name = "IVE utilization total counter";
+        desc = "Not in any data sheet. Vendor-derived: divisor of the utilization computation in IVE_DRV_GetUtili (see UTILI_BUSY_CNT at 0x84). Read only. Source: vendor module hi3518e_ive.ko, hi3519v101_ive.ko, hi3516cv300_ive.ko, open_ive.ko, confidence MEDIUM, not verified on hardware.";
+
+        field {
+            name = "utili_total_cnt";
+            desc = "Total-cycle count used as the divisor of the utilization percentage (inferred, MEDIUM).";
+            sw = r;
+            hw = w;
+        } utili_total_cnt[31:0];
+    } UTILI_TOTAL_CNT @ 0x88;
+
+`ifdef IVE_AV300_REGS
+    reg {
+        name = "UNK_008C";
+        desc = "Written by drv_ive_set_base_addr with its argument (a single word, probably an address; the caller was not followed). Access observed: written. Hi3516A V300 only (the older modules never write 0x8C). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout not observed). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_008C @ 0x8C;
+
+    reg {
+        name = "UNK_0090";
+        desc = "Named after drv_ive_set_mem_speed (memory speed configuration), which performs twelve read-modify-writes on this register, each setting one 2 or 3 bit field: [25:23] = 3, [22:21] = 1, [20:19] = 1, [18:16] = 3, [15:14] = 1, [13:12] = 1, [11:10] = 0, [9:8] = 1, [7:6] = 1, [5:4] = 1, [3:2] = 2, [1:0] = 1 (assembled 0x01AB5159 if the other bits start at 0). Access observed: read-modify-write. Hi3516A V300 only. Field meanings unknown. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field { name = "f_25_23_unk"; desc = "Written with 3. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware."; sw = rw; hw = r; } f_25_23_unk[25:23];
+        field { name = "f_22_21_unk"; desc = "Written with 1. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware."; sw = rw; hw = r; } f_22_21_unk[22:21];
+        field { name = "f_20_19_unk"; desc = "Written with 1. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware."; sw = rw; hw = r; } f_20_19_unk[20:19];
+        field { name = "f_18_16_unk"; desc = "Written with 3. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware."; sw = rw; hw = r; } f_18_16_unk[18:16];
+        field { name = "f_15_14_unk"; desc = "Written with 1. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware."; sw = rw; hw = r; } f_15_14_unk[15:14];
+        field { name = "f_13_12_unk"; desc = "Written with 1. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware."; sw = rw; hw = r; } f_13_12_unk[13:12];
+        field { name = "f_11_10_unk"; desc = "Cleared to 0. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware."; sw = rw; hw = r; } f_11_10_unk[11:10];
+        field { name = "f_9_8_unk"; desc = "Written with 1. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware."; sw = rw; hw = r; } f_9_8_unk[9:8];
+        field { name = "f_7_6_unk"; desc = "Written with 1. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware."; sw = rw; hw = r; } f_7_6_unk[7:6];
+        field { name = "f_5_4_unk"; desc = "Written with 1. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware."; sw = rw; hw = r; } f_5_4_unk[5:4];
+        field { name = "f_3_2_unk"; desc = "Written with 2. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware."; sw = rw; hw = r; } f_3_2_unk[3:2];
+        field { name = "f_1_0_unk"; desc = "Written with 1. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware."; sw = rw; hw = r; } f_1_0_unk[1:0];
+    } UNK_0090 @ 0x90;
+`endif
 `endif
 
 };
