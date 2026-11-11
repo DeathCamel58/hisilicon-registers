@@ -1,0 +1,286 @@
+`ifndef HISI_VEDU_V3_RDL
+`define HISI_VEDU_V3_RDL
+
+addrmap aHISI_VEDU_V3 {
+    name = "HiSilicon VEDU, Hi3516A V300 generation V3 (control registers, vendor-derived)";
+    desc = "HiSilicon VEDU, Hi3516A V300 generation 'V3': control registers only, vendor-derived, NOT VERIFIED ON HARDWARE. VEDU at 0x11500000 (64 KB, data sheet: H.265/H.264 encoder and decoder of its own streams, IRQ 72, PERI_CRG41 [1:0]). The data sheet has no VEDU register table. Described here are the ten registers accessed by the vedu_hal_* functions of the vendor module open_vedu.ko (OpenIPC Hi3516AV300 rootfs, Linux 4.9.37; static analysis, never executed). DIFFERENT from every other generation: mask 0x0 / clear 0x4 / start 0x8 (V2: INT 0x0 / mask 0x4 / clear 0xC / start 0x10; Hi3520D: same as V2 but MODE 0x20), the interrupt status moved to 0x3000 / 0x3004, extra bits for AXI errors, time-out and SED errors, a block-internal reset request at 0x4C, the clock/power control at 0x500. NOT described: the encoder per-frame configuration registers (written by open_h264e.ko / open_h265e.ko / open_venc.ko, not analyzed), and the decoder registers written by vedu_dec_hal_h264_config_reg / vedu_dec_hal_h265_config_reg / vedu_dec_hal_*_write_slice_msg (the V300 VEDU also decodes H.264/H.265 slice data of its own streams, with the slice and picture information passed in DDR messages; not analyzed). Details: docs/rdl-campaign/video-codec-crosschip.md.";
+
+    reg {
+        name = "Interrupt mask";
+        desc = "vedu_hal_write_int_mask stores the mask word. Bit layout assumed equal to the INT bits below.
+
+Source: vendor module static analysis (open_vedu.ko, vedu_hal_write_int_mask), offset 0x0, confidence HIGH for the offset, LOW for the bits. Not verified on hardware (nothing in this block has been read or written on a board of this generation); no reset value is known; not in the data sheet (no VEDU register table).";
+
+        field {
+            name = "mask";
+            desc = "Interrupt mask word.";
+            sw = rw;
+            hw = r;
+        } mask[31:0];
+
+    } INTMASK @ 0x0;
+
+    reg {
+        name = "Interrupt clear";
+        desc = "vedu_hal_clear_int stores the clear word.
+
+Source: vendor module static analysis (open_vedu.ko, vedu_hal_clear_int), offset 0x4, confidence HIGH for the offset, LOW for the bits. Not verified on hardware (nothing in this block has been read or written on a board of this generation); no reset value is known; not in the data sheet (no VEDU register table).";
+
+        field {
+            name = "clear";
+            desc = "Interrupt clear word.";
+            sw = w;
+            hw = r;
+        } clear[31:0];
+
+    } INTCLR @ 0x4;
+
+    reg {
+        name = "Start";
+        desc = "vedu_hal_start_vedu writes 1.
+
+Source: vendor module static analysis (open_vedu.ko, vedu_hal_start_vedu), offset 0x8, confidence HIGH. Not verified on hardware (nothing in this block has been read or written on a board of this generation); no reset value is known; not in the data sheet (no VEDU register table).";
+
+        field {
+            name = "start";
+            desc = "Write 1 to start.";
+            sw = rw;
+            hw = r;
+        } start[0:0];
+
+    } START @ 0x8;
+
+    reg {
+        name = "Mode";
+        desc = "Read/written whole (vedu_hal_read_mode / write_mode); vedu_hal_write_timer_mode changes bit 28.
+
+Source: vendor module static analysis (open_vedu.ko, vedu_hal_read_mode / write_mode / write_timer_mode), offset 0x10, confidence HIGH. Not verified on hardware (nothing in this block has been read or written on a board of this generation); no reset value is known; not in the data sheet (no VEDU register table).";
+
+        field {
+            name = "time_mode";
+            desc = "Timer mode bit 28 (vedu_hal_write_timer_mode, 1 bit wide here).";
+            sw = rw;
+            hw = r;
+        } time_mode[28:28];
+
+    } MODE @ 0x10;
+
+    reg {
+        name = "AXI outstanding";
+        desc = "vedu_hal_write_out_standing: field [11:8] = 7, low bits [4:0] set (0x1F), bits 16, 20 and 21 cleared. A different offset and layout than the V2 generation (0x40).
+
+Source: vendor module static analysis (open_vedu.ko, vedu_hal_write_out_standing), offset 0x1C, confidence HIGH for offset and bits, LOW for the names. Not verified on hardware (nothing in this block has been read or written on a board of this generation); no reset value is known; not in the data sheet (no VEDU register table).";
+
+        field {
+            name = "outstd";
+            desc = "Outstanding field, value 7 written.";
+            sw = rw;
+            hw = r;
+        } outstd[11:8];
+
+        field {
+            name = "unk_low";
+            desc = "Bits [4:0] set to 0x1F by the driver; purpose unknown.";
+            sw = rw;
+            hw = r;
+        } unk_low[4:0];
+
+    } OUTSTD @ 0x1C;
+
+    reg {
+        name = "Reset request";
+        desc = "vedu_hal_reset_request writes 1 (a soft reset request inside the block, separate from the CRG reset).
+
+Source: vendor module static analysis (open_vedu.ko, vedu_hal_reset_request), offset 0x4C, confidence HIGH for the write, MEDIUM for the meaning (function name). Not verified on hardware (nothing in this block has been read or written on a board of this generation); no reset value is known; not in the data sheet (no VEDU register table).";
+
+        field {
+            name = "reset_req";
+            desc = "Write 1 to request a reset.";
+            sw = rw;
+            hw = r;
+        } reset_req[0:0];
+
+    } RESET_REQ @ 0x4C;
+
+    reg {
+        name = "Clock-gate and power control";
+        desc = "Read-modify-write by vedu_hal_write_clk_gate_mode ([20:19]), vedu_hal_write_mem_clk_gate_mode ([21]) and vedu_hal_set_power_mode (bits 0, 1, 2, 16, 17 set to the power-save enable). Same bit positions as the V2 generation CLKPWR (0x30) but at 0x500.
+
+Source: vendor module static analysis (open_vedu.ko, vedu_hal_write_clk_gate_mode / write_mem_clk_gate_mode / set_power_mode), offset 0x500, confidence HIGH for offset and bits, LOW for names. Not verified on hardware (nothing in this block has been read or written on a board of this generation); no reset value is known; not in the data sheet (no VEDU register table).";
+
+        field {
+            name = "mem_clk_gate_en";
+            desc = "Memory clock gate enable.";
+            sw = rw;
+            hw = r;
+        } mem_clk_gate_en[21:21];
+
+        field {
+            name = "clk_gate_mode";
+            desc = "Clock gate mode.";
+            sw = rw;
+            hw = r;
+        } clk_gate_mode[20:19];
+
+        field {
+            name = "pwr17_16";
+            desc = "Power-save bits 17..16 (set together).";
+            sw = rw;
+            hw = r;
+        } pwr17_16[17:16];
+
+        field {
+            name = "pwr2_0";
+            desc = "Power-save bits 2..0 (set together).";
+            sw = rw;
+            hw = r;
+        } pwr2_0[2:0];
+
+    } CLKPWR @ 0x500;
+
+    reg {
+        name = "Interrupt status (masked)";
+        desc = "Status after masking, read at 0x3000 by vedu_hal_read_int and the per-cause readers: bit 0 end of picture, bit 2 stream buffer full, bit 3 bits over, bit 4 AXI read bus error, bit 5 AXI write bus error, bit 6 time-out, bit 7 line number, bit 8 SED error (core), bit 9 SED error (ext). Bit 1 is not read by any function (the V2/Hi3520D generation has buffer full at bit 1).
+
+Source: vendor module static analysis (open_vedu.ko, vedu_hal_read_int and vedu_hal_read_*_int), offset 0x3000, confidence HIGH for offset and bit positions, MEDIUM for the meanings (function names). Not verified on hardware (nothing in this block has been read or written on a board of this generation); no reset value is known; not in the data sheet (no VEDU register table).";
+
+        field {
+            name = "sed_err_ext";
+            desc = "SED error, ext.";
+            sw = r;
+            hw = w;
+        } sed_err_ext[9:9];
+
+        field {
+            name = "sed_err_core";
+            desc = "SED error, core.";
+            sw = r;
+            hw = w;
+        } sed_err_core[8:8];
+
+        field {
+            name = "line_num";
+            desc = "Line number interrupt.";
+            sw = r;
+            hw = w;
+        } line_num[7:7];
+
+        field {
+            name = "timeout";
+            desc = "Time-out.";
+            sw = r;
+            hw = w;
+        } timeout[6:6];
+
+        field {
+            name = "axi_wr_bus_err";
+            desc = "AXI write bus error.";
+            sw = r;
+            hw = w;
+        } axi_wr_bus_err[5:5];
+
+        field {
+            name = "axi_rd_bus_err";
+            desc = "AXI read bus error.";
+            sw = r;
+            hw = w;
+        } axi_rd_bus_err[4:4];
+
+        field {
+            name = "bits_over";
+            desc = "Bits over.";
+            sw = r;
+            hw = w;
+        } bits_over[3:3];
+
+        field {
+            name = "buf_full";
+            desc = "Stream buffer full.";
+            sw = r;
+            hw = w;
+        } buf_full[2:2];
+
+        field {
+            name = "end_of_pic";
+            desc = "End of picture.";
+            sw = r;
+            hw = w;
+        } end_of_pic[0:0];
+
+    } INT @ 0x3000;
+
+    reg {
+        name = "Interrupt status (raw)";
+        desc = "Raw (unmasked) status at 0x3004, same bit positions as INT (vedu_hal_read_raw_int and the *_raw_int readers).
+
+Source: vendor module static analysis (open_vedu.ko, vedu_hal_read_raw_int and vedu_hal_read_*_raw_int), offset 0x3004, confidence HIGH for offset and bits. Not verified on hardware (nothing in this block has been read or written on a board of this generation); no reset value is known; not in the data sheet (no VEDU register table).";
+
+        field {
+            name = "sed_err_ext";
+            desc = "SED error, ext.";
+            sw = r;
+            hw = w;
+        } sed_err_ext[9:9];
+
+        field {
+            name = "sed_err_core";
+            desc = "SED error, core.";
+            sw = r;
+            hw = w;
+        } sed_err_core[8:8];
+
+        field {
+            name = "timeout";
+            desc = "Time-out.";
+            sw = r;
+            hw = w;
+        } timeout[6:6];
+
+        field {
+            name = "axi_wr_bus_err";
+            desc = "AXI write bus error.";
+            sw = r;
+            hw = w;
+        } axi_wr_bus_err[5:5];
+
+        field {
+            name = "axi_rd_bus_err";
+            desc = "AXI read bus error.";
+            sw = r;
+            hw = w;
+        } axi_rd_bus_err[4:4];
+
+        field {
+            name = "bits_over";
+            desc = "Bits over.";
+            sw = r;
+            hw = w;
+        } bits_over[3:3];
+
+        field {
+            name = "buf_full";
+            desc = "Stream buffer full.";
+            sw = r;
+            hw = w;
+        } buf_full[2:2];
+
+    } RAWINT @ 0x3004;
+
+    reg {
+        name = "Bus idle flag";
+        desc = "vedu_hal_read_bus_idle_flag polls bit 0 (up to 100000 x udelay) until set.
+
+Source: vendor module static analysis (open_vedu.ko, vedu_hal_read_bus_idle_flag), offset 0x3010, confidence HIGH for the poll, MEDIUM for the polarity. Not verified on hardware (nothing in this block has been read or written on a board of this generation); no reset value is known; not in the data sheet (no VEDU register table).";
+
+        field {
+            name = "bus_idle";
+            desc = "Bus idle (1 = idle).";
+            sw = r;
+            hw = w;
+        } bus_idle[0:0];
+
+    } BUS_IDLE @ 0x3010;
+
+};
+
+`endif

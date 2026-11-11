@@ -1,0 +1,157 @@
+`ifndef HISI_VEDU_V2_RDL
+`define HISI_VEDU_V2_RDL
+
+addrmap aHISI_VEDU_V2 {
+    name = "HiSilicon VEDU, H.265/H.264 generation V2 (control registers, vendor-derived)";
+    desc = "HiSilicon VEDU, H.265/H.264 generation 'V2': control registers only, vendor-derived, NOT VERIFIED ON HARDWARE. Chips (cross-chip audit 2026-11-11, docs/rdl-campaign/video-codec-crosschip.md): Hi3516A/D V100 (VEDU 0x20640000, H.265), Hi3516A V200 and Hi3519 V101 (0x11280000), Hi3516C V300 and Hi3516E V100 (0x11260000). The data sheets have no VEDU register table. Described here are the seven registers that the small vendor HAL modules hi3519v101_vedu.ko (OpenIPC Hi3516AV200 rootfs, Linux 3.18.20, also the Hi3519) and hi3516cv300_vedu.ko (OpenIPC Hi3516EV100 rootfs, also Hi3516C V300) access in VEDU_HAL_* functions (static analysis, never executed; instruction-level identical offsets in both modules), plus the same offsets in hi3516a_h265e.ko (Hi3516A/D: HEVC_* functions: INT 0x0, MASK 0x4, CLR 0xC, START 0x10, power 0x30, OUTSTD 0x40; MODE not seen). This control block is DIFFERENT from the Hi3520D/AVC generation (aHISI_VEDU_V100: MODE 0x20, gates inside MODE, OUTSTD 0xA4, configuration table address 0x1E0) and from the Hi3516A V300 (aHISI_VEDU_V3: mask 0x0, clear 0x4, start 0x8, status at 0x3000). All per-frame encoder configuration registers (written by the h264e/h265e modules) are NOT described: the 64 KB window is otherwise undocumented. Interrupt numbers, clock and reset facts per chip are in the chip root files and docs/rdl-campaign/vedu-crosschip.md.";
+
+    reg {
+        name = "Interrupt status";
+        desc = "Interrupt status read by VEDU_HAL_ReadInt / ReadEndOfPicInt / ReadBufFullInt (Hi3516A/D: HEVC_ReadInt). Same offset and bits as the Hi3520D INTSTAT (bit 0 end of picture, bit 1 stream buffer full).
+
+Source: vendor module static analysis (hi3519v101_vedu.ko and hi3516cv300_vedu.ko VEDU_HAL_ReadInt / ReadBufFullInt / ReadEndOfPicInt; hi3516a_h265e.ko HEVC_ReadInt, HEVC_GetIsIntOk), offset 0x0, confidence HIGH for the offset and bit 1, MEDIUM for bit 0 (end of picture is the masked read of the whole word). Not verified on hardware (nothing in this block has been read or written on a board of this generation); no reset value is known; not in the data sheet (no VEDU register table).";
+
+        field {
+            name = "buf_full";
+            desc = "Stream buffer full (bit 1, read by VEDU_HAL_ReadBufFullInt).";
+            sw = r;
+            hw = w;
+        } buf_full[1:1];
+
+        field {
+            name = "end_of_pic";
+            desc = "End of picture (bit 0).";
+            sw = r;
+            hw = w;
+        } end_of_pic[0:0];
+
+    } INTSTAT @ 0x0;
+
+    reg {
+        name = "Interrupt mask";
+        desc = "Written by VEDU_HAL_WriteIntMask (Hi3516A/D: HEVC_SetIntMask), read back by VEDU_HAL_ReadIntMask. Bit layout assumed equal to INTSTAT (the Hi3520D INTMASK enables bits 0, 1 and 30).
+
+Source: vendor module static analysis (hi3519v101_vedu.ko, hi3516cv300_vedu.ko VEDU_HAL_WriteIntMask / ReadIntMask; hi3516a_h265e.ko HEVC_SetIntMask), offset 0x4, confidence HIGH for the offset, LOW for the bits. Not verified on hardware (nothing in this block has been read or written on a board of this generation); no reset value is known; not in the data sheet (no VEDU register table).";
+
+        field {
+            name = "mask";
+            desc = "Interrupt mask / enable word (bit layout as INTSTAT assumed).";
+            sw = rw;
+            hw = r;
+        } mask[31:0];
+
+    } INTMASK @ 0x4;
+
+    reg {
+        name = "Interrupt clear";
+        desc = "Written by VEDU_HAL_ClearInt (Hi3516A/D: HEVC_ClearInt).
+
+Source: vendor module static analysis (hi3519v101_vedu.ko, hi3516cv300_vedu.ko VEDU_HAL_ClearInt; hi3516a_h265e.ko HEVC_ClearInt), offset 0xC, confidence HIGH for the offset, LOW for the bits. Not verified on hardware (nothing in this block has been read or written on a board of this generation); no reset value is known; not in the data sheet (no VEDU register table).";
+
+        field {
+            name = "clear";
+            desc = "Interrupt clear word.";
+            sw = w;
+            hw = r;
+        } clear[31:0];
+
+    } INTCLR @ 0xC;
+
+    reg {
+        name = "Start";
+        desc = "Written 1 to start one frame (VEDU_HAL_StartVedu; Hi3516A/D HEVC_StartVpu writes 0, then 1).
+
+Source: vendor module static analysis (hi3519v101_vedu.ko, hi3516cv300_vedu.ko VEDU_HAL_StartVedu; hi3516a_h265e.ko HEVC_StartVpu), offset 0x10, confidence HIGH. Not verified on hardware (nothing in this block has been read or written on a board of this generation); no reset value is known; not in the data sheet (no VEDU register table).";
+
+        field {
+            name = "start";
+            desc = "Write 1 to start.";
+            sw = rw;
+            hw = r;
+        } start[0:0];
+
+    } START @ 0x10;
+
+    reg {
+        name = "Mode";
+        desc = "Read/written whole by VEDU_HAL_ReadMode / WriteMode; VEDU_HAL_WriteTimerMode changes bits [29:28] (read-modify-write through ReadMode/WriteMode). Seen only in the Hi3519 (Hi3516A V200) and Hi3516C V300 / Hi3516E V100 modules; the Hi3516A/D H.265 module has no such HAL function, so the Hi3516A/D MODE offset is NOT confirmed (the Hi3520D / AVC generation has MODE at 0x20).
+
+Source: vendor module static analysis (hi3519v101_vedu.ko, hi3516cv300_vedu.ko VEDU_HAL_ReadMode / WriteMode / WriteTimerMode), offset 0x14, confidence HIGH on Hi3519 and Hi3516C V300, unknown on Hi3516A/D. Not verified on hardware (nothing in this block has been read or written on a board of this generation); no reset value is known; not in the data sheet (no VEDU register table).";
+
+        field {
+            name = "time_mode";
+            desc = "Timer mode (bits [29:28], VEDU_HAL_WriteTimerMode).";
+            sw = rw;
+            hw = r;
+        } time_mode[29:28];
+
+    } MODE @ 0x14;
+
+    reg {
+        name = "Clock-gate and power control";
+        desc = "Read-modify-write by VEDU_HAL_WriteClkGateMode ([20:19]), VEDU_HAL_WriteMemClkGateMode ([21]) and VEDU_HAL_SetPowerMode (bits 0, 1, 2, 3, 16, 17, 18 and 22 all set to the same value: the power-save enable). In the Hi3520D generation the gate fields sit in MODE (0x20, [14:13], [15]). The Hi3516A/D H.265 module HEVC_HAL_SetPowerMode clears the same bit set at the same offset.
+
+Source: vendor module static analysis (hi3519v101_vedu.ko, hi3516cv300_vedu.ko VEDU_HAL_WriteClkGateMode / WriteMemClkGateMode / SetPowerMode; hi3516a_h265e.ko HEVC_HAL_SetPowerMode), offset 0x30, confidence HIGH for offset and bit positions, LOW for the names (inferred from the function names). Not verified on hardware (nothing in this block has been read or written on a board of this generation); no reset value is known; not in the data sheet (no VEDU register table).";
+
+        field {
+            name = "pwr22";
+            desc = "Power-save bit 22 (set together with the other power bits).";
+            sw = rw;
+            hw = r;
+        } pwr22[22:22];
+
+        field {
+            name = "mem_clk_gate_en";
+            desc = "Memory clock gate enable (VEDU_HAL_WriteMemClkGateMode).";
+            sw = rw;
+            hw = r;
+        } mem_clk_gate_en[21:21];
+
+        field {
+            name = "clk_gate_mode";
+            desc = "Clock gate mode (VEDU_HAL_WriteClkGateMode).";
+            sw = rw;
+            hw = r;
+        } clk_gate_mode[20:19];
+
+        field {
+            name = "pwr18_16";
+            desc = "Power-save bits 18..16 (set together).";
+            sw = rw;
+            hw = r;
+        } pwr18_16[18:16];
+
+        field {
+            name = "pwr3_0";
+            desc = "Power-save bits 3..0 (set together).";
+            sw = rw;
+            hw = r;
+        } pwr3_0[3:0];
+
+    } CLKPWR @ 0x30;
+
+    reg {
+        name = "AXI outstanding";
+        desc = "VEDU_HAL_WriteOutStanding: clears bits [7:4], sets 7 there, then ORs the low nibble (0xF on the Hi3519, 5 on Hi3516C V300 / Hi3516E V100). Hi3516A/D HevcHalInit writes bit fields [7:4] and [3:0] at the same offset. In the Hi3520D generation the register is at 0xA4 with a 4 bit field.
+
+Source: vendor module static analysis (hi3519v101_vedu.ko, hi3516cv300_vedu.ko VEDU_HAL_WriteOutStanding; hi3516a_h265e.ko HevcHalInit), offset 0x40, confidence HIGH for offset and fields, LOW for which nibble is read vs write. Not verified on hardware (nothing in this block has been read or written on a board of this generation); no reset value is known; not in the data sheet (no VEDU register table).";
+
+        field {
+            name = "outstd_wr";
+            desc = "Outstanding setting, bits [7:4] (value 7 written).";
+            sw = rw;
+            hw = r;
+        } outstd_wr[7:4];
+
+        field {
+            name = "outstd_rd";
+            desc = "Outstanding setting, bits [3:0] (0xF Hi3519, 5 Hi3516C V300).";
+            sw = rw;
+            hw = r;
+        } outstd_rd[3:0];
+
+    } OUTSTD @ 0x40;
+
+};
+
+`endif
