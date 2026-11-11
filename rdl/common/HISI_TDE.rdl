@@ -3,7 +3,7 @@
 
 addrmap aHISI_TDE {
     name = "HiSilicon TDE (registers not described)";
-    desc = "Not described: no register of this block is described; the registers exist only in closed vendor libraries (the MPP binary modules), not in the data sheet or any vendor source in the tree. The 64 KB window is kept only so that the block base address and size exist in the address map (STUB). Two-dimensional engine (data sheet 8.1, overview/features only): RGB/YCbCr conversion, direct copy and fill, 2D resize, anti-flicker, clip, alpha blending, colorkey, clip mask, status interrupts. No register description in the data sheet; the only vendor source is the TDE API header (`openhisilicon/include/tde_api.h`, no register map). Instances, per data sheet memory map and interrupt table (cross-chip audit 2026-11-11, docs/rdl-campaign/tde.md; every data sheet checked: none has a TDE register table, only the chapter with features): Hi3515 and Hi3520 V100 0x20140000 (VIC interrupt 18); Hi3516 V100 0x20630000 (IRQ 53); Hi3516C V100, Hi3518A/C, Hi3518E V100/V200 and Hi3516C V200 0x20610000 (IRQ 27); Hi3516A/D 0x20610000 (GIC 69); Hi3520D/Hi3515A/Hi3515C 0x20610000 (GIC 70); Hi3516A V200 and Hi3519 V101 0x11100000 (GIC 66); Hi3516A V300 0x11210000 (GIC 67). Hi3511/Hi3512 (interrupt 31, 0x90010000 reserved in the memory map) and Hi3516C V300/Hi3516E V100 (no TDE) have no window in the data sheet. Source: data sheet, confidence HIGH for base and IRQ. Listed as an open item in docs/rdl-sweep/PORT-BLOCKS.md.";
+    desc = "Not described: no register of this block is described; the registers exist only in closed vendor libraries (the MPP binary modules), not in the data sheet or any vendor source in the tree. The 64 KB window is kept only so that the block base address and size exist in the address map (STUB). Two-dimensional engine (data sheet 8.1, overview/features only): RGB/YCbCr conversion, direct copy and fill, 2D resize, anti-flicker, clip, alpha blending, colorkey, clip mask, status interrupts. No register description in the data sheet; the only vendor source is the TDE API header (`openhisilicon/include/tde_api.h`, no register map). Instances, per data sheet memory map and interrupt table (cross-chip audit 2026-11-11, docs/rdl-campaign/tde.md; every data sheet checked: none has a TDE register table, only the chapter with features): Hi3515 and Hi3520 V100 0x20140000 (VIC interrupt 18); Hi3516 V100 0x20630000 (IRQ 53); Hi3516C V100, Hi3518A/C, Hi3518E V100/V200 and Hi3516C V200 0x20610000 (IRQ 27); Hi3516A/D 0x20610000 (GIC 69); Hi3520D/Hi3515A/Hi3515C 0x20610000 (GIC 70); Hi3516A V200 and Hi3519 V101 0x11100000 (GIC 66); Hi3516A V300 0x11210000 (GIC 67). Hi3511/Hi3512 (interrupt 31, 0x90010000 reserved in the memory map) and Hi3516C V300/Hi3516E V100 (no TDE) have no window in the data sheet. Source: data sheet, confidence HIGH for base and IRQ. Listed as an open item in docs/rdl-sweep/PORT-BLOCKS.md. VENDOR MODULES (2026-11-11, docs/rdl-campaign/tde-vendor.md): static analysis of the vendor MPP TDE modules found four register generations, modelled as eHISI_TDE_G0 (Hi3518/Hi3516C V100), eHISI_TDE_G1 (Hi3520D/Hi3515A/C), eHISI_TDE_G2 (Hi3516A/D, Hi3518E V200/Hi3516C V200) and eHISI_TDE_G3 (Hi3516A V300); chips without a vendor module in the corpus (Hi3511/Hi3515 V100/Hi3520 V100, Hi3516 V100, Hi3516A V200, Hi3519) keep this window-only block.";
 
     external mem {
         name = "Undocumented register window";
@@ -953,6 +953,845 @@ regfile eHISI_TDE_V1 {
             hw = r;
         } value[31:0];
     } TDE_AXI_ID @ 0x86C;
+};
+
+// ---- vendor-derived generations (2026-11-11, docs/rdl-campaign/tde-vendor.md) ----
+
+regfile eHISI_TDE_G0 {
+    name = "HiSilicon TDE, Hi3518 / Hi3516C V100 generation (vendor-derived)";
+    desc = "VENDOR-DERIVED, CONFIDENCE MEDIUM/LOW, NOT VERIFIED ON HARDWARE. No data sheet has a TDE register table. Static analysis (objdump, nothing executed) of hi3518_tde.ko (HiSilicon MPP, Linux 3.0.8, OpenIPC Hi3518EV100 rootfs; unstripped, HAL functions TdeHal*) shows a compact control block in the first 0x48 bytes of the window (the module maps the base 0x20610000 and takes IRQ 27, both matching the data sheets); the operation itself is described by a node in DDR (physical address in TDE_NODE_ADDR), which is why the register set is so small. This layout is different from every later generation (those put the same ID word at 0x800 and the list control at 0x800-0x86C); ID constant 0x20080228 is common to all. Used by: Hi3518A/C V100; Hi3516C V100 (same MPP family: the Hi3518 module serves it, data-sheet base/IRQ identical, no Hi3516C-specific module in the corpus). Documented in docs/rdl-campaign/tde-vendor.md. Registers not named here were not seen accessed.";
+
+    reg {
+        name = "TDE version / ID";
+        desc = "Read-only ID word; the module's version check (bTdeHalSwVersion) compares it with 0x20080228, the same constant every other TDE generation compares against at its own offset (0x800 there). Source: vendor module hi3518_tde.ko (bTdeHalSwVersion), confidence HIGH for the offset and constant, static analysis of the disassembly. Not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout not observed in the vendor code). Not verified on hardware.";
+            sw = r;
+            hw = w;
+        } value[31:0];
+    } TDE_VERSION @ 0x0;
+
+    reg {
+        name = "TDE soft reset";
+        desc = "Written with 1 by TdeHalCtlReset and TdeHalResumeInit (engine reset), always followed by clearing all interrupt status bits (TDE_INT = 0xFF). Name taken from the same function in the HiSTB v1 driver (TDE_RST at 0x804 there). Source: vendor module hi3518_tde.ko (TdeHalCtlReset, TdeHalResumeInit), confidence MEDIUM, static analysis of the disassembly. Not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout not observed in the vendor code). Not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } TDE_RST @ 0x8;
+
+    reg {
+        name = "TDE control / start";
+        desc = "Read-modify-write with bit 0 set as the very last step of TdeHalNodeExecute, after the node address and update word were written: starts the job. Other bits never touched. Source: vendor module hi3518_tde.ko (TdeHalNodeExecute), confidence MEDIUM, static analysis of the disassembly. Not verified on hardware.";
+
+        field {
+            name = "start";
+            desc = "Set by TdeHalNodeExecute to start the queued node (vendor-observed).";
+            sw = rw;
+            hw = rw;
+        } start[0:0];
+
+        field {
+            name = "rest";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = rw;
+            hw = rw;
+        } rest[31:1];
+    } TDE_CTRL @ 0xC;
+
+    reg {
+        name = "UNK_0010";
+        desc = "Written with 0x80000000 by TdeHalOpen and TdeHalResumeInit, after TDE_NODE_ADDR was cleared. Access observed: written. Neighbors: TDE_NODE_ADDR. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_0010 @ 0x10;
+
+    reg {
+        name = "TDE node list address";
+        desc = "Physical address of the first node of the job (wgetphy of the node buffer + 32, i.e. the engine-visible part of the node), written by TdeHalNodeExecute before TDE_CTRL.start; cleared to 0 by TdeHalOpen/TdeHalResumeInit. Name by analogy with the HiSTB v1 TDE_AQ_NADDR. Source: vendor module hi3518_tde.ko (TdeHalNodeExecute, TdeHalOpen), confidence MEDIUM, static analysis of the disassembly. Not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout not observed in the vendor code). Not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } TDE_NODE_ADDR @ 0x14;
+
+    reg {
+        name = "UNK_0018";
+        desc = "Written by TdeHalNodeExecute with its third argument right after TDE_NODE_ADDR (in the HiSTB v1 / later generations the corresponding argument is the node field update mask, so this is probably the update mask, inferred, LOW). Access observed: written. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_0018 @ 0x18;
+
+    reg {
+        name = "UNK_0024";
+        desc = "Read-modify-write with bit 31 set by TdeHalCtlReset, TdeHalResumeInit and TdeHalInit (after the soft reset), no other bit touched. Access observed: read-modify-write, value 0x80000000 OR-ed in. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "bit31_unk";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = rw;
+            hw = rw;
+        } bit31_unk[31:31];
+
+        field {
+            name = "rest";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = rw;
+            hw = rw;
+        } rest[30:0];
+    } UNK_0024 @ 0x24;
+
+    reg {
+        name = "TDE interrupt status";
+        desc = "Read and written back unchanged by TdeHalCtlIntStats (acknowledge of every status bit that read as set, i.e. write-1-clear); TdeHalCtlReset writes 0xFF (clear all 8 status bits). Name by analogy with the HiSTB v1 TDE_INT (0x818 there). Source: vendor module hi3518_tde.ko (TdeHalCtlIntStats, TdeHalCtlReset), confidence MEDIUM, static analysis of the disassembly. Not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout not observed in the vendor code). Not verified on hardware.";
+            sw = rw;
+            hw = rw;
+        } value[31:0];
+    } TDE_INT @ 0x30;
+
+    reg {
+        name = "TDE status";
+        desc = "Bit 0 is the busy bit: TdeHalCtlIsIdle returns !bit0; TdeHalCtlIsIdleSafely polls it ten times in a row and TdeHalNodeExecute refuses to start (-1) when it is set. Other bits never examined. Source: vendor module hi3518_tde.ko (TdeHalCtlIsIdle, TdeHalCtlIsIdleSafely, TdeHalNodeExecute), confidence HIGH, static analysis of the disassembly. Not verified on hardware.";
+
+        field {
+            name = "busy";
+            desc = "1 = a job is running (vendor-observed idle test).";
+            sw = r;
+            hw = w;
+        } busy[0:0];
+
+        field {
+            name = "rest";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = r;
+            hw = w;
+        } rest[31:1];
+    } TDE_STA @ 0x38;
+
+    reg {
+        name = "TDE finished node address";
+        desc = "Read by TdeHalNodeGetFinishHandle: the value (when non-zero) is converted back to the kernel address of the node (physical address minus 32, wgetvrt) and the node's handle field (+28) is returned as the finished job handle. So it reads the engine-visible address of the node that just completed. Source: vendor module hi3518_tde.ko (TdeHalNodeGetFinishHandle), confidence MEDIUM, static analysis of the disassembly. Not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout not observed in the vendor code). Not verified on hardware.";
+            sw = r;
+            hw = w;
+        } value[31:0];
+    } TDE_FINISH_NODE @ 0x44;
+};
+
+regfile eHISI_TDE_G1 {
+    name = "HiSilicon TDE, Hi3520D / Hi3515A / Hi3515C generation (vendor-derived)";
+    desc = "VENDOR-DERIVED, CONFIDENCE MEDIUM/LOW, NOT VERIFIED ON HARDWARE. No data sheet has a TDE register table. Static analysis (objdump, nothing executed) of hi3520D_tde.ko (HiSilicon MPP V2.0.5.1, Linux 3.0.8, unstripped, HAL TdeHal*; init: ioremap of 0x20610000, size 0x3000, request_irq 70 = GIC ID 70, matching the data sheet). The list-control block at 0x800 (version, reset, status, interrupt, list control, next node, bus limiter) has the same offsets and meaning as the later Hi3516A/Hi3518E/Hi3521 generation (eHISI_TDE_G2), whose names follow the HiSTB v1 driver; this module differs in three ways: (1) every write to that block is repeated at +0x1000 (second copy 0x1800-0x1844, only the first is read), (2) it does not use the 0x868/0x86C registers, (3) jobs are submitted through a second register bank at 0x2000-0x2054 (TdeHalSubJob, the interrupt path reads 0x2030-0x2040), not through the async list node-address register. The node itself is a DDR structure of 42 words followed by a 64 bit update mask at +0xA8/+0xAC (TdeHalNodeGetNdSize), the layout of the HiSTB v1 node (see eHISI_TDE_V1). Registers not listed were not seen accessed. Documented in docs/rdl-campaign/tde-vendor.md.";
+
+    reg {
+        name = "TDE version / ID";
+        desc = "Read-only ID word; bTdeHalSwVersion compares it with 0x20080228 (same constant on every TDE generation). Source: vendor module hi3520D_tde.ko (bTdeHalSwVersion), confidence HIGH, static analysis of the disassembly. Not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout not observed in the vendor code). Not verified on hardware.";
+            sw = r;
+            hw = w;
+        } value[31:0];
+    } TDE_VERSION @ 0x800;
+
+    reg {
+        name = "TDE soft reset";
+        desc = "Written with 0xFFFFFFFF by TdeHalInit, TdeHalCtlReset and TdeHalResumeInit (engine reset); HiSTB v1 name. The module writes every register of this bank twice, at this offset and at +0x1000 (a second copy of the bank at 0x1800-0x1844; the mirror is only ever written, except TDE_INT which is read and written back at both); reads use the first copy. Source: vendor module hi3520D_tde.ko (TdeHalCtlReset), confidence MEDIUM, static analysis of the disassembly. Not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout not observed in the vendor code). Not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } TDE_RST @ 0x804;
+
+    reg {
+        name = "TDE status";
+        desc = "Bit 0 is the (asynchronous-queue) busy bit: TdeHalCtlIsIdle returns !bit0 and TdeHalCtlIsIdleSafely polls it ten times. HiSTB v1 name. Source: vendor module hi3520D_tde.ko (TdeHalCtlIsIdle, TdeHalCtlIsIdleSafely), confidence HIGH, static analysis of the disassembly. Not verified on hardware.";
+
+        field {
+            name = "busy";
+            desc = "1 = busy (vendor-observed idle test).";
+            sw = r;
+            hw = w;
+        } busy[0:0];
+
+        field {
+            name = "rest";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = r;
+            hw = w;
+        } rest[31:1];
+    } TDE_STA @ 0x814;
+
+    reg {
+        name = "TDE interrupt status / mask";
+        desc = "TdeHalCtlIntStats reads it and writes the value back (acknowledge, write-1-clear); TdeHalCtlReset/TdeHalInit/TdeHalResumeInit write 0x800F001F. In the HiSTB v1 driver the register is split [15:0] status and [31:16] mask (inferred, LOW). The module writes every register of this bank twice, at this offset and at +0x1000 (a second copy of the bank at 0x1800-0x1844; the mirror is only ever written, except TDE_INT which is read and written back at both); reads use the first copy. Source: vendor module hi3520D_tde.ko (TdeHalCtlIntStats, TdeHalCtlReset), confidence MEDIUM, static analysis of the disassembly. Not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout not observed in the vendor code). Not verified on hardware.";
+            sw = rw;
+            hw = rw;
+        } value[31:0];
+    } TDE_INT @ 0x818;
+
+    reg {
+        name = "TDE async list control";
+        desc = "Read-modify-write by TdeHalSystemInit, TdeHalOpen and TdeHalResumeInit: bit 24 set, bits [23:20] = 4. The same value (enable plus mode 4 = start next list after the current node and line) is what the HiSTB v1 driver writes to its TDE_AQ_CTRL (u32AqEn bit 24, u32AqOperMode [23:20]). The module writes every register of this bank twice, at this offset and at +0x1000 (a second copy of the bank at 0x1800-0x1844; the mirror is only ever written, except TDE_INT which is read and written back at both); reads use the first copy. Source: vendor module hi3520D_tde.ko (TdeHalOpen, TdeHalSystemInit), confidence MEDIUM, static analysis of the disassembly. Not verified on hardware.";
+
+        field {
+            name = "aq_oper_mode";
+            desc = "List operating mode; the module writes 4 (HiSTB v1: 0 = next list after the current list, 4 = after the current node and line).";
+            sw = rw;
+            hw = rw;
+        } aq_oper_mode[23:20];
+
+        field {
+            name = "aq_en";
+            desc = "Async list enable; set by the module.";
+            sw = rw;
+            hw = rw;
+        } aq_en[24:24];
+
+        field {
+            name = "rest";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = rw;
+            hw = rw;
+        } rest[31:25];
+
+        field {
+            name = "rest_lo";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = rw;
+            hw = rw;
+        } rest_lo[19:0];
+    } TDE_AQ_CTRL @ 0x82C;
+
+    reg {
+        name = "TDE async list next node address";
+        desc = "Written with 0 by TdeHalOpen, TdeHalSystemInit and TdeHalResumeInit (list cleared); this module never writes a node address here, jobs are submitted through the 0x2000 bank (TdeHalSubJob). HiSTB v1 name (TDE_AQ_NADDR). The module writes every register of this bank twice, at this offset and at +0x1000 (a second copy of the bank at 0x1800-0x1844; the mirror is only ever written, except TDE_INT which is read and written back at both); reads use the first copy. Source: vendor module hi3520D_tde.ko (TdeHalOpen), confidence MEDIUM for the clear, LOW for the name, static analysis of the disassembly. Not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout not observed in the vendor code). Not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } TDE_AQ_NADDR @ 0x830;
+
+    reg {
+        name = "TDE bus limiter";
+        desc = "Read-modify-write by TdeHalSetClock: OR-ed with 0x80220000 (bit 31 and bits 17 and 21; HiSTB v1 writes 0x80770000, the later generations 0x80220000). Called when the clock is switched on. HiSTB v1 name. The module writes every register of this bank twice, at this offset and at +0x1000 (a second copy of the bank at 0x1800-0x1844; the mirror is only ever written, except TDE_INT which is read and written back at both); reads use the first copy. Source: vendor module hi3520D_tde.ko (TdeHalSetClock), confidence MEDIUM, static analysis of the disassembly. Not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout not observed in the vendor code). Not verified on hardware.";
+            sw = rw;
+            hw = rw;
+        } value[31:0];
+    } TDE_BUS_LIMITER @ 0x844;
+
+    reg {
+        name = "UNK_2000";
+        desc = "Read by TdeHalSubJob: bit 0 set means busy, the job is refused (-1). This is probably the synchronous-queue status (the data sheet says the engine has a sync and an async list). Access observed: read, bit 0 tested. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "busy_unk";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = r;
+            hw = w;
+        } busy_unk[0:0];
+
+        field {
+            name = "rest";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = r;
+            hw = w;
+        } rest[31:1];
+    } UNK_2000 @ 0x2000;
+
+    reg {
+        name = "UNK_2008";
+        desc = "Written with 0 as the last register write of TdeHalSubJob (after the node address, i.e. probably the submit/start trigger of the 0x2000 bank). Access observed: written, value 0. Neighbors: UNK_2010..UNK_201C. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_2008 @ 0x2008;
+
+    reg {
+        name = "UNK_2010";
+        desc = "Written by TdeHalSubJob with its first argument (a job/handle word of the caller). Access observed: written. Neighbors: UNK_2014 (node address). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_2010 @ 0x2010;
+
+    reg {
+        name = "UNK_2014";
+        desc = "Written by TdeHalSubJob with the physical address of the node (wgetphy of the node buffer + 32, same address convention as the other generations' node address register). Access observed: written. Probably the node (list) address of the 0x2000 bank, inferred, LOW. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_2014 @ 0x2014;
+
+    reg {
+        name = "UNK_2018";
+        desc = "Written by TdeHalSubJob with 0x01000000 (bit 24 set, bits [23:20] = 0), the same bit layout as TDE_AQ_CTRL (bit 24 enable, [23:20] mode) with mode 0, so probably the control register of this bank (inferred, LOW). Access observed: written. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_2018 @ 0x2018;
+
+    reg {
+        name = "UNK_201C";
+        desc = "Written by TdeHalSubJob with its third argument (a word supplied by the caller, probably the update mask of the node). Access observed: written. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_201C @ 0x201C;
+
+    reg {
+        name = "UNK_2030";
+        desc = "Read by TdeHalCtlFifoIntStats (interrupt service path): a value of 0xFFFFFFFF makes the module print a diagnostic and the value is passed on to TdeOsiListIntProc as the first word of the status record. Access observed: read. Neighbors: UNK_2038, UNK_2040. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = r;
+            hw = w;
+        } value[31:0];
+    } UNK_2030 @ 0x2030;
+
+    reg {
+        name = "UNK_2038";
+        desc = "Read by TdeHalCtlFifoIntStats; the low 8 bits are stored as the second word of the status record, which TdeOsiListIntProc uses as the key to find the finished job (job handle) in its pending list. Access observed: read, bits [7:0] used. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "handle_unk";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = r;
+            hw = w;
+        } handle_unk[7:0];
+
+        field {
+            name = "rest";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = r;
+            hw = w;
+        } rest[31:8];
+    } UNK_2038 @ 0x2038;
+
+    reg {
+        name = "UNK_2040";
+        desc = "Read by TdeHalCtlFifoIntStats and stored as the third word of the status record (not examined further by the interrupt path). Access observed: read. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = r;
+            hw = w;
+        } value[31:0];
+    } UNK_2040 @ 0x2040;
+
+    reg {
+        name = "UNK_2050";
+        desc = "Written with 4 by TdeHalSetClock after the clock was enabled (same mode value 4 as TDE_AQ_CTRL). Access observed: written. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_2050 @ 0x2050;
+
+    reg {
+        name = "UNK_2054";
+        desc = "Written by TdeHalSubJob with its fourth argument (caller-supplied word). Access observed: written. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_2054 @ 0x2054;
+
+    reg {
+        name = "UNK_1804";
+        desc = "Mirror of TDE_RST (0x804): every write the module makes to TDE_RST is repeated here (TdeHalCtlReset, TdeHalInit, TdeHalResumeInit, TdeHalOpen, TdeHalSetClock); TDE_RST itself is the copy that is read, except TdeHalCtlIntStats which also reads and writes back 0x1818. Purpose of the duplicate unknown (probably a second list context, the data sheet mentions a sync and an async list). Access observed: written (0x1818 read and written back). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_1804 @ 0x1804;
+
+    reg {
+        name = "UNK_1818";
+        desc = "Mirror of TDE_INT (0x818): every write the module makes to TDE_INT is repeated here (TdeHalCtlReset, TdeHalInit, TdeHalResumeInit, TdeHalOpen, TdeHalSetClock); TDE_INT itself is the copy that is read, except TdeHalCtlIntStats which also reads and writes back 0x1818. Purpose of the duplicate unknown (probably a second list context, the data sheet mentions a sync and an async list). Access observed: written (0x1818 read and written back). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = rw;
+            hw = rw;
+        } value[31:0];
+    } UNK_1818 @ 0x1818;
+
+    reg {
+        name = "UNK_182C";
+        desc = "Mirror of TDE_AQ_CTRL (0x82C): every write the module makes to TDE_AQ_CTRL is repeated here (TdeHalCtlReset, TdeHalInit, TdeHalResumeInit, TdeHalOpen, TdeHalSetClock); TDE_AQ_CTRL itself is the copy that is read, except TdeHalCtlIntStats which also reads and writes back 0x1818. Purpose of the duplicate unknown (probably a second list context, the data sheet mentions a sync and an async list). Access observed: written (0x1818 read and written back). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = rw;
+            hw = rw;
+        } value[31:0];
+    } UNK_182C @ 0x182C;
+
+    reg {
+        name = "UNK_1830";
+        desc = "Mirror of TDE_AQ_NADDR (0x830): every write the module makes to TDE_AQ_NADDR is repeated here (TdeHalCtlReset, TdeHalInit, TdeHalResumeInit, TdeHalOpen, TdeHalSetClock); TDE_AQ_NADDR itself is the copy that is read, except TdeHalCtlIntStats which also reads and writes back 0x1818. Purpose of the duplicate unknown (probably a second list context, the data sheet mentions a sync and an async list). Access observed: written (0x1818 read and written back). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_1830 @ 0x1830;
+
+    reg {
+        name = "UNK_1844";
+        desc = "Mirror of TDE_BUS_LIMITER (0x844): every write the module makes to TDE_BUS_LIMITER is repeated here (TdeHalCtlReset, TdeHalInit, TdeHalResumeInit, TdeHalOpen, TdeHalSetClock); TDE_BUS_LIMITER itself is the copy that is read, except TdeHalCtlIntStats which also reads and writes back 0x1818. Purpose of the duplicate unknown (probably a second list context, the data sheet mentions a sync and an async list). Access observed: written (0x1818 read and written back). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = rw;
+            hw = rw;
+        } value[31:0];
+    } UNK_1844 @ 0x1844;
+};
+
+regfile eHISI_TDE_G2 {
+    name = "HiSilicon TDE, Hi3516A/D and Hi3518E V200 / Hi3516C V200 generation (vendor-derived)";
+    desc = "VENDOR-DERIVED, CONFIDENCE MEDIUM, NOT VERIFIED ON HARDWARE. No data sheet has a TDE register table. Static analysis (objdump, nothing executed) of hi3516a_tde.ko (Linux 3.4.35 and 4.9.37 builds) and hi3518e_tde.ko (4.9.37): HAL functions TdeHal*, identical register offsets and written values in both; the same list-control offsets are also written by hi3535_tde.ko, hi3521a_tde.ko, hi3531d_tde.ko, hi3536*_tde.ko and hi_tde.ko (not RDL chips: layout widely shared, the Hi3535 module has the same 0x81C/0x820 queue registers as this one, the Hi3521/3531/3536 modules lack them). Base 0x20610000 (ioremap in the module), interrupt per data sheet. Register names are the HiSTB v1 names (that driver programs the same offsets and values, see eHISI_TDE_V1), purposes come from the vendor functions. The job itself is a DDR node (42 words + 64 bit update mask), addresses go to TDE_AQ_NADDR. Compared with the Hi3520D module (eHISI_TDE_G1) this generation has no 0x1800 mirror and no 0x2000 bank, but adds 0x81C/0x820 (synchronous queue), 0x868 and 0x86C. Documented in docs/rdl-campaign/tde-vendor.md.";
+
+    reg {
+        name = "TDE version / ID";
+        desc = "Read-only ID word; bTdeHalSwVersion compares it with 0x20080228. Source: vendor module hi3516a_tde.ko, hi3518e_tde.ko (bTdeHalSwVersion), confidence HIGH, static analysis of the disassembly. Not verified on hardware. The two modules show identical offsets and values.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout not observed in the vendor code). Not verified on hardware.";
+            sw = r;
+            hw = w;
+        } value[31:0];
+    } TDE_VERSION @ 0x800;
+
+    reg {
+        name = "TDE soft reset";
+        desc = "Written with 0xFFFFFFFF by TdeHalCtlReset, TdeHalResumeInit and TdeHalNodeExecute (reset before every job when the engine was found idle). HiSTB v1 name. Source: vendor module hi3516a_tde.ko, hi3518e_tde.ko (TdeHalCtlReset), confidence MEDIUM, static analysis of the disassembly. Not verified on hardware. The two modules show identical offsets and values.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout not observed in the vendor code). Not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } TDE_RST @ 0x804;
+
+    reg {
+        name = "TDE control / start";
+        desc = "Written with 1 as the last step of TdeHalNodeExecute (start of the list). HiSTB v1 name. Source: vendor module hi3516a_tde.ko, hi3518e_tde.ko (TdeHalNodeExecute), confidence MEDIUM, static analysis of the disassembly. Not verified on hardware. The two modules show identical offsets and values.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout not observed in the vendor code). Not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } TDE_CTRL @ 0x808;
+
+    reg {
+        name = "TDE async list current node address";
+        desc = "Read by TdeHalCurNode and TdeHalNodeSuspend: address of the node being executed; zero means none. HiSTB v1 name. Source: vendor module hi3516a_tde.ko, hi3518e_tde.ko (TdeHalCurNode, TdeHalNodeSuspend), confidence HIGH for the access, MEDIUM for the meaning, static analysis of the disassembly. Not verified on hardware. The two modules show identical offsets and values.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout not observed in the vendor code). Not verified on hardware.";
+            sw = r;
+            hw = w;
+        } value[31:0];
+    } TDE_AQ_ADDR @ 0x810;
+
+    reg {
+        name = "TDE status";
+        desc = "Bit 0 = busy (TdeHalCtlIsIdle, TdeHalNodeExecute waits up to ten reads for it to clear); bit 2 = synchronous queue working (TdeHalIsSqWork returns bit 2); bits [27:16] = count of finished nodes (TdeHalNodeSuspend masks (value >> 16) with 0xFFF to find the node the engine stopped at). HiSTB v1 name. Source: vendor module hi3516a_tde.ko, hi3518e_tde.ko (TdeHalCtlIsIdle, TdeHalIsSqWork, TdeHalNodeSuspend), confidence HIGH for bits 0/2, MEDIUM for the node count, static analysis of the disassembly. Not verified on hardware. The two modules show identical offsets and values.";
+
+        field {
+            name = "busy";
+            desc = "1 = async list busy.";
+            sw = r;
+            hw = w;
+        } busy[0:0];
+
+        field {
+            name = "sq_work";
+            desc = "1 = synchronous queue working (vendor name SqWork).";
+            sw = r;
+            hw = w;
+        } sq_work[2:2];
+
+        field {
+            name = "node_cnt";
+            desc = "Finished-node number used by TdeHalNodeSuspend (12 bits).";
+            sw = r;
+            hw = w;
+        } node_cnt[27:16];
+
+        field {
+            name = "rest_unk";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = r;
+            hw = w;
+        } rest_unk[31:28];
+
+        field {
+            name = "rest_mid";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = r;
+            hw = w;
+        } rest_mid[15:3];
+
+        field {
+            name = "rest_b1";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = r;
+            hw = w;
+        } rest_b1[1:1];
+    } TDE_STA @ 0x814;
+
+    reg {
+        name = "TDE interrupt status / mask";
+        desc = "TdeHalCtlIntStats reads and writes back (acknowledge); TdeHalCtlIntClear keeps the low 16 bits and ORs its argument shifted into [31:16]; TdeHalCtlReset/ResumeInit/NodeExecute write 0x800F001F. Split [15:0] status, [31:16] interrupt mask/enable as in the HiSTB v1 driver (the polarity of the upper half is not stated by the code). Source: vendor module hi3516a_tde.ko, hi3518e_tde.ko (TdeHalCtlIntStats, TdeHalCtlIntClear), confidence MEDIUM, static analysis of the disassembly. Not verified on hardware. The two modules show identical offsets and values.";
+
+        field {
+            name = "status";
+            desc = "Interrupt status, acknowledged by writing the read value back (write-1-clear, vendor-observed).";
+            sw = rw;
+            hw = rw;
+        } status[15:0];
+
+        field {
+            name = "mask";
+            desc = "Interrupt enable/mask bits written by TdeHalCtlIntClear; reset value written is 0x800F (vendor-observed).";
+            sw = rw;
+            hw = rw;
+        } mask[31:16];
+    } TDE_INT @ 0x818;
+
+    reg {
+        name = "UNK_081C";
+        desc = "Read-modify-write by TdeHalNodeExecute and TdeHalResumeInit: bits [25:21] and bits [1:0] cleared, nothing set. Probably the control register of the synchronous queue (it sits next to the SQ bit in TDE_STA, inferred, LOW). Access observed: read-modify-write. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = rw;
+            hw = rw;
+        } value[31:0];
+    } UNK_081C @ 0x81C;
+
+    reg {
+        name = "UNK_0820";
+        desc = "Written with 0 by TdeHalNodeExecute, TdeHalResumeInit and TdeHalInit, right next to the TDE_AQ_NADDR clear (so probably the SQ node address, inferred, LOW). Access observed: written, value 0. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_0820 @ 0x820;
+
+    reg {
+        name = "TDE async list control";
+        desc = "Read-modify-write by TdeHalNodeExecute/TdeHalResumeInit/TdeHalInit: bit 24 set, bits [23:20] cleared then bit 22 set (mode 4); the error path of TdeHalNodeExecute clears [23:20] again. HiSTB v1 TDE_AQ_CTRL (u32AqEn bit 24, u32AqOperMode [23:20]). Source: vendor module hi3516a_tde.ko, hi3518e_tde.ko (TdeHalNodeExecute), confidence MEDIUM, static analysis of the disassembly. Not verified on hardware. The two modules show identical offsets and values.";
+
+        field {
+            name = "aq_oper_mode";
+            desc = "List operating mode; the module programs 4 (HiSTB v1: 0 = next list after the current list, 4 = after the current node and line).";
+            sw = rw;
+            hw = rw;
+        } aq_oper_mode[23:20];
+
+        field {
+            name = "aq_en";
+            desc = "Async list enable.";
+            sw = rw;
+            hw = rw;
+        } aq_en[24:24];
+
+        field {
+            name = "rest_hi";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = rw;
+            hw = rw;
+        } rest_hi[31:25];
+
+        field {
+            name = "rest_lo";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = rw;
+            hw = rw;
+        } rest_lo[19:0];
+    } TDE_AQ_CTRL @ 0x82C;
+
+    reg {
+        name = "TDE async list next node address";
+        desc = "Physical address of the first node to execute, written by TdeHalNodeExecute and TdeHalRestoreAloneNode; written with 0 by TdeHalResumeInit/Init. HiSTB v1 name. Source: vendor module hi3516a_tde.ko, hi3518e_tde.ko (TdeHalNodeExecute, TdeHalRestoreAloneNode), confidence HIGH, static analysis of the disassembly. Not verified on hardware. The two modules show identical offsets and values.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout not observed in the vendor code). Not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } TDE_AQ_NADDR @ 0x830;
+
+    reg {
+        name = "TDE async node update mask (low)";
+        desc = "Low 32 bits of the 64 bit node update mask (which node words the engine reloads), written by TdeHalNodeExecute and TdeHalRestoreAloneNode (the mask is node word 42, +0xA8). HiSTB v1 name. Source: vendor module hi3516a_tde.ko, hi3518e_tde.ko (TdeHalNodeExecute), confidence MEDIUM, static analysis of the disassembly. Not verified on hardware. The two modules show identical offsets and values.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout not observed in the vendor code). Not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } TDE_AQ_UPDATE @ 0x834;
+
+    reg {
+        name = "TDE bus limiter";
+        desc = "Written with 0x80220000 by TdeHalCtlReset/ResumeInit/NodeExecute (HiSTB v1: 0x80770000). HiSTB v1 name. Source: vendor module hi3516a_tde.ko, hi3518e_tde.ko (TdeHalCtlReset), confidence MEDIUM, static analysis of the disassembly. Not verified on hardware. The two modules show identical offsets and values.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout not observed in the vendor code). Not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } TDE_BUS_LIMITER @ 0x844;
+
+    reg {
+        name = "TDE async node update mask (high)";
+        desc = "High 32 bits of the node update mask, written by TdeHalNodeExecute. HiSTB v1 name. Source: vendor module hi3516a_tde.ko, hi3518e_tde.ko (TdeHalNodeExecute), confidence MEDIUM, static analysis of the disassembly. Not verified on hardware. The two modules show identical offsets and values.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout not observed in the vendor code). Not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } TDE_AQ_UPDATE2 @ 0x85C;
+
+    reg {
+        name = "TDE request threshold";
+        desc = "Written with 0x01FEF7CF by TdeHalCtlReset/ResumeInit/NodeExecute (same value as the HiSTB v1 driver). HiSTB v1 name. Source: vendor module hi3516a_tde.ko, hi3518e_tde.ko (TdeHalCtlReset), confidence MEDIUM, static analysis of the disassembly. Not verified on hardware. The two modules show identical offsets and values.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout not observed in the vendor code). Not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } TDE_REQ_TH @ 0x868;
+
+    reg {
+        name = "TDE AXI ID";
+        desc = "Written with 0x1010 by TdeHalResumeInit and TdeHalNodeExecute (HiSTB v1 writes 0x3010). HiSTB v1 name. Source: vendor module hi3516a_tde.ko, hi3518e_tde.ko (TdeHalResumeInit), confidence MEDIUM, static analysis of the disassembly. Not verified on hardware. The two modules show identical offsets and values.";
+
+        field {
+            name = "value";
+            desc = "32 bit value, single field (bit layout not observed in the vendor code). Not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } TDE_AXI_ID @ 0x86C;
+};
+
+regfile eHISI_TDE_G3 {
+    name = "HiSilicon TDE, Hi3516A V300 generation (vendor-derived stubs)";
+    desc = "VENDOR-DERIVED STUBS, CONFIDENCE LOW, NOT VERIFIED ON HARDWARE. The Hi3516A V300 user guide lists the TDE window (0x11210000, 64 KB, GIC 67) and a feature list only. Static analysis (objdump, nothing executed) of open_tde.ko (OpenIPC Hi3516AV300 rootfs, Linux 4.9.37; the base comes from the device tree through devm_ioremap_resource, the module also contains a constant 0x11210000): a new register map, unlike every older generation: node address as a 64 bit pair at 0xF8/0xFC (this generation addresses more than 4 GB), start at 0x500, interrupt block 0x510-0x514, an unknown register at 0x530, status and current node at 0x4000-0x4014. The register names of the older generations do not apply. Registers not listed were not seen accessed; the node zoom/filter fields the module also writes are DDR node bytes, not registers. Documented in docs/rdl-campaign/tde-vendor.md.";
+
+    reg {
+        name = "UNK_00F8";
+        desc = "Node address, low word: tde_hal_node_execute writes its first argument here (after clearing both words to 0); tde_hal_resume_init clears it. The pair 0xF8/0xFC is a 64 bit physical node address (inferred from the two-argument call, MEDIUM). Access observed: written. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_00F8 @ 0xF8;
+
+    reg {
+        name = "UNK_00FC";
+        desc = "Node address, high word: tde_hal_node_execute writes its second argument here (after 0). Access observed: written. See UNK_00F8. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_00FC @ 0xFC;
+
+    reg {
+        name = "UNK_0500";
+        desc = "Written with 1 as the last register write of tde_hal_node_execute, after the node address and an osal_dmb barrier (the start command of the list; compare TDE_CTRL at 0x808 on the older generation, inferred, LOW). Access observed: written, value 1. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_0500 @ 0x500;
+
+    reg {
+        name = "UNK_0510";
+        desc = "Written with 0xF by tde_hal_ctl_reset, tde_hal_node_execute and tde_hal_resume_init (clears four status bits), and with the value just read from 0x514 by tde_hal_ctl_int_status (acknowledge). Probably the interrupt status clear register (inferred, LOW). Access observed: written. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_0510 @ 0x510;
+
+    reg {
+        name = "UNK_0514";
+        desc = "Read by tde_hal_ctl_int_status (status word, also logged as 'tde register int status'), and read-modify-written by tde_hal_ctl_int_clear: low 16 bits kept, argument shifted into [31:16] (the layout of TDE_INT 0x818 on the older generation). Access observed: read, read-modify-write. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = rw;
+            hw = rw;
+        } value[31:0];
+    } UNK_0514 @ 0x514;
+
+    reg {
+        name = "UNK_0530";
+        desc = "Written with 0x0100647F by tde_hal_ctl_reset, tde_hal_node_execute and tde_hal_resume_init right after the interrupt clear (position and role like TDE_REQ_TH 0x868 / TDE_BUS_LIMITER on the older generation, not the same value, inferred, LOW). Access observed: written. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = w;
+            hw = r;
+        } value[31:0];
+    } UNK_0530 @ 0x530;
+
+    reg {
+        name = "UNK_4000";
+        desc = "Read by tde_hal_ctl_is_idle, tde_hal_ctl_is_idle_safely and tde_hal_node_execute: the low 8 bits are tested, all zero means idle (node_execute polls up to ten times and refuses to start otherwise). Probably the engine status (inferred, LOW). Access observed: read, bits [7:0] used. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "busy_unk";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = r;
+            hw = w;
+        } busy_unk[7:0];
+
+        field {
+            name = "rest";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = r;
+            hw = w;
+        } rest[31:8];
+    } UNK_4000 @ 0x4000;
+
+    reg {
+        name = "UNK_4010";
+        desc = "Read by tde_hal_cur_node together with UNK_4014: the 64 bit address of the node being executed (inferred from the function name and the two-word return value, LOW). Access observed: read. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = r;
+            hw = w;
+        } value[31:0];
+    } UNK_4010 @ 0x4010;
+
+    reg {
+        name = "UNK_4014";
+        desc = "High word of the pair read by tde_hal_cur_node. Access observed: read. See UNK_4010. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = r;
+            hw = w;
+        } value[31:0];
+    } UNK_4014 @ 0x4014;
 };
 
 `endif
