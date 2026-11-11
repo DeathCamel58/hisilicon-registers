@@ -7,6 +7,8 @@ regfile eHISI_JPGE {
     desc = "
     LAYOUT PARTLY CONFIRMED ON THE Hi3520D BOARD (2026-11-10): the registers used by the Linux hisi-jpge driver (interrupts, PICFG, IMGSIZE, source addresses and strides for semi-planar input, stream address/length, QPT writes, START, OUTSTD, VERSION) produced correct JPEG files on the board, so offsets and the main field positions are confirmed; each register description below states its own source and confidence in the fixed forms 'Source: data sheet', 'Source: HiSTB driver (register semantics only), confidence HIGH|MEDIUM|LOW', 'Source: Hi3520D board read-back 2026-11-10' and 'Not verified on hardware'. Previously: CANDIDATE LAYOUT, LOW-MEDIUM CONFIDENCE, NOT HARDWARE VERIFIED. JPEG encoder (JPGE) of the Hi3520D SDK generation: 40 registers transcribed from the header `jpge_reg(r004).h` (file `product/hiosd/dec/jpeg_reg.h`, Huawei copyright 2012-05-16, version 2.0) that ships unused inside the Hi3520D vendor U-Boot 2010.06 uploads (https://github.com/Axl-zhang/hisilicon-hi3520d-uboot, https://github.com/hi35xx/hi35xx-buildroot `boot/uboot/u-boot-2010.06`; GPL-2.0 U-Boot tree). The header names no chip and gives no base address; the Hi3520D data sheet (Table 1-1) places the JPGE window at 0x20660000 (GIC interrupt 73) and its 6.3 feature list (baseline JPEG, 4:2:0/4:2:2/4:4:4, planar/semi-planar/packed input, 8192x8192, 8-region OSD, separate Y/Cb/Cr quantization tables) matches this register set (8 VPP_OSD regions, 48-word quantization table). Layout: interrupt set 0x0-0xC (end of picture, buffer full, time-out, config error), picture config 0x10-0x24, source addresses/strides 0x30-0x3C, stream buffer 0x40-0x4C (start, read/write pointers, length), PTS 0x70-0x7C, time-out/timer 0x80/0x84, OUTSTD 0xA4, VERSION 0xFC, VPP overlay 0x500-0x5D0 (8 OSD regions: alpha, position, size, address, stride, layer order, colour inversion), quantization table JPGE_QPT[48] at 0x1000. Reset values and access types are unknown (no data sheet register description; modelled RW, no reset). Hardware probe to confirm the layout before relying on it: read 0x20660000 + 0xFC (JPGE_VERSION, expect a non-zero version word), + 0x0 / + 0x8 (JPGE_INTSTAT / JPGE_RAWINT, expect 0) and + 0x1000.. (JPGE_QPT, read/write test) with the JPGE clock enabled (PERI_CRG). The HiSTB SDK `source/msp/drv/jpge/src/jpge_reg.h` is a later revision of the same register family (same names, extra registers) and was not used. Every register and field desc below is marked `[inferred]` (names from the header, meanings inferred from the names).
 
+    CROSS-CHIP USE (2026-11-11, docs/rdl-campaign/jpge-crosschip.md): this same register file is instantiated on the other Hi3516/Hi3518/Hi3519 chips whose vendor MPP JPEG encoder module programs the same offsets: Hi3518 V100 / Hi3516C V100 (hi3518_jpege.ko), Hi3518E V200 / Hi3516C V200 (hi3518e_jpege.ko), Hi3516A/D V100 (hi3516a_jpege.ko), Hi3516A V200 / Hi3519 V101 (hi3519v101_jpege.ko), Hi3516C V300 / Hi3516E V100 (hi3516cv300_jpege.ko). Evidence for those chips is STATIC ANALYSIS of the vendor modules only (Source: vendor module <name>, confidence HIGH for the offsets and bit positions that the module's register-write and HAL functions access, word-checked against the Hi3520D module; no data sheet register table exists for any chip; not verified on hardware on any chip except the Hi3520D). Where a chip's module differs from the Hi3520D one the difference is named in the field text (PICFG bits 19 and 29). Registers that the Hi3520D RDL carries only from the HiSTB driver or the U-Boot header (VERSION, TIMEOUT, TIMER, PTS, CLIP_THR, SRCVADDR, SRPTR/SWPTR use by the module) were not compared on the other chips unless stated per register; for those the layout is INFERRED from the Hi3520D layout (confidence LOW-MEDIUM). Every chip's base address, interrupt number and clock/reset bits come from its own data sheet memory map, interrupt table and PERI_CRG register (never from the vendor module): Hi3516A/D 0x20660000 IRQ 73, Hi3518/Hi3516C V100 and Hi3518E V200/Hi3516C V200 0x20660000 IRQ 26, Hi3516A V200/Hi3519 0x11200000 IRQ 70, Hi3516C V300/Hi3516E V100 0x11220000 IRQ 26; clock gate/reset PERI_CRG24 [1]/[0] on all of them. The Hi3516A V300 (0x11220000, IRQ 68, PERI_CRG44) uses a DIFFERENT layout (eHISI_JPGE_AV300 in HISI_JPGE_AV300.rdl); the Hi3516 V100 (0x20610000, IRQ 54, PERI_CRG19) has no vendor module in the local corpus and is only a window (aHISI_JPGE stub below), although its data sheet 6.3 feature list is identical to the Hi3520D one.
+
     Generated 2026-11-10 by build/rdl-audit/video-rdl-scratch/gen_blocks.py: mechanical transcription of the data sheet register tables (ds_extract2 + description extraction from the PDF) merged with the vendor header; not hardware verified.
 
     Register sources: 0 registers from the data sheet (-, section -); 40 registers (5 of them arrays) and 0 fields from vendor U-Boot 2010.06 upload `product/hiosd/dec/jpeg_reg.h` = `jpge_reg(r004).h` (GPL-2.0 U-Boot tree, Huawei copyright 2012; github.com/Axl-zhang/hisilicon-hi3520d-uboot) (GPL-2.0; same SDK generation as the Hi3520D, chip not named in the file), each marked `[inferred]` in its desc (names from the header, meanings inferred from the names, reset/access unknown). ";
@@ -149,7 +151,7 @@ regfile eHISI_JPGE {
 
         field {
             name = "col2grayEn";
-            desc = "Color to gray conversion (name only). Source: HiSTB driver (register semantics only), confidence LOW. Reset 0 (Source: Hi3520D board read-back 2026-11-10). The data sheet lists no 4:0:0 encoding. Not verified on hardware.";
+            desc = "Color to gray conversion (name only). Source: HiSTB driver (register semantics only), confidence LOW. Reset 0 (Source: Hi3520D board read-back 2026-11-10). The data sheet lists no 4:0:0 encoding. Not verified on hardware. Other chips (static analysis of the vendor modules, 2026-11-11): hi3518e_jpege, hi3516a_jpege, hi3516cv300_jpege and hi3519v101_jpege write this bit in every register-write call, as 1 when an input flag of the channel structure (offset 0x104 of the write argument, name unknown, probably a 4:0:0/gray pixel-format flag) equals 1, otherwise 0 (Source: vendor module, bit position HIGH, meaning LOW); the Hi3520D and Hi3518 V100 modules never touch it.";
             sw = rw;
             hw = r;
             reset = 0;
@@ -173,7 +175,7 @@ regfile eHISI_JPGE {
 
         field {
             name = "roundEn";
-            desc = "Rounding control. Reset 1 (Source: Hi3520D board read-back 2026-11-10); the HiSTB driver and the Linux driver write 0 and the output decodes correctly, so the effect of the bit is unknown. Not verified on hardware.";
+            desc = "Rounding control. Reset 1 (Source: Hi3520D board read-back 2026-11-10); the HiSTB driver and the Linux driver write 0 and the output decodes correctly, so the effect of the bit is unknown. Not verified on hardware. Other chips (static analysis 2026-11-11): the hi3518e, hi3516a, hi3516cv300 and hi3519v101 modules write this bit as 0 in every register-write call (like the Linux driver); the Hi3520D and Hi3518 V100 modules leave it at its reset value.";
             sw = rw;
             hw = r;
             reset = 1;
@@ -213,7 +215,7 @@ regfile eHISI_JPGE {
 
         field {
             name = "rotationAngle";
-            desc = "Rotation of the source picture: 0 = none, 1 = 90, 2 = 270, 3 = 180 degrees (direction unknown). For 90/270 the HiSTB driver swaps width and height in the JFIF header and turns 4:2:2 into 4:2:0 with a doubled chroma stride. Source: HiSTB driver (register semantics only), confidence MEDIUM. Not used by the Linux driver. Not verified on hardware.";
+            desc = "Rotation of the source picture: 0 = none, 1 = 90, 2 = 270, 3 = 180 degrees (direction unknown). For 90/270 the HiSTB driver swaps width and height in the JFIF header and turns 4:2:2 into 4:2:0 with a doubled chroma stride. Source: HiSTB driver (register semantics only), confidence MEDIUM. Not used by the Linux driver. Not verified on hardware. Other chips (static analysis 2026-11-11): no vendor module analyzed writes a non-zero rotation (the Hi3516A, Hi3516CV300, Hi3518E and Hi3519V101 modules clear bits 13:12 explicitly, the Hi3518 module leaves them alone).";
             sw = rw;
             hw = r;
             reset = 0;
@@ -221,7 +223,7 @@ regfile eHISI_JPGE {
 
         field {
             name = "chnId";
-            desc = "Channel ID copied into the packet descriptor (descriptor bytes 12..15). Source: HiSTB driver (register semantics only), confidence LOW. The Linux driver writes 0. Not verified on hardware.";
+            desc = "Channel ID copied into the packet descriptor (descriptor bytes 12..15). Source: HiSTB driver (register semantics only), confidence LOW. The Linux driver writes 0. Not verified on hardware. Other chips (static analysis 2026-11-11): the hi3518, hi3518e, hi3516a, hi3516cv300 and hi3519v101 modules write the channel number into bits [11:4] too (Source: vendor module, HIGH).";
             sw = rw;
             hw = r;
             reset = 0;
@@ -229,7 +231,7 @@ regfile eHISI_JPGE {
 
         field {
             name = "yuvFmt";
-            desc = "Chroma sampling of the picture and of the JPEG: 0 = 4:2:0, 1 = 4:2:2 (Source: Hi3520D board read-back 2026-11-10: NV21 and NV61 encodes decode correctly with SOF sampling 0x22 and 0x21), 2 = 4:4:4 (Source: HiSTB driver (register semantics only), confidence MEDIUM, Not verified on hardware). Value 3: unknown, the HiSTB JPGE driver rejects it (not verified, LOW). With 4:2:2 data and yuvFmt = 0 plus a doubled chroma stride the encoder skips every second chroma line (4:2:0 JPEG from 4:2:2 input): Source: HiSTB driver (register semantics only), confidence MEDIUM (used by the HiSTB driver for rotation and 4:2:2 semi-planar), Not verified on hardware.";
+            desc = "Chroma sampling of the picture and of the JPEG: 0 = 4:2:0, 1 = 4:2:2 (Source: Hi3520D board read-back 2026-11-10: NV21 and NV61 encodes decode correctly with SOF sampling 0x22 and 0x21), 2 = 4:4:4 (Source: HiSTB driver (register semantics only), confidence MEDIUM, Not verified on hardware). Value 3: unknown, the HiSTB JPGE driver rejects it (not verified, LOW). With 4:2:2 data and yuvFmt = 0 plus a doubled chroma stride the encoder skips every second chroma line (4:2:0 JPEG from 4:2:2 input): Source: HiSTB driver (register semantics only), confidence MEDIUM (used by the HiSTB driver for rotation and 4:2:2 semi-planar), Not verified on hardware. Other chips (static analysis 2026-11-11): the vendor modules of Hi3518, Hi3518E, Hi3516A, Hi3516CV300 and Hi3519V101 write a 2 bit value from the channel structure to [3:2] (same position, Source: vendor module, HIGH).";
             sw = rw;
             hw = r;
             reset = 0;
@@ -237,7 +239,7 @@ regfile eHISI_JPGE {
 
         field {
             name = "strFmt";
-            desc = "Input storage: 0 = semi-planar (Y plane + interleaved Cr/Cb plane, Cr first; Source: Hi3520D board read-back 2026-11-10: NV21/NV61 encodes give correct colors), 1 = planar (separate Y, Cb, Cr planes), 2 = packed (YUYV family). Values 1 and 2: Source: HiSTB driver (register semantics only), confidence MEDIUM (JPGE_STORE_* enum of the HiSTB VENC code; the HiSTB H.264 encoder uses a different numbering, 0 semi-planar, 1 packed, 2 planar). Not verified on hardware for 1 and 2.";
+            desc = "Input storage: 0 = semi-planar (Y plane + interleaved Cr/Cb plane, Cr first; Source: Hi3520D board read-back 2026-11-10: NV21/NV61 encodes give correct colors), 1 = planar (separate Y, Cb, Cr planes), 2 = packed (YUYV family). Values 1 and 2: Source: HiSTB driver (register semantics only), confidence MEDIUM (JPGE_STORE_* enum of the HiSTB VENC code; the HiSTB H.264 encoder uses a different numbering, 0 semi-planar, 1 packed, 2 planar). Not verified on hardware for 1 and 2. Other chips (static analysis 2026-11-11): of the vendor modules analyzed (Hi3518, Hi3518E, Hi3516A, Hi3516CV300, Hi3519V101) none writes a non-zero value (Hi3516A, Hi3516CV300, Hi3519V101 and Hi3518E write 0 explicitly, Hi3518 leaves the field alone), so planar/packed input is exercised by no vendor code seen.";
             sw = rw;
             hw = r;
             reset = 0;
@@ -1111,8 +1113,8 @@ regfile eHISI_JPGE {
 };
 
 addrmap aHISI_JPGE {
-    name = "HiSilicon JPGE (registers not described)";
-    desc = "Not described: no register of this block is described; the registers exist only in closed vendor libraries (the MPP binary modules), not in the data sheet or any vendor source in the tree. The 64 KB window is kept only so that the block base address and size exist in the address map (STUB). JPEG encoder (data sheet 6.3, overview/features only): ISO 10918-1 baseline, YCbCr 4:2:0/4:2:2/4:4:4, planar/semi-planar/YUYV input, up to 8192x8192, separate Y/Cb/Cr quantization tables, 8-region OSD overlay. The vendor MPP JPEGE is a closed-source module (openhisilicon `kernel/jpege` is for other SoCs). No register description anywhere. Base address 0x20660000, GIC interrupt ID 73. Listed as an open item in docs/rdl-sweep/PORT-BLOCKS.md.";
+    name = "HiSilicon JPGE (window only, registers not described)";
+    desc = "Window only (GAP RECORD, no invented registers): the 64 KB JPEG encoder window exists in the data sheet memory map but no register of this chip's JPEG encoder is described anywhere in the local corpus (no data sheet register table, no vendor module, no vendor source). Instantiated by the Hi3516 V100 only (JPEG window 0x20610000, 64 KB, interrupt 54, clock/reset PERI_CRG19 [3:2] clock frequency, [1] clock gate, [0] soft reset, data sheet 6.3). The Hi3516 V100 data sheet 6.3 JPGE feature list (baseline ISO 10918-1, YCbCr 4:2:0/4:2:2/4:4:4, planar/semi-planar/packed YUYV input, 32x32 to 8192x8192 in steps of 4, one quantization table per component, up to 8 OSD regions with 129 alpha levels, interrupt, software configures the quantization table and handles the interrupt) is the same as the Hi3520D one, which suggests the Hi3520D register layout (eHISI_JPGE above) but that is an INFERENCE from a feature list, confidence LOW, and is not recorded as registers; a hardware read of JPGE_VERSION (offset 0xFC) would confirm it. See docs/rdl-campaign/jpge-crosschip.md.";
 
     external mem {
         name = "Undocumented register window";
