@@ -14,4 +14,1772 @@ addrmap aHISI_VEDU {
     } REGS;
 };
 
+addrmap aHISI_VEDU_V100 {
+    name = "HiSilicon VEDU (Hi3520D V100 edition, vendor-derived registers)";
+    desc = "VEDU, Hi3520D V100 edition (H.264 hardware encoder), vendor-derived, NOT VERIFIED ON HARDWARE. The data sheet has no VEDU register table (chapter 6 is overview only); this edition is derived from the vendor MPP modules of the Hi3520D_MPP_V2.0.5.1 SDK (hi3520D_chnl.ko: VEDU_HAL_*/VEDU_DRV_* and the VPU/IRQ glue; hi3520D_h264e.ko: H264E_DRV_*; hi3520D_sys.ko: CRG16 handling), static disassembly only, see docs/rdl-campaign/vedu-vendor.md. Result: 22 registers are named from vendor code evidence (offset, width and bits confirmed in the Hi3520D code; the names are the HiSTB drv_venc_reg_r006.h names, a neighbor generation whose offsets and bit layouts match the Hi3520D code in every place that could be compared: INTMASK 0x40000003, MODE bit 25 regCfgMode, PICFG0 field layout, QPTHR, PICINFO0..8 at 0xA20..0xA40, REGCFG_ADDR at 0x1E0) and 100 registers are stubbed as UNK_<offset> (all read-only in a vendor debug dump of 0x000-0x15F and 0xA50-0xA9F). Everything else in the 64 KB window is not described. CONFIRMED FACTS (vendor code): base 0x20620000, 64 KB, one VEDU, GIC interrupt 72 (VEDU_GetInfo returns IRQ 72, base 0x20620000, size 0x10000; request_threaded_irq with IRQF_DISABLED, handler ChnlVeduISR), clock and reset PERI_CRG16 (vedu_cken bit 1 on first, then vedu_srst_req bit 0 released, then the undocumented 'skip init' bits [9:4] pulse, then the register init), module parameter g_bVeduPowerSaveEn default 1 (selects the MODE clock-gate codes), watchdog 300 jiffies without an interrupt then reset (assert/release vedu_srst_req, redo VEDU_DRV_Init). HOW THE ENCODER IS PROGRAMMED: almost nothing is written register by register. For every frame software fills a 64-byte-aligned register-config table in DDR (about 0x264 bytes used, 1 KB reserved: source/reconstruction/reference picture addresses and strides, the 32-byte slice header bit string, PICFG0..3, image size, slice-header parameters, ME search window, ROI regions, OSD overlay, QP, scaling matrices, stream buffer address, stream read/write pointer word addresses and buffer length), flushes it, writes its physical address to REGCFG_ADDR (0x1E0), writes INTMASK (0x40000003), MODE (regcfg_mode = 1), PICFG0 and the two chroma QP offset fields of QPTHR, then writes START = 1. On the interrupt (IRQ 72) the handler reads INTSTAT, accepts bit 0, bit 1 or bit 8 as completion, reads the result registers (TIMER, PICINFO0..8, QPTHR.start_qp, MEANQP, PICBITS, TARGETBITS), writes INTCLR = 0xFFFFFFFF (0xFFFFFFFC for a non-completion status), and starts the next channel. SPS, PPS, SEI, user data, P-skip pictures and the slice header are produced by ARM software and written into the stream ring buffer or the table; rate control (hi3520D_rc.ko) is software that only reads the result registers. SED: the second gate/reset pair in PERI_CRG16 (sed_cken [11], sed_srst_req [10]) belongs to the VEDU in the vendor SYS module (SYS_HAL_VeduSedClkEn/ResetSel, commands 74/73) but no vendor module ever calls those two commands, so the vendor leaves SED at its reset state (clock on, reset asserted per the data sheet reset value 0xC03). The r006 VEDU (a combined encoder/decoder block: MODE.vedsel, VDREF addresses, VdecEndOfPic) has SED_STATE/SED_PFMC registers; SED is probably the syntax-element-decoder unit of the decode path, unused when vedsel = 0 (LOW). EDITION: other chips instantiate aHISI_VEDU (the old placeholder, unchanged) at their own bases and have other VEDU generations; this edition is instantiated by the Hi3520D family files (Hi3520D V100, Hi3515A V100, Hi3515C V100 share the data sheet and the MPP V2.0.5.1 modules; the vendor module names Hi3515A/C in its sibling VI checks, no VEDU-specific Hi3515 evidence exists, so the Hi3515A/C instantiation is inferred). Previously (data-sheet facts, still valid): PERI_CRG16 resets to 0x0000_0C03 (vedu_cken [1] = 1 clock on, vedu_srst_req [0] = 1 in reset, plus sed_cken [11] and sed_srst_req [10], both 1 at reset); working clock 225 MHz (EPLL VCO 1350 MHz / 6, shared with VPSS); DDR out-of-order access enabled by the DDR controller bit vedu_ctrl [3], QoS port 'VENC' (media0_port0_pri [2:0], priority 3 = highest, plus its timeout counter); vendor script writes DDRC QoS entry 0x2011017C = 0x10c02 (VEDU) and 0x20620020 = 0, 0x206200a4 = 3. Encoder limits per the data sheet: Semi-Planar YCbCr 4:2:0 input, 160x64 to 1920x2048, 2 kbps to 40 Mbps, H.264 High/Main/Baseline @4.2, 8 ROIs, 8-region OSD overlay, CBR/VBR; vendor channel checks: width 160..1920 and height 64..2048 (even), profile 0..2, stream buffer at least 3/4 of width x height bytes (32 KB in mini-buffer mode) and a multiple of 64. Previously: 'Not described: no register of this block is described; ... placeholder so that the block base address and size exist in the address map (STUB)'. The base address and the 64 KB size are kept (the trailing memory below). GIC interrupt ID 72. Listed as an open item in docs/rdl-sweep/PORT-BLOCKS.md.";
+
+    reg {
+        name = "Interrupt status (vendor ReadInt)";
+        desc = "Interrupt status word, read by the interrupt handler. VEDU_HAL_ReadInt returns the whole word; VEDU_HAL_ReadEndOfPicInt tests bit 0, VEDU_HAL_ReadBufFullInt bit 1, VEDU_HAL_ReadEndOfStreamInt bit 8; VEDU_DRV_IsIntOk reports a good interrupt when bit 0 OR bit 1 OR bit 8 is set (any other bit, for example an error bit, makes the handler take the error path and write 0xFFFFFFFC to INTCLR). H264E_DRV_ReadRegs (hi3520D_h264e.ko, 0x1c080) copies bit 0 and bit 1 into the per-frame result block, H264eIsVeduOK then calls a frame good when bit 0 is set and bit 1 is not. Whether the word is the masked status or the raw status is not visible in the vendor code (INTMASK is written 0x40000003 by the vendor and the r006 header has INTSTAT at this offset and RAWINT at 0x008). Register name and field names are the HiSTB drv_venc_reg_r006.h names (neighbor generation, naming only: the offset and the bits listed here were confirmed in the Hi3520D vendor code, the name is inferred). Source: vendor module hi3520D_chnl.ko (VEDU_HAL_ReadInt 0x5080, ReadEndOfPicInt 0x502c, ReadBufFullInt 0x4fd8, ReadEndOfStreamInt 0x4f84, VEDU_DRV_IsIntOk 0x4a94), confidence HIGH, word-checked: yes; also instruction-identical in the Xiongmai NBD7804T-F copy. Not verified on hardware.";
+
+        field {
+            name = "end_of_pic";
+            desc = "End of picture: the frame was encoded (vendor ReadEndOfPicInt, HIGH). r006 name VencEndOfPic.";
+            sw = r;
+            hw = w;
+        } end_of_pic[0:0];
+
+        field {
+            name = "buf_full";
+            desc = "Stream buffer full (vendor ReadBufFullInt, HIGH). r006 name VencBufFull. The vendor treats it as an interrupt to service (good in IsIntOk) but H264eIsVeduOK rejects the frame.";
+            sw = r;
+            hw = w;
+        } buf_full[1:1];
+
+        field {
+            name = "end_of_stream";
+            desc = "Vendor name 'EndOfStream' (VEDU_HAL_ReadEndOfStreamInt, HIGH for the position, LOW for the meaning). r006 calls the same bit VdecEndOfPic (end of decoded picture; the r006 VEDU also contains a decoder path). Counted as a good interrupt by VEDU_DRV_IsIntOk.";
+            sw = r;
+            hw = w;
+        } end_of_stream[8:8];
+
+    } INTSTAT @ 0x000;
+
+    reg {
+        name = "Interrupt mask / enable";
+        desc = "Interrupt mask register. VEDU_DRV_Init (called at module load and after every reset) first writes 0 (VEDU_HAL_WriteIntMask 0x4e38, every source off); H264E_DRV_WriteRegs writes the constant 0x40000003 (bits 0, 1 and 30) before every frame. Because 0 is written to disable and 0x40000003 to enable, 1 = interrupt enabled is inferred (MEDIUM; the r006 header names the register INTMASK and the same three bit positions VencEndOfPic, VencBufFull and cfgErr). VEDU_HAL_ReadIntMask exists but no caller was found. Bit 30 is in the mask but the vendor never tests it in INTSTAT (r006: cfgErr, configuration error). Register name and field names are the HiSTB drv_venc_reg_r006.h names (neighbor generation, naming only: the offset and the bits listed here were confirmed in the Hi3520D vendor code, the name is inferred). Source: vendor modules hi3520D_chnl.ko (VEDU_HAL_WriteIntMask 0x4e38, VEDU_DRV_Init 0x4990) and hi3520D_h264e.ko (H264E_DRV_WriteRegs 0x1bfec, store of 0x40000003 at +0x4), confidence HIGH for offset and values, MEDIUM for the polarity, word-checked: yes; instruction-identical in the Xiongmai NBD7804T-F copy. Not verified on hardware.";
+
+        field {
+            name = "end_of_pic_en";
+            desc = "Written 1 per frame (vendor value 0x40000003).";
+            sw = rw;
+            hw = r;
+        } end_of_pic_en[0:0];
+
+        field {
+            name = "buf_full_en";
+            desc = "Written 1 per frame.";
+            sw = rw;
+            hw = r;
+        } buf_full_en[1:1];
+
+        field {
+            name = "cfg_err_en";
+            desc = "Written 1 per frame; r006 name cfgErr.";
+            sw = rw;
+            hw = r;
+        } cfg_err_en[30:30];
+
+    } INTMASK @ 0x004;
+
+    reg {
+        name = "UNK_0x008";
+        desc = "UNK_0x008 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_RAWINT at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x008 @ 0x008;
+
+    reg {
+        name = "Interrupt clear";
+        desc = "Interrupt clear, write only in the vendor code (VEDU_HAL_ClearInt 0x4f30). Two values are written: 0xFFFFFFFF by VEDU_DRV_ClearInt (0x4b54) after a frame was processed in the interrupt handler, and 0xFFFFFFFC by VEDU_DRV_ClearErrInt (0x4b00) when the status was not a good completion (clears everything except bits 0 and 1). Write-one-to-clear is inferred from the all-ones pattern (MEDIUM). Register name and field names are the HiSTB drv_venc_reg_r006.h names (neighbor generation, naming only: the offset and the bits listed here were confirmed in the Hi3520D vendor code, the name is inferred). Source: vendor module hi3520D_chnl.ko (VEDU_HAL_ClearInt 0x4f30, VEDU_DRV_ClearInt 0x4b54, VEDU_DRV_ClearErrInt 0x4b00; call order in ChnlVeduIntHandler 0x341c), confidence HIGH for offset and values, MEDIUM for the clear semantics, word-checked: yes. Not verified on hardware.";
+
+        field {
+            name = "clear";
+            desc = "Vendor writes 0xFFFFFFFF (all sources) or 0xFFFFFFFC (all but end_of_pic and buf_full).";
+            sw = w;
+            hw = r;
+        } clear[31:0];
+
+    } INTCLR @ 0x00C;
+
+    reg {
+        name = "Start";
+        desc = "Start of one encode run. VEDU_HAL_StartVedu (0x4ed8) writes the constant 1 (a whole-word store). It is the last register write of a frame: the per-frame state is programmed first (INTMASK, MODE, PICFG0, REGCFG_ADDR, QPTHR), then the DDR register-config table is already in memory, then START. Register name and field names are the HiSTB drv_venc_reg_r006.h names (neighbor generation, naming only: the offset and the bits listed here were confirmed in the Hi3520D vendor code, the name is inferred). Source: vendor module hi3520D_chnl.ko (VEDU_HAL_StartVedu 0x4ed8, called through the vpu callback table in ChnlVeduIntHandler after the task start function), confidence HIGH, word-checked: yes. Not verified on hardware.";
+
+        field {
+            name = "start";
+            desc = "Written 1 to start the run (r006 name VStart).";
+            sw = w;
+            hw = r;
+        } start[0:0];
+
+    } START @ 0x010;
+
+    reg {
+        name = "UNK_0x014";
+        desc = "UNK_0x014 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has no register at this offset (reserved gap in the neighbor map). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x014 @ 0x014;
+
+    reg {
+        name = "UNK_0x018";
+        desc = "UNK_0x018 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has no register at this offset (reserved gap in the neighbor map). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x018 @ 0x018;
+
+    reg {
+        name = "UNK_0x01C";
+        desc = "UNK_0x01C (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has no register at this offset (reserved gap in the neighbor map). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x01C @ 0x01C;
+
+    reg {
+        name = "Mode and power control";
+        desc = "Mode register, always accessed read-modify-write by the VEDU_HAL_Write* helpers (VEDU_HAL_ReadMode 0x4cf4 / WriteMode 0x4ca4). At module init (VEDU_DRV_Init 0x4990) the vendor sets time_mode = 2 (bits 11:10, VEDU_HAL_WriteTimerMode 0x4d44) and, with the module parameter g_bVeduPowerSaveEn at its default 1, clk_gate_mode = 2 (bits 14:13, WriteClkGateMode 0x4dd4) and mem_clk_gate_en = 1 (bit 15, WriteMemClkGateMode 0x4d70); with the parameter 0 both are written 0. Per frame H264E_DRV_WriteRegs (hi3520D_h264e.ko 0x1bfec) clears bit 0 (vedsel = 0), clears bits 4:3 (stdmod = 0), sets bit 2 (osd_en) when an OSD configuration with its enable word set exists and clears it otherwise, and sets bit 25 (regcfg_mode = 1, the register block comes from DDR through REGCFG_ADDR); other bits keep the value read. The board script sysctl_hi3520D.sh additionally writes the whole register to 0 at boot ('vedu lowpower', 0x20620020 = 0). Names are the r006 names (bit 0 vedsel = encoder/decoder select, 1 = decoder in the r006 header; stdmod = standard select; timeEn, clkGateEn, memClkGateEn, regCfgMode); the vendor never writes bit 1 (r006 vencEn) in the decoded paths. Source: vendor modules hi3520D_chnl.ko (VEDU_HAL_*Mode*, VEDU_DRV_Init) and hi3520D_h264e.ko (H264E_DRV_WriteRegs), confidence HIGH for positions and written values, MEDIUM for the meaning of time_mode/clk_gate_mode values, word-checked: yes. Not verified on hardware.";
+
+        field {
+            name = "vedsel";
+            desc = "Written 0 per frame (r006: encoder/decoder select; 0 = encoder, MEDIUM).";
+            sw = rw;
+            hw = r;
+        } vedsel[0:0];
+
+        field {
+            name = "osd_en";
+            desc = "Per frame 1 when the OSD front-end overlay is configured and enabled, else 0 (H264E_DRV_WriteRegs: tests the OSD configuration pointer and its word at +8). r006 name osdEn.";
+            sw = rw;
+            hw = r;
+        } osd_en[2:2];
+
+        field {
+            name = "stdmod";
+            desc = "Written 0 per frame (r006 stdmod).";
+            sw = rw;
+            hw = r;
+        } stdmod[4:3];
+
+        field {
+            name = "time_mode";
+            desc = "Vendor writes 2 at init (VEDU_HAL_WriteTimerMode, 'TimerMode'); meaning of the code not known (r006 timeEn).";
+            sw = rw;
+            hw = r;
+        } time_mode[11:10];
+
+        field {
+            name = "clk_gate_mode";
+            desc = "Vendor writes 2 with power save on (default), 0 with it off (VEDU_HAL_WriteClkGateMode); meaning of the codes not known (r006 clkGateEn).";
+            sw = rw;
+            hw = r;
+        } clk_gate_mode[14:13];
+
+        field {
+            name = "mem_clk_gate_en";
+            desc = "Vendor writes 1 with power save on, 0 otherwise (VEDU_HAL_WriteMemClkGateMode; r006 memClkGateEn).";
+            sw = rw;
+            hw = r;
+        } mem_clk_gate_en[15:15];
+
+        field {
+            name = "regcfg_mode";
+            desc = "Written 1 per frame: the per-frame registers are loaded from the DDR register-config table at REGCFG_ADDR (r006 regCfgMode, MEDIUM).";
+            sw = rw;
+            hw = r;
+        } regcfg_mode[25:25];
+
+    } MODE @ 0x020;
+
+    reg {
+        name = "Picture configuration 0";
+        desc = "First picture configuration word, written once per frame by H264E_DRV_WriteRegs from the first word of the DDR register-config table (table word +0x40, kept in memory by H264E_DRV_UpdateRegConfigParam 0x1d4d0). All fields below are the bit positions written there (decoded instruction by instruction); the vendor sets ptbits_en = 0, num_ref_index = 0 in the decoded branch. The same bit layout is the r006 PICFG0. Source: vendor module hi3520D_h264e.ko (H264E_DRV_WriteRegs 0x1bfec, H264E_DRV_UpdateRegConfigParam 0x1d4d0), confidence HIGH for the positions, MEDIUM for the field meanings (r006 names), word-checked: yes; identical in the Xiongmai NBD7804T-F copy. Not verified on hardware.";
+
+        field {
+            name = "chn_id";
+            desc = "Channel id of the running channel (table byte 0x40).";
+            sw = rw;
+            hw = r;
+        } chn_id[7:0];
+
+        field {
+            name = "ptbits_en";
+            desc = "Cleared in the decoded branch.";
+            sw = rw;
+            hw = r;
+        } ptbits_en[8:8];
+
+        field {
+            name = "cabac_init_idc";
+            desc = "CABAC init idc from the channel attributes (vendor check: 0..2).";
+            sw = rw;
+            hw = r;
+        } cabac_init_idc[10:9];
+
+        field {
+            name = "cabac_byte_stuff";
+            desc = "CABAC byte stuffing enable (vendor check: 0..1).";
+            sw = rw;
+            hw = r;
+        } cabac_byte_stuff[11:11];
+
+        field {
+            name = "const_intra";
+            desc = "Constrained intra flag from the attributes.";
+            sw = rw;
+            hw = r;
+        } const_intra[12:12];
+
+        field {
+            name = "ipicture";
+            desc = "Set for an intra picture, cleared otherwise.";
+            sw = rw;
+            hw = r;
+        } ipicture[13:13];
+
+        field {
+            name = "trans_mode";
+            desc = "Transform mode (4x4 / 8x8 selection) from the attributes.";
+            sw = rw;
+            hw = r;
+        } trans_mode[15:14];
+
+        field {
+            name = "nal_ref_idc";
+            desc = "nal_ref_idc of the picture.";
+            sw = rw;
+            hw = r;
+        } nal_ref_idc[17:16];
+
+        field {
+            name = "num_ref_index";
+            desc = "Cleared in the decoded branch.";
+            sw = rw;
+            hw = r;
+        } num_ref_index[18:18];
+
+        field {
+            name = "entropy_enc_mode";
+            desc = "Entropy coder select: 1 = CABAC, 0 = CAVLC (vendor: Baseline cannot use CABAC).";
+            sw = rw;
+            hw = r;
+        } entropy_enc_mode[19:19];
+
+        field {
+            name = "dblk_idc";
+            desc = "disable_deblocking_filter_idc.";
+            sw = rw;
+            hw = r;
+        } dblk_idc[21:20];
+
+        field {
+            name = "dblk_alpha";
+            desc = "slice_alpha_c0_offset_div2 field (vendor check range -6..6).";
+            sw = rw;
+            hw = r;
+        } dblk_alpha[25:22];
+
+        field {
+            name = "dblk_beta";
+            desc = "slice_beta_offset_div2 field (vendor check range -6..6).";
+            sw = rw;
+            hw = r;
+        } dblk_beta[29:26];
+
+    } PICFG0 @ 0x024;
+
+    reg {
+        name = "UNK_0x028";
+        desc = "UNK_0x028 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_PICFG1 at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x028 @ 0x028;
+
+    reg {
+        name = "UNK_0x02C";
+        desc = "UNK_0x02C (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_PICFG2 at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x02C @ 0x02C;
+
+    reg {
+        name = "UNK_0x030";
+        desc = "UNK_0x030 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_PICFG3 at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x030 @ 0x030;
+
+    reg {
+        name = "UNK_0x034";
+        desc = "UNK_0x034 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_PICFG4 at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x034 @ 0x034;
+
+    reg {
+        name = "UNK_0x038";
+        desc = "UNK_0x038 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_PICFG5 at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x038 @ 0x038;
+
+    reg {
+        name = "UNK_0x03C";
+        desc = "UNK_0x03C (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_CURPOC at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x03C @ 0x03C;
+
+    reg {
+        name = "UNK_0x040";
+        desc = "UNK_0x040 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_ENCUPDATE at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x040 @ 0x040;
+
+    reg {
+        name = "UNK_0x044";
+        desc = "UNK_0x044 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has no register at this offset (reserved gap in the neighbor map). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x044 @ 0x044;
+
+    reg {
+        name = "UNK_0x048";
+        desc = "UNK_0x048 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has no register at this offset (reserved gap in the neighbor map). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x048 @ 0x048;
+
+    reg {
+        name = "UNK_0x04C";
+        desc = "UNK_0x04C (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has no register at this offset (reserved gap in the neighbor map). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x04C @ 0x04C;
+
+    reg {
+        name = "UNK_0x050";
+        desc = "UNK_0x050 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_VEDIMGSIZE at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x050 @ 0x050;
+
+    reg {
+        name = "UNK_0x054";
+        desc = "UNK_0x054 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has no register at this offset (reserved gap in the neighbor map). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x054 @ 0x054;
+
+    reg {
+        name = "UNK_0x058";
+        desc = "UNK_0x058 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_PTBITS at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x058 @ 0x058;
+
+    reg {
+        name = "UNK_0x05C";
+        desc = "UNK_0x05C (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has no register at this offset (reserved gap in the neighbor map). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x05C @ 0x05C;
+
+    reg {
+        name = "UNK_0x060";
+        desc = "UNK_0x060 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_SLCHDRSTRM0 at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x060 @ 0x060;
+
+    reg {
+        name = "UNK_0x064";
+        desc = "UNK_0x064 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_SLCHDRSTRM1 at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x064 @ 0x064;
+
+    reg {
+        name = "UNK_0x068";
+        desc = "UNK_0x068 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_SLCHDRSTRM2 at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x068 @ 0x068;
+
+    reg {
+        name = "UNK_0x06C";
+        desc = "UNK_0x06C (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_SLCHDRSTRM3 at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x06C @ 0x06C;
+
+    reg {
+        name = "UNK_0x070";
+        desc = "UNK_0x070 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_SLCHDRSTRM4 at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x070 @ 0x070;
+
+    reg {
+        name = "UNK_0x074";
+        desc = "UNK_0x074 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_SLCHDRSTRM5 at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x074 @ 0x074;
+
+    reg {
+        name = "UNK_0x078";
+        desc = "UNK_0x078 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_SLCHDRSTRM6 at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x078 @ 0x078;
+
+    reg {
+        name = "UNK_0x07C";
+        desc = "UNK_0x07C (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_SLCHDRSTRM7 at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x07C @ 0x07C;
+
+    reg {
+        name = "UNK_0x080";
+        desc = "UNK_0x080 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_SLCHDRPARA at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x080 @ 0x080;
+
+    reg {
+        name = "UNK_0x084";
+        desc = "UNK_0x084 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has no register at this offset (reserved gap in the neighbor map). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x084 @ 0x084;
+
+    reg {
+        name = "UNK_0x088";
+        desc = "UNK_0x088 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has no register at this offset (reserved gap in the neighbor map). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x088 @ 0x088;
+
+    reg {
+        name = "UNK_0x08C";
+        desc = "UNK_0x08C (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has no register at this offset (reserved gap in the neighbor map). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x08C @ 0x08C;
+
+    reg {
+        name = "UNK_0x090";
+        desc = "UNK_0x090 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_PTS0 at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x090 @ 0x090;
+
+    reg {
+        name = "UNK_0x094";
+        desc = "UNK_0x094 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_PTS1 at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x094 @ 0x094;
+
+    reg {
+        name = "UNK_0x098";
+        desc = "UNK_0x098 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_PTS2 at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x098 @ 0x098;
+
+    reg {
+        name = "UNK_0x09C";
+        desc = "UNK_0x09C (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_PTS3 at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x09C @ 0x09C;
+
+    reg {
+        name = "UNK_0x0A0";
+        desc = "UNK_0x0A0 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_TIMEOUT at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x0A0 @ 0x0A0;
+
+    reg {
+        name = "AXI outstanding";
+        desc = "Outstanding transaction count of the VEDU AXI master. VEDU_HAL_WriteOutStanding (0x4bf8) read-modify-writes bits [3:0]; VEDU_DRV_Init writes 3. The board script sysctl_hi3520D.sh writes 0x3 to 0x206200a4 ('vedu outstanding'). VEDU_HAL_ReadOutStanding exists. Register name and field names are the HiSTB drv_venc_reg_r006.h names (neighbor generation, naming only: the offset and the bits listed here were confirmed in the Hi3520D vendor code, the name is inferred). Source: vendor module hi3520D_chnl.ko (VEDU_HAL_WriteOutStanding 0x4bf8, VEDU_DRV_Init 0x4990) and Xiongmai script sysctl_hi3520D.sh, confidence HIGH, word-checked: yes. Not verified on hardware.";
+
+        field {
+            name = "outstd_num";
+            desc = "Vendor value 3 (module and script).";
+            sw = rw;
+            hw = r;
+        } outstd_num[3:0];
+
+    } OUTSTD @ 0x0A4;
+
+    reg {
+        name = "Timer";
+        desc = "Read in the per-frame result block (H264E_DRV_ReadRegs 0x1c080, result word +8, whole word). The value is stored with the other frame results; the decoded consumers (H264eUpdateStreamInfo) do not use it, so what it counts is not known (the r006 header has VEDU_TIMER at this offset and VEDU_TIMEOUT at 0x0a0). Source: vendor module hi3520D_h264e.ko (H264E_DRV_ReadRegs 0x1c080), confidence HIGH for the access, LOW for the meaning, word-checked: yes. Not verified on hardware.";
+
+        field {
+            name = "timer";
+            desc = "Unknown 32-bit value, read once per frame.";
+            sw = r;
+            hw = w;
+        } timer[31:0];
+
+    } TIMER @ 0x0A8;
+
+    reg {
+        name = "UNK_0x0AC";
+        desc = "UNK_0x0AC (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_IDLE_TIMER at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x0AC @ 0x0AC;
+
+    reg {
+        name = "UNK_0x0B0";
+        desc = "UNK_0x0B0 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has no register at this offset (reserved gap in the neighbor map). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x0B0 @ 0x0B0;
+
+    reg {
+        name = "UNK_0x0B4";
+        desc = "UNK_0x0B4 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has no register at this offset (reserved gap in the neighbor map). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x0B4 @ 0x0B4;
+
+    reg {
+        name = "UNK_0x0B8";
+        desc = "UNK_0x0B8 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has no register at this offset (reserved gap in the neighbor map). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x0B8 @ 0x0B8;
+
+    reg {
+        name = "UNK_0x0BC";
+        desc = "UNK_0x0BC (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has no register at this offset (reserved gap in the neighbor map). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x0BC @ 0x0BC;
+
+    reg {
+        name = "UNK_0x0C0";
+        desc = "UNK_0x0C0 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has no register at this offset (reserved gap in the neighbor map). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x0C0 @ 0x0C0;
+
+    reg {
+        name = "UNK_0x0C4";
+        desc = "UNK_0x0C4 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has no register at this offset (reserved gap in the neighbor map). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x0C4 @ 0x0C4;
+
+    reg {
+        name = "UNK_0x0C8";
+        desc = "UNK_0x0C8 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has no register at this offset (reserved gap in the neighbor map). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x0C8 @ 0x0C8;
+
+    reg {
+        name = "UNK_0x0CC";
+        desc = "UNK_0x0CC (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has no register at this offset (reserved gap in the neighbor map). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x0CC @ 0x0CC;
+
+    reg {
+        name = "UNK_0x0D0";
+        desc = "UNK_0x0D0 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has no register at this offset (reserved gap in the neighbor map). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x0D0 @ 0x0D0;
+
+    reg {
+        name = "UNK_0x0D4";
+        desc = "UNK_0x0D4 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has no register at this offset (reserved gap in the neighbor map). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x0D4 @ 0x0D4;
+
+    reg {
+        name = "UNK_0x0D8";
+        desc = "UNK_0x0D8 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has no register at this offset (reserved gap in the neighbor map). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x0D8 @ 0x0D8;
+
+    reg {
+        name = "UNK_0x0DC";
+        desc = "UNK_0x0DC (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has no register at this offset (reserved gap in the neighbor map). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x0DC @ 0x0DC;
+
+    reg {
+        name = "UNK_0x0E0";
+        desc = "UNK_0x0E0 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has no register at this offset (reserved gap in the neighbor map). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x0E0 @ 0x0E0;
+
+    reg {
+        name = "UNK_0x0E4";
+        desc = "UNK_0x0E4 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has no register at this offset (reserved gap in the neighbor map). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x0E4 @ 0x0E4;
+
+    reg {
+        name = "UNK_0x0E8";
+        desc = "UNK_0x0E8 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has no register at this offset (reserved gap in the neighbor map). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x0E8 @ 0x0E8;
+
+    reg {
+        name = "UNK_0x0EC";
+        desc = "UNK_0x0EC (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has no register at this offset (reserved gap in the neighbor map). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x0EC @ 0x0EC;
+
+    reg {
+        name = "UNK_0x0F0";
+        desc = "UNK_0x0F0 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has no register at this offset (reserved gap in the neighbor map). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x0F0 @ 0x0F0;
+
+    reg {
+        name = "UNK_0x0F4";
+        desc = "UNK_0x0F4 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has no register at this offset (reserved gap in the neighbor map). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x0F4 @ 0x0F4;
+
+    reg {
+        name = "UNK_0x0F8";
+        desc = "UNK_0x0F8 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_VERSION0 at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x0F8 @ 0x0F8;
+
+    reg {
+        name = "UNK_0x0FC";
+        desc = "UNK_0x0FC (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_VERSION1 at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x0FC @ 0x0FC;
+
+    reg {
+        name = "UNK_0x100";
+        desc = "UNK_0x100 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_SRCYADDR at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x100 @ 0x100;
+
+    reg {
+        name = "UNK_0x104";
+        desc = "UNK_0x104 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_SRCCADDR at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x104 @ 0x104;
+
+    reg {
+        name = "UNK_0x108";
+        desc = "UNK_0x108 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has no register at this offset (reserved gap in the neighbor map). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x108 @ 0x108;
+
+    reg {
+        name = "UNK_0x10C";
+        desc = "UNK_0x10C (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has no register at this offset (reserved gap in the neighbor map). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x10C @ 0x10C;
+
+    reg {
+        name = "UNK_0x110";
+        desc = "UNK_0x110 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_RCNYADDR at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x110 @ 0x110;
+
+    reg {
+        name = "UNK_0x114";
+        desc = "UNK_0x114 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_RCNCADDR at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x114 @ 0x114;
+
+    reg {
+        name = "UNK_0x118";
+        desc = "UNK_0x118 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has no register at this offset (reserved gap in the neighbor map). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x118 @ 0x118;
+
+    reg {
+        name = "UNK_0x11C";
+        desc = "UNK_0x11C (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has no register at this offset (reserved gap in the neighbor map). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x11C @ 0x11C;
+
+    reg {
+        name = "UNK_0x120";
+        desc = "UNK_0x120 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_REFYADDR at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x120 @ 0x120;
+
+    reg {
+        name = "UNK_0x124";
+        desc = "UNK_0x124 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_REFCADDR at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x124 @ 0x124;
+
+    reg {
+        name = "UNK_0x128";
+        desc = "UNK_0x128 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has no register at this offset (reserved gap in the neighbor map). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x128 @ 0x128;
+
+    reg {
+        name = "UNK_0x12C";
+        desc = "UNK_0x12C (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has no register at this offset (reserved gap in the neighbor map). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x12C @ 0x12C;
+
+    reg {
+        name = "UNK_0x130";
+        desc = "UNK_0x130 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_SSTRIDE at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x130 @ 0x130;
+
+    reg {
+        name = "UNK_0x134";
+        desc = "UNK_0x134 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_RSTRIDE at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x134 @ 0x134;
+
+    reg {
+        name = "UNK_0x138";
+        desc = "UNK_0x138 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has no register at this offset (reserved gap in the neighbor map). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x138 @ 0x138;
+
+    reg {
+        name = "UNK_0x13C";
+        desc = "UNK_0x13C (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has no register at this offset (reserved gap in the neighbor map). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x13C @ 0x13C;
+
+    reg {
+        name = "UNK_0x140";
+        desc = "UNK_0x140 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_STRMADDR at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x140 @ 0x140;
+
+    reg {
+        name = "UNK_0x144";
+        desc = "UNK_0x144 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_SRPTRADDR at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x144 @ 0x144;
+
+    reg {
+        name = "UNK_0x148";
+        desc = "UNK_0x148 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_SWPTRADDR at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x148 @ 0x148;
+
+    reg {
+        name = "UNK_0x14C";
+        desc = "UNK_0x14C (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_STRMBUFLEN at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x14C @ 0x14C;
+
+    reg {
+        name = "UNK_0x150";
+        desc = "UNK_0x150 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_TNBUFADDR at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x150 @ 0x150;
+
+    reg {
+        name = "UNK_0x154";
+        desc = "UNK_0x154 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_IPIXBUFADDR at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x154 @ 0x154;
+
+    reg {
+        name = "UNK_0x158";
+        desc = "UNK_0x158 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_DOWNMSG_ADDR at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x158 @ 0x158;
+
+    reg {
+        name = "UNK_0x15C";
+        desc = "UNK_0x15C (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has no register at this offset (reserved gap in the neighbor map). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x15C @ 0x15C;
+
+    reg {
+        name = "Register-config table address";
+        desc = "Physical address of the per-channel register-config table in DDR, written once per frame by H264E_DRV_WriteRegs (the value is ctx+0x67c of the channel context). The table is 64-byte aligned (the vendor aligns the address up to 64 and reserves 1 KB: H264E_CreateChn) and holds the picture-level registers (source/reconstruction/reference addresses and strides, slice header bits, picture configuration, ME/ROI/OSD/QP/scaling-matrix words, stream buffer address and ring-pointer addresses); software fills it (H264E_DRV_InitRegConfigParam 0x1db40 at channel creation, H264E_DRV_UpdateRegConfigParam 0x1d4d0 per frame, H264E_DRV_UpdateOsdConfigParam 0x1dae0 on OSD change) and flushes the data cache of the touched ranges (hil_mmb_flush_dcache_byaddr) before START. MODE.regcfg_mode = 1 selects this mode. The table layout is documented in docs/rdl-campaign/vedu-vendor.md, section 6. Register name and field names are the HiSTB drv_venc_reg_r006.h names (neighbor generation, naming only: the offset and the bits listed here were confirmed in the Hi3520D vendor code, the name is inferred). Source: vendor module hi3520D_h264e.ko (H264E_DRV_WriteRegs 0x1bfec, store at +0x1e0), confidence HIGH for offset and role, MEDIUM for the table semantics, word-checked: yes. Not verified on hardware.";
+
+        field {
+            name = "addr";
+            desc = "Physical address of the register-config table (64-byte aligned).";
+            sw = w;
+            hw = r;
+        } addr[31:0];
+
+    } REGCFG_ADDR @ 0x1E0;
+
+    reg {
+        name = "QP threshold / chroma QP offsets";
+        desc = "Read-modify-write per frame by H264E_DRV_WriteRegs: bits [26:22] and [31:27] both get the value (attribute word & 0x1f). Read back in the per-frame result block: bits [21:16] (H264E_DRV_ReadRegs, result word +0x30). In r006 the register is QPTHR (minQp [5:0], maxQp [13:8], startQp [21:16], chromaQpOff [26:22], secondChromaQpOff [31:27]); the vendor code confirms exactly the two upper fields as written and [21:16] as read, nothing else. The rate-control module writes min/max/start QP through the DDR table, not through this register (RC_ConfigHw only builds a parameter block; LOW). Register name and field names are the HiSTB drv_venc_reg_r006.h names (neighbor generation, naming only: the offset and the bits listed here were confirmed in the Hi3520D vendor code, the name is inferred). Source: vendor module hi3520D_h264e.ko (H264E_DRV_WriteRegs 0x1bfec, H264E_DRV_ReadRegs 0x1c080), confidence HIGH for the bit positions, MEDIUM for the meaning, word-checked: yes. Not verified on hardware.";
+
+        field {
+            name = "start_qp";
+            desc = "Read per frame into the result block (r006 startQp).";
+            sw = r;
+            hw = w;
+        } start_qp[21:16];
+
+        field {
+            name = "chroma_qp_off";
+            desc = "Written per frame (attribute & 0x1f).";
+            sw = rw;
+            hw = r;
+        } chroma_qp_off[26:22];
+
+        field {
+            name = "second_chroma_qp_off";
+            desc = "Written per frame with the same value as chroma_qp_off.";
+            sw = rw;
+            hw = r;
+        } second_chroma_qp_off[31:27];
+
+    } QPTHR @ 0x350;
+
+    reg {
+        name = "Target bits";
+        desc = "Read in the per-frame result block (H264E_DRV_ReadRegs, result word +0x3c, whole word); the result block goes to the rate-control module through the module callback table. r006 name VEDU_TARGETBITS at this offset. Meaning (the rate controller's target bit budget as seen by the hardware) is inferred from the r006 name only. Source: vendor module hi3520D_h264e.ko (H264E_DRV_ReadRegs 0x1c080), confidence HIGH for the access, LOW for the meaning, word-checked: yes. Not verified on hardware.";
+
+        field {
+            name = "targetbits";
+            desc = "Read once per frame.";
+            sw = r;
+            hw = w;
+        } targetbits[31:0];
+
+    } TARGETBITS @ 0x364;
+
+    reg {
+        name = "Picture bits";
+        desc = "Read in the per-frame result block (H264E_DRV_ReadRegs, result word +0x38, whole word) and handed to rate control. r006 name VEDU_PICBITS (bits of the encoded picture) at this offset; the meaning is inferred from that name (the stream length itself is computed by software from the stream ring pointers, not from this register). Source: vendor module hi3520D_h264e.ko (H264E_DRV_ReadRegs 0x1c080), confidence HIGH for the access, LOW for the meaning, word-checked: yes. Not verified on hardware.";
+
+        field {
+            name = "picbits";
+            desc = "Read once per frame.";
+            sw = r;
+            hw = w;
+        } picbits[31:0];
+
+    } PICBITS @ 0x374;
+
+    reg {
+        name = "Mean QP";
+        desc = "Read in the per-frame result block with a 6-bit mask (H264E_DRV_ReadRegs, result word +0x34, value & 0x3f). r006 name VEDU_MEANQP (meanQp [5:0]). Source: vendor module hi3520D_h264e.ko (H264E_DRV_ReadRegs 0x1c080), confidence HIGH for position, MEDIUM for the meaning, word-checked: yes. Not verified on hardware.";
+
+        field {
+            name = "mean_qp";
+            desc = "Mean QP of the picture (r006 meanQp).";
+            sw = r;
+            hw = w;
+        } mean_qp[5:0];
+
+    } MEANQP @ 0x388;
+
+    reg {
+        name = "Macroblock statistics 0";
+        desc = "Read in the per-frame result block with a 19-bit mask (H264E_DRV_ReadRegs 0x1c080, result word +0x10, value & 0x7ffff); the block is copied into the stream statistics (H264eUpdateStreamInfo 0x1a6c) returned to the user. r006 names this register PICINFO0 = pskipMbNum: the number of macroblocks of that type in the picture; the order of the nine result words in the vendor block matches r006 PICINFO0..8. Register name and field names are the HiSTB drv_venc_reg_r006.h names (neighbor generation, naming only: the offset and the bits listed here were confirmed in the Hi3520D vendor code, the name is inferred). Source: vendor module hi3520D_h264e.ko (H264E_DRV_ReadRegs 0x1c080), confidence HIGH for offset and width, MEDIUM for the meaning, word-checked: yes. Not verified on hardware.";
+
+        field {
+            name = "mb_num";
+            desc = "Count of macroblocks (r006 pskipMbNum).";
+            sw = r;
+            hw = w;
+        } mb_num[18:0];
+
+    } PICINFO0 @ 0xA20;
+
+    reg {
+        name = "Macroblock statistics 1";
+        desc = "Read in the per-frame result block with a 19-bit mask (H264E_DRV_ReadRegs 0x1c080, result word +0x0c, value & 0x7ffff); the block is copied into the stream statistics (H264eUpdateStreamInfo 0x1a6c) returned to the user. r006 names this register PICINFO1 = IPCMMbNum: the number of macroblocks of that type in the picture; the order of the nine result words in the vendor block matches r006 PICINFO0..8. Register name and field names are the HiSTB drv_venc_reg_r006.h names (neighbor generation, naming only: the offset and the bits listed here were confirmed in the Hi3520D vendor code, the name is inferred). Source: vendor module hi3520D_h264e.ko (H264E_DRV_ReadRegs 0x1c080), confidence HIGH for offset and width, MEDIUM for the meaning, word-checked: yes. Not verified on hardware.";
+
+        field {
+            name = "mb_num";
+            desc = "Count of macroblocks (r006 IPCMMbNum).";
+            sw = r;
+            hw = w;
+        } mb_num[18:0];
+
+    } PICINFO1 @ 0xA24;
+
+    reg {
+        name = "Macroblock statistics 2";
+        desc = "Read in the per-frame result block with a 19-bit mask (H264E_DRV_ReadRegs 0x1c080, result word +0x14, value & 0x7ffff); the block is copied into the stream statistics (H264eUpdateStreamInfo 0x1a6c) returned to the user. r006 names this register PICINFO2 = inter16x16MbNum: the number of macroblocks of that type in the picture; the order of the nine result words in the vendor block matches r006 PICINFO0..8. Register name and field names are the HiSTB drv_venc_reg_r006.h names (neighbor generation, naming only: the offset and the bits listed here were confirmed in the Hi3520D vendor code, the name is inferred). Source: vendor module hi3520D_h264e.ko (H264E_DRV_ReadRegs 0x1c080), confidence HIGH for offset and width, MEDIUM for the meaning, word-checked: yes. Not verified on hardware.";
+
+        field {
+            name = "mb_num";
+            desc = "Count of macroblocks (r006 inter16x16MbNum).";
+            sw = r;
+            hw = w;
+        } mb_num[18:0];
+
+    } PICINFO2 @ 0xA28;
+
+    reg {
+        name = "Macroblock statistics 3";
+        desc = "Read in the per-frame result block with a 19-bit mask (H264E_DRV_ReadRegs 0x1c080, result word +0x18, value & 0x7ffff); the block is copied into the stream statistics (H264eUpdateStreamInfo 0x1a6c) returned to the user. r006 names this register PICINFO3 = inter16x8MbNum: the number of macroblocks of that type in the picture; the order of the nine result words in the vendor block matches r006 PICINFO0..8. Register name and field names are the HiSTB drv_venc_reg_r006.h names (neighbor generation, naming only: the offset and the bits listed here were confirmed in the Hi3520D vendor code, the name is inferred). Source: vendor module hi3520D_h264e.ko (H264E_DRV_ReadRegs 0x1c080), confidence HIGH for offset and width, MEDIUM for the meaning, word-checked: yes. Not verified on hardware.";
+
+        field {
+            name = "mb_num";
+            desc = "Count of macroblocks (r006 inter16x8MbNum).";
+            sw = r;
+            hw = w;
+        } mb_num[18:0];
+
+    } PICINFO3 @ 0xA2C;
+
+    reg {
+        name = "Macroblock statistics 4";
+        desc = "Read in the per-frame result block with a 19-bit mask (H264E_DRV_ReadRegs 0x1c080, result word +0x1c, value & 0x7ffff); the block is copied into the stream statistics (H264eUpdateStreamInfo 0x1a6c) returned to the user. r006 names this register PICINFO4 = inter8x16MbNum: the number of macroblocks of that type in the picture; the order of the nine result words in the vendor block matches r006 PICINFO0..8. Register name and field names are the HiSTB drv_venc_reg_r006.h names (neighbor generation, naming only: the offset and the bits listed here were confirmed in the Hi3520D vendor code, the name is inferred). Source: vendor module hi3520D_h264e.ko (H264E_DRV_ReadRegs 0x1c080), confidence HIGH for offset and width, MEDIUM for the meaning, word-checked: yes. Not verified on hardware.";
+
+        field {
+            name = "mb_num";
+            desc = "Count of macroblocks (r006 inter8x16MbNum).";
+            sw = r;
+            hw = w;
+        } mb_num[18:0];
+
+    } PICINFO4 @ 0xA30;
+
+    reg {
+        name = "Macroblock statistics 5";
+        desc = "Read in the per-frame result block with a 19-bit mask (H264E_DRV_ReadRegs 0x1c080, result word +0x20, value & 0x7ffff); the block is copied into the stream statistics (H264eUpdateStreamInfo 0x1a6c) returned to the user. r006 names this register PICINFO5 = inter8x8MbNum: the number of macroblocks of that type in the picture; the order of the nine result words in the vendor block matches r006 PICINFO0..8. Register name and field names are the HiSTB drv_venc_reg_r006.h names (neighbor generation, naming only: the offset and the bits listed here were confirmed in the Hi3520D vendor code, the name is inferred). Source: vendor module hi3520D_h264e.ko (H264E_DRV_ReadRegs 0x1c080), confidence HIGH for offset and width, MEDIUM for the meaning, word-checked: yes. Not verified on hardware.";
+
+        field {
+            name = "mb_num";
+            desc = "Count of macroblocks (r006 inter8x8MbNum).";
+            sw = r;
+            hw = w;
+        } mb_num[18:0];
+
+    } PICINFO5 @ 0xA34;
+
+    reg {
+        name = "Macroblock statistics 6";
+        desc = "Read in the per-frame result block with a 19-bit mask (H264E_DRV_ReadRegs 0x1c080, result word +0x24, value & 0x7ffff); the block is copied into the stream statistics (H264eUpdateStreamInfo 0x1a6c) returned to the user. r006 names this register PICINFO6 = Intra16MbNum: the number of macroblocks of that type in the picture; the order of the nine result words in the vendor block matches r006 PICINFO0..8. Register name and field names are the HiSTB drv_venc_reg_r006.h names (neighbor generation, naming only: the offset and the bits listed here were confirmed in the Hi3520D vendor code, the name is inferred). Source: vendor module hi3520D_h264e.ko (H264E_DRV_ReadRegs 0x1c080), confidence HIGH for offset and width, MEDIUM for the meaning, word-checked: yes. Not verified on hardware.";
+
+        field {
+            name = "mb_num";
+            desc = "Count of macroblocks (r006 Intra16MbNum).";
+            sw = r;
+            hw = w;
+        } mb_num[18:0];
+
+    } PICINFO6 @ 0xA38;
+
+    reg {
+        name = "Macroblock statistics 7";
+        desc = "Read in the per-frame result block with a 19-bit mask (H264E_DRV_ReadRegs 0x1c080, result word +0x2c, value & 0x7ffff); the block is copied into the stream statistics (H264eUpdateStreamInfo 0x1a6c) returned to the user. r006 names this register PICINFO7 = Intra8MbNum: the number of macroblocks of that type in the picture; the order of the nine result words in the vendor block matches r006 PICINFO0..8. Register name and field names are the HiSTB drv_venc_reg_r006.h names (neighbor generation, naming only: the offset and the bits listed here were confirmed in the Hi3520D vendor code, the name is inferred). Source: vendor module hi3520D_h264e.ko (H264E_DRV_ReadRegs 0x1c080), confidence HIGH for offset and width, MEDIUM for the meaning, word-checked: yes. Not verified on hardware.";
+
+        field {
+            name = "mb_num";
+            desc = "Count of macroblocks (r006 Intra8MbNum).";
+            sw = r;
+            hw = w;
+        } mb_num[18:0];
+
+    } PICINFO7 @ 0xA3C;
+
+    reg {
+        name = "Macroblock statistics 8";
+        desc = "Read in the per-frame result block with a 19-bit mask (H264E_DRV_ReadRegs 0x1c080, result word +0x28, value & 0x7ffff); the block is copied into the stream statistics (H264eUpdateStreamInfo 0x1a6c) returned to the user. r006 names this register PICINFO8 = Intra4MbNum: the number of macroblocks of that type in the picture; the order of the nine result words in the vendor block matches r006 PICINFO0..8. Register name and field names are the HiSTB drv_venc_reg_r006.h names (neighbor generation, naming only: the offset and the bits listed here were confirmed in the Hi3520D vendor code, the name is inferred). Source: vendor module hi3520D_h264e.ko (H264E_DRV_ReadRegs 0x1c080), confidence HIGH for offset and width, MEDIUM for the meaning, word-checked: yes. Not verified on hardware.";
+
+        field {
+            name = "mb_num";
+            desc = "Count of macroblocks (r006 Intra4MbNum).";
+            sw = r;
+            hw = w;
+        } mb_num[18:0];
+
+    } PICINFO8 @ 0xA40;
+
+    reg {
+        name = "UNK_0xA50";
+        desc = "UNK_0xA50 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_VCTRL_STATE[0] at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0xA50 @ 0xA50;
+
+    reg {
+        name = "UNK_0xA54";
+        desc = "UNK_0xA54 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_VCTRL_STATE[1] at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0xA54 @ 0xA54;
+
+    reg {
+        name = "UNK_0xA58";
+        desc = "UNK_0xA58 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_VCTRL_STATE[2] at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0xA58 @ 0xA58;
+
+    reg {
+        name = "UNK_0xA5C";
+        desc = "UNK_0xA5C (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_VCTRL_STATE[3] at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0xA5C @ 0xA5C;
+
+    reg {
+        name = "UNK_0xA60";
+        desc = "UNK_0xA60 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_VCTRL_STATE[4] at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0xA60 @ 0xA60;
+
+    reg {
+        name = "UNK_0xA64";
+        desc = "UNK_0xA64 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_VCTRL_STATE[5] at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0xA64 @ 0xA64;
+
+    reg {
+        name = "UNK_0xA68";
+        desc = "UNK_0xA68 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_VCTRL_STATE[6] at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0xA68 @ 0xA68;
+
+    reg {
+        name = "UNK_0xA6C";
+        desc = "UNK_0xA6C (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_VCTRL_STATE[7] at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0xA6C @ 0xA6C;
+
+    reg {
+        name = "UNK_0xA70";
+        desc = "UNK_0xA70 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_VCTRL_STATE[8] at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0xA70 @ 0xA70;
+
+    reg {
+        name = "UNK_0xA74";
+        desc = "UNK_0xA74 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_VCTRL_STATE[9] at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0xA74 @ 0xA74;
+
+    reg {
+        name = "UNK_0xA78";
+        desc = "UNK_0xA78 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_CREFLD_STATE[0] at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0xA78 @ 0xA78;
+
+    reg {
+        name = "UNK_0xA7C";
+        desc = "UNK_0xA7C (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_CREFLD_STATE[1] at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0xA7C @ 0xA7C;
+
+    reg {
+        name = "UNK_0xA80";
+        desc = "UNK_0xA80 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_CREFLD_STATE[2] at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0xA80 @ 0xA80;
+
+    reg {
+        name = "UNK_0xA84";
+        desc = "UNK_0xA84 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has no register at this offset (reserved gap in the neighbor map). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0xA84 @ 0xA84;
+
+    reg {
+        name = "UNK_0xA88";
+        desc = "UNK_0xA88 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has no register at this offset (reserved gap in the neighbor map). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0xA88 @ 0xA88;
+
+    reg {
+        name = "UNK_0xA8C";
+        desc = "UNK_0xA8C (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has no register at this offset (reserved gap in the neighbor map). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0xA8C @ 0xA8C;
+
+    reg {
+        name = "UNK_0xA90";
+        desc = "UNK_0xA90 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_LDSTR_STATE[0] at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0xA90 @ 0xA90;
+
+    reg {
+        name = "UNK_0xA94";
+        desc = "UNK_0xA94 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_LDSTR_STATE[1] at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0xA94 @ 0xA94;
+
+    reg {
+        name = "UNK_0xA98";
+        desc = "UNK_0xA98 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_LDSTR_STATE[2] at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0xA98 @ 0xA98;
+
+    reg {
+        name = "UNK_0xA9C";
+        desc = "UNK_0xA9C (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_chnl.ko (VEDU_OutputDebugInfo 0x57e4, called from the channel watchdog ChnlWatchDogTimerISR 0x308c when a frame does not complete): read as part of the debug dump of the ranges 0x000-0x15F and 0xA50-0xA9F (word loads, printed with printk, value not interpreted); never written by the vendor. Neighbors: the whole dump range. r006 has VEDU_LDSTR_STATE[3] at this offset (neighbor generation, inferred, LOW; not adopted as a name). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor-observed read in the debug dump only).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0xA9C @ 0xA9C;
+
+
+    external mem {
+        name = "Rest of the window (not described)";
+        desc = "The rest of the 64 KB window from 0xAA0 (the registers above 0xAA0 and the gaps between the registers listed above are not described: no vendor access seen). Kept so that the block size stays 64 KB. The r006 neighbor map has further registers up to 0xFF14 (RAWINT 0x008, PTS, VDREF addresses, MECFG..., VPP_OSD, AXI test registers, data RAMs at 0x4000-0x5E80, AXI delay registers 0xFF00-0xFF10); none of them is accessed by the Hi3520D vendor code except the debug-dump reads listed as UNK_ registers.";
+        mementries = 15704;
+        memwidth = 32;
+        sw = rw;
+    } REST @ 0xAA0;
+};
+
 `endif

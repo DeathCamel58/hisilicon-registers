@@ -821,6 +821,7 @@ regfile eCRG {
 
     reg {
         name = "VEDU clock and soft reset control register";
+        desc = "Vendor-module cross-check (2026-11-10, docs/rdl-campaign/vedu-vendor.md): hi3520D_sys.ko SYS_HAL_VeduClkEn (0x4e04, bit 1), SYS_HAL_VeduResetSel (0x4dc4, bit 0, value 1 = reset), SYS_HAL_VeduSedClkEn (0x4e8c, bit 11), SYS_HAL_VeduSedResetSel (0x4e48, bit 10), SYS_HAL_VeduSkipInit (0x4ed0, undocumented bits [9:4]); dispatch commands 71 reset, 72 clock, 73 SED reset, 74 SED clock, 75 skip init. The VEDU glue in hi3520D_chnl.ko (VEDU_Init 0x5388, VEDU_Reset 0x5350, VEDU_Exit 0x525c) uses commands 72, 71 and 75 only: init order clock on (bit 1 = 1), reset released (bit 0 = 0), skip init, then the register writes; reset and exit: reset asserted (bit 0 = 1) then clock off. Reset sequence (watchdog): reset asserted then released immediately with no delay. NO vendor module calls the SED commands 73/74, so the vendor leaves SED at its reset state (clock on, reset asserted, data sheet reset value 0x0C03); with the vendor sequence PERI_CRG16 is expected to read 0x00000E02 after init (inferred: reset value 0xC03, bit 0 cleared, bit 9 set by skip init). Both gate and reset use plain read-modify-write of bits (no delay). Source: vendor module hi3520D_sys.ko, confidence HIGH, word-checked: yes; identical in the Xiongmai NBD7804T-F copy. Not verified on hardware.";
 
         enum PERI_CRG16_sed_cken_enum {
             DISABLE = 0x0 { desc = "disabled"; };
@@ -865,6 +866,20 @@ regfile eCRG {
             encode = PERI_CRG16_vedu_srst_req_enum;
             reset = 0x1;
         } vedu_srst_req[0:0];
+
+        field {
+            name = "bits8_4_unk";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware. Observed access: cleared (mask 0x1F0, one read-modify-write) by vendor module hi3520D_sys.ko SYS_HAL_VeduSkipInit (0x4ed0, command 75), called once per VEDU from VEDU_Init in hi3520D_chnl.ko after the reset is released and before the register init. Treated as one field because the vendor clears the five bits together. Not in the data sheet (it lists only bits 11, 10, 1, 0); no reset value or meaning is claimed.";
+            sw = rw;
+            hw = r;
+        } bits8_4_unk[8:4];
+
+        field {
+            name = "bit9_unk";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware. Observed access: cleared and then set to 1 in two consecutive read-modify-write cycles (no delay) by vendor module hi3520D_sys.ko SYS_HAL_VeduSkipInit (0x4ed0, command 75), once per VEDU, after the reset is released and before the register init; final value 1. Not in the data sheet; no reset value or meaning is claimed.";
+            sw = rw;
+            hw = r;
+        } bit9_unk[9:9];
 
     } PERI_CRG16 @ 0x0040;
 
