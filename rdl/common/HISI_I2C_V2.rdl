@@ -1,0 +1,688 @@
+`ifndef HISI_I2C_V2_RDL
+`define HISI_I2C_V2_RDL
+
+regfile eHISI_I2C_V2 {
+    name = "HiSilicon I2C Master Controller V2 (command-FIFO, timing-command sequencer)";
+    desc = "
+    HiSilicon master-only I2C controller of the Hi3516C V300, Hi3516E V100 and Hi3516A V300 (Hi3516D V300 class). Data sheet source: Hi3516C V300 / Hi3516E V100 data sheet issue 05 (`hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt`, chapter 12.1) and Hi3516A V300 user guide issue 01 (Chinese, chapter 12.1) (cross-chip audit 2026-11-11, docs/rdl-campaign/i2c.md). Source: data sheet, confidence HIGH for every register of the table; Not verified on hardware; no vendor source in the allowed trees (the register layout is the one used by the out-of-tree vendor/OpenIPC `i2c-hibvt` driver, compatibles `hisilicon,hibvt-i2c` / `hisilicon,hi3516cv300-i2c`, which is not in mainline 7.3).
+
+    Not a DesignWare core and not the Hi3520D APB I2C: a transfer is described as a program of up to 32 timing commands (`I2C_TIMING_CMD[n]`: START, send DEV_ADDR / DATA_BUF / PATTERN_DATA bytes, receive, ACK handling, up to three counted jumps `I2C_LOOPn` / `I2C_DSTn`, UDB1 = refill DATA_BUF byte 1 from the TX FIFO, STOP, EXIT) that the state machine runs when `I2C_CTRL1.start` is written. 64 x 8 bit TX and RX FIFOs, watermark interrupts, optional DMA (`I2C_CTRL1.dma_operation`). Standard (100 kbit/s) and fast (400 kbit/s) mode, 7-bit and 10-bit addressing, arbitration; the data sheet states standard and non-standard timing are both possible.
+
+    | SoC | Instances | Base addresses | Interrupt |
+    |-----|-----------|----------------|-----------|
+    | Hi3516C V300 / Hi3516E V100 | I2C0, I2C1 | 0x12110000, 0x12112000 | VIC 20 (shared, `I2C0/I2C1`) |
+    | Hi3516A V300 (`I2C_V2_CTRL2`) | I2C0-I2C7 | 0x120B0000 + n x 0x1000 | GIC 43-47 (I2C0-I2C4), 109-111 (I2C5-I2C7) |
+
+    Reference clock PCLK: 50 MHz on the Hi3516C V300 / Hi3516E V100; on the Hi3516A V300 selectable 50 MHz or 100 MHz in PERI_CRG105 (data sheet). Hold time and SCL timing formulas are in the register descriptions. Clock gate and soft reset are in the CRG (Hi3516C V300 PERI_CRG57 `i2c0_srst_req` [23] / `i2c1_srst_req` [25]; Hi3516A V300 PERI_CRG110 `i2cN_srst_req`).
+
+    All registers are 32 bits wide; unlisted bits are reserved. Registers outside the table (0x28-0x2C, 0x80-0xAC, 0xDC, 0xEC+) are not described by any data sheet.
+    ";
+
+    reg {
+        name = "I2C global configuration register";
+        desc = "I2C_GLB is the I2C global configuration register. Data sheet 12.1.7 (offset 0x0000, reset 0x0000_0000).";
+
+        field {
+            name = "sda_hold_duration";
+            desc = "SDA hold time duration. The reference clock PCLK is 50 MHz; the data sheet says this field is set to 0xa and cannot be set to any other value. It controls only the hold time of data sent from the host to the slave device.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } sda_hold_duration[23:8];
+
+        field {
+            name = "i2c_enable";
+            desc = "I2C enable control. 0: disabled, TX FIFO and RX FIFO are cleared. 1: enabled. If a timing exception occurs, disable and then enable the controller so that residual data of the previous operation is dropped from the FIFOs.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } i2c_enable[0:0];
+    } I2C_GLB @ 0x0;
+
+    reg {
+        name = "I2C high level duration register";
+        desc = "SCL high level duration in reference clock cycles (PCLK 50 MHz on the Hi3516C V300; 50 or 100 MHz on the Hi3516A V300). Recommended: standard mode i2c_high_duration = (FPCLK/FSCL) x 0.5; fast mode (FPCLK/FSCL) x 0.36, e.g. 400 kHz at 50 MHz = 45 (data sheet). Data sheet 12.1.7.";
+
+        field {
+            name = "i2c_high_duration";
+            desc = "SCL high level duration (reference clock cycles).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } i2c_high_duration[15:0];
+    } I2C_HCNT @ 0x4;
+
+    reg {
+        name = "I2C low level duration register";
+        desc = "SCL low level duration in reference clock cycles. Standard mode i2c_low_duration = (FPCLK/FSCL) x 0.5; fast mode (FPCLK/FSCL) x 0.64, e.g. 400 kHz at 50 MHz = 80 (data sheet). Data sheet 12.1.7.";
+
+        field {
+            name = "i2c_low_duration";
+            desc = "SCL low level duration (reference clock cycles).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } i2c_low_duration[15:0];
+    } I2C_LCNT @ 0x8;
+
+    reg {
+        name = "I2C component address register";
+        desc = "I2C component address register. Timing data preparation register (data sheet 12.1.4 / 12.1.7). Total reset 0x0000_0000.";
+
+        field {
+            name = "dev_addr_byte4";
+            desc = "Byte 4 of the register: component (slave) address byte 4, sent by the SDA4..SDA1 (WDA4..WDA1) timing commands.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } dev_addr_byte4[31:24];
+
+        field {
+            name = "dev_addr_byte3";
+            desc = "Byte 3 of the register: component (slave) address byte 3, sent by the SDA4..SDA1 (WDA4..WDA1) timing commands.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } dev_addr_byte3[23:16];
+
+        field {
+            name = "dev_addr_byte2";
+            desc = "Byte 2 of the register: component (slave) address byte 2, sent by the SDA4..SDA1 (WDA4..WDA1) timing commands.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } dev_addr_byte2[15:8];
+
+        field {
+            name = "dev_addr_byte1";
+            desc = "Byte 1 of the register: component (slave) address byte 1, sent by the SDA4..SDA1 (WDA4..WDA1) timing commands.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } dev_addr_byte1[7:0];
+    } I2C_DEV_ADDR @ 0x10;
+
+    reg {
+        name = "I2C data buffer register";
+        desc = "I2C data buffer register. Timing data preparation register (data sheet 12.1.4 / 12.1.7). Total reset 0x0000_0000.";
+
+        field {
+            name = "data_buf_byte4";
+            desc = "Byte 4 of the register: data buffer byte 4, sent by the SDB4..SDB1 (WDB4..WDB1) timing commands (byte 1 is refilled from the TX FIFO by UDB1).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } data_buf_byte4[31:24];
+
+        field {
+            name = "data_buf_byte3";
+            desc = "Byte 3 of the register: data buffer byte 3, sent by the SDB4..SDB1 (WDB4..WDB1) timing commands (byte 1 is refilled from the TX FIFO by UDB1).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } data_buf_byte3[23:16];
+
+        field {
+            name = "data_buf_byte2";
+            desc = "Byte 2 of the register: data buffer byte 2, sent by the SDB4..SDB1 (WDB4..WDB1) timing commands (byte 1 is refilled from the TX FIFO by UDB1).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } data_buf_byte2[15:8];
+
+        field {
+            name = "data_buf_byte1";
+            desc = "Byte 1 of the register: data buffer byte 1, sent by the SDB4..SDB1 (WDB4..WDB1) timing commands (byte 1 is refilled from the TX FIFO by UDB1).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } data_buf_byte1[7:0];
+    } I2C_DATA_BUF @ 0x14;
+
+    reg {
+        name = "I2C pattern data 1 register";
+        desc = "I2C pattern data 1 register. Timing data preparation register (data sheet 12.1.4 / 12.1.7). Total reset 0x0000_0000.";
+
+        field {
+            name = "pattern_data_byte4";
+            desc = "Byte 4 of the register: pattern data byte 4, sent by the SPD4..SPD1 (WPD4..WPD1) timing commands.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } pattern_data_byte4[31:24];
+
+        field {
+            name = "pattern_data_byte3";
+            desc = "Byte 3 of the register: pattern data byte 3, sent by the SPD4..SPD1 (WPD4..WPD1) timing commands.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } pattern_data_byte3[23:16];
+
+        field {
+            name = "pattern_data_byte2";
+            desc = "Byte 2 of the register: pattern data byte 2, sent by the SPD4..SPD1 (WPD4..WPD1) timing commands.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } pattern_data_byte2[15:8];
+
+        field {
+            name = "pattern_data_byte1";
+            desc = "Byte 1 of the register: pattern data byte 1, sent by the SPD4..SPD1 (WPD4..WPD1) timing commands.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } pattern_data_byte1[7:0];
+    } I2C_PATTERN_DATA1 @ 0x18;
+
+    reg {
+        name = "I2C pattern data 2 register";
+        desc = "I2C pattern data 2 register. Timing data preparation register (data sheet 12.1.4 / 12.1.7). Total reset 0x0000_0000.";
+
+        field {
+            name = "pattern_data_byte8";
+            desc = "Byte 8 of the register: pattern data byte 8, sent by the SPD8..SPD5 (WPD8..WPD5) timing commands.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } pattern_data_byte8[31:24];
+
+        field {
+            name = "pattern_data_byte7";
+            desc = "Byte 7 of the register: pattern data byte 7, sent by the SPD8..SPD5 (WPD8..WPD5) timing commands.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } pattern_data_byte7[23:16];
+
+        field {
+            name = "pattern_data_byte6";
+            desc = "Byte 6 of the register: pattern data byte 6, sent by the SPD8..SPD5 (WPD8..WPD5) timing commands.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } pattern_data_byte6[15:8];
+
+        field {
+            name = "pattern_data_byte5";
+            desc = "Byte 5 of the register: pattern data byte 5, sent by the SPD8..SPD5 (WPD8..WPD5) timing commands.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } pattern_data_byte5[7:0];
+    } I2C_PATTERN_DATA2 @ 0x1C;
+
+    reg {
+        name = "I2C TX FIFO data register";
+        desc = "Write-only entry of the 64-entry TX FIFO: data to be transmitted (consumed by UDB1). Data sheet 12.1.7.";
+
+        field {
+            name = "tx_fifo";
+            desc = "TX FIFO entry: the written byte is data to be transmitted.";
+            sw = w;
+            hw = r;
+            reset = 0x0;
+        } tx_fifo[7:0];
+    } I2C_TX_FIFO @ 0x20;
+
+    reg {
+        name = "I2C RX FIFO data register";
+        desc = "Read-only entry of the 64-entry RX FIFO: data received from the I2C bus (filled by the RD command). Data sheet 12.1.7.";
+
+        field {
+            name = "rx_fifo";
+            desc = "RX FIFO entry: the byte read is data received from the I2C bus.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } rx_fifo[7:0];
+    } I2C_RX_FIFO @ 0x24;
+
+    reg {
+        name = "I2C timing command register";
+        desc = "I2C_TIMING_CMD[n] (n = 0 to 31, offset 0x30 + n x 4) holds timing command n of the sequence. Command codes (data sheet Table 12-1 and the register description): 0x00 EXIT, 0x01 S (START), 0x02-0x05 SDA4..SDA1 (send dev_addr_byte4..1; the register description calls them WDA4..WDA1), 0x06-0x09 SDB4..SDB1 (send data_buf_byte4..1), 0x0A-0x11 SPD8..SPD1 (send pattern_data_byte8..1), 0x12 RD (receive one byte; waits while the RX FIFO is full), 0x13 RACK (receive low acknowledgement), 0x14 RNACK (receive high non-acknowledgement), 0x15 RNC (receive acknowledgement regardless of level), 0x16 SACK, 0x17 SNACK (send acknowledgement / non-acknowledgement), 0x18-0x1A JMPN1..JMPN3 (jump DSTn, LOOPn times), 0x1B and 0x1C undefined, 0x1D UDB1 (update data_buf_byte1 from the TX FIFO; waits while the TX FIFO is empty), 0x1E SR (repeated START), 0x1F P (STOP). While waiting on a FIFO the controller does not change the state of the bus. The data sheet gives the codes in a table, not as an enum of the field.";
+
+        field {
+            name = "timing_cmd";
+            desc = "Timing command code (see the register description).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } timing_cmd[4:0];
+    } I2C_TIMING_CMD[32] @ 0x30 += 0x4;
+
+    reg {
+        name = "I2C loop number 1 register";
+        desc = "Jump counter for the JMPN1 command (number of loops). Data sheet 12.1.7.";
+
+        field {
+            name = "loop_num1";
+            desc = "Number of loops.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } loop_num1[31:0];
+    } I2C_LOOP1 @ 0xB0;
+
+    reg {
+        name = "I2C jump destination 1 register";
+        desc = "Jump destination for the JMPN1 command: the index n of the I2C_TIMING_CMD register to continue at. Data sheet 12.1.7 (bits 31:5 are printed RW reserved in the Hi3516C V300 edition).";
+
+        field {
+            name = "dst_timing_cmd1";
+            desc = "Jump destination timing command register index.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } dst_timing_cmd1[4:0];
+    } I2C_DST1 @ 0xB4;
+
+    reg {
+        name = "I2C loop number 2 register";
+        desc = "Jump counter for the JMPN2 command (number of loops). Data sheet 12.1.7.";
+
+        field {
+            name = "loop_num2";
+            desc = "Number of loops.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } loop_num2[31:0];
+    } I2C_LOOP2 @ 0xB8;
+
+    reg {
+        name = "I2C jump destination 2 register";
+        desc = "Jump destination for the JMPN2 command: the index n of the I2C_TIMING_CMD register to continue at. Data sheet 12.1.7 (bits 31:5 are printed RW reserved in the Hi3516C V300 edition).";
+
+        field {
+            name = "dst_timing_cmd2";
+            desc = "Jump destination timing command register index.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } dst_timing_cmd2[4:0];
+    } I2C_DST2 @ 0xBC;
+
+    reg {
+        name = "I2C loop number 3 register";
+        desc = "Jump counter for the JMPN3 command (number of loops). Data sheet 12.1.7.";
+
+        field {
+            name = "loop_num3";
+            desc = "Number of loops.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } loop_num3[31:0];
+    } I2C_LOOP3 @ 0xC0;
+
+    reg {
+        name = "I2C jump destination 3 register";
+        desc = "Jump destination for the JMPN3 command: the index n of the I2C_TIMING_CMD register to continue at. Data sheet 12.1.7 (bits 31:5 are printed RW reserved in the Hi3516C V300 edition).";
+
+        field {
+            name = "dst_timing_cmd3";
+            desc = "Jump destination timing command register index.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } dst_timing_cmd3[4:0];
+    } I2C_DST3 @ 0xC4;
+
+    reg {
+        name = "I2C TX FIFO watermark register";
+        desc = "TX FIFO watermark. Data sheet 12.1.7.";
+
+        field {
+            name = "tx_watermark";
+            desc = "When the data in the TX FIFO is less than this value, the tx_lt_watermark_raw raw interrupt is set to 1.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } tx_watermark[5:0];
+    } I2C_TX_WATERMARK @ 0xC8;
+
+    reg {
+        name = "I2C RX FIFO watermark register";
+        desc = "RX FIFO watermark. Data sheet 12.1.7.";
+
+        field {
+            name = "rx_watermark";
+            desc = "When the data in the RX FIFO is more than this value, the rx_gt_watermark_raw raw interrupt is set to 1.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } rx_watermark[5:0];
+    } I2C_RX_WATERMARK @ 0xCC;
+
+    reg {
+        name = "I2C control register 1";
+        desc = "I2C_CTRL1 starts the timing sequence and selects DMA. Data sheet 12.1.7.";
+
+        field {
+            name = "dma_operation";
+            desc = "DMA operation control. 00: non-DMA mode. 01: reserved. 10: DMA write mode. 11: DMA read mode.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } dma_operation[9:8];
+
+        field {
+            name = "start";
+            desc = "Boot control: writing 1 lets the internal state machine run the timing command sequence. After the sequence is complete or an exception occurs, the logic clears this bit (modelled rw; hardware self-clear). 0: not boot, 1: boot.";
+            sw = rw;
+            hw = rw;
+            reset = 0x0;
+        } start[0:0];
+    } I2C_CTRL1 @ 0xD0;
+
+`ifdef I2C_V2_CTRL2
+    reg {
+        name = "I2C control register 2";
+        desc = "I2C_CTRL2 (Hi3516A V300 only; not in the Hi3516C V300 / Hi3516E V100 data sheet): pin level monitor and GPIO-mode override of SCL/SDA (bus recovery). Data sheet (Hi3516A V300 user guide, offset 0x00D4, reset 0x1111_0011). Data sheet quirk: the Chinese text describes bit 28 (i2c_scl_oen) as the SDA output level and bit 24 (i2c_sda_oen) as the SCL output level (names and descriptions are swapped), and gpio_mode names `force_scl_oe_n` twice; the register names are kept, the descriptions follow the register names.";
+
+        field {
+            name = "i2c_scl_oen";
+            desc = "Monitor of the internal I2C SCL output level (the data sheet text says SDA). 0: low, 1: high.";
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } i2c_scl_oen[28:28];
+
+        field {
+            name = "i2c_sda_oen";
+            desc = "Monitor of the internal I2C SDA output level (the data sheet text says SCL). 0: low, 1: high.";
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } i2c_sda_oen[24:24];
+
+        field {
+            name = "i2c_scl_in";
+            desc = "Level of the external I2C bus SCL. 0: low, 1: high.";
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } i2c_scl_in[20:20];
+
+        field {
+            name = "i2c_sda_in";
+            desc = "Level of the external I2C bus SDA. 0: low, 1: high.";
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } i2c_sda_in[16:16];
+
+        field {
+            name = "gpio_mode";
+            desc = "Put the SCL and SDA pins in GPIO mode: the pin levels are then given by force_scl_oen and force_sda_oen.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } gpio_mode[8:8];
+
+        field {
+            name = "force_scl_oen";
+            desc = "SCL pin level while gpio_mode is active. 0: low, 1: high.";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } force_scl_oen[4:4];
+
+        field {
+            name = "force_sda_oen";
+            desc = "SDA pin level while gpio_mode is active. 0: low, 1: high.";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } force_sda_oen[0:0];
+    } I2C_CTRL2 @ 0xD4;
+`endif
+
+    reg {
+        name = "I2C FIFO status register";
+        desc = "I2C_FIFO_STAT reports the FIFO state. Total reset 0x000A_0000. Data sheet 12.1.7.";
+
+        field {
+            name = "tx_fifo_not_full";
+            desc = "TX FIFO full indicator. 0: full, 1: not full.";
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } tx_fifo_not_full[19:19];
+
+        field {
+            name = "tx_fifo_not_empty";
+            desc = "TX FIFO empty indicator. 0: empty, 1: not empty.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } tx_fifo_not_empty[18:18];
+
+        field {
+            name = "rx_fifo_not_full";
+            desc = "RX FIFO full indicator. 0: full, 1: not full.";
+            sw = r;
+            hw = w;
+            reset = 0x1;
+        } rx_fifo_not_full[17:17];
+
+        field {
+            name = "rx_fifo_not_empty";
+            desc = "RX FIFO empty indicator. 0: empty, 1: not empty.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } rx_fifo_not_empty[16:16];
+
+        field {
+            name = "tx_fifo_vld_num";
+            desc = "Number of valid data in the TX FIFO.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } tx_fifo_vld_num[14:8];
+
+        field {
+            name = "rx_fifo_vld_num";
+            desc = "Number of valid data in the RX FIFO.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } rx_fifo_vld_num[6:0];
+    } I2C_FIFO_STAT @ 0xD8;
+
+    reg {
+        name = "I2C raw interrupt register";
+        desc = "I2C_INTR_RAW holds the raw (unmasked) interrupt flags. The data sheet access type is RWC: write 1 to clear (modelled `sw = rw` + `onwrite = woclr`). Data sheet 12.1.7.";
+
+        field {
+            name = "all_cmd_done_raw";
+            desc = "Raw interrupt: the EXIT command of the timing command sequence has been executed. 0: no interrupt, 1: interrupt generated.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            reset = 0x0;
+        } all_cmd_done_raw[12:12];
+
+        field {
+            name = "arb_lost_raw";
+            desc = "Raw interrupt: arbitration loss. 0: no interrupt, 1: interrupt generated.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            reset = 0x0;
+        } arb_lost_raw[11:11];
+
+        field {
+            name = "start_det_raw";
+            desc = "Raw interrupt: a START is detected. 0: no interrupt, 1: interrupt generated.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            reset = 0x0;
+        } start_det_raw[10:10];
+
+        field {
+            name = "stop_det_raw";
+            desc = "Raw interrupt: a STOP is detected. 0: no interrupt, 1: interrupt generated.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            reset = 0x0;
+        } stop_det_raw[9:9];
+
+        field {
+            name = "tx_lt_watermark_raw";
+            desc = "Raw interrupt: the data amount in the TX FIFO is less than the watermark during data transmission. 0: no interrupt, 1: interrupt generated.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            reset = 0x0;
+        } tx_lt_watermark_raw[4:4];
+
+        field {
+            name = "rx_gt_watermark_raw";
+            desc = "Raw interrupt: the data amount in the RX FIFO is greater than the watermark during data reception. 0: no interrupt, 1: interrupt generated.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            reset = 0x0;
+        } rx_gt_watermark_raw[2:2];
+
+        field {
+            name = "ack_bit_unmatch_raw";
+            desc = "Raw interrupt: the acknowledgement bit is not as expected. 0: no interrupt, 1: interrupt generated.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            reset = 0x0;
+        } ack_bit_unmatch_raw[0:0];
+    } I2C_INTR_RAW @ 0xE0;
+
+    reg {
+        name = "I2C interrupt enable register";
+        desc = "I2C_INTR_EN enables the interrupts (the summary table names it I2C_INTR_EN, the register block header I2C_INTR_en). Data sheet 12.1.7.";
+
+        field {
+            name = "all_cmd_done_en";
+            desc = "all_cmd_done interrupt enable. 0: disabled, 1: enabled.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } all_cmd_done_en[12:12];
+
+        field {
+            name = "arb_lost_en";
+            desc = "arb_lost interrupt enable. 0: disabled, 1: enabled.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } arb_lost_en[11:11];
+
+        field {
+            name = "start_det_en";
+            desc = "start_det interrupt enable. 0: disabled, 1: enabled.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } start_det_en[10:10];
+
+        field {
+            name = "stop_det_en";
+            desc = "stop_det interrupt enable. 0: disabled, 1: enabled.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } stop_det_en[9:9];
+
+        field {
+            name = "tx_lt_watermark_en";
+            desc = "tx_lt_watermark interrupt enable. 0: disabled, 1: enabled.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } tx_lt_watermark_en[4:4];
+
+        field {
+            name = "rx_gt_watermark_en";
+            desc = "rx_gt_watermark interrupt enable. 0: disabled, 1: enabled.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } rx_gt_watermark_en[2:2];
+
+        field {
+            name = "ack_bit_unmatch_en";
+            desc = "ack_bit_unmatch interrupt enable. 0: disabled, 1: enabled.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } ack_bit_unmatch_en[0:0];
+    } I2C_INTR_EN @ 0xE4;
+
+    reg {
+        name = "I2C interrupt status register";
+        desc = "I2C_INTR_STAT is the masked interrupt status (raw AND enable). Data sheet 12.1.7.";
+
+        field {
+            name = "all_cmd_done";
+            desc = "Masked interrupt status of all_cmd_done. 0: none, 1: interrupt generated.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } all_cmd_done[12:12];
+
+        field {
+            name = "arb_lost";
+            desc = "Masked interrupt status of arb_lost. 0: none, 1: interrupt generated.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } arb_lost[11:11];
+
+        field {
+            name = "start_det";
+            desc = "Masked interrupt status of start_det. 0: none, 1: interrupt generated.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } start_det[10:10];
+
+        field {
+            name = "stop_det";
+            desc = "Masked interrupt status of stop_det. 0: none, 1: interrupt generated.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } stop_det[9:9];
+
+        field {
+            name = "tx_lt_watermark";
+            desc = "Masked interrupt status of tx_lt_watermark. 0: none, 1: interrupt generated.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } tx_lt_watermark[4:4];
+
+        field {
+            name = "rx_gt_watermark";
+            desc = "Masked interrupt status of rx_gt_watermark. 0: none, 1: interrupt generated.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } rx_gt_watermark[2:2];
+
+        field {
+            name = "ack_bit_unmatch";
+            desc = "Masked interrupt status of ack_bit_unmatch. 0: none, 1: interrupt generated.";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } ack_bit_unmatch[0:0];
+    } I2C_INTR_STAT @ 0xE8;
+
+};
+
+`endif
