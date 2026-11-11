@@ -3,24 +3,24 @@
 
 regfile eHISI_JPGD {
     name = "HiSilicon JPEG decoder";
-    desc = "Partly described: offsets of all 27 registers (incl. the 5 table memories) are exact (taken from the vendor U-Boot JPEG decoder headers and code); the bit meanings are known only where that code shows them (PICSIZE, SAMPLINGFACTOR, QUANT packing, START and INT bit 0, the values written to RESUME/SCALE/OUTTYPE/INTMASK). NOT known: bit layouts of RESUME, PICVLDNUM, PICTYPE, SCALE, OUTTYPE, DEBUG, the individual INT error bits, the INTMASK polarity, which STRIDE half is luma or chroma; and no register has a reset value (never read on hardware). Registers and fields whose meaning is guessed from names or comments say \"Meaning unverified\". The data sheet has no register description for this block (audited 2026-11-10 against the Chinese Hi3520D/Hi3515A/Hi3515C user guide, chapter 7.2).
+    desc = "HiSilicon JPEG decoder (JPGD) at 0x20670000, GIC interrupt ID 74, clock and reset in PERI_CRG25 (0x20030064: bit 1 clock enable, bit 0 soft reset, reset value 0x3 = clock on, reset asserted). Register offsets, access order, written values and table memory formats below come from the vendor MPP of the Hi3520D (audit 2026-11-10, docs/rdl-campaign/jpgd-vendor.md): the kernel module hi3520D_jpegd.ko (character device /dev/jpeg: ioremap of 0x20670000 length 0x6BF, clock/reset handling, IRQ 74 handler, mmap of the first 4 KB to user space), its user-space library libjpeg.so (JPEG_HDEC_* functions: the code that actually programs the block), and the vendor U-Boot JPEG decoder (CONFIG_HI3520D, product/hiosd/dec/). The Hi3520D data sheet only has the overview (chapter 7.2, Table 1-1 window 0x20670000-0x2067FFFF, Table 3-16 GIC 74) and no register tables, so no offset or bit can be checked against it. Nothing here was run on hardware; reset values are unknown for every register (the vendor code never reads before writing, except SCALE).
 
-    Data sheet facts (chapter 7.2, Table 1-1, Table 3-16, PERI_CRG25; all consistent with this block): window 0x20670000-0x2067FFFF (64 KB), GIC interrupt 74, AXI master (DDR access priority via DDRC media0 port 2, out-of-order enable bit `jpgd_ctrl`), interrupt-driven or polled. Partial ITU-T T.81 baseline: sequential DCT, 8-bit precision, three components (Y/U/V) with YUV 4:0:0, 4:2:0, 4:2:2 1x2, 4:2:2 2x1 and 4:4:4, interleaved scans, up to 2 DC + 2 AC Huffman tables and 3 quantization tables; frequency-domain downscale 1/2, 1/4, 1/8; 1x1 to 8192x8192 pixels (semi-planar output up to 8192x8192); segmented stream input; 40 Mpixel/s or 3 channels of D1 Motion-JPEG at 30 fps. Software parses everything above the scan header (markers, tables, frame size, restart interval) and programs the registers; hardware parses the entropy-coded segments and RSTn markers. Per picture there are three interrupt causes: picture done, stream segment consumed with an error (decode stops), stream segment consumed and more data needed (software writes the next STADDR/ENDADDR window and writes 1 to the register the data sheet calls JPGD_RESUME_START, presumably `JPGD_RESUME` at 0x4; each (re)start needs at least 64 bytes of stream). Reset values of the registers are not given.
+    Data sheet facts (chapter 7.2, Source: data sheet): window 0x20670000-0x2067FFFF (64 KB), GIC interrupt 74, AXI master (DDR access priority via DDRC media0 port 2, out-of-order enable bit `jpgd_ctrl`), interrupt-driven or polled. Partial ITU-T T.81 baseline: sequential DCT, 8-bit precision, three components (Y/U/V) with YUV 4:0:0, 4:2:0, 4:2:2 1x2, 4:2:2 2x1 and 4:4:4, interleaved scans, up to 2 DC + 2 AC Huffman tables and 3 quantization tables; frequency-domain downscale 1/2, 1/4, 1/8; 1x1 to 8192x8192 pixels; segmented stream input; 40 Mpixel/s or 3 channels of D1 Motion-JPEG at 30 fps. Software parses everything above the scan header and programs the registers and tables; hardware parses the entropy-coded segments including RSTn markers. Per picture there are three interrupt causes: picture done, stream segment consumed with an error (decode stops), stream segment consumed and more data needed (software writes the next stream window and writes 1 to the register the data sheet calls JPGD_RESUME_START, which the vendor code shows is bit 0 of JPGD_RESUME at 0x4; each (re)start needs at least 64 bytes of stream).
 
-    HiSilicon JPEG decoder (JPGD) at 0x20670000, GIC interrupt ID 74; clock and reset in PERI_CRG25 (0x20030064: bit 1 clock enable, bit 0 soft reset; U-Boot `JPGD_CLOCK_ON 0x2`, `JPGD_RESET_REG_VALUE 0x1`). The Hi3520D data sheet only has the overview (chapter 7.2, no register description; Table 1-1 lists the 64 KB window), so this block is transcribed from the vendor U-Boot JPEG decoder (`product/hiosd/dec/`, a baseline-JPEG boot-logo decoder). The register offsets, the access sequence and the written values are exact; bit meanings are given where the code makes them evident, everything else is a plain 32-bit register. The same offsets are used by the Hi3535 build of that driver (same base 0x20670000); the Hi3531/Hi3520A family has the JPGD at 0x10170000. Software window per the vendor header: `JPGD_REG_LENGTH 0x6BF`. Reset values: unknown (not read on hardware).
+    Vendor per-picture sequence (libjpeg.so JPEG_HDEC_SetPara 0x1c184 and the JPEG_HDEC_SendStream* functions; the user process holds /dev/jpeg exclusively from open to close): 1. INTMASK = 0. 2. QUANT table memory (64 words). 3. Huffman DC table memory (12 words). 4. Huffman AC min, base, symbol memories (8, 8, 176 words). 5. PICTYPE. 6. SCALE (read-modify-write). 7. PICSIZE. 8. STRIDE. 9. SAMPLINGFACTOR. 10. STADDR, ENDADDR (stream window). 11. YSTADDR, UVSTADDR. 12. OUTTYPE (only when 4:2:0 semi-planar output is forced), LPIXSUM1 = 0x80000000 (only when the luma pixel sum is wanted). 13. STADD, ENDADD (the part of the window that holds data, start of the entropy-coded data after the SOS header to the end of the stream or of the current segment). 14. RESUME = 0 (more segments follow) or 2 (this is the last segment). 15. START = 1. 16. Wait for the interrupt (the vendor waits at most 10 s); INT bit 0 = done, bit 2 = segment consumed, more needed (write the next STADD/ENDADD, RESUME = 1 or 3 for the last segment, no START write), bit 1 = error. The kernel handler acknowledges by writing the INT value it read back to INT. Not verified on hardware.
 
-    Cross-check 2026-11-10 with the HiSTB SDK JPGD driver header (`source/msp/drv/jpeg/include/hi_jpeg_reg.h`, Hi3798MV100/CV200 era, proprietary SDK upload at github.com/JasonFreeLab/HiSTBLinuxV100R005C00SPC050; offsets only, no text copied): the first 18 offsets (START 0x0 .. OUTTYPE 0x44, INT 0x100, INTMASK 0x104, DEBUG 0x108, LPIXSUM0/1 0x114/0x118, SAMPLINGFACTOR 0x124, DRI 0x128, QUANT 0x200, HDCTABLE 0x300, HACMINTABLE 0x340, HACBASETABLE 0x360, HACSYMTABLE 0x400) are identical to this block, so the Hi3520D JPGD is an earlier revision of the same IP. That newer revision additionally has (NOT modelled here, unverified on the Hi3520D, candidate offsets only): ARGBOUTSTRIDE 0x1C, PD_CBCR_CFG 0x38, PD_Y_CFG 0x3C, ALPHA 0x48, HORCOEF00_01..HORCOEF26_27 0x4C-0x78, VERCOEF00_01..VERCOEF32_33 0x8C-0xA8, CSC00_01..CSC22 0xB4-0xC4, MINADDR/MINADDR1 0xC8/0xCC, MCUY_CFG 0xD4, OUTSTARTPOS/OUTENDPOS 0xD8/0xDC, MCUY 0xE0, BSRES* 0xE4-0xFC, PD_Y/PD_CBCR 0x10C/0x110, AXI4KCNT/AXI16MCNT 0x11C/0x120, DRI_CNT_CFG/DRI_CNT 0x12C/0x130, MMU_BYPASS 0x134, LINE_NUM/LINE_ADDR 0x138/0x13C, register window 0x6F0 (Hi3520D vendor code: 0x6BF); its driver writes INTMASK = 0x20. Its bit layouts live in `jpeg_drv_hal.c`, which was not fetched. Probe on the Hi3520D: read 0x20670000 + 0x11C/0x120 (AXI counters) and + 0x12C after a decode to see whether the extras exist.
+    Clock and reset (SYS_HAL_JpgdClkEn / SYS_HAL_JpgdResetSel in hi3520D_sys.ko touch only PERI_CRG25 bit 1 / bit 0; hi3520D_jpegd.ko itself ioremaps PERI_CRG25): module init writes 0, then sets bit 1 (clock on), then clears bit 0; every open and the reset ioctl set bit 0, poll START bit 1 until it reads 0, then clear bit 0; module exit clears bit 1. The vendor U-Boot does clock on, reset asserted, poll START bit 1, reset released. A clock-gated block must not be read.
+
+    The register window used by the vendor is 0x6BF bytes (library refuses offsets above 0x6BE); the 0x11C/0x120/0x12C extras of the newer HiSTB revision are never touched by any Hi3520D vendor code and are not modelled. Other chips' JPGD (Hi3531/Hi3520A at 0x10170000, Hi3535/Hi3536 etc.) are other revisions; this file is instantiated only by the Hi3520D/Hi3515A/Hi3515C family.
     ";
 
     reg {
         name = "Decode start / status";
-        desc = "Writing 1 starts a decode (hi_JpegDecode.c writes 0x01 last). U-Boot polls the register and waits until bit 1 reads 0 before configuring a new picture (`JPGD_REG_START`).
-
-Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+        desc = "Decode start and busy status. Write 1 to start one picture decode (written last, after RESUME; not rewritten when a stream segment is resumed, RESUME bit 0 does that). Bit 1 is polled until it reads 0 after the soft reset has been asserted (kernel module on open and reset ioctl, vendor U-Boot before releasing reset); meaning 'decoder busy / reset in progress' is inferred from that use. previously: `busy` named from U-Boot's `result & 0x2` only. Source: vendor module hi3520D_jpegd.ko together with its user-space library libjpeg.so of the same MPP (Hi3520D_MPP_V2.0.5.1; the module only maps the registers, the library programs them) (jpg_osr_ioctl cmd 0x6a00/0x6a09, JPEG_HDEC_SendStreamFromPhyMem 0x1dfc8 (START = 1)), confidence HIGH for the start write, MEDIUM for the busy meaning, word-checked: yes; Not verified on hardware.";
 
         field {
             name = "busy";
-            desc = "Decoder busy (U-Boot waits for 0 before programming; interpretation of `result & 0x2`).";
+            desc = "Decoder busy (polled until 0 after asserting the soft reset; read-only status).";
             sw = r;
             hw = w;
         } busy[1:1];
@@ -31,111 +31,111 @@ Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_
             sw = rw;
             hw = r;
         } start[0:0];
+
     } JPGD_START @ 0x0;
 
     reg {
-        name = "Continue-stream register";
-        desc = "`JPGD_REG_RESUME`: U-Boot writes 0x02 before start (stream resume / buffer control); the bit meaning is not documented. The data sheet (7.2.3.3, continue-stream procedure) says software restarts the decoder after the stream-consumed interrupt by writing 1 to a register it names JPGD_RESUME_START (no offset or bit given); this is probably this register, but U-Boot writes 0x2 (not 0x1), so the bit position is unconfirmed.
-
-Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+        name = "Stream continue / last-segment register";
+        desc = "Per stream segment control, written before START (first segment) or alone (continuation). Bit 1 = this segment ends the JPEG data (the vendor sets it when the remaining stream fits the window or the data ends with FFD9). Bit 0 = resume: write 1 after programming the next STADD/ENDADD window when INT bit 2 said that more data is needed. First segment: RESUME = 0 or 2, then START = 1. Continuation segments: RESUME = 1 or 3, no START write. The vendor U-Boot writes 2 (the whole stream is one segment). previously: 32-bit `value`, bit meaning unknown, 'probably JPGD_RESUME_START but U-Boot writes 0x2'; resolved: bit 0 is the data sheet's JPGD_RESUME_START, bit 1 is the end-of-stream flag. Source: vendor module hi3520D_jpegd.ko together with its user-space library libjpeg.so of the same MPP (Hi3520D_MPP_V2.0.5.1; the module only maps the registers, the library programs them) (JPEG_HDEC_SendStreamFromVirMem 0x1dd34, SendStreamFromFile 0x1e1e8, SendStreamFromCallBack 0x1e594, SendStreamFromPhyMem 0x1dfc8), confidence HIGH for the written values and their order, MEDIUM for the bit names, word-checked: yes; Not verified on hardware. Bits [31:2] are never written (0).";
 
         field {
-            name = "value";
-            desc = "Register value (bit layout unknown; U-Boot writes 0x2).";
+            name = "resume";
+            desc = "Write 1 to continue after the next stream segment has been programmed (data sheet: JPGD_RESUME_START).";
             sw = rw;
             hw = r;
-        } value[31:0];
+        } resume[0:0];
+
+        field {
+            name = "last";
+            desc = "This stream segment is the last one (end of the JPEG data).";
+            sw = rw;
+            hw = r;
+        } last[1:1];
+
     } JPGD_RESUME @ 0x4;
 
     reg {
         name = "Pic_vld_num register";
-        desc = "`JPGD_REG_PICVLDNUM`: valid-picture count; not used by U-Boot, layout unknown.
-
-Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+        desc = "`JPGD_REG_PICVLDNUM` (valid-picture count, name from the vendor U-Boot header only). Never read or written by the Hi3520D kernel module, user library or U-Boot decoder: purpose and layout unknown. Source: vendor U-Boot header product/hiosd/dec/hi_drv_jpeg_reg.h (offset and name only), confidence LOW, word-checked: no; Not verified on hardware.";
 
         field {
             name = "value";
-            desc = "Register value (layout unknown).";
+            desc = "Register value (layout unknown, never accessed by vendor code).";
             sw = rw;
             hw = r;
         } value[31:0];
+
     } JPGD_PICVLDNUM @ 0x8;
 
     reg {
         name = "Output stride register";
-        desc = "`JPGD_REG_STRIDE` (VHB stride): U-Boot writes `LineBytes << 16 | LineBytes` with LineBytes = image width aligned to 64, i.e. a luma stride and a chroma stride in the two halves; which half is which is not stated.
-
-Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+        desc = "Line stride in bytes of the semi-planar output: bits [15:0] luma (Y) stride, bits [31:16] chroma (interleaved UV) stride. Vendor: Y stride = scaled output width rounded up to a multiple of 64; UV stride = Y stride for 4:2:0 and 4:2:2 (2x1) and for any format when OUTTYPE forces 4:2:0 semi-planar output, 2 x Y stride for 4:2:2 (1x2) and 4:4:4 (two bytes per chroma sample), 0 for 4:0:0. previously: halves 'which is luma/chroma not stated' (the vendor U-Boot wrote the same value to both). Source: vendor module hi3520D_jpegd.ko together with its user-space library libjpeg.so of the same MPP (Hi3520D_MPP_V2.0.5.1; the module only maps the registers, the library programs them) (JPEG_HDEC_GetImagInfo 0x1a688 (strides), JPEG_HDEC_SetPara 0x1c184 (write 0x0c = Y | UV << 16)), confidence HIGH, word-checked: yes; Not verified on hardware.";
 
         field {
-            name = "stride_hi";
-            desc = "Meaning unverified: which half is luma and which chroma is not stated. Stride in bytes (upper half; U-Boot writes the 64-aligned line length).";
+            name = "uv_stride";
+            desc = "Chroma (UV) line stride in bytes.";
             sw = rw;
             hw = r;
-        } stride_hi[31:16];
+        } uv_stride[31:16];
 
         field {
-            name = "stride_lo";
-            desc = "Meaning unverified: see stride_hi. Stride in bytes (lower half; same value written).";
+            name = "y_stride";
+            desc = "Luma (Y) line stride in bytes (multiple of 64 in the vendor code).";
             sw = rw;
             hw = r;
-        } stride_lo[15:0];
+        } y_stride[15:0];
+
     } JPGD_STRIDE @ 0xC;
 
     reg {
         name = "Picture size register";
-        desc = "`JPGD_REG_PICSIZE`: picture size in 16x16 MCUs, `((width + 15) >> 4) | ((height + 15) >> 4) << 16`.
-
-Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+        desc = "Picture size of the coded image in MCU-sized units (not the scaled output size): width = ceil(image_width / 8) when the Y horizontal sampling factor is 1, else ceil(image_width / 16); height likewise with the Y vertical sampling factor. Each half must be below 0x400 (the vendor library refuses the picture if (value & 0xFC00FC00) != 0, i.e. each half is at most 1023 units; its support check separately limits both image dimensions to 1..8096 pixels). The vendor reads the register back after the decode finished (low and high half). previously: 'size in 16x16 MCUs' (the vendor U-Boot doubles the width/height for factor 1 to get the same 8-pixel unit). Source: vendor module hi3520D_jpegd.ko together with its user-space library libjpeg.so of the same MPP (Hi3520D_MPP_V2.0.5.1; the module only maps the registers, the library programs them) (JPEG_HDEC_SetPara 0x1c184 (write 0x10, mask check), JPEG_HDEC_GetImagInfo 0x1a688 (units), SendStream* (read back)), confidence HIGH, word-checked: yes; Not verified on hardware.";
 
         field {
             name = "height_mcu";
-            desc = "Picture height in 16-line units, rounded up.";
+            desc = "Picture height in MCU units (8 or 16 lines), rounded up.";
             sw = rw;
             hw = r;
         } height_mcu[31:16];
 
         field {
             name = "width_mcu";
-            desc = "Picture width in 16-pixel units, rounded up.";
+            desc = "Picture width in MCU units (8 or 16 pixels), rounded up.";
             sw = rw;
             hw = r;
         } width_mcu[15:0];
+
     } JPGD_PICSIZE @ 0x10;
 
     reg {
         name = "Picture type register";
-        desc = "`JPGD_REG_PICTYPE`: written with `value_type` (the sampling format code computed from the JPEG header; the code table is in the closed-source library).
-
-Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+        desc = "Sampling format code of the coded image: 0 = YUV 4:0:0 (one component), 3 = YUV 4:2:0, 4 = YUV 4:2:2 with 2:1 horizontal subsampling (2x1), 5 = YUV 4:2:2 with 2:1 vertical subsampling (1x2), 6 = YUV 4:4:4. Codes 1, 2 and 7 are never written (7 = invalid, rejected by the vendor library before the write). The library derives the code from the SOF sampling factors: Y 2x2 with U/V 1x1 = 420, Y 2x1 (width factor twice the chroma one, equal height) = 422 (2x1), equal widths with Y height twice the chroma height = 422 (1x2), all equal = 444, one component = 400. previously: 'value_type computed by the closed-source library, encoding unknown'. Source: vendor module hi3520D_jpegd.ko together with its user-space library libjpeg.so of the same MPP (Hi3520D_MPP_V2.0.5.1; the module only maps the registers, the library programs them) (JPEG_HDEC_SetPara 0x1c184 (jump table to 0/3/4/5/6), SOF handler in libjpeg.so 0x68d8-0x6a84 (type 0..4)), confidence HIGH, word-checked: yes; Not verified on hardware.";
 
         field {
-            name = "value";
-            desc = "Picture (sampling) type code; encoding unknown.";
+            name = "pic_type";
+            desc = "Sampling format code (0, 3, 4, 5, 6 written by the vendor).";
             sw = rw;
             hw = r;
-        } value[31:0];
+        } pic_type[2:0];
+
     } JPGD_PICTYPE @ 0x14;
 
     reg {
         name = "Decode time register";
-        desc = "`JPGD_REG_TIME`: picture decode time cost (read-only per the vendor comment).
-
-Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+        desc = "Picture decode time cost (name and read-only status from the vendor U-Boot header comment). Read by the vendor library API HI_JPEG_GetRegTime; the unit is not known. Source: vendor module hi3520D_jpegd.ko together with its user-space library libjpeg.so of the same MPP (Hi3520D_MPP_V2.0.5.1; the module only maps the registers, the library programs them) (HI_JPEG_GetRegTime 0x1e8a0 (read)), confidence MEDIUM for the access, LOW for the meaning, word-checked: yes; Not verified on hardware.";
 
         field {
             name = "time";
-            desc = "Meaning unverified: decode time cost (read-only per the vendor comment only).";
+            desc = "Decode time cost (unit unknown; read-only per the vendor header comment).";
             sw = r;
             hw = w;
         } time[31:0];
+
     } JPGD_TIME @ 0x18;
 
     reg {
-        name = "Stream buffer start address (hardware window, 128-byte aligned)";
-        desc = "Stream buffer start address (hardware window, 128-byte aligned): `JPGD_REG_STADDR`. The data sheet (7.2.3.3) says software gives the decoder one contiguous stream segment (physical start and end address in bytes) per start, and a (re)start needs at least 64 bytes of stream.
-
-Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+        name = "Stream window start address";
+        desc = "Physical start of the stream buffer window the decoder may read; STADD/ENDADD must lie inside STADDR..ENDADDR. Vendor values: mmz stream buffer (64-byte aligned allocation, 512 KB = 0x80000 window, used for the segmented path) or, for a stream already in contiguous memory, ((address - 1) & ~63) - 100 with ENDADDR = address + length + 100 (a 100-byte margin on both sides); the vendor U-Boot uses the 128-byte aligned stream start and aligned end. The data sheet says each (re)start needs at least 64 bytes of stream. Source: vendor module hi3520D_jpegd.ko together with its user-space library libjpeg.so of the same MPP (Hi3520D_MPP_V2.0.5.1; the module only maps the registers, the library programs them) (JPEG_HDEC_SetStreamBuf 0x1c100 (writes 0x20 and 0x24)), confidence HIGH, word-checked: yes; Not verified on hardware.";
 
         field {
             name = "addr";
@@ -143,13 +143,12 @@ Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_
             sw = rw;
             hw = r;
         } addr[31:0];
+
     } JPGD_STADDR @ 0x20;
 
     reg {
-        name = "Stream buffer end address (hardware window)";
-        desc = "Stream buffer end address (hardware window): `JPGD_REG_ENDADDR`.
-
-Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+        name = "Stream window end address";
+        desc = "Physical end of the stream window, see STADDR. Source: vendor module hi3520D_jpegd.ko together with its user-space library libjpeg.so of the same MPP (Hi3520D_MPP_V2.0.5.1; the module only maps the registers, the library programs them) (JPEG_HDEC_SetStreamBuf 0x1c100), confidence HIGH, word-checked: yes; Not verified on hardware.";
 
         field {
             name = "addr";
@@ -157,13 +156,12 @@ Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_
             sw = rw;
             hw = r;
         } addr[31:0];
+
     } JPGD_ENDADDR @ 0x24;
 
     reg {
-        name = "Stream start address (must lie inside the STADDR..ENDADDR window)";
-        desc = "Stream start address (must lie inside the STADDR..ENDADDR window): `JPGD_REG_STADD`.
-
-Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+        name = "Stream data start address";
+        desc = "Physical address of the first byte of entropy-coded data of the current segment (just after the SOS header; inside the STADDR..ENDADDR window). Rewritten for every segment. Source: vendor module hi3520D_jpegd.ko together with its user-space library libjpeg.so of the same MPP (Hi3520D_MPP_V2.0.5.1; the module only maps the registers, the library programs them) (JPEG_HDEC_SendStreamFromVirMem 0x1dd34 / PhyMem 0x1dfc8 / File 0x1e1e8), confidence HIGH, word-checked: yes; Not verified on hardware.";
 
         field {
             name = "addr";
@@ -171,13 +169,12 @@ Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_
             sw = rw;
             hw = r;
         } addr[31:0];
+
     } JPGD_STADD @ 0x28;
 
     reg {
-        name = "Stream end address (inside the window)";
-        desc = "Stream end address (inside the window): `JPGD_REG_ENDADD`.
-
-Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+        name = "Stream data end address";
+        desc = "Physical address just after the last byte of the current segment (end of the JPEG data for the last segment). Rewritten for every segment. Source: vendor module hi3520D_jpegd.ko together with its user-space library libjpeg.so of the same MPP (Hi3520D_MPP_V2.0.5.1; the module only maps the registers, the library programs them) (JPEG_HDEC_SendStreamFromVirMem 0x1dd34 / PhyMem 0x1dfc8 / File 0x1e1e8), confidence HIGH, word-checked: yes; Not verified on hardware.";
 
         field {
             name = "addr";
@@ -185,13 +182,12 @@ Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_
             sw = rw;
             hw = r;
         } addr[31:0];
+
     } JPGD_ENDADD @ 0x2C;
 
     reg {
         name = "Luminance output address";
-        desc = "Luminance output address: `JPGD_REG_YSTADDR`.
-
-Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+        desc = "Physical address of the luma plane (output memory is 128-byte aligned in the vendor library). The plane size is Y stride x output height rounded up to 16 lines (8 lines when the Y vertical sampling factor is 1). Source: vendor module hi3520D_jpegd.ko together with its user-space library libjpeg.so of the same MPP (Hi3520D_MPP_V2.0.5.1; the module only maps the registers, the library programs them) (JPEG_HDEC_SetPara 0x1c184 (write 0x30), JPEG_HDEC_GetYUVMem 0x1bbac (align 128)), confidence HIGH, word-checked: yes; Not verified on hardware.";
 
         field {
             name = "addr";
@@ -199,13 +195,12 @@ Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_
             sw = rw;
             hw = r;
         } addr[31:0];
+
     } JPGD_YSTADDR @ 0x30;
 
     reg {
-        name = "Chrominance output address (U-Boot";
-        desc = "Chrominance output address (U-Boot: Y + LineBytes x height aligned to 16): `JPGD_REG_UVSTADDR`.
-
-Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+        name = "Chrominance output address";
+        desc = "Physical address of the interleaved CbCr plane; the vendor places it directly behind the luma plane: YSTADDR + Y stride x aligned height (written even for 4:0:0). previously: 'Y + LineBytes x height aligned to 16' (U-Boot). Source: vendor module hi3520D_jpegd.ko together with its user-space library libjpeg.so of the same MPP (Hi3520D_MPP_V2.0.5.1; the module only maps the registers, the library programs them) (JPEG_HDEC_SetPara 0x1c184 (write 0x34), JPEG_HDEC_GetImagInfo 0x1a688 (plane sizes)), confidence HIGH, word-checked: yes; Not verified on hardware.";
 
         field {
             name = "addr";
@@ -213,118 +208,187 @@ Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_
             sw = rw;
             hw = r;
         } addr[31:0];
+
     } JPGD_UVSTADDR @ 0x34;
 
     reg {
-        name = "Scale register";
-        desc = "`JPGD_REG_SCALE`: U-Boot writes 0x3C; layout unknown.
-
-Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+        name = "Scale / output control register";
+        desc = "Bits [1:0] frequency-domain downscale: 0 = 1/1, 1 = 1/2, 2 = 1/4, 3 = 1/8 (the vendor library writes (old & ~3) | scale | 0x8, so the other bits keep the value the system script wrote). Bits [6:4] AXI outstanding setting: the vendor sysctl script (Xiongmai sysctl_hi3520D.sh, OpenIPC load_hisilicon) writes the whole register = 0x70 ('jpgd outstanding') before any decode, the vendor U-Boot writes 0x3C (outstanding 3). Bit 3 is set to 1 by the library for every picture (U-Boot 0x3C also has it); the same name `jidct_emar_en` in an older HiSTB library (other revision) is the YUV-output enable (0 = no YUV to DDR for ARGB output), meaning inferred. Bit 2 is set only by U-Boot (0x3C). Output size limit seen in the library: the scale is raised until both scaled dimensions are at most 4095. previously: 'U-Boot writes 0x3C; layout unknown'. Source: vendor module hi3520D_jpegd.ko together with its user-space library libjpeg.so of the same MPP (Hi3520D_MPP_V2.0.5.1; the module only maps the registers, the library programs them) (JPEG_HDEC_SetPara 0x1c184 (read + write 0x40), JPEG_HDEC_GetImagInfo 0x1a688 (scale code), sysctl_hi3520D.sh), confidence HIGH for scale[1:0] and the script value, MEDIUM for outstanding, LOW for bit 3 meaning, word-checked: yes; Not verified on hardware. Neighbor-revision names (older HiSTB jpeg6b library, inferred): Outstanding field, jidct_emar_en.";
 
         field {
-            name = "value";
-            desc = "Register value (layout unknown).";
+            name = "outstanding";
+            desc = "AXI outstanding configuration (vendor script writes 7, U-Boot writes 3). Meaning inferred from the script comment 'jpgd outstanding'.";
             sw = rw;
             hw = r;
-        } value[31:0];
+        } outstanding[6:4];
+
+        field {
+            name = "jidct_emar_en";
+            desc = "Written 1 by the vendor library on every picture (YUV output enable per an older revision of the library, LOW).";
+            sw = rw;
+            hw = r;
+        } jidct_emar_en[3:3];
+
+        field {
+            name = "bit2_unk";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware. Written 1 only by the vendor U-Boot (value 0x3C), never by the Linux library.";
+            sw = rw;
+            hw = r;
+        } bit2_unk[2:2];
+
+        field {
+            name = "scale";
+            desc = "Downscale: 0 = 1/1, 1 = 1/2, 2 = 1/4, 3 = 1/8.";
+            sw = rw;
+            hw = r;
+        } scale[1:0];
+
     } JPGD_SCALE @ 0x40;
 
     reg {
         name = "Output type register";
-        desc = "`JPGD_REG_OUTTYPE`: U-Boot writes 0x4; layout unknown.
-
-Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+        desc = "Written 4 only when the application asked for 4:2:0 semi-planar output (HI_JPEG_SetYCbCr420spFlag; then the library also halves the UV stride/plane for 4:2:2 (1x2) and 4:4:4 and refuses 1/8 scale); the vendor U-Boot always writes 4. Bit 2 therefore forces the output to YUV 4:2:0 semi-planar; with the register at 0 the decoder writes the native sampling format. The older HiSTB library (other revision) writes 0x4 under CONFIG_JPEG_OUTPUT_YUV420SP as well and uses bits 0, 3, 4 for ARGB order and median filters, none of which the Hi3520D vendor code uses. previously: 'U-Boot writes 0x4; layout unknown'. Source: vendor module hi3520D_jpegd.ko together with its user-space library libjpeg.so of the same MPP (Hi3520D_MPP_V2.0.5.1; the module only maps the registers, the library programs them) (JPEG_HDEC_SetPara 0x1c184 (write 0x44 = 4), HI_JPEG_SetYCbCr420spFlag 0x1a3b8), confidence MEDIUM, word-checked: yes; Not verified on hardware. Meaning of bit 2 is inferred from the library's size computations; all other bits are never written.";
 
         field {
-            name = "value";
-            desc = "Register value (layout unknown).";
+            name = "out_420sp";
+            desc = "Force 4:2:0 semi-planar output (the only value the vendor code writes).";
             sw = rw;
             hw = r;
-        } value[31:0];
+        } out_420sp[2:2];
+
     } JPGD_OUTTYPE @ 0x44;
 
     reg {
         name = "Interrupt status register";
-        desc = "`JPGD_REG_INT` (halt status). U-Boot polls `& 0x1f`; bit 0 means the decode finished successfully, any other set bit is an error / stop condition; the individual bits are not documented.
+        desc = "Interrupt status. The kernel IRQ handler (IRQ 74, shared) reads the register, writes the same value back (acknowledge, write-one-to-clear assumed, not proven) and wakes the waiter: bit 0 = picture decoded (done), bit 1 = stream segment consumed with an error (the library aborts the decode), bit 2 = stream segment consumed and more data needed (the library programs the next window and resumes). Priority in the handler: bit 0, then bit 1, then bit 2. The vendor U-Boot polls `INT & 0x1f` with INTMASK = 0x17 (bits 0, 1, 2, 4 masked), so the register shows the status even when the interrupt is masked; it never acknowledges. Bits 3 and 4 are never interpreted. previously: bit 0 done, bits [4:1] 'any other bit is an error'. Source: vendor module hi3520D_jpegd.ko together with its user-space library libjpeg.so of the same MPP (Hi3520D_MPP_V2.0.5.1; the module only maps the registers, the library programs them) (JpgOsrISR 0x958, JpgHalGetIntStatus 0x64, JpgHalSetIntStatus 0x88), confidence HIGH for bits 0-2 and the write-back, MEDIUM for the bit names, word-checked: yes; Not verified on hardware.";
 
-Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+        field {
+            name = "bit4_unk";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware. Seen only in the U-Boot poll mask 0x1f and INTMASK 0x17.";
+            sw = r;
+            hw = w;
+        } bit4_unk[4:4];
+
+        field {
+            name = "bit3_unk";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware. Seen only in the U-Boot poll mask 0x1f.";
+            sw = r;
+            hw = w;
+        } bit3_unk[3:3];
+
+        field {
+            name = "more";
+            desc = "Stream segment consumed, more data needed (resume procedure).";
+            sw = rw;
+            hw = w;
+        } more[2:2];
 
         field {
             name = "err";
-            desc = "Meaning unverified: error / stop status bits (individual meaning unknown; inferred from U-Boot polling `& 0x1f`).";
-            sw = r;
+            desc = "Stream segment consumed with an error, decode stopped.";
+            sw = rw;
             hw = w;
-        } err[4:1];
+        } err[1:1];
 
         field {
             name = "done";
-            desc = "Decode completed.";
-            sw = r;
+            desc = "Picture decode finished.";
+            sw = rw;
             hw = w;
         } done[0:0];
+
     } JPGD_INT @ 0x100;
 
     reg {
         name = "Interrupt mask register";
-        desc = "`JPGD_REG_INTMASK` (halt shield): U-Boot writes 0x17.
-
-Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+        desc = "Interrupt mask ('halt shield'): the kernel module writes 0 at init and the library writes 0 again before every picture, and the decode is then driven purely by the IRQ, so a 0 bit enables the interrupt for that cause and a 1 bit masks it (bits 0-2 inferred from this use; the vendor U-Boot polls INT with 0x17 written here). The status in INT is not affected by the mask. Source: vendor module hi3520D_jpegd.ko together with its user-space library libjpeg.so of the same MPP (Hi3520D_MPP_V2.0.5.1; the module only maps the registers, the library programs them) (JpgHalSetIntMask 0xa8, JpgHalGetIntMask 0xc8, JPEG_HDEC_SetPara 0x1c184 (write 0x104)), confidence MEDIUM, word-checked: yes; Not verified on hardware.";
 
         field {
-            name = "mask";
-            desc = "Meaning unverified: interrupt mask bits (polarity not documented; U-Boot writes 0x17 = bits 4,2,1,0).";
+            name = "bit4_unk";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware. Seen only in U-Boot's 0x17.";
             sw = rw;
             hw = r;
-        } mask_f[4:0];
+        } bit4_unk[4:4];
+
+        field {
+            name = "bit3_unk";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware. Never written as 1 by the vendor code.";
+            sw = rw;
+            hw = r;
+        } bit3_unk[3:3];
+
+        field {
+            name = "mask_more";
+            desc = "1 = mask the 'more data needed' interrupt.";
+            sw = rw;
+            hw = r;
+        } mask_more[2:2];
+
+        field {
+            name = "mask_err";
+            desc = "1 = mask the error interrupt.";
+            sw = rw;
+            hw = r;
+        } mask_err[1:1];
+
+        field {
+            name = "mask_done";
+            desc = "1 = mask the picture-done interrupt.";
+            sw = rw;
+            hw = r;
+        } mask_done[0:0];
+
     } JPGD_INTMASK @ 0x104;
 
     reg {
         name = "Debug register";
-        desc = "`JPGD_REG_DEBUG`.
-
-Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+        desc = "`JPGD_REG_DEBUG` (name from the vendor U-Boot header only). Never accessed by the Hi3520D kernel module, user library or U-Boot decoder: purpose unknown. Source: vendor U-Boot header product/hiosd/dec/hi_drv_jpeg_reg.h (offset and name only), confidence LOW, word-checked: no; Not verified on hardware.";
 
         field {
             name = "value";
-            desc = "Meaning unverified: debug status (only the vendor register name is known).";
+            desc = "Debug status (only the vendor register name is known).";
             sw = r;
             hw = w;
         } value[31:0];
+
     } JPGD_DEBUG @ 0x108;
 
     reg {
         name = "Luminance pixel sum register 0";
-        desc = "`JPGD_REG_LPIXSUM0` (save lu pixel data).
-
-Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+        desc = "Low 32 bits of the sum of all decoded luma pixel values, read after the decode when the application asked for it (HI_JPEG_SetLuPixSumFlag). Source: vendor module hi3520D_jpegd.ko together with its user-space library libjpeg.so of the same MPP (Hi3520D_MPP_V2.0.5.1; the module only maps the registers, the library programs them) (JPEG_HDEC_Start 0x1b100 (read 0x114)), confidence HIGH for the access, MEDIUM for the meaning, word-checked: yes; Not verified on hardware.";
 
         field {
             name = "value";
-            desc = "Meaning unverified: luminance pixel sum, low part (assumed from the vendor comment 'save lu pixel data').";
+            desc = "Luma pixel sum, bits 31:0.";
             sw = r;
             hw = w;
         } value[31:0];
+
     } JPGD_LPIXSUM0 @ 0x114;
 
     reg {
         name = "Luminance pixel sum register 1";
-        desc = "`JPGD_REG_LPIXSUM1`: U-Boot writes 0x80000000 before decoding.
-
-Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+        desc = "Write 0x80000000 before the decode to enable the luma pixel sum (the vendor U-Boot always does, the library only when the flag is set); after the decode bits [3:0] hold bits 35:32 of the 36-bit sum (the library reads this register and keeps only the low nibble). Bit 31 = enable is inferred from the written value. Source: vendor module hi3520D_jpegd.ko together with its user-space library libjpeg.so of the same MPP (Hi3520D_MPP_V2.0.5.1; the module only maps the registers, the library programs them) (JPEG_HDEC_SetPara 0x1c184 (write 0x118), JPEG_HDEC_Start 0x1b100 (read, mask 0xf)), confidence HIGH for the accesses, MEDIUM for the field meaning, word-checked: yes; Not verified on hardware.";
 
         field {
-            name = "value";
-            desc = "Meaning unverified: register value (U-Boot writes 0x80000000; purpose unknown).";
+            name = "enable";
+            desc = "Written 1 to enable the luma pixel sum (inferred).";
             sw = rw;
             hw = r;
-        } value[31:0];
+        } enable[31:31];
+
+        field {
+            name = "sum_hi";
+            desc = "Luma pixel sum bits 35:32 (read after the decode).";
+            sw = r;
+            hw = w;
+        } sum_hi[3:0];
+
     } JPGD_LPIXSUM1 @ 0x118;
 
     reg {
         name = "Sampling factor register";
-        desc = "`JPGD_REG_SAMPLINGFACTOR`: `Y_H << 20 | Y_V << 16 | U_H << 12 | U_V << 8 | V_V << 4 | V_V` as written by U-Boot (the lowest nibble is written with the V vertical factor twice: probable vendor typo for V_H, kept as software behaviour).
-
-Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+        desc = "Component sampling factors from the SOF header, one byte per component with the horizontal factor in the high nibble: Y at [23:16], U at [15:8], V at [7:0]. 4:2:0 is 0x221111, 4:4:4 0x111111, 4:0:0 0x110000 (U and V bytes 0). previously: U-Boot wrote `V_V << 4 | V_V` into [7:0] and the RDL carried a 'probable vendor typo' note; the Linux library writes the real V horizontal factor into [7:4], so the U-Boot value is a bug (resolved). Source: vendor module hi3520D_jpegd.ko together with its user-space library libjpeg.so of the same MPP (Hi3520D_MPP_V2.0.5.1; the module only maps the registers, the library programs them) (JPEG_HDEC_SetPara 0x1c184 (write 0x124), SOF handler in libjpeg.so 0x69c4-0x6a04), confidence HIGH, word-checked: yes; Not verified on hardware.";
 
         field {
             name = "y_h";
@@ -342,38 +406,37 @@ Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_
 
         field {
             name = "u_h";
-            desc = "U horizontal sampling factor.";
+            desc = "U horizontal sampling factor (0 for 4:0:0).";
             sw = rw;
             hw = r;
         } u_h[15:12];
 
         field {
             name = "u_v";
-            desc = "U vertical sampling factor.";
+            desc = "U vertical sampling factor (0 for 4:0:0).";
             sw = rw;
             hw = r;
         } u_v[11:8];
 
         field {
-            name = "v_v";
-            desc = "V vertical sampling factor.";
+            name = "v_h";
+            desc = "V horizontal sampling factor (0 for 4:0:0).";
             sw = rw;
             hw = r;
-        } v_v[7:4];
+        } v_h[7:4];
 
         field {
-            name = "v_h";
-            desc = "Meaning unverified: V horizontal sampling factor (U-Boot writes V_V here, probably a vendor typo).";
+            name = "v_v";
+            desc = "V vertical sampling factor (0 for 4:0:0).";
             sw = rw;
             hw = r;
-        } v_h[3:0];
+        } v_v[3:0];
+
     } JPGD_SAMPLINGFACTOR @ 0x124;
 
     reg {
         name = "Restart interval register";
-        desc = "`JPGD_REG_DRI`: JPEG restart interval (DRI marker value).
-
-Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+        desc = "`JPGD_REG_DRI`: JPEG restart interval (DRI marker value). Written only by the vendor U-Boot decoder; the Linux user library never writes it (restart markers are then presumably recognized by the hardware itself from the RSTn markers in the stream), so whether the Hi3520D implements this register is not confirmed. Source: vendor U-Boot JPEG decoder (CONFIG_HI3520D, Jpeg_HDEDC_Uboot), confidence LOW, word-checked: no (not used by libjpeg.so); Not verified on hardware.";
 
         field {
             name = "restart";
@@ -381,13 +444,12 @@ Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_
             sw = rw;
             hw = r;
         } restart[31:0];
+
     } JPGD_DRI @ 0x128;
 
     reg {
         name = "Quantization table memory";
-        desc = "`JPGD_REG_QUANT`: 64 words, one per coefficient: `Y + (U << 8) + (V << 16)` (U-Boot copies 256 bytes).
-
-Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+        desc = "64 words, one per coefficient in natural (raster, not zigzag) order: word i = Q_Y[i] | Q_U[i] << 8 | Q_V[i] << 16, 8-bit values only (the vendor does not handle 16-bit DQT precision). The table of each component is the one its SOF Tq selects; a missing U table falls back to Y and a missing V table to U. 256 bytes are written with plain word stores, first thing after INTMASK. Source: vendor module hi3520D_jpegd.ko together with its user-space library libjpeg.so of the same MPP (Hi3520D_MPP_V2.0.5.1; the module only maps the registers, the library programs them) (JPEG_HDEC_SetDqt 0x1db64 (CpyData2Reg offset 0x200, 256 bytes)), confidence HIGH for the packing, MEDIUM for the natural order (libjpeg 6b stores quantval in natural order, the vendor header says so), word-checked: yes; Not verified on hardware.";
 
         field {
             name = "q";
@@ -395,63 +457,61 @@ Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_
             sw = rw;
             hw = r;
         } q[31:0];
+
     } JPGD_QUANT[64] @ 0x200 += 0x4;
 
     reg {
         name = "Huffman DC table memory";
-        desc = "`JPGD_REG_HDCTABLE`: 48 bytes (12 words) of DC Huffman table data (format produced by `JPEG_HDEC_Uboot_SetDC`).
-
-Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+        desc = "12 words, indexed by the DC symbol (category 0..11): bits [7:0] luma code (low 8 bits of the canonical Huffman code), [11:8] luma code length, [19:12] chroma code (low 8 bits), [23:20] chroma code length, [31:24] 0. Luma = the table the Y component uses, chroma = the table of U/V (a single table is duplicated). Canonical codes are assigned in increasing order by length per T.81 Annex C. 48 bytes written. Source: vendor module hi3520D_jpegd.ko together with its user-space library libjpeg.so of the same MPP (Hi3520D_MPP_V2.0.5.1; the module only maps the registers, the library programs them) (JPEG_HDEC_SetDC 0x1d060 (CpyData2Reg offset 0x300, 48 bytes; shifts 8/12/20, masks 0xff/0xf), vendor U-Boot JPEG_HDEC_Uboot_SetDC (source, same packing)), confidence HIGH, word-checked: yes; Not verified on hardware. Why 8 code bits suffice for longer DC codes is unknown.";
 
         field {
             name = "data";
-            desc = "Table data.";
+            desc = "Packed {chroma length, chroma code, luma length, luma code} of one DC symbol.";
             sw = rw;
             hw = r;
         } data[31:0];
+
     } JPGD_HDCTABLE[12] @ 0x300 += 0x4;
 
     reg {
         name = "Huffman AC min-code table memory";
-        desc = "`JPGD_REG_HACMINTABLE`: 32 bytes (8 words).
-
-Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+        desc = "8 words for 16 code lengths (index l = code length l + 1): word i = LU_min[2i] | LU_min[2i+1] << 8 | CH_min[2i] << 16 | CH_min[2i+1] << 24, each byte the low 8 bits of the first canonical code of that length, min[l] = (min[l-1] + count[l]) << 1 where count[l] is the DHT count of length l (0 for l = 0); lengths above the longest used code are 0xFF. LU = table of the Y component, CH = table of U/V. 32 bytes written. Source: vendor module hi3520D_jpegd.ko together with its user-space library libjpeg.so of the same MPP (Hi3520D_MPP_V2.0.5.1; the module only maps the registers, the library programs them) (JPEG_HDEC_SetAC 0x1c3ec (CpyData2Reg offset 0x340, 32 bytes), vendor U-Boot JPEG_HDEC_Uboot_SetAC (source)), confidence HIGH for the packing, MEDIUM for the 0xFF fill (from the U-Boot source), word-checked: yes; Not verified on hardware.";
 
         field {
             name = "data";
-            desc = "Table data.";
+            desc = "Four packed min-code bytes (two luma, two chroma lengths).";
             sw = rw;
             hw = r;
         } data[31:0];
+
     } JPGD_HACMINTABLE[8] @ 0x340 += 0x4;
 
     reg {
         name = "Huffman AC base table memory";
-        desc = "`JPGD_REG_HACBASETABLE`: 32 bytes (8 words).
-
-Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+        desc = "8 words, same packing as HACMINTABLE: byte for code length l = (number of codes shorter than l - min[l]) & 0xFF, written only when the DHT count of that length is non-zero, else 0; symbol index = code + base. 32 bytes written. Source: vendor module hi3520D_jpegd.ko together with its user-space library libjpeg.so of the same MPP (Hi3520D_MPP_V2.0.5.1; the module only maps the registers, the library programs them) (JPEG_HDEC_SetAC 0x1c3ec (CpyData2Reg offset 0x360, 32 bytes), vendor U-Boot JPEG_HDEC_Uboot_SetAC (source)), confidence HIGH for the packing, MEDIUM for the arithmetic (U-Boot source, binary has the same conditional store), word-checked: yes; Not verified on hardware.";
 
         field {
             name = "data";
-            desc = "Table data.";
+            desc = "Four packed base bytes (two luma, two chroma lengths).";
             sw = rw;
             hw = r;
         } data[31:0];
+
     } JPGD_HACBASETABLE[8] @ 0x360 += 0x4;
 
     reg {
         name = "Huffman AC symbol table memory";
-        desc = "`JPGD_REG_HACSYMTABLE`: 0x2C0 bytes (176 words).
-
-Vendor U-Boot `product/hiosd/dec/hi_drv_jpeg_reg.h` + `hi_JpegDecode.c` (CONFIG_HI3520D: base 0x20670000, GIC ID 74, clock/reset PERI_CRG25 at 0x20030064). No reset values are known (not in the data sheet, never read).";
+        desc = "176 words (0x2C0 bytes written; a baseline AC table has at most 162 symbols): word k = luma huffval[k] | chroma huffval[k] << 8, in DHT order (increasing code length), upper half 0. Source: vendor module hi3520D_jpegd.ko together with its user-space library libjpeg.so of the same MPP (Hi3520D_MPP_V2.0.5.1; the module only maps the registers, the library programs them) (JPEG_HDEC_SetAC 0x1c3ec (CpyData2Reg offset 0x400, 704 bytes), vendor U-Boot JPEG_HDEC_Uboot_SetAC (source)), confidence HIGH for size and offset, MEDIUM for the byte order (U-Boot source and the lsl #8 in the binary), word-checked: yes; Not verified on hardware.";
 
         field {
             name = "data";
-            desc = "Table data.";
+            desc = "Luma AC symbol [7:0] and chroma AC symbol [15:8] of one table entry.";
             sw = rw;
             hw = r;
         } data[31:0];
+
     } JPGD_HACSYMTABLE[176] @ 0x400 += 0x4;
+
 };
 
 `endif
