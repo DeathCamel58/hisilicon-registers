@@ -3,13 +3,15 @@
 
 regfile eHISI_SCD {
     name = "HiSilicon SCD start-code detector (UNVERIFIED, vendor-derived)";
-    desc = "UNVERIFIED, vendor-derived: HiSilicon stream context decoder / start-code detector (SCD), the front end of the VDH decoder. Window 0x10150000 (data sheet memory map: 'reserved 64 KB'; the data sheet only documents its clock gate: PERI_CRG53 at 0x200300D4, bit 3 scd_cken, bit 1 scd_srst_req). GIC interrupt ID 75 (the data sheet lists 75 as reserved; the vendor driver requests it for the SCD service routine). Hi3520D DDRC QoS entry: DDRC_QOS[1] (0x20110154) is labeled 'SCD' in the vendor board script. A second instance SCD1 at 0x10160000 appears only in copied Hi3531 platform headers. Only the registers the vendor module uses are listed; the Hi3521A-and-later generations put the same registers at +0x800 inside the VDH window. Probe first: SCD_OVER (0x40) after PERI_CRG53 = 0x8 (clock on, reset released).";
+    desc = "UNVERIFIED, vendor-derived: HiSilicon stream context decoder / start-code detector (SCD), the front end of the VDH decoder. Window 0x10150000 (data sheet memory map: 'reserved 64 KB'; the data sheet only documents its clock gate: PERI_CRG53 at 0x200300D4, bit 3 scd_cken, bit 1 scd_srst_req). GIC interrupt ID 75 (the data sheet lists 75 as reserved; the vendor driver requests it for the SCD service routine). Second pass 2026-11-10: confirmed in all three Hi3520D vfmw builds (OpenDrivers: request_threaded_irq(75, VCTRL_Scd_Isr, flags 0x20) and free_irq(75) in CloseDrivers; the handler SM_SCDIntServeProc reads SCD_INT (0x44), writes SCD_INI_CLR (0x24) and wakes the SCD thread), confidence HIGH, word-checked: yes, not verified on hardware; the hardware wiring of ID 75 is not documented. Vendor sequence per stream chunk: WriteScdVtrlReg writes 0x04, 0x08, 0x0C, 0x10, 0x14, 0x18, 0x20, then 0x00 = 0 and 0x00 = start & 1; completion is signaled by SCD_INT (interrupt) / SCD_OVER bit 0 (WaitSCDFinish); ResetSCD sets PERI_CRG53 bit 1, polls SCD_OVER bit 1 until clear (10000 iterations), clears the reset and restores SCD_INT_MASK bit 0. The SCD only finds start codes and writes a segment list: it does not copy or rewrite bitstream data (the VDH reads the original buffer through the slice-message byte/bit offsets), so it is not needed when software already knows the slice boundaries. Emulation prevention bytes (00 00 03) stay in the stream: neither the SCD driver nor the vfmw syntax parser strips them (confidence MEDIUM: inferred from the GPL V400R004/Hi3520D sources and the absence of any stripping code). DDRC QoS: the vendor script programs DDRC_QOS[1] (0x20110154) = 0x03F06 for 'SCD'; no QoS entry exists for the VDH. Certainty convention: each register states source, confidence and word-check status; nothing here was read or written on the board. Hi3520D DDRC QoS entry: DDRC_QOS[1] (0x20110154) is labeled 'SCD' in the vendor board script. A second instance SCD1 at 0x10160000 appears only in copied Hi3531 platform headers. Only the registers the vendor module uses are listed; the Hi3521A-and-later generations put the same registers at +0x800 inside the VDH window. Probe first: SCD_OVER (0x40) after PERI_CRG53 = 0x8 (clock on, reset released).";
 
     reg {
         name = "SCD start";
         desc = "The vendor code writes 0, then (start & 1) after the other registers (WriteScdVtrlReg).
 
-Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw.ko (SCD driver, static disassembly of WriteScdVtrlReg/ReadScdStateReg/ResetSCD/SM_SCDIntServeProc, 2026-11-10); the offsets equal the Huawei HiSCDV200 map (`scd_drv.h`, REG_SCD_* at 0x800+) minus 0x800. Never read or written on hardware; no reset value is known; not in the data sheet. See docs/rdl-campaign/vdh-scd.md.";
+Sequence: write 0, then (start & 1) after all other registers; PrintScdVtrlReg reads it back for debug.
+
+Source: vendor module hi3520D_vfmw.ko (WriteScdVtrlReg (last two writes)), confidence HIGH, word-checked against the Hi3520D disassembly: yes. Not verified on hardware (nothing in this block has been read or written on the board); no reset value is known; not in the data sheet. Details: docs/rdl-campaign/vdh-scd.md.";
 
         field {
             name = "start";
@@ -24,7 +26,7 @@ Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw
         name = "Segment list address";
         desc = "Physical address of the output list of detected NAL/start-code segments.
 
-Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw.ko (SCD driver, static disassembly of WriteScdVtrlReg/ReadScdStateReg/ResetSCD/SM_SCDIntServeProc, 2026-11-10); the offsets equal the Huawei HiSCDV200 map (`scd_drv.h`, REG_SCD_* at 0x800+) minus 0x800. Never read or written on hardware; no reset value is known; not in the data sheet. See docs/rdl-campaign/vdh-scd.md.";
+Source: vendor module hi3520D_vfmw.ko (WriteScdVtrlReg), confidence HIGH, word-checked against the Hi3520D disassembly: yes. Not verified on hardware (nothing in this block has been read or written on the board); no reset value is known; not in the data sheet. Details: docs/rdl-campaign/vdh-scd.md.";
 
         field {
             name = "list_address";
@@ -39,7 +41,7 @@ Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw
         name = "Up-message address";
         desc = "Physical address of the message buffer the SCD writes its result into.
 
-Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw.ko (SCD driver, static disassembly of WriteScdVtrlReg/ReadScdStateReg/ResetSCD/SM_SCDIntServeProc, 2026-11-10); the offsets equal the Huawei HiSCDV200 map (`scd_drv.h`, REG_SCD_* at 0x800+) minus 0x800. Never read or written on hardware; no reset value is known; not in the data sheet. See docs/rdl-campaign/vdh-scd.md.";
+Source: vendor module hi3520D_vfmw.ko (WriteScdVtrlReg), confidence HIGH, word-checked against the Hi3520D disassembly: yes. Not verified on hardware (nothing in this block has been read or written on the board); no reset value is known; not in the data sheet. Details: docs/rdl-campaign/vdh-scd.md.";
 
         field {
             name = "up_address";
@@ -54,7 +56,7 @@ Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw
         name = "Up-message length";
         desc = "Length of the up-message buffer.
 
-Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw.ko (SCD driver, static disassembly of WriteScdVtrlReg/ReadScdStateReg/ResetSCD/SM_SCDIntServeProc, 2026-11-10); the offsets equal the Huawei HiSCDV200 map (`scd_drv.h`, REG_SCD_* at 0x800+) minus 0x800. Never read or written on hardware; no reset value is known; not in the data sheet. See docs/rdl-campaign/vdh-scd.md.";
+Source: vendor module hi3520D_vfmw.ko (WriteScdVtrlReg (write), ProcessScdReturn (read-back: the count is halved and compared with the segment index)), confidence HIGH for the accesses, LOW for the unit, word-checked against the Hi3520D disassembly: yes. Not verified on hardware (nothing in this block has been read or written on the board); no reset value is known; not in the data sheet. Details: docs/rdl-campaign/vdh-scd.md.";
 
         field {
             name = "up_len";
@@ -69,7 +71,7 @@ Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw
         name = "Stream buffer first address";
         desc = "Start of the circular stream buffer the SCD scans.
 
-Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw.ko (SCD driver, static disassembly of WriteScdVtrlReg/ReadScdStateReg/ResetSCD/SM_SCDIntServeProc, 2026-11-10); the offsets equal the Huawei HiSCDV200 map (`scd_drv.h`, REG_SCD_* at 0x800+) minus 0x800. Never read or written on hardware; no reset value is known; not in the data sheet. See docs/rdl-campaign/vdh-scd.md.";
+Source: vendor module hi3520D_vfmw.ko (WriteScdVtrlReg), confidence HIGH, word-checked against the Hi3520D disassembly: yes. Not verified on hardware (nothing in this block has been read or written on the board); no reset value is known; not in the data sheet. Details: docs/rdl-campaign/vdh-scd.md.";
 
         field {
             name = "buffer_first";
@@ -84,7 +86,7 @@ Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw
         name = "Stream buffer last address";
         desc = "End of the circular stream buffer.
 
-Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw.ko (SCD driver, static disassembly of WriteScdVtrlReg/ReadScdStateReg/ResetSCD/SM_SCDIntServeProc, 2026-11-10); the offsets equal the Huawei HiSCDV200 map (`scd_drv.h`, REG_SCD_* at 0x800+) minus 0x800. Never read or written on hardware; no reset value is known; not in the data sheet. See docs/rdl-campaign/vdh-scd.md.";
+Source: vendor module hi3520D_vfmw.ko (WriteScdVtrlReg), confidence HIGH, word-checked against the Hi3520D disassembly: yes. Not verified on hardware (nothing in this block has been read or written on the board); no reset value is known; not in the data sheet. Details: docs/rdl-campaign/vdh-scd.md.";
 
         field {
             name = "buffer_last";
@@ -99,7 +101,7 @@ Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw
         name = "Stream buffer scan start address";
         desc = "Address where scanning starts inside the buffer.
 
-Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw.ko (SCD driver, static disassembly of WriteScdVtrlReg/ReadScdStateReg/ResetSCD/SM_SCDIntServeProc, 2026-11-10); the offsets equal the Huawei HiSCDV200 map (`scd_drv.h`, REG_SCD_* at 0x800+) minus 0x800. Never read or written on hardware; no reset value is known; not in the data sheet. See docs/rdl-campaign/vdh-scd.md.";
+Source: vendor module hi3520D_vfmw.ko (WriteScdVtrlReg), confidence HIGH, word-checked against the Hi3520D disassembly: yes. Not verified on hardware (nothing in this block has been read or written on the board); no reset value is known; not in the data sheet. Details: docs/rdl-campaign/vdh-scd.md.";
 
         field {
             name = "buffer_ini";
@@ -114,7 +116,9 @@ Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw
         name = "SCD interrupt mask";
         desc = "EnableInt writes 0 (unmask); MaskInt masks; ResetSCD saves and restores bit 0. Polarity inferred.
 
-Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw.ko (SCD driver, static disassembly of WriteScdVtrlReg/ReadScdStateReg/ResetSCD/SM_SCDIntServeProc, 2026-11-10); the offsets equal the Huawei HiSCDV200 map (`scd_drv.h`, REG_SCD_* at 0x800+) minus 0x800. Never read or written on hardware; no reset value is known; not in the data sheet. See docs/rdl-campaign/vdh-scd.md.";
+VCTRL_RunProcess masks the SCD interrupt around its loop; the SCD is the only interrupt the Hi3520D vfmw modules request (GIC ID 75).
+
+Source: vendor module hi3520D_vfmw.ko (SCDDRV_EnableInt (writes 0), SCDDRV_MaskInt, ResetSCD (saves and restores bit 0)), confidence HIGH for the accesses, LOW for the polarity, word-checked against the Hi3520D disassembly: yes. Not verified on hardware (nothing in this block has been read or written on the board); no reset value is known; not in the data sheet. Details: docs/rdl-campaign/vdh-scd.md.";
 
         field {
             name = "mask";
@@ -129,7 +133,7 @@ Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw
         name = "SCD protocol select";
         desc = "Vendor value = (slice_check_flag << 4 & 0x10) | (protocol & 0xF); the Huawei V400 driver adds bit 7 (secure) and bit 8 (low delay), unused on Hi3520D.
 
-Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw.ko (SCD driver, static disassembly of WriteScdVtrlReg/ReadScdStateReg/ResetSCD/SM_SCDIntServeProc, 2026-11-10); the offsets equal the Huawei HiSCDV200 map (`scd_drv.h`, REG_SCD_* at 0x800+) minus 0x800. Never read or written on hardware; no reset value is known; not in the data sheet. See docs/rdl-campaign/vdh-scd.md.";
+Source: vendor module hi3520D_vfmw.ko (WriteScdVtrlReg (write ((slice_check << 4) & 0x10) | (protocol & 0xF)), ProcessScdReturn (read-back)), confidence HIGH, word-checked against the Hi3520D disassembly: yes. Not verified on hardware (nothing in this block has been read or written on the board); no reset value is known; not in the data sheet. Details: docs/rdl-campaign/vdh-scd.md.";
 
         field {
             name = "protocol";
@@ -151,7 +155,7 @@ Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw
         name = "SCD interrupt clear";
         desc = "Written 1 in the interrupt service routine.
 
-Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw.ko (SCD driver, static disassembly of WriteScdVtrlReg/ReadScdStateReg/ResetSCD/SM_SCDIntServeProc, 2026-11-10); the offsets equal the Huawei HiSCDV200 map (`scd_drv.h`, REG_SCD_* at 0x800+) minus 0x800. Never read or written on hardware; no reset value is known; not in the data sheet. See docs/rdl-campaign/vdh-scd.md.";
+Source: vendor module hi3520D_vfmw.ko (SM_SCDIntServeProc (write in the interrupt handler after reading SCD_INT)), confidence HIGH for the access, MEDIUM for the meaning, word-checked against the Hi3520D disassembly: yes. Not verified on hardware (nothing in this block has been read or written on the board); no reset value is known; not in the data sheet. Details: docs/rdl-campaign/vdh-scd.md.";
 
         field {
             name = "clear";
@@ -166,7 +170,7 @@ Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw
         name = "SCD over";
         desc = "Huawei code reads bit 0 as 'segment done'; the Hi3520D ResetSCD polls bit 1 until it reads 0.
 
-Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw.ko (SCD driver, static disassembly of WriteScdVtrlReg/ReadScdStateReg/ResetSCD/SM_SCDIntServeProc, 2026-11-10); the offsets equal the Huawei HiSCDV200 map (`scd_drv.h`, REG_SCD_* at 0x800+) minus 0x800. Never read or written on hardware; no reset value is known; not in the data sheet. See docs/rdl-campaign/vdh-scd.md.";
+Source: vendor module hi3520D_vfmw.ko (ReadScdStateReg, WaitSCDFinish (bit 0), ResetSCD (waits for bit 1 to clear, 10000 iterations)), confidence HIGH for the accesses, MEDIUM for the meaning, word-checked against the Hi3520D disassembly: yes. Not verified on hardware (nothing in this block has been read or written on the board); no reset value is known; not in the data sheet. Details: docs/rdl-campaign/vdh-scd.md.";
 
         field {
             name = "over";
@@ -188,7 +192,7 @@ Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw
         name = "SCD interrupt state";
         desc = "Read in the interrupt service routine.
 
-Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw.ko (SCD driver, static disassembly of WriteScdVtrlReg/ReadScdStateReg/ResetSCD/SM_SCDIntServeProc, 2026-11-10); the offsets equal the Huawei HiSCDV200 map (`scd_drv.h`, REG_SCD_* at 0x800+) minus 0x800. Never read or written on hardware; no reset value is known; not in the data sheet. See docs/rdl-campaign/vdh-scd.md.";
+Source: vendor module hi3520D_vfmw.ko (SM_SCDIntServeProc, ReadScdStateReg (bit 0)), confidence HIGH for the access, word-checked against the Hi3520D disassembly: yes. Not verified on hardware (nothing in this block has been read or written on the board); no reset value is known; not in the data sheet. Details: docs/rdl-campaign/vdh-scd.md.";
 
         field {
             name = "pending";
@@ -203,7 +207,7 @@ Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw
         name = "SCD segment count";
         desc = "Huawei ReadScdStateReg: ScdNum = bits [21:0], ShortScdNum = bits [31:22].
 
-Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw.ko (SCD driver, static disassembly of WriteScdVtrlReg/ReadScdStateReg/ResetSCD/SM_SCDIntServeProc, 2026-11-10); the offsets equal the Huawei HiSCDV200 map (`scd_drv.h`, REG_SCD_* at 0x800+) minus 0x800. Never read or written on hardware; no reset value is known; not in the data sheet. See docs/rdl-campaign/vdh-scd.md.";
+Source: vendor module hi3520D_vfmw.ko (ReadScdStateReg), confidence HIGH for the read access, MEDIUM for the field split, word-checked against the Hi3520D disassembly: yes. Not verified on hardware (nothing in this block has been read or written on the board); no reset value is known; not in the data sheet. Details: docs/rdl-campaign/vdh-scd.md.";
 
         field {
             name = "scd_num";
@@ -225,7 +229,7 @@ Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw
         name = "Rollback address";
         desc = "Address the SCD stopped at (used to resume).
 
-Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw.ko (SCD driver, static disassembly of WriteScdVtrlReg/ReadScdStateReg/ResetSCD/SM_SCDIntServeProc, 2026-11-10); the offsets equal the Huawei HiSCDV200 map (`scd_drv.h`, REG_SCD_* at 0x800+) minus 0x800. Never read or written on hardware; no reset value is known; not in the data sheet. See docs/rdl-campaign/vdh-scd.md.";
+Source: vendor module hi3520D_vfmw.ko (ReadScdStateReg), confidence HIGH for the read access, MEDIUM for the meaning, word-checked against the Hi3520D disassembly: yes. Not verified on hardware (nothing in this block has been read or written on the board); no reset value is known; not in the data sheet. Details: docs/rdl-campaign/vdh-scd.md.";
 
         field {
             name = "roll_addr";
@@ -240,7 +244,7 @@ Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw
         name = "Source bytes consumed";
         desc = "Number of stream bytes consumed by the SCD.
 
-Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw.ko (SCD driver, static disassembly of WriteScdVtrlReg/ReadScdStateReg/ResetSCD/SM_SCDIntServeProc, 2026-11-10); the offsets equal the Huawei HiSCDV200 map (`scd_drv.h`, REG_SCD_* at 0x800+) minus 0x800. Never read or written on hardware; no reset value is known; not in the data sheet. See docs/rdl-campaign/vdh-scd.md.";
+Source: vendor module hi3520D_vfmw.ko (ReadScdStateReg), confidence HIGH for the read access, MEDIUM for the meaning, word-checked against the Hi3520D disassembly: yes. Not verified on hardware (nothing in this block has been read or written on the board); no reset value is known; not in the data sheet. Details: docs/rdl-campaign/vdh-scd.md.";
 
         field {
             name = "src_eaten";
