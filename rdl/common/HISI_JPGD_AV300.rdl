@@ -1,0 +1,578 @@
+`ifndef HISI_JPGD_AV300_RDL
+`define HISI_JPGD_AV300_RDL
+
+regfile eHISI_JPGD_AV300 {
+    name = "HiSilicon JPEG decoder (JPGD), Hi3516A V300 generation (vendor-derived)";
+    desc = "
+    VENDOR-DERIVED, CONFIDENCE MEDIUM, NOT VERIFIED ON HARDWARE. JPEG decoder of the Hi3516A V300 at 0x11260000 (64 KB). Data sheet facts (Chinese user guide, 2019-09-15): memory map row 'JPGD register 64 KB' at 0x11260000, interrupt ID 77, clock gate and soft reset in PERI_CRG49 (0x120100C4: bit 1 jpgd_cken, bit 0 jpgd_srst_req, reset 0), DDR QoS groups jpgd_w_qos / jpgd_r_qos, secure-access switches in MISC_CTRL. The data sheet has NO register table for this block; every register below comes from static analysis (objdump, never executed) of the vendor kernel module open_jpegd.ko of the OpenIPC Hi3516AV300 nightly firmware (Linux 4.9.37, 2026-11-10; symbols kept): jpegd_reg_addr_init (ioremap 0x11260000, 0x10000 bytes), jpegd_drv_write_regs (all per-picture register writes), jpegd_drv_read_regs / jpegd_read_int / jpegd_clear_int (interrupt path), jpegd_start_vpu (start), jpegd_reset / jpegd_reset_select (soft reset through the sys module, PERI_CRG49), jpegd_set_time_out and jpegd_get_time_out. The OpenIPC device tree confirms base 0x11260000 and interrupt SPI 45 (= ID 77).
+
+    The layout is the Hi3520D layout (eHISI_JPGD) at every offset the V300 driver uses (START 0x0, RESUME 0x4, STRIDE 0xC, PICSIZE 0x10, PICTYPE 0x14, TIME 0x18, address registers 0x20-0x34, SCALE 0x40, OUTTYPE 0x44, INT 0x100, INTMASK 0x104, SAMPLINGFACTOR 0x124, DRI 0x128, and the five table memories at 0x200 / 0x300 / 0x340 / 0x360 / 0x400 with identical lengths 64 / 12 / 8 / 8 / 176 words) PLUS six new high-word address registers at 0x148-0x15C (one per address register 0x20-0x34, 64 bit DMA addresses) and a 12 bit PICSIZE. Register and field names are inherited from the Hi3520D RDL (which got them from the vendor U-Boot header and the Hi3520D user library) wherever the V300 offset matches; the module has no register names of its own. Not touched by the V300 driver and therefore not described: PICVLDNUM 0x8, LPIXSUM0/1 0x114/0x118. Unlike the Hi3520D, where all register programming is in a user-space library, the V300 programs the decoder in the kernel module (the stream is parsed in software, the module also has a complete software JPEG decoder fallback, jpegd_dec_soft).
+
+    Each register carries 'Source: vendor module static analysis (open_jpegd.ko, <function>, <offset>)' and a confidence (HIGH = access read directly from the disassembly, MEDIUM = meaning taken from the matching Hi3520D register, LOW = inferred or unknown). Details: docs/rdl-campaign/video-codec-crosschip.md.
+    ";
+
+    reg {
+        name = "Decode start / status";
+        desc = "Decode start and busy status. The driver starts one picture with a read-modify-write that ORs bit 0 (jpegd_start_vpu). The reset helper polls bit 1 until it reads 0 (up to 1000 x 10 us) before the soft reset is released (jpegd_reset_select).
+
+Source: vendor module static analysis (open_jpegd.ko, jpegd_start_vpu, jpegd_reset_select, offset 0x0), confidence HIGH for the accesses, MEDIUM for the bit names (inferred from the Hi3520D eHISI_JPGD). Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no JPGD register table).";
+
+        field {
+            name = "busy";
+            desc = "Decoder busy (polled until 0 around the soft reset; read-only status). Meaning inferred from the Hi3520D layout.";
+            sw = r;
+            hw = w;
+        } busy[1:1];
+
+        field {
+            name = "start";
+            desc = "Write 1 to start decoding one picture.";
+            sw = rw;
+            hw = r;
+        } start[0:0];
+
+    } JPGD_START @ 0x0;
+
+    reg {
+        name = "Stream continue / last-segment register";
+        desc = "Written with the constant 2 (bit 1 = last segment, bit 0 = no resume) for every picture before the start: the V300 driver always hands the whole stream over in one segment (jpegd_drv_write_regs, first store). The multi-segment continue protocol of the Hi3520D library is not used.
+
+Source: vendor module static analysis (open_jpegd.ko, jpegd_drv_write_regs, offset 0x4), confidence HIGH for the write of the value 2, MEDIUM for the field names (inferred from the Hi3520D). Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no JPGD register table).";
+
+        field {
+            name = "last";
+            desc = "This stream segment is the last one (the driver always writes 1).";
+            sw = rw;
+            hw = r;
+        } last[1:1];
+
+        field {
+            name = "resume";
+            desc = "Continue after the next stream segment was programmed (never written 1 by the V300 driver).";
+            sw = rw;
+            hw = r;
+        } resume[0:0];
+
+    } JPGD_RESUME @ 0x4;
+
+    reg {
+        name = "Output stride register";
+        desc = "Output line strides of the decoded picture: luma stride in bits [15:0], chroma stride in bits [31:16] (two 16 bit fields composed with bfi from the configuration structure words at +0x28 and +0x2C).
+
+Source: vendor module static analysis (open_jpegd.ko, jpegd_drv_write_regs, offset 0xC), confidence HIGH for the two 16 bit fields, MEDIUM for the unit (inferred from the Hi3520D). Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no JPGD register table).";
+
+        field {
+            name = "uv_stride";
+            desc = "Chroma plane line stride in bytes.";
+            sw = rw;
+            hw = r;
+        } uv_stride[31:16];
+
+        field {
+            name = "y_stride";
+            desc = "Luma plane line stride in bytes.";
+            sw = rw;
+            hw = r;
+        } y_stride[15:0];
+
+    } JPGD_STRIDE @ 0xC;
+
+    reg {
+        name = "Picture size register";
+        desc = "Picture size of the coded image: two 12 bit fields, [11:0] and [27:16] (bits [15:12] and [31:28] are not written by the driver). Unit and field order inferred from the Hi3520D (MCU-sized units, width low, height high). DIFFERENCE: the Hi3520D library refuses values with bits in 0xFC00FC00 (10 bit fields); the V300 driver composes 12 bit fields.
+
+Source: vendor module static analysis (open_jpegd.ko, jpegd_drv_write_regs, offset 0x10), confidence HIGH for the two 12 bit fields, LOW for width/height order and unit (inferred from the Hi3520D). Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no JPGD register table).";
+
+        field {
+            name = "height_mcu";
+            desc = "Picture height in MCU units (assumed from the Hi3520D).";
+            sw = rw;
+            hw = r;
+        } height_mcu[27:16];
+
+        field {
+            name = "width_mcu";
+            desc = "Picture width in MCU units (assumed from the Hi3520D).";
+            sw = rw;
+            hw = r;
+        } width_mcu[11:0];
+
+    } JPGD_PICSIZE @ 0x10;
+
+    reg {
+        name = "Picture type register";
+        desc = "Picture (chroma format) type, 3 bit value from jpegd_prepare_pic_type: 0 = 4:0:0, 3 = 4:2:0, 4 = 4:2:2 (2x1), 5 = 4:2:2 (1x2), 6 = 4:4:4. The driver's internal format code 0..4 is mapped through a jump table to 3, 4, 6, 5, 0 (jpegd_prepare_pic_type), using the same register values as the Hi3520D.
+
+Source: vendor module static analysis (open_jpegd.ko, jpegd_drv_write_regs, jpegd_prepare_pic_type, offset 0x14), confidence HIGH for the 3 bit field and the code values. Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no JPGD register table).";
+
+        field {
+            name = "pic_type";
+            desc = "Chroma format code (0 = 400, 3 = 420, 4 = 422 2x1, 5 = 422 1x2, 6 = 444).";
+            sw = rw;
+            hw = r;
+        } pic_type[2:0];
+
+    } JPGD_PICTYPE @ 0x14;
+
+    reg {
+        name = "Decode time register";
+        desc = "Read by jpegd_get_time_out (the only read of this register; returned to the caller as the decode time).
+
+Source: vendor module static analysis (open_jpegd.ko, jpegd_get_time_out, offset 0x18), confidence HIGH for the read, LOW for the meaning (name inherited from the Hi3520D). Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no JPGD register table).";
+
+        field {
+            name = "time";
+            desc = "Decode time counter (unit unknown).";
+            sw = r;
+            hw = w;
+        } time[31:0];
+
+    } JPGD_TIME @ 0x18;
+
+    reg {
+        name = "STADDR address (low word)";
+        desc = "Physical address register, low 32 bits: stream window start. Written from the configuration structure (r4+0x50 / high r4+0x54). Same offset and role as the Hi3520D register of the same name; the V300 additionally has a high word register (JPGD_STADDR_H) so addresses above 4 GB are possible.
+
+Source: vendor module static analysis (open_jpegd.ko, jpegd_drv_write_regs, offset 0x20), confidence HIGH for the write, MEDIUM for the role (same offset as the Hi3520D register). Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no JPGD register table).";
+
+        field {
+            name = "addr";
+            desc = "Physical address, low 32 bits.";
+            sw = rw;
+            hw = r;
+        } addr[31:0];
+
+    } JPGD_STADDR @ 0x20;
+
+    reg {
+        name = "ENDADDR address (low word)";
+        desc = "Physical address register, low 32 bits: stream window end. Written from the configuration structure (r4+0x58 / high r4+0x5C). Same offset and role as the Hi3520D register of the same name; the V300 additionally has a high word register (JPGD_ENDADDR_H) so addresses above 4 GB are possible.
+
+Source: vendor module static analysis (open_jpegd.ko, jpegd_drv_write_regs, offset 0x24), confidence HIGH for the write, MEDIUM for the role (same offset as the Hi3520D register). Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no JPGD register table).";
+
+        field {
+            name = "addr";
+            desc = "Physical address, low 32 bits.";
+            sw = rw;
+            hw = r;
+        } addr[31:0];
+
+    } JPGD_ENDADDR @ 0x24;
+
+    reg {
+        name = "STADD address (low word)";
+        desc = "Physical address register, low 32 bits: current stream segment start. Written from the configuration structure (r4+0x40 / high r4+0x44). Same offset and role as the Hi3520D register of the same name; the V300 additionally has a high word register (JPGD_STADD_H) so addresses above 4 GB are possible.
+
+Source: vendor module static analysis (open_jpegd.ko, jpegd_drv_write_regs, offset 0x28), confidence HIGH for the write, MEDIUM for the role (same offset as the Hi3520D register). Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no JPGD register table).";
+
+        field {
+            name = "addr";
+            desc = "Physical address, low 32 bits.";
+            sw = rw;
+            hw = r;
+        } addr[31:0];
+
+    } JPGD_STADD @ 0x28;
+
+    reg {
+        name = "ENDADD address (low word)";
+        desc = "Physical address register, low 32 bits: current stream segment end. Written from the configuration structure (r4+0x48 / high r4+0x4C). Same offset and role as the Hi3520D register of the same name; the V300 additionally has a high word register (JPGD_ENDADD_H) so addresses above 4 GB are possible.
+
+Source: vendor module static analysis (open_jpegd.ko, jpegd_drv_write_regs, offset 0x2C), confidence HIGH for the write, MEDIUM for the role (same offset as the Hi3520D register). Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no JPGD register table).";
+
+        field {
+            name = "addr";
+            desc = "Physical address, low 32 bits.";
+            sw = rw;
+            hw = r;
+        } addr[31:0];
+
+    } JPGD_ENDADD @ 0x2C;
+
+    reg {
+        name = "YSTADDR address (low word)";
+        desc = "Physical address register, low 32 bits: luma output base. Written from the configuration structure (r4+0x68 / high r4+0x6C). Same offset and role as the Hi3520D register of the same name; the V300 additionally has a high word register (JPGD_YSTADDR_H) so addresses above 4 GB are possible.
+
+Source: vendor module static analysis (open_jpegd.ko, jpegd_drv_write_regs, offset 0x30), confidence HIGH for the write, MEDIUM for the role (same offset as the Hi3520D register). Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no JPGD register table).";
+
+        field {
+            name = "addr";
+            desc = "Physical address, low 32 bits.";
+            sw = rw;
+            hw = r;
+        } addr[31:0];
+
+    } JPGD_YSTADDR @ 0x30;
+
+    reg {
+        name = "UVSTADDR address (low word)";
+        desc = "Physical address register, low 32 bits: chroma output base (written only when the output is semi-planar, structure word +0x0C == 1). Written from the configuration structure (r4+0x70 / high r4+0x74). Same offset and role as the Hi3520D register of the same name; the V300 additionally has a high word register (JPGD_UVSTADDR_H) so addresses above 4 GB are possible.
+
+Source: vendor module static analysis (open_jpegd.ko, jpegd_drv_write_regs, offset 0x34), confidence HIGH for the write, MEDIUM for the role (same offset as the Hi3520D register). Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no JPGD register table).";
+
+        field {
+            name = "addr";
+            desc = "Physical address, low 32 bits.";
+            sw = rw;
+            hw = r;
+        } addr[31:0];
+
+    } JPGD_UVSTADDR @ 0x34;
+
+    reg {
+        name = "STADDR address (high word)";
+        desc = "NEW on the V300 (no counterpart in the Hi3520D): written together with the low word register at 0x20 from the next configuration word. Assumed to be the upper 32 bits of a 64 bit DMA address (the V300 pairs every address with a second word); the name is chosen here, the module has no register names. LOW confidence for the meaning; the pairing and the write order are certain.
+
+Source: vendor module static analysis (open_jpegd.ko, jpegd_drv_write_regs, offset 0x148), confidence HIGH for the write, LOW for the meaning (inferred from the write pairing). Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no JPGD register table).";
+
+        field {
+            name = "addr_h";
+            desc = "Physical address, upper bits (assumed).";
+            sw = rw;
+            hw = r;
+        } addr_h[31:0];
+
+    } JPGD_STADDR_H @ 0x148;
+
+    reg {
+        name = "ENDADDR address (high word)";
+        desc = "NEW on the V300 (no counterpart in the Hi3520D): written together with the low word register at 0x24 from the next configuration word. Assumed to be the upper 32 bits of a 64 bit DMA address (the V300 pairs every address with a second word); the name is chosen here, the module has no register names. LOW confidence for the meaning; the pairing and the write order are certain.
+
+Source: vendor module static analysis (open_jpegd.ko, jpegd_drv_write_regs, offset 0x14C), confidence HIGH for the write, LOW for the meaning (inferred from the write pairing). Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no JPGD register table).";
+
+        field {
+            name = "addr_h";
+            desc = "Physical address, upper bits (assumed).";
+            sw = rw;
+            hw = r;
+        } addr_h[31:0];
+
+    } JPGD_ENDADDR_H @ 0x14C;
+
+    reg {
+        name = "STADD address (high word)";
+        desc = "NEW on the V300 (no counterpart in the Hi3520D): written together with the low word register at 0x28 from the next configuration word. Assumed to be the upper 32 bits of a 64 bit DMA address (the V300 pairs every address with a second word); the name is chosen here, the module has no register names. LOW confidence for the meaning; the pairing and the write order are certain.
+
+Source: vendor module static analysis (open_jpegd.ko, jpegd_drv_write_regs, offset 0x150), confidence HIGH for the write, LOW for the meaning (inferred from the write pairing). Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no JPGD register table).";
+
+        field {
+            name = "addr_h";
+            desc = "Physical address, upper bits (assumed).";
+            sw = rw;
+            hw = r;
+        } addr_h[31:0];
+
+    } JPGD_STADD_H @ 0x150;
+
+    reg {
+        name = "ENDADD address (high word)";
+        desc = "NEW on the V300 (no counterpart in the Hi3520D): written together with the low word register at 0x2C from the next configuration word. Assumed to be the upper 32 bits of a 64 bit DMA address (the V300 pairs every address with a second word); the name is chosen here, the module has no register names. LOW confidence for the meaning; the pairing and the write order are certain.
+
+Source: vendor module static analysis (open_jpegd.ko, jpegd_drv_write_regs, offset 0x154), confidence HIGH for the write, LOW for the meaning (inferred from the write pairing). Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no JPGD register table).";
+
+        field {
+            name = "addr_h";
+            desc = "Physical address, upper bits (assumed).";
+            sw = rw;
+            hw = r;
+        } addr_h[31:0];
+
+    } JPGD_ENDADD_H @ 0x154;
+
+    reg {
+        name = "YSTADDR address (high word)";
+        desc = "NEW on the V300 (no counterpart in the Hi3520D): written together with the low word register at 0x30 from the next configuration word. Assumed to be the upper 32 bits of a 64 bit DMA address (the V300 pairs every address with a second word); the name is chosen here, the module has no register names. LOW confidence for the meaning; the pairing and the write order are certain.
+
+Source: vendor module static analysis (open_jpegd.ko, jpegd_drv_write_regs, offset 0x158), confidence HIGH for the write, LOW for the meaning (inferred from the write pairing). Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no JPGD register table).";
+
+        field {
+            name = "addr_h";
+            desc = "Physical address, upper bits (assumed).";
+            sw = rw;
+            hw = r;
+        } addr_h[31:0];
+
+    } JPGD_YSTADDR_H @ 0x158;
+
+    reg {
+        name = "UVSTADDR address (high word)";
+        desc = "NEW on the V300 (no counterpart in the Hi3520D): written together with the low word register at 0x34 from the next configuration word. Assumed to be the upper 32 bits of a 64 bit DMA address (the V300 pairs every address with a second word); the name is chosen here, the module has no register names. LOW confidence for the meaning; the pairing and the write order are certain.
+
+Source: vendor module static analysis (open_jpegd.ko, jpegd_drv_write_regs, offset 0x15C), confidence HIGH for the write, LOW for the meaning (inferred from the write pairing). Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no JPGD register table).";
+
+        field {
+            name = "addr_h";
+            desc = "Physical address, upper bits (assumed).";
+            sw = rw;
+            hw = r;
+        } addr_h[31:0];
+
+    } JPGD_UVSTADDR_H @ 0x15C;
+
+    reg {
+        name = "Scale / control register";
+        desc = "Read-modify-write per picture (jpegd_drv_write_regs): bits [1:0] cleared (scale 1/1), bit 3 set, bits [7:4] = 3, bits [11:8] cleared, bit 2 cleared and set again only when the structure word +0x0C == 1 (semi-planar output). The Hi3520D bit names are used where bit positions agree; bits [11:8] are cleared by the V300 only and have no known meaning.
+
+Source: vendor module static analysis (open_jpegd.ko, jpegd_drv_write_regs, jpegd_set_outstanding, jpegd_reset, offset 0x40), confidence HIGH for the accesses, LOW for bit 2 and bits [11:8]. Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no JPGD register table).";
+
+        field {
+            name = "unk11_8";
+            desc = "Cleared by the V300 driver; purpose unknown.";
+            sw = rw;
+            hw = r;
+        } unk11_8[11:8];
+
+        field {
+            name = "outstanding";
+            desc = "AXI outstanding setting, value 3 written (jpegd_set_outstanding writes this field, [7:4] 4 bits wide in the V300 code, [6:4] in the Hi3520D layout).";
+            sw = rw;
+            hw = r;
+        } outstanding[7:4];
+
+        field {
+            name = "jidct_emar_en";
+            desc = "Bit 3, always set by the driver (name inherited from the Hi3520D, purpose assumed).";
+            sw = rw;
+            hw = r;
+        } jidct_emar_en[3:3];
+
+        field {
+            name = "bit2_unk";
+            desc = "Bit 2: cleared, then set when the structure word +0x0C == 1 (assumed: semi-planar output); purpose unknown (the Hi3520D RDL also has it as bit2_unk).";
+            sw = rw;
+            hw = r;
+        } bit2_unk[2:2];
+
+        field {
+            name = "scale";
+            desc = "Downscale: the V300 driver always writes 0 (1/1).";
+            sw = rw;
+            hw = r;
+        } scale[1:0];
+
+    } JPGD_SCALE @ 0x40;
+
+    reg {
+        name = "Output type register";
+        desc = "Written per picture: 4 when the structure word +0x0C == 1 and structure word +0x04 != 4, else 0. The Hi3520D writes 4 for 4:2:0 semi-planar output.
+
+Source: vendor module static analysis (open_jpegd.ko, jpegd_drv_write_regs, offset 0x44), confidence HIGH for the values, MEDIUM for the meaning. Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no JPGD register table).";
+
+        field {
+            name = "out_420sp";
+            desc = "Bit 2 (value 4): 4:2:0 semi-planar output (name and meaning from the Hi3520D; the V300 writes 4 or 0).";
+            sw = rw;
+            hw = r;
+        } out_420sp[2:2];
+
+    } JPGD_OUTTYPE @ 0x44;
+
+    reg {
+        name = "Interrupt status register";
+        desc = "Interrupt status. Read by jpegd_read_int / jpegd_get_is_int_ok (non-zero = interrupt pending) and decoded by jpegd_drv_read_regs into four flags: bit 0, bit 1, bit 4, bit 2 (in that order). Acknowledged by writing 0xFFFFFFFF (jpegd_clear_int and jpegd_clear_err_int). Bit meanings from the Hi3520D: bit 0 done, bit 1 error, bit 2 more data needed; bit 4 is read by the V300 driver but its meaning is not known (the Hi3520D RDL has it as bit4_unk).
+
+Source: vendor module static analysis (open_jpegd.ko, jpegd_read_int, jpegd_clear_int, jpegd_drv_read_regs, offset 0x100), confidence HIGH for the accesses and the 0xFFFFFFFF write-back, MEDIUM for the bits that match the Hi3520D, LOW for bit 4. Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no JPGD register table).";
+
+        field {
+            name = "bit4_unk";
+            desc = "Read by jpegd_drv_read_regs (third flag); meaning unknown.";
+            sw = rw;
+            hw = w;
+        } bit4_unk[4:4];
+
+        field {
+            name = "more";
+            desc = "Stream segment consumed, more data needed (Hi3520D meaning).";
+            sw = rw;
+            hw = w;
+        } more[2:2];
+
+        field {
+            name = "err";
+            desc = "Decode error (Hi3520D meaning).";
+            sw = rw;
+            hw = w;
+        } err[1:1];
+
+        field {
+            name = "done";
+            desc = "Picture decoded (Hi3520D meaning).";
+            sw = rw;
+            hw = w;
+        } done[0:0];
+
+    } JPGD_INT @ 0x100;
+
+    reg {
+        name = "Interrupt mask register";
+        desc = "Written 0 by jpegd_set_int_mask and by jpegd_reset (all causes unmasked, Hi3520D convention: 1 = masked).
+
+Source: vendor module static analysis (open_jpegd.ko, jpegd_set_int_mask, jpegd_reset, offset 0x104), confidence HIGH for the value 0, MEDIUM for the polarity. Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no JPGD register table).";
+
+        field {
+            name = "mask";
+            desc = "Interrupt mask (0 = unmasked).";
+            sw = rw;
+            hw = r;
+        } mask[31:0];
+
+    } JPGD_INTMASK @ 0x104;
+
+    reg {
+        name = "Time-out register";
+        desc = "Written by jpegd_set_time_out(handle, value) right after a soft reset: the value is the time-out limit passed by the caller (unit unknown). This is the register the Hi3520D RDL calls JPGD_DEBUG (name from the vendor U-Boot header only, never accessed by any Hi3520D code); the V300 code gives the register a purpose. The name TIMEOUT comes from the function name.
+
+Source: vendor module static analysis (open_jpegd.ko, jpegd_set_time_out, offset 0x108), confidence HIGH for the write, MEDIUM for the meaning (function name). Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no JPGD register table).";
+
+        field {
+            name = "timeout";
+            desc = "Time-out limit (unit unknown).";
+            sw = rw;
+            hw = r;
+        } timeout[31:0];
+
+    } JPGD_TIMEOUT @ 0x108;
+
+    reg {
+        name = "Sampling factor register";
+        desc = "Per-component sampling factors, three bytes composed from structure bytes +0x10, +0x11, +0x12 (bits [7:0], [15:8], [23:16]). Component order and nibble split are inferred from the Hi3520D layout (Y at [23:16] as (h << 4 | v), U at [15:8], V at [7:0]).
+
+Source: vendor module static analysis (open_jpegd.ko, jpegd_drv_write_regs, offset 0x124), confidence HIGH for the three byte fields, MEDIUM for the nibble split. Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no JPGD register table).";
+
+        field {
+            name = "y_h";
+            desc = "Y horizontal sampling factor (assumed).";
+            sw = rw;
+            hw = r;
+        } y_h[23:20];
+
+        field {
+            name = "y_v";
+            desc = "Y vertical sampling factor (assumed).";
+            sw = rw;
+            hw = r;
+        } y_v[19:16];
+
+        field {
+            name = "u_h";
+            desc = "U horizontal sampling factor (assumed).";
+            sw = rw;
+            hw = r;
+        } u_h[15:12];
+
+        field {
+            name = "u_v";
+            desc = "U vertical sampling factor (assumed).";
+            sw = rw;
+            hw = r;
+        } u_v[11:8];
+
+        field {
+            name = "v_h";
+            desc = "V horizontal sampling factor (assumed).";
+            sw = rw;
+            hw = r;
+        } v_h[7:4];
+
+        field {
+            name = "v_v";
+            desc = "V vertical sampling factor (assumed).";
+            sw = rw;
+            hw = r;
+        } v_v[3:0];
+
+    } JPGD_SAMPLINGFACTOR @ 0x124;
+
+    reg {
+        name = "Restart interval register";
+        desc = "Restart interval (DRI marker value), 16 bit field written from the structure word +0x14. Used by the V300 driver (jpegd_dec_dri parses it); in the Hi3520D only the vendor U-Boot touches it.
+
+Source: vendor module static analysis (open_jpegd.ko, jpegd_drv_write_regs, jpegd_dec_dri, offset 0x128), confidence HIGH for the 16 bit write, MEDIUM for the meaning. Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no JPGD register table).";
+
+        field {
+            name = "restart";
+            desc = "Restart interval in MCUs.";
+            sw = rw;
+            hw = r;
+        } restart[15:0];
+
+    } JPGD_DRI @ 0x128;
+
+    reg {
+        name = "Quantization table memory (64 words)";
+        desc = "64 words written from structure +0x88 (loop of 64, base index 0x80 words): per Hi3520D layout word i holds Q_Y[i] | Q_U[i] << 8 | Q_V[i] << 16 (table order and packing not re-verified on the V300).
+
+Source: vendor module static analysis (open_jpegd.ko, jpegd_drv_write_regs, offset 0x200), confidence HIGH for offset and length, MEDIUM for the packing. Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no JPGD register table).";
+
+        field {
+            name = "q";
+            desc = "Quantization values (packing as in the Hi3520D).";
+            sw = rw;
+            hw = r;
+        } q[31:0];
+
+    } JPGD_QUANT[64] @ 0x200 += 0x4;
+
+    reg {
+        name = "DC Huffman table memory (12 words)";
+        desc = "12 words from structure +0x188, base index 0xC0 words (byte offset 0x300). Content as in the Hi3520D DC table.
+
+Source: vendor module static analysis (open_jpegd.ko, jpegd_drv_write_regs, offset 0x300), confidence HIGH for offset and length, MEDIUM for the content. Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no JPGD register table).";
+
+        field {
+            name = "data";
+            desc = "DC Huffman table data.";
+            sw = rw;
+            hw = r;
+        } data[31:0];
+
+    } JPGD_HDCTABLE[12] @ 0x300 += 0x4;
+
+    reg {
+        name = "AC Huffman min-code table memory (8 words)";
+        desc = "8 words from structure +0x1BC, base index 0xD0 words (byte offset 0x340).
+
+Source: vendor module static analysis (open_jpegd.ko, jpegd_drv_write_regs, offset 0x340), confidence HIGH for offset and length, MEDIUM for the content. Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no JPGD register table).";
+
+        field {
+            name = "data";
+            desc = "AC min-code table data.";
+            sw = rw;
+            hw = r;
+        } data[31:0];
+
+    } JPGD_HACMINTABLE[8] @ 0x340 += 0x4;
+
+    reg {
+        name = "AC Huffman base table memory (8 words)";
+        desc = "8 words from structure +0x1DC, base index 0xD8 words (byte offset 0x360).
+
+Source: vendor module static analysis (open_jpegd.ko, jpegd_drv_write_regs, offset 0x360), confidence HIGH for offset and length, MEDIUM for the content. Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no JPGD register table).";
+
+        field {
+            name = "data";
+            desc = "AC base table data.";
+            sw = rw;
+            hw = r;
+        } data[31:0];
+
+    } JPGD_HACBASETABLE[8] @ 0x360 += 0x4;
+
+    reg {
+        name = "AC Huffman symbol table memory (176 words)";
+        desc = "176 words from structure +0x1F8, base index 0x100 words (byte offset 0x400).
+
+Source: vendor module static analysis (open_jpegd.ko, jpegd_drv_write_regs, offset 0x400), confidence HIGH for offset and length, MEDIUM for the content. Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no JPGD register table).";
+
+        field {
+            name = "data";
+            desc = "AC symbol table data.";
+            sw = rw;
+            hw = r;
+        } data[31:0];
+
+    } JPGD_HACSYMTABLE[176] @ 0x400 += 0x4;
+
+};
+
+`endif
