@@ -1105,19 +1105,6 @@ regfile eCRG {
             reset = 0x0;
         } voie_srst_req[0:0];
 
-    } PERI_CRG28 @ 0x0070;
-
-    reg {
-        name = "VCMP related clock and soft reset control register";
-        desc = "Vendor-module cross-check (vcmp.ko, 2026-11-10): the vendor VCMP module drives this register only through hi3520D_sys.ko (SYS_HAL_VcmpClkEn: read-modify-write of bit 1; SYS_HAL_VcmpResetSel: read-modify-write of bit 0), always in this order: init = clock enabled first, then reset released (value 0x2); exit = reset asserted first, then clock disabled. Both calls are made from VcmpHalInit/VcmpHalExit (first VcmpOpen / last VcmpClose, i.e. when hifb.ko loads or unloads). The board scripts (load3520D via clkcfg_hi3520D.sh, OpenIPC load_hisilicon) additionally write the whole register with 0x2 before any module is loaded. Source: vendor module hi3520D_sys.ko (SYS_HAL_VcmpClkEn, SYS_HAL_VcmpResetSel), confidence HIGH, word-checked: yes. Not verified on hardware. Details: docs/rdl-campaign/vcmp-vendor.md.";
-
-        enum PERI_CRG29_vcmp_cken_enum {
-            DISABLE = 0x0 { desc = "disabled"; };
-            ENABLE = 0x1 { desc = "enabled"; };
-        };
-
-        field {
-            name = "vcmp_cken";
         field {
             name = "bit3_unk";
             desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware. Observed access: read-modify-write (set to 1) by vendor module hi3520D_vfmw.ko, BPD_OpenHardware (called from OpenDrivers via the hardware-open table); neighbors accessed together: bit 2 of the same register (cleared) and the 4 KB BPD window 0x206D0000 mapped by OpenDrivers (data sheet: DDR test module, do not touch); inherited Hi3531-generation code, probably irrelevant on this chip. Not in the data sheet; no reset value or meaning is claimed.";
@@ -1132,6 +1119,19 @@ regfile eCRG {
             hw = r;
         } bit2_unk[2:2];
 
+    } PERI_CRG28 @ 0x0070;
+
+    reg {
+        name = "VCMP related clock and soft reset control register";
+        desc = "Vendor-module cross-check (vcmp.ko, 2026-11-10): the vendor VCMP module drives this register only through hi3520D_sys.ko (SYS_HAL_VcmpClkEn: read-modify-write of bit 1; SYS_HAL_VcmpResetSel: read-modify-write of bit 0), always in this order: init = clock enabled first, then reset released (value 0x2); exit = reset asserted first, then clock disabled. Both calls are made from VcmpHalInit/VcmpHalExit (first VcmpOpen / last VcmpClose, i.e. when hifb.ko loads or unloads). The board scripts (load3520D via clkcfg_hi3520D.sh, OpenIPC load_hisilicon) additionally write the whole register with 0x2 before any module is loaded. Source: vendor module hi3520D_sys.ko (SYS_HAL_VcmpClkEn, SYS_HAL_VcmpResetSel), confidence HIGH, word-checked: yes. Not verified on hardware. Details: docs/rdl-campaign/vcmp-vendor.md.";
+
+        enum PERI_CRG29_vcmp_cken_enum {
+            DISABLE = 0x0 { desc = "disabled"; };
+            ENABLE = 0x1 { desc = "enabled"; };
+        };
+
+        field {
+            name = "vcmp_cken";
             desc = "Source: vendor module hi3520D_sys.ko (SYS_HAL_VcmpClkEn), confidence HIGH, word-checked: yes: set before the reset is released (init) and cleared after the reset is asserted (exit). Not verified on hardware.";
             encode = PERI_CRG29_vcmp_cken_enum;
             reset = 0x0;
@@ -1898,6 +1898,7 @@ regfile eCRG {
 
     reg {
         name = "SCD related clock and soft reset control register";
+        desc = "Data sheet: scd_cken [3], scd_srst_req [1], reset 0x0. Second pass 2026-11-10, vendor module hi3520D_vfmw.ko, confidence HIGH, word-checked against the Hi3520D disassembly: yes: SCD_OpenHardware does reg = (reg | 8) & ~2 (read-modify-write); ResetSCD sets bit 1, polls SCD_OVER (0x10150040) bit 1 until clear (10000 iterations), clears bit 1; the vendor board script writes 0x8 (`himm 0x200300d4 0x8`). DNR_OpenHardware additionally sets bit 8 and clears bits 1:0 (stub fields below, purpose unknown). Not verified on hardware.";
 
         enum PERI_CRG53_scd_cken_enum {
             DISABLE = 0x0 { desc = "disabled"; };
@@ -1910,7 +1911,6 @@ regfile eCRG {
             reset = 0x0;
         } scd_cken[3:3];
 
-        desc = "Data sheet: scd_cken [3], scd_srst_req [1], reset 0x0. Second pass 2026-11-10, vendor module hi3520D_vfmw.ko, confidence HIGH, word-checked against the Hi3520D disassembly: yes: SCD_OpenHardware does reg = (reg | 8) & ~2 (read-modify-write); ResetSCD sets bit 1, polls SCD_OVER (0x10150040) bit 1 until clear (10000 iterations), clears bit 1; the vendor board script writes 0x8 (`himm 0x200300d4 0x8`). DNR_OpenHardware additionally sets bit 8 and clears bits 1:0 (stub fields below, purpose unknown). Not verified on hardware.";
         enum PERI_CRG53_scd_srst_req_enum {
             DEASSERT_RESET = 0x0 { desc = "deassert reset"; };
             RESET = 0x1 { desc = "reset"; };
@@ -1922,18 +1922,6 @@ regfile eCRG {
             reset = 0x0;
         } scd_srst_req[1:1];
 
-    } PERI_CRG53 @ 0x00D4;
-
-    reg {
-        name = "DDRTEST and EFUSE related clock and soft reset control register";
-        desc = "Hardware (Hi3520D V100 board, read on hardware 2026-11-08, stock U-Boot prompt after a cold boot): reads 0x0000000A (ddrtest_cken = 1), data sheet reset 0x00000002. Boot value (the DDR boot table uses the DDR tester for training), not taken as the reset value.";
-
-        enum PERI_CRG54_ddrtest_cken_enum {
-            DISABLE = 0x0 { desc = "disabled"; };
-            ENABLE = 0x1 { desc = "enabled"; };
-        };
-
-        field {
         field {
             name = "bit8_unk";
             desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware. Observed access: read-modify-write (set to 1) by vendor module hi3520D_vfmw.ko, DNR_OpenHardware; neighbors accessed together: bits 1:0 of the same register (cleared; bit 1 = scd_srst_req); the software path SM_CopyYuvToDnr/g_dnr_hal_fun_ptr, no register window known. Not in the data sheet; no reset value or meaning is claimed.";
@@ -1948,6 +1936,18 @@ regfile eCRG {
             hw = r;
         } bit0_unk[0:0];
 
+    } PERI_CRG53 @ 0x00D4;
+
+    reg {
+        name = "DDRTEST and EFUSE related clock and soft reset control register";
+        desc = "Hardware (Hi3520D V100 board, read on hardware 2026-11-08, stock U-Boot prompt after a cold boot): reads 0x0000000A (ddrtest_cken = 1), data sheet reset 0x00000002. Boot value (the DDR boot table uses the DDR tester for training), not taken as the reset value.";
+
+        enum PERI_CRG54_ddrtest_cken_enum {
+            DISABLE = 0x0 { desc = "disabled"; };
+            ENABLE = 0x1 { desc = "enabled"; };
+        };
+
+        field {
             name = "ddrtest_cken";
             encode = PERI_CRG54_ddrtest_cken_enum;
             reset = 0x0;
