@@ -82,7 +82,7 @@ regfile eHISI_CIPHER_MC {
         AES_128_DES_3KEY_0 = 0x0 { desc = "AES: 128 bits. DES/3DES: 3 keys."; };
         AES_192_DES_3KEY_1 = 0x1 { desc = "AES: 192 bits. DES/3DES: 3 keys."; };
         AES_256_DES_3KEY_2 = 0x2 { desc = "AES: 256 bits. DES/3DES: 3 keys."; };
-        AES_128_DES_2KEY   = 0x3 { desc = "AES: 128 bits. DES/3DES: 2 keys."; };
+        AES_128_DES_2KEY   = 0x3 { desc = "AES: 128 bits. DES/3DES: 2 keys. HARDWARE VERIFIED (Hi3520D, 2026-11-11, 3DES ECB/CBC/CFB/OFB): two-key 3DES takes K1 || K2 (16 bytes in the key slot), result equals three-key 3DES with K3 = K1."; };
     };
 
     enum CIPHER_MC_ivin_sel_enum {
@@ -92,8 +92,8 @@ regfile eHISI_CIPHER_MC {
 
     enum CIPHER_MC_width_enum {
         FULL_0 = 0x0 { desc = "DES/3DES: 64 bits. AES: 128 bits."; };
-        BIT_8  = 0x1 { desc = "8 bits (AES: CFB mode only; DES/3DES: CFB and OFB modes only)."; };
-        BIT_1  = 0x2 { desc = "1 bit (AES: CFB mode only; DES/3DES: CFB and OFB modes only)."; };
+        BIT_8  = 0x1 { desc = "8 bits (AES: CFB mode only; DES/3DES: CFB and OFB modes only). HARDWARE VERIFIED (Hi3520D, 2026-11-11, linux hisi-cipher.c, DMA channels): standard CFB8/OFB8 (register shifts one byte per data byte, keystream = first byte of E(register)); requests must be whole cipher blocks."; };
+        BIT_1  = 0x2 { desc = "1 bit (AES: CFB mode only; DES/3DES: CFB and OFB modes only). HARDWARE VERIFIED (Hi3520D, 2026-11-11, linux hisi-cipher.c, DMA channels): one segment per bit, data PACKED eight bits per byte, most significant bit first (not one bit per byte); register shifts left one bit, keystream = top bit of E(register); requests must be whole cipher blocks."; };
         FULL_3 = 0x3 { desc = "DES/3DES: 64 bits. AES: 128 bits."; };
     };
 
@@ -354,7 +354,7 @@ regfile eHISI_CIPHER_MC {
             field { name = "key_adder"; desc = "ID of the key used by the current channel; any of the keys 0-7."; encode = CIPHER_MC_key_adder_enum; reset = 0x0; } key_adder[16:14];
             field { name = "key_sel"; desc = "Key select."; encode = CIPHER_MC_key_sel_enum; reset = 0x0; } key_sel[13:13];
             field { name = "key_length"; desc = "Key length select (AES / DES differ, see the values)."; encode = CIPHER_MC_key_length_enum; reset = 0x0; } key_length[10:9];
-            field { name = "ivin_sel"; desc = "NOT IN THE DATA SHEET (bit 8 is reserved there): vendor driver bit, new IV select as in CHAN0_CIPHER_CTRL (0 = no new IV, 1 = new IV). Meaning inferred from the vendor code; hardware verified 2026-11-09, Hi3520D, linux driver hi3520d-cipher.c: the driver sets it for CBC/CTR so the IV is taken from iv_start_addr of the node with iv_set."; encode = CIPHER_MC_ivin_sel_enum; reset = 0x0; } ivin_sel[8:8];
+            field { name = "ivin_sel"; desc = "NOT IN THE DATA SHEET (bit 8 is reserved there): vendor driver bit, new IV select as in CHAN0_CIPHER_CTRL (0 = no new IV, 1 = new IV). Meaning inferred from the vendor code; hardware verified 2026-11-09, Hi3520D, linux driver hi3520d-cipher.c: the driver sets it for CBC/CTR so the IV is taken from iv_start_addr of the node with iv_set. HARDWARE TESTED 2026-11-11 (Hi3520D, CBC/CTR/CFB/OFB, 33 cases): clearing the bit makes NO difference on channels 1-7, the IV is taken from iv_start_addr of the node with iv_set either way; the bit is probably only for the register-mode channel 0 (unverified)."; encode = CIPHER_MC_ivin_sel_enum; reset = 0x0; } ivin_sel[8:8];
             field { name = "width"; desc = "Bit width control (DES/3DES and AES differ, see the values)."; encode = CIPHER_MC_width_enum; reset = 0x0; } width[7:6];
             field { name = "alg_sel"; desc = "Algorithm select."; encode = CIPHER_MC_alg_sel_enum; reset = 0x0; } alg_sel[5:4];
             field { name = "mode"; desc = "Operating mode select. AES: ECB, CBC, CFB, OFB, CTR; DES/3DES: ECB, CBC, CFB, OFB; other values select ECB."; encode = CIPHER_MC_mode_enum; reset = 0x0; } mode[3:1];
