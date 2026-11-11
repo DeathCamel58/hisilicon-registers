@@ -1,0 +1,587 @@
+`ifndef HISI_VDH_RDL
+`define HISI_VDH_RDL
+
+regfile eHISI_VDH {
+    name = "HiSilicon VDH video decoder (UNVERIFIED, vendor-derived)";
+    desc = "UNVERIFIED, vendor-derived: HiSilicon video decoder hardware (VDH), the H.264 slice-data decoder of the Hi3520D. Two instances exist in vendor code: VDH0 at 0x20630000 (data sheet memory map: 'reserved 64 KB') and VDH1 at 0x206A0000 (inside the data sheet's reserved 0x20680000-0x206AFFFF); each uses a 64 KB window. The data sheet (chapter 7.1) only describes the decoder as software VFMW running on the ARM (slice header and above) plus the hardware VDH (slice data and below, exchanging a message pool in DDR with VFMW) and has no register table, base address, interrupt or clock gate for it. Clock and reset: PERI_CRG20 at 0x20030050 (VDH0) / PERI_CRG21 at 0x20030054 (VDH1): bit 1 = clock enable, bit 0 = soft reset (1 = reset), both from the vendor driver (not in the data sheet). No interrupt is registered by the vendor driver (it polls VDH_STATE bit 17); the GIC ID is unknown. Capabilities (data sheet 7.1.2): H.264 Baseline/Main/High @ L4.2, CABAC/CAVLC, 8x8 transform, deblocking, I_PCM, 80x64 to 1920x2048; NO B slices, NO field/MBAFF, NO weighted prediction, NO ASO/FMO. No firmware/microcode is loaded (the vendor VFMW is plain ARM code; the CABAC init table is built by software into a DDR buffer). Registers listed are only those the Hi3520D vendor module touches (offsets and values read from its machine code); names/bit layouts come from the GPL Huawei VDH V400R004 header where the same offset is used. Message formats (picture message D0..D59 + scaling matrices, slice messages with stream byte/bit offsets, reference lists, next-slice pointer) are in docs/rdl-campaign/vdh-scd.md. Probe first: VDH_STATE (0x1C), EMAR_ID (0x30) with PERI_CRG20 clock on and reset released; reading with the clock gated can hang the bus.";
+
+    reg {
+        name = "Decode start";
+        desc = "The vendor code pulses the register 0, 1, 0 (VDMHAL_V200R001_StartHwDecode) after all other registers and the message memory are written; writing 1 starts the decode of one slice batch (one frame in the vendor driver).
+
+Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw.ko (HAL `VDMHAL_V200R001`, static disassembly of VDMHAL_V200R001_*/H264HAL_V200R001_StartDec, 2026-11-10) with names and bit layouts taken from the GPL VDH V400R004 header (`vdm_hal_local.h`, Huawei frd kernel) wherever the Hi3520D code writes the same offset with a compatible value. Never read or written on hardware; no reset value is known; not in the data sheet. See docs/rdl-campaign/vdh-scd.md.";
+
+        field {
+            name = "dec_start";
+            desc = "Pulse 0 -> 1 -> 0 to start decoding (name from V400R004 `VDH_START.dec_start`).";
+            sw = rw;
+            hw = r;
+        } dec_start[0:0];
+
+    } VDH_START @ 0x0;
+
+    reg {
+        name = "Repair (error concealment copy) start";
+        desc = "Pulsed 0, 1, 0 by VDMHAL_V200R001_StartHwRepair; starts the hardware repair copy described by the repair message (CfgRpMsg/CfgRpReg).
+
+Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw.ko (HAL `VDMHAL_V200R001`, static disassembly of VDMHAL_V200R001_*/H264HAL_V200R001_StartDec, 2026-11-10) with names and bit layouts taken from the GPL VDH V400R004 header (`vdm_hal_local.h`, Huawei frd kernel) wherever the Hi3520D code writes the same offset with a compatible value. Never read or written on hardware; no reset value is known; not in the data sheet. See docs/rdl-campaign/vdh-scd.md.";
+
+        field {
+            name = "repair_start";
+            desc = "Pulse 0 -> 1 -> 0 to start the repair job (V400R004 `VDH_REPAIR.repair_start`).";
+            sw = rw;
+            hw = r;
+        } repair_start[0:0];
+
+    } VDH_REPAIR @ 0x4;
+
+    reg {
+        name = "Basic configuration 0";
+        desc = "H.264 path of the vendor code: mbamt_to_dec = (macroblocks to decode - 1), clamped to 0x16AFF; bit 30 always 1; bit 31 always 0; StartHwDecode additionally ORs 0x300000 (bits 20/21) just before the start pulse. Bit names are the V400R004 names (H.264 sets load_qmatrix_flag = 1 there, which is bit 30 of that layout): UNVERIFIED for this revision.
+
+Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw.ko (HAL `VDMHAL_V200R001`, static disassembly of VDMHAL_V200R001_*/H264HAL_V200R001_StartDec, 2026-11-10) with names and bit layouts taken from the GPL VDH V400R004 header (`vdm_hal_local.h`, Huawei frd kernel) wherever the Hi3520D code writes the same offset with a compatible value. Never read or written on hardware; no reset value is known; not in the data sheet. See docs/rdl-campaign/vdh-scd.md.";
+
+        field {
+            name = "mbamt_to_dec";
+            desc = "Number of macroblocks to decode minus 1 (picture MBs; max 0x16AFF in the vendor clamp).";
+            sw = rw;
+            hw = r;
+        } mbamt_to_dec[19:0];
+
+        field {
+            name = "memory_clock_gating_en";
+            desc = "Set by StartHwDecode (V400R004 name).";
+            sw = rw;
+            hw = r;
+        } memory_clock_gating_en[20:20];
+
+        field {
+            name = "module_clock_gating_en";
+            desc = "Set by StartHwDecode (V400R004 name).";
+            sw = rw;
+            hw = r;
+        } module_clock_gating_en[21:21];
+
+        field {
+            name = "load_qmatrix_flag";
+            desc = "Written 1 by the H.264 path (V400R004 name; the picture message carries the scaling matrices).";
+            sw = rw;
+            hw = r;
+        } load_qmatrix_flag[30:30];
+
+        field {
+            name = "sec_mode_en";
+            desc = "Written 0 (V400R004 name: secure mode).";
+            sw = rw;
+            hw = r;
+        } sec_mode_en[31:31];
+
+    } BASIC_CFG0 @ 0x8;
+
+    reg {
+        name = "Basic configuration 1";
+        desc = "H.264 path of the vendor code: video_standard 0 (the MPEG-4 path passes 2), ddr_stride = frame stride in bytes / 64 (the vendor code masks (stride >> 2) with 0x3FF0, i.e. a 10-bit field here; V400R004 has 9 bits plus a uv_order bit), fst_slc_grp = new-picture flag, mv_output_en = 0, max_slcgrp_num = 1, vdh_2d_en = 1, ppfd_en = 1 (top nibble 0xA). Field boundaries beyond bit 13 are the V400R004 layout (UNVERIFIED).
+
+Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw.ko (HAL `VDMHAL_V200R001`, static disassembly of VDMHAL_V200R001_*/H264HAL_V200R001_StartDec, 2026-11-10) with names and bit layouts taken from the GPL VDH V400R004 header (`vdm_hal_local.h`, Huawei frd kernel) wherever the Hi3520D code writes the same offset with a compatible value. Never read or written on hardware; no reset value is known; not in the data sheet. See docs/rdl-campaign/vdh-scd.md.";
+
+        field {
+            name = "video_standard";
+            desc = "0 = H.264, 2 = MPEG-4 (values the vendor code writes; others unknown).";
+            sw = rw;
+            hw = r;
+        } video_standard[3:0];
+
+        field {
+            name = "ddr_stride";
+            desc = "Frame stride in units of 64 bytes (Y and chroma share the stride).";
+            sw = rw;
+            hw = r;
+        } ddr_stride[13:4];
+
+        field {
+            name = "fst_slc_grp";
+            desc = "First slice group of a new picture (new-picture flag).";
+            sw = rw;
+            hw = r;
+        } fst_slc_grp[14:14];
+
+        field {
+            name = "mv_output_en";
+            desc = "Motion vector (PMV) output enable; written 0 by the Hi3520D H.264 path, set to nal_ref_idc != 0 in V400R004.";
+            sw = rw;
+            hw = r;
+        } mv_output_en[15:15];
+
+        field {
+            name = "max_slcgrp_num";
+            desc = "Maximum slice groups per batch (1 on Hi3520D, 2 in V400R004).";
+            sw = rw;
+            hw = r;
+        } max_slcgrp_num[27:16];
+
+        field {
+            name = "line_num_output_en";
+            desc = "Line-number output (low delay), V400R004 name; written 0.";
+            sw = rw;
+            hw = r;
+        } line_num_output_en[28:28];
+
+        field {
+            name = "vdh_2d_en";
+            desc = "2D (tiled) output enable (V400R004 name); written 1.";
+            sw = rw;
+            hw = r;
+        } vdh_2d_en[29:29];
+
+        field {
+            name = "compress_en";
+            desc = "Frame compression enable (V400R004 name); written 0.";
+            sw = rw;
+            hw = r;
+        } compress_en[30:30];
+
+        field {
+            name = "ppfd_en";
+            desc = "PPFD (pre-parse FIFO/bitstream fetch) enable; written 1 on Hi3520D.";
+            sw = rw;
+            hw = r;
+        } ppfd_en[31:31];
+
+    } BASIC_CFG1 @ 0xC;
+
+    reg {
+        name = "ARM-to-VDH message address (down message)";
+        desc = "Physical address of the message slot the VDH reads: the picture message followed by the slice message chain (vendor: DN message slot, 16-byte aligned, DDR).
+
+Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw.ko (HAL `VDMHAL_V200R001`, static disassembly of VDMHAL_V200R001_*/H264HAL_V200R001_StartDec, 2026-11-10) with names and bit layouts taken from the GPL VDH V400R004 header (`vdm_hal_local.h`, Huawei frd kernel) wherever the Hi3520D code writes the same offset with a compatible value. Never read or written on hardware; no reset value is known; not in the data sheet. See docs/rdl-campaign/vdh-scd.md.";
+
+        field {
+            name = "av_msg_addr";
+            desc = "Physical DDR address & ~0xF.";
+            sw = rw;
+            hw = r;
+        } av_msg_addr[31:0];
+
+    } AVM_ADDR @ 0x10;
+
+    reg {
+        name = "VDH-to-ARM message address (up message)";
+        desc = "Physical address of the message slot the VDH writes back (decode report; vendor: UP message slot, 16-byte aligned).
+
+Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw.ko (HAL `VDMHAL_V200R001`, static disassembly of VDMHAL_V200R001_*/H264HAL_V200R001_StartDec, 2026-11-10) with names and bit layouts taken from the GPL VDH V400R004 header (`vdm_hal_local.h`, Huawei frd kernel) wherever the Hi3520D code writes the same offset with a compatible value. Never read or written on hardware; no reset value is known; not in the data sheet. See docs/rdl-campaign/vdh-scd.md.";
+
+        field {
+            name = "va_msg_addr";
+            desc = "Physical DDR address & ~0xF.";
+            sw = rw;
+            hw = r;
+        } va_msg_addr[31:0];
+
+    } VAM_ADDR @ 0x14;
+
+    reg {
+        name = "Stream buffer base address";
+        desc = "Physical base of the bitstream buffer; slice messages give each slice as an offset from this base plus bit offset and bit length.
+
+Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw.ko (HAL `VDMHAL_V200R001`, static disassembly of VDMHAL_V200R001_*/H264HAL_V200R001_StartDec, 2026-11-10) with names and bit layouts taken from the GPL VDH V400R004 header (`vdm_hal_local.h`, Huawei frd kernel) wherever the Hi3520D code writes the same offset with a compatible value. Never read or written on hardware; no reset value is known; not in the data sheet. See docs/rdl-campaign/vdh-scd.md.";
+
+        field {
+            name = "stream_base_addr";
+            desc = "Physical DDR address & ~0xF.";
+            sw = rw;
+            hw = r;
+        } stream_base_addr[31:0];
+
+    } STREAM_BASE_ADDR @ 0x18;
+
+    reg {
+        name = "VDH state";
+        desc = "Polled by the vendor driver: bit 17 = decode over (VDMHAL_V200R001_IsVdmReady), ResetVdm waits for bit 20 to read 0 after asserting the soft reset (up to 10000 reads), BackupInfo reads the whole register. In V400R004 bits [16:0] are the decoded slice count and bits [26:19] a version id (UNVERIFIED here; the version id would help to identify the revision).
+
+Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw.ko (HAL `VDMHAL_V200R001`, static disassembly of VDMHAL_V200R001_*/H264HAL_V200R001_StartDec, 2026-11-10) with names and bit layouts taken from the GPL VDH V400R004 header (`vdm_hal_local.h`, Huawei frd kernel) wherever the Hi3520D code writes the same offset with a compatible value. Never read or written on hardware; no reset value is known; not in the data sheet. See docs/rdl-campaign/vdh-scd.md.";
+
+        field {
+            name = "decoded_slice_num";
+            desc = "Decoded slice count (V400R004 name).";
+            sw = r;
+            hw = w;
+        } decoded_slice_num[16:0];
+
+        field {
+            name = "dec_over";
+            desc = "Decode over (polled by vendor code; there is no VDH interrupt registered).";
+            sw = r;
+            hw = w;
+        } dec_over[17:17];
+
+        field {
+            name = "dec_err";
+            desc = "Decode error (V400R004 name).";
+            sw = r;
+            hw = w;
+        } dec_err[18:18];
+
+    } VDH_STATE @ 0x1C;
+
+    reg {
+        name = "Interrupt state";
+        desc = "ClearIntState writes 0xFFFFFFFF; CheckInt reads it. Whether the bits are write-1-to-clear is not confirmed.
+
+Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw.ko (HAL `VDMHAL_V200R001`, static disassembly of VDMHAL_V200R001_*/H264HAL_V200R001_StartDec, 2026-11-10) with names and bit layouts taken from the GPL VDH V400R004 header (`vdm_hal_local.h`, Huawei frd kernel) wherever the Hi3520D code writes the same offset with a compatible value. Never read or written on hardware; no reset value is known; not in the data sheet. See docs/rdl-campaign/vdh-scd.md.";
+
+        field {
+            name = "dec_over";
+            desc = "Decode over interrupt state (V400R004 name).";
+            sw = rw;
+            hw = r;
+        } dec_over[0:0];
+
+        field {
+            name = "dec_err";
+            desc = "Decode error interrupt state (V400R004 name).";
+            sw = rw;
+            hw = r;
+        } dec_err[1:1];
+
+    } INT_STATE @ 0x20;
+
+    reg {
+        name = "Interrupt mask";
+        desc = "EnableInt writes 0xFFFFFFFE (bit 0 = 0 enables the decode-over interrupt, everything else masked), MaskInt writes 0xFFFFFFFF; ResetVdm saves and restores it. Polarity 0 = enabled is inferred from those two values.
+
+Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw.ko (HAL `VDMHAL_V200R001`, static disassembly of VDMHAL_V200R001_*/H264HAL_V200R001_StartDec, 2026-11-10) with names and bit layouts taken from the GPL VDH V400R004 header (`vdm_hal_local.h`, Huawei frd kernel) wherever the Hi3520D code writes the same offset with a compatible value. Never read or written on hardware; no reset value is known; not in the data sheet. See docs/rdl-campaign/vdh-scd.md.";
+
+        field {
+            name = "dec_over";
+            desc = "0 = decode-over interrupt enabled (inferred).";
+            sw = rw;
+            hw = r;
+        } dec_over[0:0];
+
+        field {
+            name = "dec_err";
+            desc = "0 = decode-error interrupt enabled (inferred).";
+            sw = rw;
+            hw = r;
+        } dec_err[1:1];
+
+    } INT_MASK @ 0x24;
+
+    reg {
+        name = "VCTRL state";
+        desc = "VDMHAL_V200R001_IsVdmRun reports 'running' when the value is not 1, i.e. 1 means idle.
+
+Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw.ko (HAL `VDMHAL_V200R001`, static disassembly of VDMHAL_V200R001_*/H264HAL_V200R001_StartDec, 2026-11-10) with names and bit layouts taken from the GPL VDH V400R004 header (`vdm_hal_local.h`, Huawei frd kernel) wherever the Hi3520D code writes the same offset with a compatible value. Never read or written on hardware; no reset value is known; not in the data sheet. See docs/rdl-campaign/vdh-scd.md.";
+
+        field {
+            name = "state";
+            desc = "1 = idle (inferred from IsVdmRun).";
+            sw = rw;
+            hw = r;
+        } state[31:0];
+
+    } VCTRL_STATE @ 0x28;
+
+    reg {
+        name = "EMAR ID / on-chip RAM selection";
+        desc = "H.264 path writes 0x00013300 for pictures up to 120 macroblocks wide and 0x00003300 for wider ones (V400R004 default 0x161F7; its header comment says 0x0001xxxx = all RAM on chip). The vendor repair path writes 0x3300. Meaning of the fields unknown.
+
+Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw.ko (HAL `VDMHAL_V200R001`, static disassembly of VDMHAL_V200R001_*/H264HAL_V200R001_StartDec, 2026-11-10) with names and bit layouts taken from the GPL VDH V400R004 header (`vdm_hal_local.h`, Huawei frd kernel) wherever the Hi3520D code writes the same offset with a compatible value. Never read or written on hardware; no reset value is known; not in the data sheet. See docs/rdl-campaign/vdh-scd.md.";
+
+        field {
+            name = "emar_id";
+            desc = "Written values 0x13300 / 0x3300 (vendor).";
+            sw = rw;
+            hw = r;
+        } emar_id[31:0];
+
+    } EMAR_ID @ 0x30;
+
+    reg {
+        name = "SED timeout";
+        desc = "Written 0x00300C03 for all seven timeout registers 0x3C-0x54.
+
+Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw.ko (HAL `VDMHAL_V200R001`, static disassembly of VDMHAL_V200R001_*/H264HAL_V200R001_StartDec, 2026-11-10) with names and bit layouts taken from the GPL VDH V400R004 header (`vdm_hal_local.h`, Huawei frd kernel) wherever the Hi3520D code writes the same offset with a compatible value. Never read or written on hardware; no reset value is known; not in the data sheet. See docs/rdl-campaign/vdh-scd.md.";
+
+        field {
+            name = "timeout";
+            desc = "Vendor value 0x00300C03.";
+            sw = rw;
+            hw = r;
+        } timeout[31:0];
+
+    } SED_TO @ 0x3C;
+
+    reg {
+        name = "ITRANS timeout";
+        desc = "See SED_TO.
+
+Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw.ko (HAL `VDMHAL_V200R001`, static disassembly of VDMHAL_V200R001_*/H264HAL_V200R001_StartDec, 2026-11-10) with names and bit layouts taken from the GPL VDH V400R004 header (`vdm_hal_local.h`, Huawei frd kernel) wherever the Hi3520D code writes the same offset with a compatible value. Never read or written on hardware; no reset value is known; not in the data sheet. See docs/rdl-campaign/vdh-scd.md.";
+
+        field {
+            name = "timeout";
+            desc = "Vendor value 0x00300C03.";
+            sw = rw;
+            hw = r;
+        } timeout[31:0];
+
+    } ITRANS_TO @ 0x40;
+
+    reg {
+        name = "PMV timeout";
+        desc = "See SED_TO.
+
+Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw.ko (HAL `VDMHAL_V200R001`, static disassembly of VDMHAL_V200R001_*/H264HAL_V200R001_StartDec, 2026-11-10) with names and bit layouts taken from the GPL VDH V400R004 header (`vdm_hal_local.h`, Huawei frd kernel) wherever the Hi3520D code writes the same offset with a compatible value. Never read or written on hardware; no reset value is known; not in the data sheet. See docs/rdl-campaign/vdh-scd.md.";
+
+        field {
+            name = "timeout";
+            desc = "Vendor value 0x00300C03.";
+            sw = rw;
+            hw = r;
+        } timeout[31:0];
+
+    } PMV_TO @ 0x44;
+
+    reg {
+        name = "PRC timeout";
+        desc = "See SED_TO.
+
+Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw.ko (HAL `VDMHAL_V200R001`, static disassembly of VDMHAL_V200R001_*/H264HAL_V200R001_StartDec, 2026-11-10) with names and bit layouts taken from the GPL VDH V400R004 header (`vdm_hal_local.h`, Huawei frd kernel) wherever the Hi3520D code writes the same offset with a compatible value. Never read or written on hardware; no reset value is known; not in the data sheet. See docs/rdl-campaign/vdh-scd.md.";
+
+        field {
+            name = "timeout";
+            desc = "Vendor value 0x00300C03.";
+            sw = rw;
+            hw = r;
+        } timeout[31:0];
+
+    } PRC_TO @ 0x48;
+
+    reg {
+        name = "RCN timeout";
+        desc = "See SED_TO.
+
+Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw.ko (HAL `VDMHAL_V200R001`, static disassembly of VDMHAL_V200R001_*/H264HAL_V200R001_StartDec, 2026-11-10) with names and bit layouts taken from the GPL VDH V400R004 header (`vdm_hal_local.h`, Huawei frd kernel) wherever the Hi3520D code writes the same offset with a compatible value. Never read or written on hardware; no reset value is known; not in the data sheet. See docs/rdl-campaign/vdh-scd.md.";
+
+        field {
+            name = "timeout";
+            desc = "Vendor value 0x00300C03.";
+            sw = rw;
+            hw = r;
+        } timeout[31:0];
+
+    } RCN_TO @ 0x4C;
+
+    reg {
+        name = "DBLK timeout";
+        desc = "See SED_TO.
+
+Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw.ko (HAL `VDMHAL_V200R001`, static disassembly of VDMHAL_V200R001_*/H264HAL_V200R001_StartDec, 2026-11-10) with names and bit layouts taken from the GPL VDH V400R004 header (`vdm_hal_local.h`, Huawei frd kernel) wherever the Hi3520D code writes the same offset with a compatible value. Never read or written on hardware; no reset value is known; not in the data sheet. See docs/rdl-campaign/vdh-scd.md.";
+
+        field {
+            name = "timeout";
+            desc = "Vendor value 0x00300C03.";
+            sw = rw;
+            hw = r;
+        } timeout[31:0];
+
+    } DBLK_TO @ 0x50;
+
+    reg {
+        name = "PPFD timeout";
+        desc = "See SED_TO.
+
+Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw.ko (HAL `VDMHAL_V200R001`, static disassembly of VDMHAL_V200R001_*/H264HAL_V200R001_StartDec, 2026-11-10) with names and bit layouts taken from the GPL VDH V400R004 header (`vdm_hal_local.h`, Huawei frd kernel) wherever the Hi3520D code writes the same offset with a compatible value. Never read or written on hardware; no reset value is known; not in the data sheet. See docs/rdl-campaign/vdh-scd.md.";
+
+        field {
+            name = "timeout";
+            desc = "Vendor value 0x00300C03.";
+            sw = rw;
+            hw = r;
+        } timeout[31:0];
+
+    } PPFD_TO @ 0x54;
+
+    reg {
+        name = "1D (linear) luma output address";
+        desc = "Physical address of the linear (raster) luma plane of the picture being decoded, 256-byte aligned in the vendor code (& ~0xFF); the same buffers are the reference pictures listed in the picture message.
+
+Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw.ko (HAL `VDMHAL_V200R001`, static disassembly of VDMHAL_V200R001_*/H264HAL_V200R001_StartDec, 2026-11-10) with names and bit layouts taken from the GPL VDH V400R004 header (`vdm_hal_local.h`, Huawei frd kernel) wherever the Hi3520D code writes the same offset with a compatible value. Never read or written on hardware; no reset value is known; not in the data sheet. See docs/rdl-campaign/vdh-scd.md.";
+
+        field {
+            name = "ystaddr_1d";
+            desc = "Physical DDR address & ~0xFF.";
+            sw = rw;
+            hw = r;
+        } ystaddr_1d[31:0];
+
+    } YSTADDR_1D @ 0x60;
+
+    reg {
+        name = "1D output stride";
+        desc = "Frame stride in bytes / 16.
+
+Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw.ko (HAL `VDMHAL_V200R001`, static disassembly of VDMHAL_V200R001_*/H264HAL_V200R001_StartDec, 2026-11-10) with names and bit layouts taken from the GPL VDH V400R004 header (`vdm_hal_local.h`, Huawei frd kernel) wherever the Hi3520D code writes the same offset with a compatible value. Never read or written on hardware; no reset value is known; not in the data sheet. See docs/rdl-campaign/vdh-scd.md.";
+
+        field {
+            name = "ystride_1d";
+            desc = "Stride in bytes >> 4.";
+            sw = rw;
+            hw = r;
+        } ystride_1d[31:0];
+
+    } YSTRIDE_1D @ 0x64;
+
+    reg {
+        name = "1D chroma offset";
+        desc = "Byte offset of the interleaved chroma plane from the luma base: stride x picture height rounded to 16 lines (semi-planar layout).
+
+Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw.ko (HAL `VDMHAL_V200R001`, static disassembly of VDMHAL_V200R001_*/H264HAL_V200R001_StartDec, 2026-11-10) with names and bit layouts taken from the GPL VDH V400R004 header (`vdm_hal_local.h`, Huawei frd kernel) wherever the Hi3520D code writes the same offset with a compatible value. Never read or written on hardware; no reset value is known; not in the data sheet. See docs/rdl-campaign/vdh-scd.md.";
+
+        field {
+            name = "uvoffset_1d";
+            desc = "Chroma plane offset in bytes.";
+            sw = rw;
+            hw = r;
+        } uvoffset_1d[31:0];
+
+    } UVOFFSET_1D @ 0x68;
+
+    reg {
+        name = "Head information offset / PRC count";
+        desc = "Written 0x18 by the H.264 path (V400R004 writes 0 and names it HEAD_INF_OFFSET / PRCNUM_1D_CNT).
+
+Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw.ko (HAL `VDMHAL_V200R001`, static disassembly of VDMHAL_V200R001_*/H264HAL_V200R001_StartDec, 2026-11-10) with names and bit layouts taken from the GPL VDH V400R004 header (`vdm_hal_local.h`, Huawei frd kernel) wherever the Hi3520D code writes the same offset with a compatible value. Never read or written on hardware; no reset value is known; not in the data sheet. See docs/rdl-campaign/vdh-scd.md.";
+
+        field {
+            name = "value";
+            desc = "Vendor value 0x18.";
+            sw = rw;
+            hw = r;
+        } value[31:0];
+
+    } HEAD_INF_OFFSET @ 0x6C;
+
+    reg {
+        name = "PRC memory 1 count (constant)";
+        desc = "Written the constant 0x7F3CFC3C on every decode (V400R004 names the offset PRCMEM1_1D_CNT / LINE_NUM_STADDR).
+
+Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw.ko (HAL `VDMHAL_V200R001`, static disassembly of VDMHAL_V200R001_*/H264HAL_V200R001_StartDec, 2026-11-10) with names and bit layouts taken from the GPL VDH V400R004 header (`vdm_hal_local.h`, Huawei frd kernel) wherever the Hi3520D code writes the same offset with a compatible value. Never read or written on hardware; no reset value is known; not in the data sheet. See docs/rdl-campaign/vdh-scd.md.";
+
+        field {
+            name = "value";
+            desc = "Vendor value 0x7F3CFC3C.";
+            sw = rw;
+            hw = r;
+        } value[31:0];
+
+    } PRCMEM1_1D_CNT @ 0x70;
+
+    reg {
+        name = "PRC memory 2 count (constant)";
+        desc = "Written the constant 0xFF3FFF12 on every decode.
+
+Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw.ko (HAL `VDMHAL_V200R001`, static disassembly of VDMHAL_V200R001_*/H264HAL_V200R001_StartDec, 2026-11-10) with names and bit layouts taken from the GPL VDH V400R004 header (`vdm_hal_local.h`, Huawei frd kernel) wherever the Hi3520D code writes the same offset with a compatible value. Never read or written on hardware; no reset value is known; not in the data sheet. See docs/rdl-campaign/vdh-scd.md.";
+
+        field {
+            name = "value";
+            desc = "Vendor value 0xFF3FFF12.";
+            sw = rw;
+            hw = r;
+        } value[31:0];
+
+    } PRCMEM2_1D_CNT @ 0x74;
+
+    reg {
+        name = "PPFD buffer address";
+        desc = "Physical address of the 100 KB (64*4*400 bytes) pre-parse buffer in the vendor memory arrangement; 16-byte aligned.
+
+Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw.ko (HAL `VDMHAL_V200R001`, static disassembly of VDMHAL_V200R001_*/H264HAL_V200R001_StartDec, 2026-11-10) with names and bit layouts taken from the GPL VDH V400R004 header (`vdm_hal_local.h`, Huawei frd kernel) wherever the Hi3520D code writes the same offset with a compatible value. Never read or written on hardware; no reset value is known; not in the data sheet. See docs/rdl-campaign/vdh-scd.md.";
+
+        field {
+            name = "ppfd_buf_addr";
+            desc = "Physical DDR address & ~0xF.";
+            sw = rw;
+            hw = r;
+        } ppfd_buf_addr[31:0];
+
+    } PPFD_BUF_ADDR @ 0x80;
+
+    reg {
+        name = "PPFD buffer length";
+        desc = "16-bit length (vendor writes 0x31F).
+
+Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw.ko (HAL `VDMHAL_V200R001`, static disassembly of VDMHAL_V200R001_*/H264HAL_V200R001_StartDec, 2026-11-10) with names and bit layouts taken from the GPL VDH V400R004 header (`vdm_hal_local.h`, Huawei frd kernel) wherever the Hi3520D code writes the same offset with a compatible value. Never read or written on hardware; no reset value is known; not in the data sheet. See docs/rdl-campaign/vdh-scd.md.";
+
+        field {
+            name = "ppfd_buf_len";
+            desc = "Buffer length (units unknown; vendor value 0x31F).";
+            sw = rw;
+            hw = r;
+        } ppfd_buf_len[15:0];
+
+    } PPFD_BUF_LEN @ 0x84;
+
+    reg {
+        name = "Reference picture structure types";
+        desc = "Sixteen 2-bit entries, one per reference slot (frame/top/bottom structure), packed from slot 0 at bit 1:0 (V400R004 `REF_PIC_TYPE`).
+
+Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw.ko (HAL `VDMHAL_V200R001`, static disassembly of VDMHAL_V200R001_*/H264HAL_V200R001_StartDec, 2026-11-10) with names and bit layouts taken from the GPL VDH V400R004 header (`vdm_hal_local.h`, Huawei frd kernel) wherever the Hi3520D code writes the same offset with a compatible value. Never read or written on hardware; no reset value is known; not in the data sheet. See docs/rdl-campaign/vdh-scd.md.";
+
+        field {
+            name = "ref_pic_type";
+            desc = "16 x 2-bit reference structure types.";
+            sw = rw;
+            hw = r;
+        } ref_pic_type[31:0];
+
+    } REF_PIC_TYPE @ 0x94;
+
+    reg {
+        name = "Frame/adaptive storage mode";
+        desc = "Written once per picture (0x2 for frame pictures in V400R004).
+
+Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw.ko (HAL `VDMHAL_V200R001`, static disassembly of VDMHAL_V200R001_*/H264HAL_V200R001_StartDec, 2026-11-10) with names and bit layouts taken from the GPL VDH V400R004 header (`vdm_hal_local.h`, Huawei frd kernel) wherever the Hi3520D code writes the same offset with a compatible value. Never read or written on hardware; no reset value is known; not in the data sheet. See docs/rdl-campaign/vdh-scd.md.";
+
+        field {
+            name = "value";
+            desc = "Frame/adaptive store select.";
+            sw = rw;
+            hw = r;
+        } value[31:0];
+
+    } FF_APT_EN @ 0x98;
+
+    reg {
+        name = "Decode cycles per picture";
+        desc = "Read by BackupInfo (performance counter).
+
+Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw.ko (HAL `VDMHAL_V200R001`, static disassembly of VDMHAL_V200R001_*/H264HAL_V200R001_StartDec, 2026-11-10) with names and bit layouts taken from the GPL VDH V400R004 header (`vdm_hal_local.h`, Huawei frd kernel) wherever the Hi3520D code writes the same offset with a compatible value. Never read or written on hardware; no reset value is known; not in the data sheet. See docs/rdl-campaign/vdh-scd.md.";
+
+        field {
+            name = "cycles";
+            desc = "Cycles spent on the last picture.";
+            sw = r;
+            hw = w;
+        } cycles[31:0];
+
+    } DEC_CYCLEPERPIC @ 0xB0;
+
+    reg {
+        name = "QP of macroblock 0 in the current picture";
+        desc = "Read by BackupInfo.
+
+Source: UNVERIFIED, derived from the Xiongmai Hi3520D vendor module hi3520D_vfmw.ko (HAL `VDMHAL_V200R001`, static disassembly of VDMHAL_V200R001_*/H264HAL_V200R001_StartDec, 2026-11-10) with names and bit layouts taken from the GPL VDH V400R004 header (`vdm_hal_local.h`, Huawei frd kernel) wherever the Hi3520D code writes the same offset with a compatible value. Never read or written on hardware; no reset value is known; not in the data sheet. See docs/rdl-campaign/vdh-scd.md.";
+
+        field {
+            name = "qp";
+            desc = "Value of the QP statistics register.";
+            sw = r;
+            hw = w;
+        } qp[31:0];
+
+    } MB0_QP_IN_CURR_PIC @ 0xD0;
+
+};
+
+`endif
