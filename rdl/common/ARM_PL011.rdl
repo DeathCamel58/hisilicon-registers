@@ -13,7 +13,7 @@ regfile eARM_PL011 {
     Registers UART_DR .. UART_ICR with their reset values are from the Hi3520D data sheet 14.3.6 (printed pages 14-31 .. 14-50, `datasheet.txt` lines 53660-54554) and were checked
     against the UART chapter of every other data sheet listed below: offsets, bit layouts and resets agree (the Hi3516A V300 data sheet gives UART_FR the reset 0x0096 instead of 0x0012,
     see `PL011_FR_RESET_G2` below). The data sheets show 16-bit (UART_RSR, UART_FBRD 8-bit) register widths; all registers are modelled as 32-bit APB registers with the upper bits
-    unused (as in the PL011). The data sheets omit UART_ILPR, UART_DMACR, the modem status bits and the PrimeCell ID registers; they are added from the ARM PL011 TRM (fields marked
+    unused (as in the PL011). The data sheets omit UART_ILPR, the modem status bits and the PrimeCell ID registers (UART_DMACR is in every data sheet); they are added from the ARM PL011 TRM (fields marked
     so) and are not hardware verified, except that the PrimeCell identification is what the AMBA bus reads at probe. The data sheet total reset values of UART_FR (0x0012) and
     UART_RIS (0x0002) include a set bit 1 (DSR / CTS modem status) that the data sheet lists as reserved; it is modelled in those added fields. The older data sheets (Hi3511, Hi3515,
     Hi3516 V100, Hi3516C V100, Hi3518 V100) print the UART_RIS total reset as 0x0000 (bit 1 clear); the PL011 TRM gives UARTRIS a reset of 0x00- with the modem bits [3:0] undefined.
@@ -36,6 +36,12 @@ regfile eARM_PL011 {
     | Hi3516A V200 / Hi3519 V101 | UART0-4 | 0x12100000 + n x 0x1000 | GIC 36-40 |
     | Hi3516C V300 / Hi3516E V100 | UART0-2 | 0x12100000, 0x12101000, 0x12102000 | VIC 5 (UART0), 30 (UART1), 25 (UART2) |
     | Hi3516A V300 | UART0-4 | 0x120A0000 + n x 0x1000 | GIC 38-42 |
+
+    Wiring and FIFO depth per data sheet (second pass 2026-11-11): UART0 is the 2-wire debug UART everywhere; the 4-wire (RTS/CTS) UART is UART1 on Hi3516 V100 (external modem), Hi3516A/D,
+    Hi3516C V100, Hi3518 V100 (3-wire on Hi3518C), Hi3518E, Hi3516C V200/V300, Hi3516E V100 and Hi3520D; UART1 and UART2 on Hi3516A V200 / Hi3519; UART1, UART2, UART3 on Hi3516A V300
+    (UART0 and UART4 are 2-wire). Transmit/receive FIFO depth is 16 x 8 / 16 x 12 bit on Hi3511, Hi3515, Hi3520, Hi3516 V100, Hi3516C V100, Hi3518 V100, Hi3518E V100 and Hi3520D, and 64 x 8 / 64 x 12 bit on
+    Hi3516A/D, Hi3516A V200, Hi3519, Hi3516A V300, Hi3518E V20X / Hi3516C V200 and Hi3516C V300 / Hi3516E V100 (data sheet feature lists; the PL011 TRM FIFO depth is fixed at 16, so the 64-deep
+    UARTs are a modified/extended design; the register map is unchanged). UART DMA request lines are listed in the DMAC request table of every data sheet except Hi3520D (no DMAC at all); Hi3511 lists only UART0 (requests 14/15).
     ";
 
     reg {
@@ -1137,9 +1143,9 @@ ARM PrimeCell UART (PL011) TRM; not in the Hi3520D data sheet.";
 
     reg {
         name = "DMA control register";
-        desc = "DMA enable bits; not in the data sheet (PL011 TRM). The Hi3520D UARTs have no DMA request lines documented.
+        desc = "DMA control register, UART_DMACR in all 15 data sheet editions (offset 0x048, reset 0x0000, bits 2:0 identical to the PL011 TRM UARTDMACR, ARM DDI 0183G table 3-18). The Hi3520D data sheet has no DMA controller (no DMAC base address and no UART request lines), so the enable bits have no consumer on that chip; the Hi3511 data sheet says only UART0 supports DMA.
 
-ARM PrimeCell UART (PL011) TRM; not in the Hi3520D data sheet.";
+Data sheet UART_DMACR (Hi3520D printed page 14-50); ARM PrimeCell UART (PL011) TRM DDI 0183G.";
 
         field {
             name = "dmaonerr";
