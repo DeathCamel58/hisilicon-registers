@@ -5,14 +5,22 @@
 regfile eHISI_AIO {
     name = "HiSilicon audio input/output interface";
     desc = "
-    HiSilicon audio input/output interface (AIO) at 0x20650000, GIC interrupt ID 47: one audio input port (AIP: 2/4/8/16-channel PCM or I2S, 8- or 16-bit) and two output ports (AOP0: 2/4/8/16-channel; AOP1: I2S to the HDMI transmitter), PCM master/slave, DMA into/from cyclic buffers in DDR (write/read pointer registers, adjustable buffer size and thresholds). Register layout: AIP registers at 0x1000.., AOP0 at 0x2000.., AOP1 at 0x2100.. (as in the data sheet summary Table 13-1, `datasheet.txt` line 50033). Registers are from Hi3520D/Hi3515A/Hi3515C data sheet issue 07, chapter 13.5/13.6 (`datasheet.txt` lines 49525-52003). Clocks: PERI_CRG33..35 (AIO MCLK/BCLK/FSCLK, AIO bus clock). Not hardware verified.
+    HiSilicon audio input/output interface (AIO) at 0x20650000, GIC interrupt ID 47 (SPI 15): one audio input port (AIP: 2/4/8/16-channel PCM or I2S, 8- or 16-bit multi-channel, 8-32 bit single) and two output ports (AOP0: pads AIO_SD_TX/WS_TX/BCLK_TX; AOP1: I2S master wired inside the chip to the HDMI transmitter, no pads). I2S or PCM, master or slave (AOP1 master only), 8-192 kHz.
+
+    Data moves by the block's own DMA between cyclic buffers in DDR and the port: there is no general DMA controller involved. Per port: BUF_SADDR (multiple of 128), BUF_SIZE (multiple of 128, bytes, 24 bits), BUF_WPTR, BUF_RPTR (byte offsets into the buffer, 24 bits), an almost-full/almost-empty threshold, TRANS_SIZE (a transfer-complete interrupt every TRANS_SIZE bytes, the *_TMP registers latch the pointers at that interrupt), INT_ENA/RAW/STATUS/CLR, STOP (enable and stop_done). The producer owns the write pointer (the block for AIP, software for AOP) and the consumer the read pointer; software must keep at least 32 bytes of free space when it advances an AOP write pointer and must queue at least 128 bytes before enabling an AOP (data sheet 13.4). A port must be stopped (enable 0, stop_done 1) before its soft reset. All three ports share the one interrupt line, AIO_INT_STATUS tells which port fired.
+
+    Register layout: global interrupt registers at 0x0, AIP registers at 0x1000.., AOP0 at 0x2000.., AOP1 at 0x2100.. (data sheet Table 13-1). Registers are from the Hi3520D/Hi3515A/Hi3515C data sheet chapter 13.5/13.6.
+
+    Clocks and resets are NOT in this block, they are in the CRG (offsets from the CRG base 0x20030000, data sheet 3.2.3/3.2.4 and 13.4): PERI_CRG32/33/34 (0x80/0x84/0x88) = AIP/AOP0/AOP1 MCLK fractional divider, 24-bit ckcfg = MCLK / 675 MHz * 2^27 (MCLK at most 62.5 MHz; example: 12.288 MHz = 0x25485F); PERI_CRG32 bit 24 aip_clk_sel (0 = AIP shares the AOP0 BCLK/FS, i.e. 4-wire codec; 1 = own); PERI_CRG35 (0x8C) = AIO bus clock gate (bit 1) and bus soft reset (bit 0): the AIO registers must not be accessed while the bus clock is off; PERI_CRG36/37/38 (0x90/0x94/0x98) = AIP/AOP0/AOP1 fsclk_div [14:12], bclk_div [11:8], bclk_sel [4] (1 = internal master clock), bclkout/bclk polarity [3:2], cken [1] (AIP cken also gates the AIO_MCLK pad) and srst_req [0] (the data sheet says: no separate soft reset is needed after a normal system reset). AOP1 always needs PERI_CRG34/38 programmed as master because the HDMI transmitter takes its clocks from it. The AIO pads are muxed through muxctrl_reg5-11 (IO_CONFIG 0x14-0x2C, function 0 = AIO; AIO_MCLK doubles as BOOT_SEL and AIO_SD_TX as JTAG_SEL at reset).
+
+    Vendor cross-check (2026-11-11, static analysis only, nothing executed: OpenIPC copy of hi3520D_sio.ko, V = vendor module): the module ioremaps only 0x20650000 size 0x10000, programs only registers documented here (observed offsets 0x1000-0x1038 and 0x2028/0x202C by a scripted scan, the AOP0/AOP1 copies use the same HAL with a port index), writes AIP_INF_ATTRI with bit 12 set (the reserved must-be-1 field) and keeps the reserved bits of AIP_CTRL at 0x3210, and does the CRG programming through the sys module (command numbers 0x1D-0x22, 0x2B), not in the AIO module. Vendor MCLK values (confidence HIGH, same formula as the data sheet): 0x0025485F (12.288 MHz = 256 x 48 kHz) for 8/12/16/24/32/48 kHz, 0x002240E4 (11.2896 MHz = 256 x 44.1 kHz) for 11.025/22.05/44.1 kHz, 0x0018DAEA (8.192 MHz = 256 x 32 kHz) in one special case; BCLK/MCLK and FS/BCLK dividers follow the table in data sheet 3.2.3. No undocumented AIO register was seen, so no UNK stubs. Audit record: docs/rdl-campaign/aio.md. Not verified on hardware.
     ";
 
     reg {
         name = "AIO global interrupt enable register";
         desc = "AIO_INT_ENA is an AIO global interrupt enable register.
 
-Data sheet 13.6 AIO_INT_ENA (offset 0x0, printed page 13-12, `datasheet.txt` line 50129).";
+Source: data sheet (Hi3520D/Hi3515A/Hi3515C user guide, 13.6 AIO_INT_ENA, offset 0x0, printed page 13-12), confidence HIGH: offset, fields, access and reset compared by script with the Chinese issue 02 edition on 2026-11-11, no difference. Not verified on hardware.";
 
         enum AIO_INT_ENA_aop1_int_ena_enum {
             DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
@@ -61,7 +69,7 @@ Data sheet 13.6 AIO_INT_ENA (offset 0x0, printed page 13-12, `datasheet.txt` lin
         name = "AIO global interrupt status register";
         desc = "AIO_INT_STATUS is an AIO global interrupt status register.
 
-Data sheet 13.6 AIO_INT_STATUS (offset 0x4, printed page 13-13, `datasheet.txt` line 50171).";
+Source: data sheet (Hi3520D/Hi3515A/Hi3515C user guide, 13.6 AIO_INT_STATUS, offset 0x4, printed page 13-13), confidence HIGH: offset, fields, access and reset compared by script with the Chinese issue 02 edition on 2026-11-11, no difference. Not verified on hardware.";
 
         enum AIO_INT_STATUS_aop1_int_status_enum {
             NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
@@ -110,7 +118,7 @@ Data sheet 13.6 AIO_INT_STATUS (offset 0x4, printed page 13-13, `datasheet.txt` 
         name = "Raw AIO global interrupt register";
         desc = "AIO_INT_RAW is a raw AIO global interrupt register.
 
-Data sheet 13.6 AIO_INT_RAW (offset 0x8, printed page 13-14, `datasheet.txt` line 50213).";
+Source: data sheet (Hi3520D/Hi3515A/Hi3515C user guide, 13.6 AIO_INT_RAW, offset 0x8, printed page 13-14), confidence HIGH: offset, fields, access and reset compared by script with the Chinese issue 02 edition on 2026-11-11, no difference. Not verified on hardware.";
 
         enum AIO_INT_RAW_aop1_int_raw_enum {
             NO_RAW_INTERRUPT = 0 { name = "No Raw Interrupt"; desc = "No raw interrupt is generated."; };
@@ -159,7 +167,7 @@ Data sheet 13.6 AIO_INT_RAW (offset 0x8, printed page 13-14, `datasheet.txt` lin
         name = "AIP attribute configuration register";
         desc = "AIP_INF_ATTRI is an AIP attribute configuration register.
 
-Data sheet 13.6 AIP_INF_ATTRI (offset 0x1000, printed page 13-15, `datasheet.txt` line 50255).";
+Source: data sheet (Hi3520D/Hi3515A/Hi3515C user guide, 13.6 AIP_INF_ATTRI, offset 0x1000, printed page 13-15), confidence HIGH: offset, fields, access and reset compared by script with the Chinese issue 02 edition on 2026-11-11, no difference. Not verified on hardware.";
 
         enum AIP_INF_ATTRI_aip_samp_precision_enum {
             V_8_BITS = 0 { name = "V 8 Bits"; desc = "8 bits"; };
@@ -250,7 +258,7 @@ Data sheet 13.6 AIP_INF_ATTRI (offset 0x1000, printed page 13-15, `datasheet.txt
         name = "AIP control register";
         desc = "AIP_CTRL is an AIP control register.
 
-Data sheet 13.6 AIP_CTRL (offset 0x1004, printed page 13-16, `datasheet.txt` line 50322).";
+Source: data sheet (Hi3520D/Hi3515A/Hi3515C user guide, 13.6 AIP_CTRL, offset 0x1004, printed page 13-16), confidence HIGH: offset, fields, access and reset compared by script with the Chinese issue 02 edition on 2026-11-11, no difference. Not verified on hardware.";
 
         enum AIP_CTRL_aip_shift8_en_enum {
             DISABLED_DATA_STORED = 0 { name = "Disabled Data Stored"; desc = "disabled. Data is stored to the memory in 8-bit format."; };
@@ -279,7 +287,7 @@ Data sheet 13.6 AIP_CTRL (offset 0x1004, printed page 13-16, `datasheet.txt` lin
         name = "AIP cyclic buffer start address register";
         desc = "AIP_BUF_SADDR is an AIP cyclic buffer start address register.
 
-Data sheet 13.6 AIP_BUF_SADDR (offset 0x1008, printed page 13-17, `datasheet.txt` line 50363).";
+Source: data sheet (Hi3520D/Hi3515A/Hi3515C user guide, 13.6 AIP_BUF_SADDR, offset 0x1008, printed page 13-17), confidence HIGH: offset, fields, access and reset compared by script with the Chinese issue 02 edition on 2026-11-11, no difference. Not verified on hardware.";
 
         field {
             name = "aip_buf_saddr";
@@ -294,7 +302,7 @@ Data sheet 13.6 AIP_BUF_SADDR (offset 0x1008, printed page 13-17, `datasheet.txt
         name = "AIP cyclic buffer size register";
         desc = "AIP_BUF_SIZE is an AIP cyclic buffer size register.
 
-Data sheet 13.6 AIP_BUF_SIZE (offset 0x100C, printed page 13-17, `datasheet.txt` line 50383).";
+Source: data sheet (Hi3520D/Hi3515A/Hi3515C user guide, 13.6 AIP_BUF_SIZE, offset 0x100C, printed page 13-17), confidence HIGH: offset, fields, access and reset compared by script with the Chinese issue 02 edition on 2026-11-11, no difference. Not verified on hardware.";
 
         field {
             name = "aip_buf_size";
@@ -309,7 +317,7 @@ Data sheet 13.6 AIP_BUF_SIZE (offset 0x100C, printed page 13-17, `datasheet.txt`
         name = "AIP cyclic buffer write address register";
         desc = "AIP_BUF_WPTR is an AIP cyclic buffer write address register.
 
-Data sheet 13.6 AIP_BUF_WPTR (offset 0x1010, printed page 13-18, `datasheet.txt` line 50412).";
+Source: data sheet (Hi3520D/Hi3515A/Hi3515C user guide, 13.6 AIP_BUF_WPTR, offset 0x1010, printed page 13-18), confidence HIGH: offset, fields, access and reset compared by script with the Chinese issue 02 edition on 2026-11-11, no difference. Not verified on hardware.";
 
         field {
             name = "aip_buf_wptr";
@@ -324,7 +332,7 @@ Data sheet 13.6 AIP_BUF_WPTR (offset 0x1010, printed page 13-18, `datasheet.txt`
         name = "AIP cyclic buffer read address register";
         desc = "AIP_BUF_RPTR is an AIP cyclic buffer read address register.
 
-Data sheet 13.6 AIP_BUF_RPTR (offset 0x1014, printed page 13-18, `datasheet.txt` line 50436).";
+Source: data sheet (Hi3520D/Hi3515A/Hi3515C user guide, 13.6 AIP_BUF_RPTR, offset 0x1014, printed page 13-18), confidence HIGH: offset, fields, access and reset compared by script with the Chinese issue 02 edition on 2026-11-11, no difference. Not verified on hardware.";
 
         field {
             name = "aip_buf_rptr";
@@ -339,7 +347,7 @@ Data sheet 13.6 AIP_BUF_RPTR (offset 0x1014, printed page 13-18, `datasheet.txt`
         name = "AIP cyclic buffer almost full threshold H register";
         desc = "AIP_BUF_AFULL_TH is an AIP cyclic buffer almost full threshold register.
 
-Data sheet 13.6 AIP_BUF_AFULL_TH (offset 0x1018, printed page 13-19, `datasheet.txt` line 50467).";
+Source: data sheet (Hi3520D/Hi3515A/Hi3515C user guide, 13.6 AIP_BUF_AFULL_TH, offset 0x1018, printed page 13-19), confidence HIGH: offset, fields, access and reset compared by script with the Chinese issue 02 edition on 2026-11-11, no difference. Not verified on hardware.";
 
         field {
             name = "aip_buf_afull_th";
@@ -354,7 +362,7 @@ Data sheet 13.6 AIP_BUF_AFULL_TH (offset 0x1018, printed page 13-19, `datasheet.
         name = "AIP data transfer length register";
         desc = "AIP_TRANS_SIZE is an AIP data transfer length register.
 
-Data sheet 13.6 AIP_TRANS_SIZE (offset 0x101C, printed page 13-19, `datasheet.txt` line 50493).";
+Source: data sheet (Hi3520D/Hi3515A/Hi3515C user guide, 13.6 AIP_TRANS_SIZE, offset 0x101C, printed page 13-19), confidence HIGH: offset, fields, access and reset compared by script with the Chinese issue 02 edition on 2026-11-11, no difference. Not verified on hardware.";
 
         field {
             name = "aip_trans_size";
@@ -369,7 +377,7 @@ Data sheet 13.6 AIP_TRANS_SIZE (offset 0x101C, printed page 13-19, `datasheet.tx
         name = "AIP interrupt enable register";
         desc = "AIP_INT_ENA is an AIP interrupt enable register.
 
-Data sheet 13.6 AIP_INT_ENA (offset 0x1020, printed page 13-20, `datasheet.txt` line 50526).";
+Source: data sheet (Hi3520D/Hi3515A/Hi3515C user guide, 13.6 AIP_INT_ENA, offset 0x1020, printed page 13-20), confidence HIGH: offset, fields, access and reset compared by script with the Chinese issue 02 edition on 2026-11-11, no difference. Not verified on hardware.";
 
         enum AIP_INT_ENA_aip_stop_int_en_enum {
             DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
@@ -446,7 +454,7 @@ Data sheet 13.6 AIP_INT_ENA (offset 0x1020, printed page 13-20, `datasheet.txt` 
         name = "Raw AIP interrupt register";
         desc = "AIP_INT_RAW is a raw AIP interrupt register.
 
-Data sheet 13.6 AIP_INT_RAW (offset 0x1024, printed page 13-21, `datasheet.txt` line 50579).";
+Source: data sheet (Hi3520D/Hi3515A/Hi3515C user guide, 13.6 AIP_INT_RAW, offset 0x1024, printed page 13-21), confidence HIGH: offset, fields, access and reset compared by script with the Chinese issue 02 edition on 2026-11-11, no difference. Not verified on hardware.";
 
         enum AIP_INT_RAW_aip_stop_int_raw_enum {
             NO_RAW_INTERRUPT = 0 { name = "No Raw Interrupt"; desc = "No raw interrupt is generated."; };
@@ -523,7 +531,7 @@ Data sheet 13.6 AIP_INT_RAW (offset 0x1024, printed page 13-21, `datasheet.txt` 
         name = "AIP interrupt status register";
         desc = "AIP_INT_STATUS is an AIP interrupt status register.
 
-Data sheet 13.6 AIP_INT_STATUS (offset 0x1028, printed page 13-22, `datasheet.txt` line 50633).";
+Source: data sheet (Hi3520D/Hi3515A/Hi3515C user guide, 13.6 AIP_INT_STATUS, offset 0x1028, printed page 13-22), confidence HIGH: offset, fields, access and reset compared by script with the Chinese issue 02 edition on 2026-11-11, no difference. Not verified on hardware.";
 
         enum AIP_INT_STATUS_aip_stop_int_status_enum {
             NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
@@ -600,7 +608,7 @@ Data sheet 13.6 AIP_INT_STATUS (offset 0x1028, printed page 13-22, `datasheet.tx
         name = "AIP interrupt clear register";
         desc = "AIP_INT_CLR is an AIP interrupt clear register. The value 0 is returned when the register is read, and the value 0 has no meaning.
 
-Data sheet 13.6 AIP_INT_CLR (offset 0x102C, printed page 13-23, `datasheet.txt` line 50688).";
+Source: data sheet (Hi3520D/Hi3515A/Hi3515C user guide, 13.6 AIP_INT_CLR, offset 0x102C, printed page 13-23), confidence HIGH: offset, fields, access and reset compared by script with the Chinese issue 02 edition on 2026-11-11, no difference. Not verified on hardware.";
 
         enum AIP_INT_CLR_aip_stop_int_clr_enum {
             NOT_CLEARED = 0 { name = "Not Cleared"; desc = "not cleared"; };
@@ -677,7 +685,7 @@ Data sheet 13.6 AIP_INT_CLR (offset 0x102C, printed page 13-23, `datasheet.txt` 
         name = "AIP cyclic buffer write address lock MP register";
         desc = "AIP_BUF_WPTR_TMP is an AIP cyclic buffer write address lock register.
 
-Data sheet 13.6 AIP_BUF_WPTR_TMP (offset 0x1030, printed page 13-24, `datasheet.txt` line 50742).";
+Source: data sheet (Hi3520D/Hi3515A/Hi3515C user guide, 13.6 AIP_BUF_WPTR_TMP, offset 0x1030, printed page 13-24), confidence HIGH: offset, fields, access and reset compared by script with the Chinese issue 02 edition on 2026-11-11, no difference. Not verified on hardware.";
 
         field {
             name = "aip_buf_wptr_tmp";
@@ -692,7 +700,7 @@ Data sheet 13.6 AIP_BUF_WPTR_TMP (offset 0x1030, printed page 13-24, `datasheet.
         name = "AIP cyclic buffer read address lock register MP";
         desc = "AIP_BUF_RPTR_TMP is an AIP cyclic buffer read address lock register.
 
-Data sheet 13.6 AIP_BUF_RPTR_TMP (offset 0x1034, printed page 13-24, `datasheet.txt` line 50764).";
+Source: data sheet (Hi3520D/Hi3515A/Hi3515C user guide, 13.6 AIP_BUF_RPTR_TMP, offset 0x1034, printed page 13-24), confidence HIGH: offset, fields, access and reset compared by script with the Chinese issue 02 edition on 2026-11-11, no difference. Not verified on hardware.";
 
         field {
             name = "aip_buf_rptr_tmp";
@@ -707,7 +715,7 @@ Data sheet 13.6 AIP_BUF_RPTR_TMP (offset 0x1034, printed page 13-24, `datasheet.
         name = "AIP enable/disable control register";
         desc = "AIP_STOP is an AIP enable/disable control register.
 
-Data sheet 13.6 AIP_STOP (offset 0x1038, printed page 13-25, `datasheet.txt` line 50793).";
+Source: data sheet (Hi3520D/Hi3515A/Hi3515C user guide, 13.6 AIP_STOP, offset 0x1038, printed page 13-25), confidence HIGH: offset, fields, access and reset compared by script with the Chinese issue 02 edition on 2026-11-11, no difference. Not verified on hardware.";
 
         enum AIP_STOP_aip_stop_done_enum {
             NOT_COMPLETE = 0 { name = "Not Complete"; desc = "not complete"; };
@@ -742,7 +750,7 @@ Data sheet 13.6 AIP_STOP (offset 0x1038, printed page 13-25, `datasheet.txt` lin
         name = "AOP0 attribute configuration register";
         desc = "AOP0_INF_ATTRI is an AOP0 attribute configuration register.
 
-Data sheet 13.6 AOP0_INF_ATTRI (offset 0x2000, printed page 13-26, `datasheet.txt` line 50831).";
+Source: data sheet (Hi3520D/Hi3515A/Hi3515C user guide, 13.6 AOP0_INF_ATTRI, offset 0x2000, printed page 13-26), confidence HIGH: offset, fields, access and reset compared by script with the Chinese issue 02 edition on 2026-11-11, no difference. Not verified on hardware.";
 
         enum AOP0_INF_ATTRI_aop0_samp_precision_enum {
             V_8_BITS = 0 { name = "V 8 Bits"; desc = "8 bits"; };
@@ -825,7 +833,7 @@ Data sheet 13.6 AOP0_INF_ATTRI (offset 0x2000, printed page 13-26, `datasheet.tx
         name = "AOP0 control register";
         desc = "AOP0_CTRL is an AOP0 control register.
 
-Data sheet 13.6 AOP0_CTRL (offset 0x2004, printed page 13-27, `datasheet.txt` line 50899).";
+Source: data sheet (Hi3520D/Hi3515A/Hi3515C user guide, 13.6 AOP0_CTRL, offset 0x2004, printed page 13-27), confidence HIGH: offset, fields, access and reset compared by script with the Chinese issue 02 edition on 2026-11-11, no difference. Not verified on hardware.";
 
         enum AOP0_CTRL_aop0_mute_enum {
             UNMUTED = 0 { name = "Unmuted"; desc = "unmuted"; };
@@ -846,7 +854,7 @@ Data sheet 13.6 AOP0_CTRL (offset 0x2004, printed page 13-27, `datasheet.txt` li
         name = "AOP0 cyclic buffer start address register";
         desc = "AOP0_BUF_SADDR is an AOP0 cyclic buffer start address register.
 
-Data sheet 13.6 AOP0_BUF_SADDR (offset 0x2008, printed page 13-28, `datasheet.txt` line 50935).";
+Source: data sheet (Hi3520D/Hi3515A/Hi3515C user guide, 13.6 AOP0_BUF_SADDR, offset 0x2008, printed page 13-28), confidence HIGH: offset, fields, access and reset compared by script with the Chinese issue 02 edition on 2026-11-11, no difference. Not verified on hardware.";
 
         field {
             name = "aop0_buf_saddr";
@@ -861,7 +869,7 @@ Data sheet 13.6 AOP0_BUF_SADDR (offset 0x2008, printed page 13-28, `datasheet.tx
         name = "AOP0 cyclic buffer size register";
         desc = "AOP0_BUF_SIZE is an AOP0 cyclic buffer size register.
 
-Data sheet 13.6 AOP0_BUF_SIZE (offset 0x200C, printed page 13-28, `datasheet.txt` line 50955).";
+Source: data sheet (Hi3520D/Hi3515A/Hi3515C user guide, 13.6 AOP0_BUF_SIZE, offset 0x200C, printed page 13-28), confidence HIGH: offset, fields, access and reset compared by script with the Chinese issue 02 edition on 2026-11-11, no difference. Not verified on hardware.";
 
         field {
             name = "aop0_buf_size";
@@ -876,7 +884,7 @@ Data sheet 13.6 AOP0_BUF_SIZE (offset 0x200C, printed page 13-28, `datasheet.txt
         name = "AOP0 cyclic buffer write address register";
         desc = "AOP0_BUF_WPTR is an AOP0 cyclic buffer write address register.
 
-Data sheet 13.6 AOP0_BUF_WPTR (offset 0x2010, printed page 13-29, `datasheet.txt` line 50984).";
+Source: data sheet (Hi3520D/Hi3515A/Hi3515C user guide, 13.6 AOP0_BUF_WPTR, offset 0x2010, printed page 13-29), confidence HIGH: offset, fields, access and reset compared by script with the Chinese issue 02 edition on 2026-11-11, no difference. Not verified on hardware.";
 
         field {
             name = "aop0_buf_wptr";
@@ -891,7 +899,7 @@ Data sheet 13.6 AOP0_BUF_WPTR (offset 0x2010, printed page 13-29, `datasheet.txt
         name = "AOP0 cyclic buffer read address register";
         desc = "AOP0_BUF_RPTR is an AOP0 cyclic buffer read address register.
 
-Data sheet 13.6 AOP0_BUF_RPTR (offset 0x2014, printed page 13-29, `datasheet.txt` line 51011).";
+Source: data sheet (Hi3520D/Hi3515A/Hi3515C user guide, 13.6 AOP0_BUF_RPTR, offset 0x2014, printed page 13-29), confidence HIGH: offset, fields, access and reset compared by script with the Chinese issue 02 edition on 2026-11-11, no difference. Not verified on hardware.";
 
         field {
             name = "aop0_buf_rptr";
@@ -906,7 +914,7 @@ Data sheet 13.6 AOP0_BUF_RPTR (offset 0x2014, printed page 13-29, `datasheet.txt
         name = "AOP0 cyclic buffer almost empty threshold Y_TH register";
         desc = "AOP0_BUF_AEMPTY_TH is an AOP0 cyclic buffer almost empty threshold register.
 
-Data sheet 13.6 AOP0_BUF_AEMPTY_TH (offset 0x2018, printed page 13-30, `datasheet.txt` line 51042).";
+Source: data sheet (Hi3520D/Hi3515A/Hi3515C user guide, 13.6 AOP0_BUF_AEMPTY_TH, offset 0x2018, printed page 13-30), confidence HIGH: offset, fields, access and reset compared by script with the Chinese issue 02 edition on 2026-11-11, no difference. Not verified on hardware.";
 
         field {
             name = "aop0_buf_aempty_th";
@@ -921,7 +929,7 @@ Data sheet 13.6 AOP0_BUF_AEMPTY_TH (offset 0x2018, printed page 13-30, `datashee
         name = "AOP0 data transfer length register";
         desc = "AOP0_TRANS_SIZE is an AOP0 data transfer length register.
 
-Data sheet 13.6 AOP0_TRANS_SIZE (offset 0x201C, printed page 13-30, `datasheet.txt` line 51070).";
+Source: data sheet (Hi3520D/Hi3515A/Hi3515C user guide, 13.6 AOP0_TRANS_SIZE, offset 0x201C, printed page 13-30), confidence HIGH: offset, fields, access and reset compared by script with the Chinese issue 02 edition on 2026-11-11, no difference. Not verified on hardware.";
 
         field {
             name = "aop0_trans_size";
@@ -936,7 +944,7 @@ Data sheet 13.6 AOP0_TRANS_SIZE (offset 0x201C, printed page 13-30, `datasheet.t
         name = "AOP0 interrupt enable register";
         desc = "AOP0_INT_ENA is an AOP0 interrupt enable register.
 
-Data sheet 13.6 AOP0_INT_ENA (offset 0x2020, printed page 13-31, `datasheet.txt` line 51102).";
+Source: data sheet (Hi3520D/Hi3515A/Hi3515C user guide, 13.6 AOP0_INT_ENA, offset 0x2020, printed page 13-31), confidence HIGH: offset, fields, access and reset compared by script with the Chinese issue 02 edition on 2026-11-11, no difference. Not verified on hardware.";
 
         enum AOP0_INT_ENA_aop0_stop_int_en_enum {
             DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
@@ -1013,7 +1021,7 @@ Data sheet 13.6 AOP0_INT_ENA (offset 0x2020, printed page 13-31, `datasheet.txt`
         name = "Raw AOP0 interrupt register";
         desc = "AOP0_INT_RAW is a raw AOP0 interrupt register.
 
-Data sheet 13.6 AOP0_INT_RAW (offset 0x2024, printed page 13-32, `datasheet.txt` line 51157).";
+Source: data sheet (Hi3520D/Hi3515A/Hi3515C user guide, 13.6 AOP0_INT_RAW, offset 0x2024, printed page 13-32), confidence HIGH: offset, fields, access and reset compared by script with the Chinese issue 02 edition on 2026-11-11, no difference. Not verified on hardware.";
 
         enum AOP0_INT_RAW_aop0_stop_int_raw_enum {
             NO_RAW_INTERRUPT = 0 { name = "No Raw Interrupt"; desc = "No raw interrupt is generated."; };
@@ -1090,7 +1098,7 @@ Data sheet 13.6 AOP0_INT_RAW (offset 0x2024, printed page 13-32, `datasheet.txt`
         name = "AOP0 interrupt status register";
         desc = "AOP0_INT_STATUS is an AOP0 interrupt status register.
 
-Data sheet 13.6 AOP0_INT_STATUS (offset 0x2028, printed page 13-33, `datasheet.txt` line 51212).";
+Source: data sheet (Hi3520D/Hi3515A/Hi3515C user guide, 13.6 AOP0_INT_STATUS, offset 0x2028, printed page 13-33), confidence HIGH: offset, fields, access and reset compared by script with the Chinese issue 02 edition on 2026-11-11, no difference. Not verified on hardware.";
 
         enum AOP0_INT_STATUS_aop0_stop_int_status_enum {
             NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
@@ -1167,7 +1175,7 @@ Data sheet 13.6 AOP0_INT_STATUS (offset 0x2028, printed page 13-33, `datasheet.t
         name = "AOP0 interrupt clear register";
         desc = "AOP0_INT_CLR is an AOP0 interrupt clear register. The value 0 is returned when the register is read, and the value 0 has no meaning.
 
-Data sheet 13.6 AOP0_INT_CLR (offset 0x202C, printed page 13-34, `datasheet.txt` line 51272).";
+Source: data sheet (Hi3520D/Hi3515A/Hi3515C user guide, 13.6 AOP0_INT_CLR, offset 0x202C, printed page 13-34), confidence HIGH: offset, fields, access and reset compared by script with the Chinese issue 02 edition on 2026-11-11, no difference. Not verified on hardware.";
 
         enum AOP0_INT_CLR_aop0_stop_int_clr_enum {
             NOT_CLEARED = 0 { name = "Not Cleared"; desc = "not cleared"; };
@@ -1244,7 +1252,7 @@ Data sheet 13.6 AOP0_INT_CLR (offset 0x202C, printed page 13-34, `datasheet.txt`
         name = "AOP0 cyclic buffer write address lock TMP register";
         desc = "AOP0_BUF_WPTR_TMP is an AOP0 cyclic buffer write address lock register.
 
-Data sheet 13.6 AOP0_BUF_WPTR_TMP (offset 0x2030, printed page 13-35, `datasheet.txt` line 51326).";
+Source: data sheet (Hi3520D/Hi3515A/Hi3515C user guide, 13.6 AOP0_BUF_WPTR_TMP, offset 0x2030, printed page 13-35), confidence HIGH: offset, fields, access and reset compared by script with the Chinese issue 02 edition on 2026-11-11, no difference. Not verified on hardware.";
 
         field {
             name = "aop0_buf_wptr_tmp";
@@ -1259,7 +1267,7 @@ Data sheet 13.6 AOP0_BUF_WPTR_TMP (offset 0x2030, printed page 13-35, `datasheet
         name = "AOP0 cyclic buffer read address lock TMP register";
         desc = "AOP0_BUF_RPTR_TMP is an AOP0 cyclic buffer read address lock register.
 
-Data sheet 13.6 AOP0_BUF_RPTR_TMP (offset 0x2034, printed page 13-35, `datasheet.txt` line 51350).";
+Source: data sheet (Hi3520D/Hi3515A/Hi3515C user guide, 13.6 AOP0_BUF_RPTR_TMP, offset 0x2034, printed page 13-35), confidence HIGH: offset, fields, access and reset compared by script with the Chinese issue 02 edition on 2026-11-11, no difference. Not verified on hardware.";
 
         field {
             name = "aop0_buf_rptr_tmp";
@@ -1274,7 +1282,7 @@ Data sheet 13.6 AOP0_BUF_RPTR_TMP (offset 0x2034, printed page 13-35, `datasheet
         name = "AOP0 enable/disable control register";
         desc = "AOP0_STOP is an AOP0 enable/disable control register.
 
-Data sheet 13.6 AOP0_STOP (offset 0x2038, printed page 13-36, `datasheet.txt` line 51379).";
+Source: data sheet (Hi3520D/Hi3515A/Hi3515C user guide, 13.6 AOP0_STOP, offset 0x2038, printed page 13-36), confidence HIGH: offset, fields, access and reset compared by script with the Chinese issue 02 edition on 2026-11-11, no difference. Not verified on hardware.";
 
         enum AOP0_STOP_aop0_stop_done_enum {
             NOT_COMPLETE = 0 { name = "Not Complete"; desc = "not complete"; };
@@ -1309,7 +1317,7 @@ Data sheet 13.6 AOP0_STOP (offset 0x2038, printed page 13-36, `datasheet.txt` li
         name = "AOP1 attribute configuration register";
         desc = "AOP1_INF_ATTRI is an AOP1 attribute configuration register.
 
-Data sheet 13.6 AOP1_INF_ATTRI (offset 0x2100, printed page 13-37, `datasheet.txt` line 51417).";
+Source: data sheet (Hi3520D/Hi3515A/Hi3515C user guide, 13.6 AOP1_INF_ATTRI, offset 0x2100, printed page 13-37), confidence HIGH: offset, fields, access and reset compared by script with the Chinese issue 02 edition on 2026-11-11, no difference. Not verified on hardware.";
 
         enum AOP1_INF_ATTRI_aop1_samp_precision_enum {
             V_8_BITS = 0 { name = "V 8 Bits"; desc = "8 bits"; };
@@ -1392,7 +1400,7 @@ Data sheet 13.6 AOP1_INF_ATTRI (offset 0x2100, printed page 13-37, `datasheet.tx
         name = "AOP1 control register";
         desc = "AOP1_CTRL is an AOP1 control register.
 
-Data sheet 13.6 AOP1_CTRL (offset 0x2104, printed page 13-38, `datasheet.txt` line 51485).";
+Source: data sheet (Hi3520D/Hi3515A/Hi3515C user guide, 13.6 AOP1_CTRL, offset 0x2104, printed page 13-38), confidence HIGH: offset, fields, access and reset compared by script with the Chinese issue 02 edition on 2026-11-11, no difference. Not verified on hardware.";
 
         enum AOP1_CTRL_aop1_mute_enum {
             UNMUTED = 0 { name = "Unmuted"; desc = "unmuted"; };
@@ -1413,7 +1421,7 @@ Data sheet 13.6 AOP1_CTRL (offset 0x2104, printed page 13-38, `datasheet.txt` li
         name = "AOP1 cyclic buffer start address register";
         desc = "AOP1_BUF_SADDR is an AOP1 cyclic buffer start address register.
 
-Data sheet 13.6 AOP1_BUF_SADDR (offset 0x2108, printed page 13-39, `datasheet.txt` line 51521).";
+Source: data sheet (Hi3520D/Hi3515A/Hi3515C user guide, 13.6 AOP1_BUF_SADDR, offset 0x2108, printed page 13-39), confidence HIGH: offset, fields, access and reset compared by script with the Chinese issue 02 edition on 2026-11-11, no difference. Not verified on hardware.";
 
         field {
             name = "aop1_buf_saddr";
@@ -1428,7 +1436,7 @@ Data sheet 13.6 AOP1_BUF_SADDR (offset 0x2108, printed page 13-39, `datasheet.tx
         name = "AOP1 cyclic buffer size register";
         desc = "AOP1_BUF_SIZE is an AOP1 cyclic buffer size register.
 
-Data sheet 13.6 AOP1_BUF_SIZE (offset 0x210C, printed page 13-39, `datasheet.txt` line 51541).";
+Source: data sheet (Hi3520D/Hi3515A/Hi3515C user guide, 13.6 AOP1_BUF_SIZE, offset 0x210C, printed page 13-39), confidence HIGH: offset, fields, access and reset compared by script with the Chinese issue 02 edition on 2026-11-11, no difference. Not verified on hardware.";
 
         field {
             name = "aop1_buf_size";
@@ -1443,7 +1451,7 @@ Data sheet 13.6 AOP1_BUF_SIZE (offset 0x210C, printed page 13-39, `datasheet.txt
         name = "AOP1 cyclic buffer write address register";
         desc = "AOP1_BUF_WPTR is an AOP1 cyclic buffer write address register.
 
-Data sheet 13.6 AOP1_BUF_WPTR (offset 0x2110, printed page 13-40, `datasheet.txt` line 51570).";
+Source: data sheet (Hi3520D/Hi3515A/Hi3515C user guide, 13.6 AOP1_BUF_WPTR, offset 0x2110, printed page 13-40), confidence HIGH: offset, fields, access and reset compared by script with the Chinese issue 02 edition on 2026-11-11, no difference. Not verified on hardware.";
 
         field {
             name = "aop1_buf_wptr";
@@ -1458,7 +1466,7 @@ Data sheet 13.6 AOP1_BUF_WPTR (offset 0x2110, printed page 13-40, `datasheet.txt
         name = "AOP1 cyclic buffer read address register";
         desc = "AOP1_BUF_RPTR is an AOP1 cyclic buffer read address register.
 
-Data sheet 13.6 AOP1_BUF_RPTR (offset 0x2114, printed page 13-40, `datasheet.txt` line 51597).";
+Source: data sheet (Hi3520D/Hi3515A/Hi3515C user guide, 13.6 AOP1_BUF_RPTR, offset 0x2114, printed page 13-40), confidence HIGH: offset, fields, access and reset compared by script with the Chinese issue 02 edition on 2026-11-11, no difference. Not verified on hardware.";
 
         field {
             name = "aop1_buf_rptr";
@@ -1473,7 +1481,7 @@ Data sheet 13.6 AOP1_BUF_RPTR (offset 0x2114, printed page 13-40, `datasheet.txt
         name = "AOP1 cyclic buffer almost empty threshold Y_TH register";
         desc = "AOP1_BUF_AEMPTY_TH is an AOP1 cyclic buffer almost empty threshold register.
 
-Data sheet 13.6 AOP1_BUF_AEMPTY_TH (offset 0x2118, printed page 13-41, `datasheet.txt` line 51628).";
+Source: data sheet (Hi3520D/Hi3515A/Hi3515C user guide, 13.6 AOP1_BUF_AEMPTY_TH, offset 0x2118, printed page 13-41), confidence HIGH: offset, fields, access and reset compared by script with the Chinese issue 02 edition on 2026-11-11, no difference. Not verified on hardware.";
 
         field {
             name = "aop1_buf_aempty_th";
@@ -1488,7 +1496,7 @@ Data sheet 13.6 AOP1_BUF_AEMPTY_TH (offset 0x2118, printed page 13-41, `datashee
         name = "AOP1 data transfer length register";
         desc = "AOP1_TRANS_SIZE is an AOP1 data transfer length register.
 
-Data sheet 13.6 AOP1_TRANS_SIZE (offset 0x211C, printed page 13-41, `datasheet.txt` line 51656).";
+Source: data sheet (Hi3520D/Hi3515A/Hi3515C user guide, 13.6 AOP1_TRANS_SIZE, offset 0x211C, printed page 13-41), confidence HIGH: offset, fields, access and reset compared by script with the Chinese issue 02 edition on 2026-11-11, no difference. Not verified on hardware.";
 
         field {
             name = "aop1_trans_size";
@@ -1503,7 +1511,7 @@ Data sheet 13.6 AOP1_TRANS_SIZE (offset 0x211C, printed page 13-41, `datasheet.t
         name = "AOP1 interrupt enable register";
         desc = "AOP1_INT_ENA is an AOP1 interrupt enable register.
 
-Data sheet 13.6 AOP1_INT_ENA (offset 0x2120, printed page 13-42, `datasheet.txt` line 51688).";
+Source: data sheet (Hi3520D/Hi3515A/Hi3515C user guide, 13.6 AOP1_INT_ENA, offset 0x2120, printed page 13-42), confidence HIGH: offset, fields, access and reset compared by script with the Chinese issue 02 edition on 2026-11-11, no difference. Not verified on hardware.";
 
         enum AOP1_INT_ENA_aop1_stop_int_en_enum {
             DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
@@ -1580,7 +1588,7 @@ Data sheet 13.6 AOP1_INT_ENA (offset 0x2120, printed page 13-42, `datasheet.txt`
         name = "Raw AOP1 interrupt register";
         desc = "AOP1_INT_RAW is a raw AOP1 interrupt register.
 
-Data sheet 13.6 AOP1_INT_RAW (offset 0x2124, printed page 13-43, `datasheet.txt` line 51743).";
+Source: data sheet (Hi3520D/Hi3515A/Hi3515C user guide, 13.6 AOP1_INT_RAW, offset 0x2124, printed page 13-43), confidence HIGH: offset, fields, access and reset compared by script with the Chinese issue 02 edition on 2026-11-11, no difference. Not verified on hardware.";
 
         enum AOP1_INT_RAW_aop1_stop_int_raw_enum {
             NO_RAW_INTERRUPT = 0 { name = "No Raw Interrupt"; desc = "No raw interrupt is generated."; };
@@ -1657,7 +1665,7 @@ Data sheet 13.6 AOP1_INT_RAW (offset 0x2124, printed page 13-43, `datasheet.txt`
         name = "AOP1 interrupt status register";
         desc = "AOP1_INT_STATUS is an AOP1 interrupt status register.
 
-Data sheet 13.6 AOP1_INT_STATUS (offset 0x2128, printed page 13-44, `datasheet.txt` line 51798).";
+Source: data sheet (Hi3520D/Hi3515A/Hi3515C user guide, 13.6 AOP1_INT_STATUS, offset 0x2128, printed page 13-44), confidence HIGH: offset, fields, access and reset compared by script with the Chinese issue 02 edition on 2026-11-11, no difference. Not verified on hardware.";
 
         enum AOP1_INT_STATUS_aop1_stop_int_status_enum {
             NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
@@ -1734,7 +1742,7 @@ Data sheet 13.6 AOP1_INT_STATUS (offset 0x2128, printed page 13-44, `datasheet.t
         name = "AOP1 interrupt clear register";
         desc = "AOP1_INT_CLR is an AOP1 interrupt clear register.
 
-Data sheet 13.6 AOP1_INT_CLR (offset 0x212C, printed page 13-45, `datasheet.txt` line 51857).";
+Source: data sheet (Hi3520D/Hi3515A/Hi3515C user guide, 13.6 AOP1_INT_CLR, offset 0x212C, printed page 13-45), confidence HIGH: offset, fields, access and reset compared by script with the Chinese issue 02 edition on 2026-11-11, no difference. Not verified on hardware.";
 
         enum AOP1_INT_CLR_aop1_stop_int_clr_enum {
             NOT_CLEARED = 0 { name = "Not Cleared"; desc = "not cleared"; };
@@ -1811,7 +1819,7 @@ Data sheet 13.6 AOP1_INT_CLR (offset 0x212C, printed page 13-45, `datasheet.txt`
         name = "AOP1 cyclic buffer write address lock TMP register";
         desc = "AOP1_BUF_WPTR_TMP is an AOP1 cyclic buffer write address lock register.
 
-Data sheet 13.6 AOP1_BUF_WPTR_TMP (offset 0x2130, printed page 13-46, `datasheet.txt` line 51911).";
+Source: data sheet (Hi3520D/Hi3515A/Hi3515C user guide, 13.6 AOP1_BUF_WPTR_TMP, offset 0x2130, printed page 13-46), confidence HIGH: offset, fields, access and reset compared by script with the Chinese issue 02 edition on 2026-11-11, no difference. Not verified on hardware.";
 
         field {
             name = "aop1_buf_wptr_tmp";
@@ -1826,7 +1834,7 @@ Data sheet 13.6 AOP1_BUF_WPTR_TMP (offset 0x2130, printed page 13-46, `datasheet
         name = "AOP1 cyclic buffer read address lock TMP register";
         desc = "AOP1_BUF_RPTR_TMP is an AOP1 cyclic buffer read address lock register.
 
-Data sheet 13.6 AOP1_BUF_RPTR_TMP (offset 0x2134, printed page 13-46, `datasheet.txt` line 51935).";
+Source: data sheet (Hi3520D/Hi3515A/Hi3515C user guide, 13.6 AOP1_BUF_RPTR_TMP, offset 0x2134, printed page 13-46), confidence HIGH: offset, fields, access and reset compared by script with the Chinese issue 02 edition on 2026-11-11, no difference. Not verified on hardware.";
 
         field {
             name = "aop1_buf_rptr_tmp";
@@ -1841,7 +1849,7 @@ Data sheet 13.6 AOP1_BUF_RPTR_TMP (offset 0x2134, printed page 13-46, `datasheet
         name = "AOP1 enable/disable control register";
         desc = "AOP1_STOP is an AOP1 enable/disable control register.
 
-Data sheet 13.6 AOP1_STOP (offset 0x2138, printed page 13-47, `datasheet.txt` line 51964).";
+Source: data sheet (Hi3520D/Hi3515A/Hi3515C user guide, 13.6 AOP1_STOP, offset 0x2138, printed page 13-47), confidence HIGH: offset, fields, access and reset compared by script with the Chinese issue 02 edition on 2026-11-11, no difference. Not verified on hardware.";
 
         enum AOP1_STOP_aop1_stop_done_enum {
             NOT_COMPLETE = 0 { name = "Not Complete"; desc = "not complete"; };
