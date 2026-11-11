@@ -5,13 +5,19 @@ regfile eHISI_VICAP_CH {
     name = "HiSilicon VICAP port/channel registers";
     desc = "
     One VICAP port/channel register group (`CH[16]` at 0x10000 + n x 0x2000). Offsets are rebased to the start of the group (the data sheet lists the registers of PORT 0 / CH 0 as 0x10000.. and 0x10300..; Figure 11-17 shows PORTn registers at 0x10000 + n x 0x4000 and CHn registers at 0x10300 + n x 0x2000). The PT_* registers (offsets 0x000..0x044) exist only in channels 0 and 4 (at most two external ports are supported; port 0 serves channels 0-3, port 1 channels 4-7); they are present but not implemented in the other groups. The Hi3520D has 8 channels (Hi3515A: 4), the data sheet space allocation shows 16.
+
+    VENDOR CROSS-CHECK (docs/rdl-campaign/vicap-vendor.md; Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, HiMPP kernel module from the OpenIPC Hi3520D rootfs; static disassembly)): the vendor HAL addresses port p at base + 0x10000 + p x 0x8000 (VIU_HAL_SetPortEn and all PT accessors: index (p + 2) shifted left by 15) and channel c at base + 0x10300 + (c & 3) x 0x2000 + (c >> 2) x 0x8000 (VIU_HAL_GetChnReg: switch on c & 3 selects +0x0/0x2000/0x4000/0x6000, c >> 2 is shifted left by 15). Therefore the PT_* registers of the two Hi3520D ports sit in channel groups 0 and 4 (0x10000 and 0x18000, 0x8000 apart); the 0x4000 port spacing of the data sheet Figure 11-17 does not apply (previously: PORTn at 0x10000 + n x 0x4000 quoted from the figure). Offsets inside a group equal vendor offset + 0x300 for registers the vendor reaches through GetChnReg (vendor +0x100 = CH_CTRL 0x400, +0x110 = CH_CROP_START 0x410, +0x200 = CH_DITHER_CFG 0x500, +0x400 = CH_MSC_CFG 0x700, +0x500 = CH_VCDS_CFG 0x800, +0x640 = CH_LHFIR_SPH 0x940, +0x900 = CH_SUM_Y 0xC00). Confidence HIGH. Not verified on hardware.
+    Board facts (2026-11-10, Linux driver test): channel group registers read 0 and drop writes until the port enable bit (PT_INTF_MOD.port_en) is set; the vendor HAL likewise enables the port first (VIU_DRV_EnableDev -> VIU_HAL_SetPortEn, then udelay of g_u32DelayTime = 100 us) and only afterwards programs channels.
+    Global per-register source and confidence lines were added 2026-11-10 (user rule): 'Source: data sheet' text is unchanged data-sheet content; every 'Source: vendor module ...' line is derived from the proprietary module by static analysis and is not a data-sheet fact.
     ";
 
     reg {
         name = "Port mode register";
         desc = "PT_INTF_MOD is a port mode register.
 
-Data sheet 11.1.6 PT_INTF_MOD (offset 0x10000, printed page 11-21, `datasheet.txt` line 33933).";
+Source: data sheet 11.1.6 PT_INTF_MOD (offset 0x10000, printed page 11-21, `datasheet.txt` line 33933).
+
+Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, HiMPP kernel module from the OpenIPC Hi3520D rootfs; static disassembly), VIU_DRV_SetDevAttrByChip (0x13754), VIU_HAL_SetPortEn/ClkMode/WorkMode/InputMode/CompMode/FixCode, VIU_HAL_SetAdChnId/SetAdChnIdEn, confidence HIGH for the bit positions written: bit0 port_en (SetPortEn), bit1 clk_mode (SetPortClkMode; vendor always writes 0 for BT.656), [4:3] port_mod (SetPortCompMode; written by SetDataLayout only for the 16-bit/digital-camera modes), bit7 fix_code (SetPortFixCode; 0 unless BT.601 or digital camera input), [9:8] written by SetPortWorkMode with the multiplex count (0 = 1Mux, 1 = 2Mux, 2 = 4Mux; forced to 1 for BT1120 interleaved), [11:10] written by SetPortInputMode with the interface type (VI interface enum 0 BT656 -> 0, 1 BT601 -> 1, 2 -> 2, 3 BT1120 standard -> 0, 4 BT1120 interleaved -> 3), [13:12]/[15:14]/[17:16]/[19:18] channel IDs ch0..3 (SetAdChnId) and bits 20..23 id enables (SetAdChnIdEn, only when more than one way is multiplexed). NOTE: the vendor labels of [9:8] (multiplex count) and [11:10] (input interface type) are the reverse of the data-sheet field names port_mux_mode [9:8] / port_cap_mode [11:10] below (the data sheet names [11:10] as the 1/2/4-channel multiplexing field); for the 1-channel BT.656 case both fields are 0 so it does not matter there. Previously the data-sheet naming only. Vendor write order for a BT.656 device: CRG11 sc_sel and divider, channel clock on, 100 us, device reset released, WK_MODE ptN_mode, PT ch IDs, clk_mode 0, [9:8], [11:10], fix_code, then port_en LAST (VIU_DRV_EnableDev), 100 us. Not verified on hardware.";
 
         enum PT_INTF_MOD_interleave_seq_enum {
             C_COMPONENT_BEFORE = 0 { name = "C Component Before"; desc = "The C component is before the Y component."; };
@@ -122,7 +128,7 @@ Data sheet 11.1.6 PT_INTF_MOD (offset 0x10000, printed page 11-21, `datasheet.tx
 
         field {
             name = "port_cap_mode";
-            desc = "Port mode.";
+            desc = "Port mode. Vendor writes the INPUT INTERFACE type here (0 BT.656/BT.1120 standard, 1 BT.601, 2 and 3 other, 3 = BT.1120 interleaved), not the multiplex count (Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, HiMPP kernel module from the OpenIPC Hi3520D rootfs; static disassembly), VIU_HAL_SetPortInputMode, confidence HIGH for the position, MEDIUM for the value names). Not verified on hardware.";
             sw = rw;
             hw = r;
             encode = PT_INTF_MOD_port_cap_mode_enum;
@@ -138,7 +144,7 @@ Data sheet 11.1.6 PT_INTF_MOD (offset 0x10000, printed page 11-21, `datasheet.tx
 
         field {
             name = "port_mux_mode";
-            desc = "Multiplexing mode.";
+            desc = "Multiplexing mode. Vendor writes the MULTIPLEX COUNT here (0 = 1 channel, 1 = 2 channel (or BT.1120 interleaved), 2 = 4 channel) (Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, HiMPP kernel module from the OpenIPC Hi3520D rootfs; static disassembly), VIU_HAL_SetPortWorkMode, confidence HIGH for the position). Not verified on hardware.";
             sw = rw;
             hw = r;
             encode = PT_INTF_MOD_port_mux_mode_enum;
@@ -206,7 +212,7 @@ Data sheet 11.1.6 PT_INTF_MOD (offset 0x10000, printed page 11-21, `datasheet.tx
         name = "R component mask register";
         desc = "PT_R_MASK_L is R component mask register.
 
-Data sheet 11.1.6 PT_R_MASK_L (offset 0x10004, printed page 11-23, `datasheet.txt` line 34036).";
+Source: data sheet 11.1.6 PT_R_MASK_L (offset 0x10004, printed page 11-23, `datasheet.txt` line 34036).";
 
         field {
             name = "r_mask";
@@ -221,7 +227,7 @@ Data sheet 11.1.6 PT_R_MASK_L (offset 0x10004, printed page 11-23, `datasheet.tx
         name = "B component mask register";
         desc = "PT_B_MASK_L is B component mask register.
 
-Data sheet 11.1.6 PT_B_MASK_L (offset 0x10008, printed page 11-24, `datasheet.txt` line 34065).";
+Source: data sheet 11.1.6 PT_B_MASK_L (offset 0x10008, printed page 11-24, `datasheet.txt` line 34065).";
 
         field {
             name = "b_mask";
@@ -236,7 +242,7 @@ Data sheet 11.1.6 PT_B_MASK_L (offset 0x10008, printed page 11-24, `datasheet.tx
         name = "G component mask register";
         desc = "PT_G_MASK_L is G component mask register.
 
-Data sheet 11.1.6 PT_G_MASK_L (offset 0x1000C, printed page 11-24, `datasheet.txt` line 34084).";
+Source: data sheet 11.1.6 PT_G_MASK_L (offset 0x1000C, printed page 11-24, `datasheet.txt` line 34084).";
 
         field {
             name = "g_mask";
@@ -251,7 +257,7 @@ Data sheet 11.1.6 PT_G_MASK_L (offset 0x1000C, printed page 11-24, `datasheet.tx
         name = "R component offset register";
         desc = "PT_R_OFFSET_L is R component offset register.
 
-Data sheet 11.1.6 PT_R_OFFSET_L (offset 0x10014, printed page 11-24, `datasheet.txt` line 34102).";
+Source: data sheet 11.1.6 PT_R_OFFSET_L (offset 0x10014, printed page 11-24, `datasheet.txt` line 34102).";
 
         field {
             name = "r_offset";
@@ -266,7 +272,7 @@ Data sheet 11.1.6 PT_R_OFFSET_L (offset 0x10014, printed page 11-24, `datasheet.
         name = "B component offset register";
         desc = "PT_B_OFFSET_L is B component offset register.
 
-Data sheet 11.1.6 PT_B_OFFSET_L (offset 0x10018, printed page 11-25, `datasheet.txt` line 34130).";
+Source: data sheet 11.1.6 PT_B_OFFSET_L (offset 0x10018, printed page 11-25, `datasheet.txt` line 34130).";
 
         field {
             name = "b_offset";
@@ -281,7 +287,7 @@ Data sheet 11.1.6 PT_B_OFFSET_L (offset 0x10018, printed page 11-25, `datasheet.
         name = "G component offset register";
         desc = "PT_G_OFFSET_L is G component offset register.
 
-Data sheet 11.1.6 PT_G_OFFSET_L (offset 0x1001C, printed page 11-25, `datasheet.txt` line 34150).";
+Source: data sheet 11.1.6 PT_G_OFFSET_L (offset 0x1001C, printed page 11-25, `datasheet.txt` line 34150).";
 
         field {
             name = "g_offset";
@@ -296,11 +302,13 @@ Data sheet 11.1.6 PT_G_OFFSET_L (offset 0x1001C, printed page 11-25, `datasheet.
         name = "Port test configuration register";
         desc = "PT_TEST_CFG is a port test configuration register.
 
-Data sheet 11.1.6 PT_TEST_CFG (offset 0x10040, printed page 11-25, `datasheet.txt` line 34169).";
+Source: data sheet 11.1.6 PT_TEST_CFG (offset 0x10040, printed page 11-25, `datasheet.txt` line 34169).
+
+Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, HiMPP kernel module from the OpenIPC Hi3520D rootfs; static disassembly), VIU_HAL_SetColorBarEn (0x13e38), confidence HIGH that bit 0 is a color bar enable at port base + 0x40: the HAL does read-modify-write of bit 0 only (cbar_en) at base + 0x10040 + port x 0x8000. The function is NOT called anywhere in hi3520D_viu.ko (no caller or exported use; the module has no test-pattern parameter or ioctl), and the vendor never writes hsync_sel [1] or interlace [2]; no timing or clock registers for the generator exist in the vendor code. The only related board script content (crgctrl_*_hi3520D.sh, 0x2003002C values 0x5524ff02 / 0x00241102 / 0xaa240102 / 0x0524f102) never sets PERI_CRG11.vi_selftest. Conclusion: the generator is probably a verification feature (the module also contains an empty RTL_Verify_RegWrite stub); whether it works in silicon is UNKNOWN. Not verified on hardware. Board 2026-11-10: with cbar_en (and hsync_sel/interlace variants) plus vi_selftest set, no frame start interrupt and IPI size 0 were observed.";
 
         field {
             name = "interlace";
-            desc = "interlace";
+            desc = "interlace Source: data sheet (name only; not referenced by the vendor module, confidence: nothing known about behavior). Not verified on hardware.";
             sw = rw;
             hw = r;
             reset = 0x0;
@@ -308,7 +316,7 @@ Data sheet 11.1.6 PT_TEST_CFG (offset 0x10040, printed page 11-25, `datasheet.tx
 
         field {
             name = "hsync_sel";
-            desc = "hsync_sel";
+            desc = "hsync_sel Source: data sheet (name only; not referenced by the vendor module, confidence: nothing known about behavior). Not verified on hardware.";
             sw = rw;
             hw = r;
             reset = 0x0;
@@ -316,7 +324,7 @@ Data sheet 11.1.6 PT_TEST_CFG (offset 0x10040, printed page 11-25, `datasheet.tx
 
         field {
             name = "cbar_en";
-            desc = "cbar_en";
+            desc = "cbar_en Source: vendor module hi3520D_viu.ko, VIU_HAL_SetColorBarEn, confidence HIGH for the bit position; behavior unknown. Not verified on hardware.";
             sw = rw;
             hw = r;
             reset = 0x0;
@@ -327,7 +335,7 @@ Data sheet 11.1.6 PT_TEST_CFG (offset 0x10040, printed page 11-25, `datasheet.tx
         name = "Port ID status register";
         desc = "PT_ID_STATUS is a port ID status register.
 
-Data sheet 11.1.6 PT_ID_STATUS (offset 0x10044, printed page 11-26, `datasheet.txt` line 34226).";
+Source: data sheet 11.1.6 PT_ID_STATUS (offset 0x10044, printed page 11-26, `datasheet.txt` line 34226).";
 
         field {
             name = "id3";
@@ -366,7 +374,9 @@ Data sheet 11.1.6 PT_ID_STATUS (offset 0x10044, printed page 11-26, `datasheet.t
         name = "Port timing register 0";
         desc = "CH_INTF_CFG0 is timing register 0.
 
-Data sheet 11.1.6 CH_INTF_CFG0 (offset 0x10300, printed page 11-27, `datasheet.txt` line 34256).";
+Source: data sheet 11.1.6 CH_INTF_CFG0 (offset 0x10300, printed page 11-27, `datasheet.txt` line 34256).
+
+Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, HiMPP kernel module from the OpenIPC Hi3520D rootfs; static disassembly), VIU_HAL_SetChnInputMode ([6:5]), VIU_HAL_SetChnScanMode / SetChnCombineMode ([8:7]), VIU_HAL_SetChnSync, confidence HIGH for positions: [6:5] port_mode: the vendor writes the interface type (0 for BT.656 and BT.1120 standard, 1 and 2 for the sync-based BT.601/digital camera modes, 3 for BT.1120 interleaved; VIU_DRV_SetChnIntfCfg), [8:7] scan mode (bit7 = progressive when set, ScanMode(0 interlaced) clears bit7 and keeps bit8; CombineMode != 0 sets bit8 = Y/C separate). UNDOCUMENTED BITS found: VIU_HAL_SetChnSync writes six single bits of this register from the VI sync configuration (bits 4, 3, 2, 1, 9, 10: arguments in call order; HiMPP VI_SYNC_CFG_S members vsync field/pulse, vsync polarity, vsync valid and its polarity, hsync polarity), used only for BT.601 / digital camera input (not for BT.656; VIU_DRV_SetChnIntfCfg calls it only when the interface type is 1 or 2). Names and polarities are UNKNOWN, confidence LOW for the meaning (HIGH for the positions). Not verified on hardware.";
 
         field {
             name = "port_scan_mod";
@@ -383,13 +393,57 @@ Data sheet 11.1.6 CH_INTF_CFG0 (offset 0x10300, printed page 11-27, `datasheet.t
             hw = r;
             reset = 0x0;
         } port_mode[6:5];
+
+        field {
+            name = "bit4_unk";
+            desc = "Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, static disassembly) Observed only as a written bit: VIU_HAL_SetChnSync (0x15020) writes this bit from its 1st configuration argument (read-modify-write of the whole register; called from VIU_DRV_SetChnIntfCfg only for the BT.601 / digital camera interface types, never for BT.656). Meaning unknown. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } bit4_unk[4:4];
+
+        field {
+            name = "bit3_unk";
+            desc = "Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, static disassembly) Observed only as a written bit: VIU_HAL_SetChnSync (0x15020) writes this bit from its 2nd configuration argument (read-modify-write of the whole register; called from VIU_DRV_SetChnIntfCfg only for the BT.601 / digital camera interface types, never for BT.656). Meaning unknown. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } bit3_unk[3:3];
+
+        field {
+            name = "bit2_unk";
+            desc = "Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, static disassembly) Observed only as a written bit: VIU_HAL_SetChnSync (0x15020) writes this bit from its 3rd configuration argument (read-modify-write of the whole register; called from VIU_DRV_SetChnIntfCfg only for the BT.601 / digital camera interface types, never for BT.656). Meaning unknown. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } bit2_unk[2:2];
+
+        field {
+            name = "bit1_unk";
+            desc = "Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, static disassembly) Observed only as a written bit: VIU_HAL_SetChnSync (0x15020) writes this bit from its 4th configuration argument (read-modify-write of the whole register; called from VIU_DRV_SetChnIntfCfg only for the BT.601 / digital camera interface types, never for BT.656). Meaning unknown. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } bit1_unk[1:1];
+
+        field {
+            name = "bit9_unk";
+            desc = "Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, static disassembly) Observed only as a written bit: VIU_HAL_SetChnSync (0x15020) writes this bit from its 5th configuration argument (read-modify-write of the whole register; called from VIU_DRV_SetChnIntfCfg only for the BT.601 / digital camera interface types, never for BT.656). Meaning unknown. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } bit9_unk[9:9];
+
+        field {
+            name = "bit10_unk";
+            desc = "Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, static disassembly) Observed only as a written bit: VIU_HAL_SetChnSync (0x15020) writes this bit from its 6th configuration argument (read-modify-write of the whole register; called from VIU_DRV_SetChnIntfCfg only for the BT.601 / digital camera interface types, never for BT.656). Meaning unknown. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } bit10_unk[10:10];
     } CH_INTF_CFG0 @ 0x300;
 
     reg {
         name = "Port timing register 1";
         desc = "CH_INTF_CFG1 is timing register 1.
 
-Data sheet 11.1.6 CH_INTF_CFG1 (offset 0x10304, printed page 11-28, `datasheet.txt` line 34314).";
+Source: data sheet 11.1.6 CH_INTF_CFG1 (offset 0x10304, printed page 11-28, `datasheet.txt` line 34314).
+
+Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, HiMPP kernel module from the OpenIPC Hi3520D rootfs; static disassembly), VIU_HAL_SetChnYUVInputSeq ([5:4]), SetChnCompMode ([15:14]), SetChnFtcPolar (bit2), SetChnFixcode (bit3), SetChnCorrectEn (bit0), confidence HIGH for the positions. Vendor default path for BT.656 (VIU_DRV_SetChnIntfCfg, interface type 0): sav_ver_en = 0, ftc_cfg = 0, ftc_polar = 0, yuv_seq = 0 (UYVY; 1 for the other interface types), port_mod = 0. The Linux driver writes the whole register as 0, which is identical. Not verified on hardware.";
 
         enum CH_INTF_CFG1_port_mod_enum {
             SINGLE_COMPONENT_INPUT = 0 { name = "Single Component Input"; desc = "single-component input"; };
@@ -459,10 +513,129 @@ Data sheet 11.1.6 CH_INTF_CFG1 (offset 0x10304, printed page 11-28, `datasheet.t
     } CH_INTF_CFG1 @ 0x304;
 
     reg {
+        name = "[inferred] hsync front blank";
+        desc = "[inferred] hsync front blank. NOT IN THE DATA SHEET. Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, HiMPP kernel module from the OpenIPC Hi3520D rootfs; static disassembly), VIU_HAL_SetChnHsync_*/SetChnVsync_*/SetChnTimingBlank (channel-group offset 0x310 = vendor GetChnReg offset 0x10): a 16-bit write (strh into a read-modify-write copy, upper half preserved). Used only for BT.601 / digital camera input with explicit sync timing (VIU_DRV_SetChnIntfCfg); the name comes from the vendor function name, the units (pixels or lines) and valid range are UNKNOWN. Confidence MEDIUM for the offset and 16-bit width, LOW for the meaning. Not verified on hardware. The name is VENDOR-DERIVED (from the HAL function name, not documented); access observed: written only (16-bit read-modify-write), value = the VI timing blank configuration given by the application (no constants). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "[inferred] 16-bit timing value (vendor-derived, unit unknown).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } value[15:0];
+    } CH_HSYNC_HFB @ 0x310;
+
+    reg {
+        name = "[inferred] hsync active";
+        desc = "[inferred] hsync active. NOT IN THE DATA SHEET. Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, HiMPP kernel module from the OpenIPC Hi3520D rootfs; static disassembly), VIU_HAL_SetChnHsync_*/SetChnVsync_*/SetChnTimingBlank (channel-group offset 0x314 = vendor GetChnReg offset 0x14): a 16-bit write (strh into a read-modify-write copy, upper half preserved). Used only for BT.601 / digital camera input with explicit sync timing (VIU_DRV_SetChnIntfCfg); the name comes from the vendor function name, the units (pixels or lines) and valid range are UNKNOWN. Confidence MEDIUM for the offset and 16-bit width, LOW for the meaning. Not verified on hardware. The name is VENDOR-DERIVED (from the HAL function name, not documented); access observed: written only (16-bit read-modify-write), value = the VI timing blank configuration given by the application (no constants). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "[inferred] 16-bit timing value (vendor-derived, unit unknown).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } value[15:0];
+    } CH_HSYNC_HACT @ 0x314;
+
+    reg {
+        name = "[inferred] hsync back blank";
+        desc = "[inferred] hsync back blank. NOT IN THE DATA SHEET. Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, HiMPP kernel module from the OpenIPC Hi3520D rootfs; static disassembly), VIU_HAL_SetChnHsync_*/SetChnVsync_*/SetChnTimingBlank (channel-group offset 0x318 = vendor GetChnReg offset 0x18): a 16-bit write (strh into a read-modify-write copy, upper half preserved). Used only for BT.601 / digital camera input with explicit sync timing (VIU_DRV_SetChnIntfCfg); the name comes from the vendor function name, the units (pixels or lines) and valid range are UNKNOWN. Confidence MEDIUM for the offset and 16-bit width, LOW for the meaning. Not verified on hardware. The name is VENDOR-DERIVED (from the HAL function name, not documented); access observed: written only (16-bit read-modify-write), value = the VI timing blank configuration given by the application (no constants). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "[inferred] 16-bit timing value (vendor-derived, unit unknown).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } value[15:0];
+    } CH_HSYNC_HBB @ 0x318;
+
+    reg {
+        name = "[inferred] vsync field 1 front blank";
+        desc = "[inferred] vsync field 1 front blank. NOT IN THE DATA SHEET. Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, HiMPP kernel module from the OpenIPC Hi3520D rootfs; static disassembly), VIU_HAL_SetChnHsync_*/SetChnVsync_*/SetChnTimingBlank (channel-group offset 0x320 = vendor GetChnReg offset 0x20): a 16-bit write (strh into a read-modify-write copy, upper half preserved). Used only for BT.601 / digital camera input with explicit sync timing (VIU_DRV_SetChnIntfCfg); the name comes from the vendor function name, the units (pixels or lines) and valid range are UNKNOWN. Confidence MEDIUM for the offset and 16-bit width, LOW for the meaning. Not verified on hardware. The name is VENDOR-DERIVED (from the HAL function name, not documented); access observed: written only (16-bit read-modify-write), value = the VI timing blank configuration given by the application (no constants). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "[inferred] 16-bit timing value (vendor-derived, unit unknown).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } value[15:0];
+    } CH_VSYNC_VFB @ 0x320;
+
+    reg {
+        name = "[inferred] vsync field 1 active";
+        desc = "[inferred] vsync field 1 active. NOT IN THE DATA SHEET. Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, HiMPP kernel module from the OpenIPC Hi3520D rootfs; static disassembly), VIU_HAL_SetChnHsync_*/SetChnVsync_*/SetChnTimingBlank (channel-group offset 0x324 = vendor GetChnReg offset 0x24): a 16-bit write (strh into a read-modify-write copy, upper half preserved). Used only for BT.601 / digital camera input with explicit sync timing (VIU_DRV_SetChnIntfCfg); the name comes from the vendor function name, the units (pixels or lines) and valid range are UNKNOWN. Confidence MEDIUM for the offset and 16-bit width, LOW for the meaning. Not verified on hardware. The name is VENDOR-DERIVED (from the HAL function name, not documented); access observed: written only (16-bit read-modify-write), value = the VI timing blank configuration given by the application (no constants). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "[inferred] 16-bit timing value (vendor-derived, unit unknown).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } value[15:0];
+    } CH_VSYNC_VACT @ 0x324;
+
+    reg {
+        name = "[inferred] vsync field 1 back blank";
+        desc = "[inferred] vsync field 1 back blank. NOT IN THE DATA SHEET. Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, HiMPP kernel module from the OpenIPC Hi3520D rootfs; static disassembly), VIU_HAL_SetChnHsync_*/SetChnVsync_*/SetChnTimingBlank (channel-group offset 0x328 = vendor GetChnReg offset 0x28): a 16-bit write (strh into a read-modify-write copy, upper half preserved). Used only for BT.601 / digital camera input with explicit sync timing (VIU_DRV_SetChnIntfCfg); the name comes from the vendor function name, the units (pixels or lines) and valid range are UNKNOWN. Confidence MEDIUM for the offset and 16-bit width, LOW for the meaning. Not verified on hardware. The name is VENDOR-DERIVED (from the HAL function name, not documented); access observed: written only (16-bit read-modify-write), value = the VI timing blank configuration given by the application (no constants). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "[inferred] 16-bit timing value (vendor-derived, unit unknown).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } value[15:0];
+    } CH_VSYNC_VBB @ 0x328;
+
+    reg {
+        name = "[inferred] vsync field 2 front blank";
+        desc = "[inferred] vsync field 2 front blank. NOT IN THE DATA SHEET. Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, HiMPP kernel module from the OpenIPC Hi3520D rootfs; static disassembly), VIU_HAL_SetChnHsync_*/SetChnVsync_*/SetChnTimingBlank (channel-group offset 0x330 = vendor GetChnReg offset 0x30): a 16-bit write (strh into a read-modify-write copy, upper half preserved). Used only for BT.601 / digital camera input with explicit sync timing (VIU_DRV_SetChnIntfCfg); the name comes from the vendor function name, the units (pixels or lines) and valid range are UNKNOWN. Confidence MEDIUM for the offset and 16-bit width, LOW for the meaning. Not verified on hardware. The name is VENDOR-DERIVED (from the HAL function name, not documented); access observed: written only (16-bit read-modify-write), value = the VI timing blank configuration given by the application (no constants). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "[inferred] 16-bit timing value (vendor-derived, unit unknown).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } value[15:0];
+    } CH_VSYNC_VBFB @ 0x330;
+
+    reg {
+        name = "[inferred] vsync field 2 active";
+        desc = "[inferred] vsync field 2 active. NOT IN THE DATA SHEET. Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, HiMPP kernel module from the OpenIPC Hi3520D rootfs; static disassembly), VIU_HAL_SetChnHsync_*/SetChnVsync_*/SetChnTimingBlank (channel-group offset 0x334 = vendor GetChnReg offset 0x34): a 16-bit write (strh into a read-modify-write copy, upper half preserved). Used only for BT.601 / digital camera input with explicit sync timing (VIU_DRV_SetChnIntfCfg); the name comes from the vendor function name, the units (pixels or lines) and valid range are UNKNOWN. Confidence MEDIUM for the offset and 16-bit width, LOW for the meaning. Not verified on hardware. The name is VENDOR-DERIVED (from the HAL function name, not documented); access observed: written only (16-bit read-modify-write), value = the VI timing blank configuration given by the application (no constants). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "[inferred] 16-bit timing value (vendor-derived, unit unknown).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } value[15:0];
+    } CH_VSYNC_VBACT @ 0x334;
+
+    reg {
+        name = "[inferred] vsync field 2 back blank";
+        desc = "[inferred] vsync field 2 back blank. NOT IN THE DATA SHEET. Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, HiMPP kernel module from the OpenIPC Hi3520D rootfs; static disassembly), VIU_HAL_SetChnHsync_*/SetChnVsync_*/SetChnTimingBlank (channel-group offset 0x338 = vendor GetChnReg offset 0x38): a 16-bit write (strh into a read-modify-write copy, upper half preserved). Used only for BT.601 / digital camera input with explicit sync timing (VIU_DRV_SetChnIntfCfg); the name comes from the vendor function name, the units (pixels or lines) and valid range are UNKNOWN. Confidence MEDIUM for the offset and 16-bit width, LOW for the meaning. Not verified on hardware. The name is VENDOR-DERIVED (from the HAL function name, not documented); access observed: written only (16-bit read-modify-write), value = the VI timing blank configuration given by the application (no constants). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "value";
+            desc = "[inferred] 16-bit timing value (vendor-derived, unit unknown).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } value[15:0];
+    } CH_VSYNC_VBBB @ 0x338;
+
+    reg {
         name = "Frame sync delay register";
         desc = "CH_FSTART_DLY is frame sync delay register. The data sheet lists no bit fields for it.
 
-Data sheet 11.1.6 CH_FSTART_DLY (offset 0x10360, printed page 11-29, `datasheet.txt` line 34379).";
+Source: data sheet 11.1.6 CH_FSTART_DLY (offset 0x10360, printed page 11-29, `datasheet.txt` line 34379).
+
+Source: vendor module hi3520D_viu.ko: no access found (not touched by any HAL function), confidence: nothing known. Not verified on hardware.";
 
         field {
             name = "value";
@@ -477,7 +650,9 @@ Data sheet 11.1.6 CH_FSTART_DLY (offset 0x10360, printed page 11-29, `datasheet.
         name = "Channel control register";
         desc = "CH_CTRL is a channel control register.
 
-Data sheet 11.1.6 CH_CTRL (offset 0x10400, printed page 11-29, `datasheet.txt` line 34398).";
+Source: data sheet 11.1.6 CH_CTRL (offset 0x10400, printed page 11-29, `datasheet.txt` line 34398).
+
+Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, HiMPP kernel module from the OpenIPC Hi3520D rootfs; static disassembly), VIU_HAL_SetChnEn (0x14718; read-modify-write of bit 0), confidence HIGH. Vendor sequencing (VIU_DRV_EnableChn_ByChip, ViuDrvInterruptRoute, ViuDrvChnProcess): the channel is first cleared (ch_en = 0), the raw interrupts are cleared (all ones written to CH_INT_RAW) and CH_INT_MASK is set to 1 (frame start only, VIU_DRV_GetDefIntMask = 1). ch_en is set to 1 ONLY LATER, from the frame-start interrupt handler, after the next buffer addresses have been written (ViuDrvProcCapFrm -> VIU_DRV_SetChnEn) -- i.e. the vendor takes frame-start interrupts with ch_en = 0, so the frame-start event (CH_INT_RAW bit 0) is generated by the port timing detection independently of ch_en and of buffers. The Linux driver sets ch_en and a buffer before the first frame start; that should be harmless but differs from the vendor. Not verified on hardware.";
 
         enum CH_CTRL_ch_en_enum {
             DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
@@ -498,7 +673,9 @@ Data sheet 11.1.6 CH_CTRL (offset 0x10400, printed page 11-29, `datasheet.txt` l
         name = "Capture control register";
         desc = "CH_REG_NEWER is a capture control register.
 
-Data sheet 11.1.6 CH_REG_NEWER (offset 0x10404, printed page 11-30, `datasheet.txt` line 34431).";
+Source: data sheet 11.1.6 CH_REG_NEWER (offset 0x10404, printed page 11-30, `datasheet.txt` line 34431).
+
+Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, HiMPP kernel module from the OpenIPC Hi3520D rootfs; static disassembly), VIU_HAL_SetRegNewer (0x14788: read-modify-write, OR 1), called from the interrupt path after the buffer addresses (CH_YBASE_ADDR..CH_CLINE_OFFSET) were rewritten in the frame-start handler (ViuDrvChnIntProcess), confidence HIGH. Not verified on hardware.";
 
         field {
             name = "reg_newer";
@@ -513,7 +690,9 @@ Data sheet 11.1.6 CH_REG_NEWER (offset 0x10404, printed page 11-30, `datasheet.t
         name = "Crop start position register";
         desc = "CH_CROP_START is a crop start position register.
 
-Data sheet 11.1.6 CH_CROP_START (offset 0x10410, printed page 11-30, `datasheet.txt` line 34458).";
+Source: data sheet 11.1.6 CH_CROP_START (offset 0x10410, printed page 11-30, `datasheet.txt` line 34458).
+
+Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, HiMPP kernel module from the OpenIPC Hi3520D rootfs; static disassembly), VIU_HAL_SetChnCrop: x start in [11:0], y start in [27:16], written as plain values (not minus one), confidence HIGH. Not verified on hardware.";
 
         field {
             name = "y_start";
@@ -536,7 +715,9 @@ Data sheet 11.1.6 CH_CROP_START (offset 0x10410, printed page 11-30, `datasheet.
         name = "Crop size configuration register";
         desc = "CH_CROP_SIZE is a crop size configuration register.
 
-Data sheet 11.1.6 CH_CROP_SIZE (offset 0x10414, printed page 11-30, `datasheet.txt` line 34480).";
+Source: data sheet 11.1.6 CH_CROP_SIZE (offset 0x10414, printed page 11-30, `datasheet.txt` line 34480).
+
+VENDOR CONFIRMS the size - 1 encoding (Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, HiMPP kernel module from the OpenIPC Hi3520D rootfs; static disassembly), VIU_HAL_SetChnCrop: the crop size words are written as width - 1 and height - 1, 12 bits each; VIU_HAL_SetChnYCDestSize writes the luma and chroma destination sizes as width - 1 / height - 1), confidence HIGH; the data-sheet description text 'in pixels/lines' is therefore imprecise (previously: size in pixels/lines). Not verified on hardware.";
 
         field {
             name = "crop_hgt";
@@ -559,7 +740,9 @@ Data sheet 11.1.6 CH_CROP_SIZE (offset 0x10414, printed page 11-30, `datasheet.t
         name = "Raw stream luminance storage size register";
         desc = "CH_YDES_SIZE is a luminance storage size register.
 
-Data sheet 11.1.6 CH_YDES_SIZE (offset 0x10418, printed page 11-31, `datasheet.txt` line 34511).";
+Source: data sheet 11.1.6 CH_YDES_SIZE (offset 0x10418, printed page 11-31, `datasheet.txt` line 34511).
+
+VENDOR CONFIRMS the size - 1 encoding (Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, HiMPP kernel module from the OpenIPC Hi3520D rootfs; static disassembly), VIU_HAL_SetChnCrop: the crop size words are written as width - 1 and height - 1, 12 bits each; VIU_HAL_SetChnYCDestSize writes the luma and chroma destination sizes as width - 1 / height - 1), confidence HIGH; the data-sheet description text 'in pixels/lines' is therefore imprecise (previously: size in pixels/lines). Not verified on hardware.";
 
         field {
             name = "height";
@@ -582,7 +765,9 @@ Data sheet 11.1.6 CH_YDES_SIZE (offset 0x10418, printed page 11-31, `datasheet.t
         name = "Raw stream chrominance storage size register";
         desc = "CH_CDES_SIZE is a chrominance storage size register.
 
-Data sheet 11.1.6 CH_CDES_SIZE (offset 0x1041C, printed page 11-31, `datasheet.txt` line 34533).";
+Source: data sheet 11.1.6 CH_CDES_SIZE (offset 0x1041C, printed page 11-31, `datasheet.txt` line 34533).
+
+VENDOR CONFIRMS the size - 1 encoding (Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, HiMPP kernel module from the OpenIPC Hi3520D rootfs; static disassembly), VIU_HAL_SetChnCrop: the crop size words are written as width - 1 and height - 1, 12 bits each; VIU_HAL_SetChnYCDestSize writes the luma and chroma destination sizes as width - 1 / height - 1), confidence HIGH; the data-sheet description text 'in pixels/lines' is therefore imprecise (previously: size in pixels/lines). Not verified on hardware.";
 
         field {
             name = "height";
@@ -605,7 +790,9 @@ Data sheet 11.1.6 CH_CDES_SIZE (offset 0x1041C, printed page 11-31, `datasheet.t
         name = "Raw stream luminance storage base address register";
         desc = "CH_YBASE_ADDR is a luminance storage base address register.
 
-Data sheet 11.1.6 CH_YBASE_ADDR (offset 0x10420, printed page 11-32, `datasheet.txt` line 34564).";
+Source: data sheet 11.1.6 CH_YBASE_ADDR (offset 0x10420, printed page 11-32, `datasheet.txt` line 34564).
+
+Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, HiMPP kernel module from the OpenIPC Hi3520D rootfs; static disassembly), VIU_HAL_SetOutPicMemInfo (word write at group offset +0x120), confidence HIGH. Not verified on hardware.";
 
         field {
             name = "ybase_addr";
@@ -620,7 +807,9 @@ Data sheet 11.1.6 CH_YBASE_ADDR (offset 0x10420, printed page 11-32, `datasheet.
         name = "Raw stream chrominance storage base address register";
         desc = "CH_CBASE_ADDR is a chrominance storage base address register.
 
-Data sheet 11.1.6 CH_CBASE_ADDR (offset 0x10424, printed page 11-32, `datasheet.txt` line 34583).";
+Source: data sheet 11.1.6 CH_CBASE_ADDR (offset 0x10424, printed page 11-32, `datasheet.txt` line 34583).
+
+Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, HiMPP kernel module from the OpenIPC Hi3520D rootfs; static disassembly), VIU_HAL_SetOutPicMemInfo (word write at +0x124), confidence HIGH. Not verified on hardware.";
 
         field {
             name = "cbase_addr";
@@ -635,7 +824,9 @@ Data sheet 11.1.6 CH_CBASE_ADDR (offset 0x10424, printed page 11-32, `datasheet.
         name = "Raw stream luminance line offset register";
         desc = "CH_YLINE_OFFSET is a luminance line offset register.
 
-Data sheet 11.1.6 CH_YLINE_OFFSET (offset 0x10428, printed page 11-32, `datasheet.txt` line 34601).";
+Source: data sheet 11.1.6 CH_YLINE_OFFSET (offset 0x10428, printed page 11-32, `datasheet.txt` line 34601).
+
+Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, HiMPP kernel module from the OpenIPC Hi3520D rootfs; static disassembly), VIU_HAL_SetOutPicMemInfo (16-bit write into [15:0], upper half preserved; ViuDrvStartCap passes line stride x 2 when a frame is captured as two interleaved fields, and the plain stride otherwise), confidence HIGH. Not verified on hardware.";
 
         field {
             name = "y_stride";
@@ -650,7 +841,9 @@ Data sheet 11.1.6 CH_YLINE_OFFSET (offset 0x10428, printed page 11-32, `datashee
         name = "Raw stream chrominance line offset register";
         desc = "CH_CLINE_OFFSET is a chrominance line offset register.
 
-Data sheet 11.1.6 CH_CLINE_OFFSET (offset 0x1042C, printed page 11-33, `datasheet.txt` line 34630).";
+Source: data sheet 11.1.6 CH_CLINE_OFFSET (offset 0x1042C, printed page 11-33, `datasheet.txt` line 34630).
+
+Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, HiMPP kernel module from the OpenIPC Hi3520D rootfs; static disassembly), VIU_HAL_SetOutPicMemInfo (16-bit write into [15:0]), confidence HIGH. Not verified on hardware.";
 
         field {
             name = "c_stride";
@@ -665,7 +858,9 @@ Data sheet 11.1.6 CH_CLINE_OFFSET (offset 0x1042C, printed page 11-33, `datashee
         name = "Channel raw interrupt register";
         desc = "CH_INT_RAW is a channel raw interrupt register.
 
-Data sheet 11.1.6 CH_INT_RAW (offset 0x10430, printed page 11-33, `datasheet.txt` line 34650).";
+Source: data sheet 11.1.6 CH_INT_RAW (offset 0x10430, printed page 11-33, `datasheet.txt` line 34650).
+
+Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, HiMPP kernel module from the OpenIPC Hi3520D rootfs; static disassembly), VIU_HAL_GetRawIntStatus (+0x130), VIU_HAL_ClrInterruptStatus (write of the read value OR mask back to +0x130; the vendor clears with all ones at channel enable), confidence HIGH. The vendor interrupt handler (ViuDrvInterruptRoute, GIC ID 68 = 0x44 passed to request_threaded_irq) first reads VICAP_INT, then per channel the masked status (CH_INT) and raw status, clears, and tests bits 0 (frame start), 8 (field throw) and 17 (buffer overflow, VIU_HAL_BUFOVF). Default enabled mask = bit 0 only. Not verified on hardware.";
 
         enum CH_INT_RAW_bus_err_enum {
             NO_RAW_INTERRUPT = 0 { name = "No Raw Interrupt"; desc = "No raw interrupt is generated."; };
@@ -777,7 +972,7 @@ Data sheet 11.1.6 CH_INT_RAW (offset 0x10430, printed page 11-33, `datasheet.txt
         name = "Channel interrupt register";
         desc = "CH_INT is a channel interrupt register.
 
-Data sheet 11.1.6 CH_INT (offset 0x10434, printed page 11-34, `datasheet.txt` line 34719).";
+Source: data sheet 11.1.6 CH_INT (offset 0x10434, printed page 11-34, `datasheet.txt` line 34719).";
 
         enum CH_INT_bus_err_enum {
             NO_RAW_INTERRUPT = 0 { name = "No Raw Interrupt"; desc = "No raw interrupt is generated."; };
@@ -882,7 +1077,9 @@ Data sheet 11.1.6 CH_INT (offset 0x10434, printed page 11-34, `datasheet.txt` li
         name = "Channel interrupt mask register";
         desc = "CH_INT_MASK is a channel interrupt mask register.
 
-Data sheet 11.1.6 CH_INT_MASK (offset 0x10438, printed page 11-36, `datasheet.txt` line 34784).";
+Source: data sheet 11.1.6 CH_INT_MASK (offset 0x10438, printed page 11-36, `datasheet.txt` line 34784).
+
+Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, HiMPP kernel module from the OpenIPC Hi3520D rootfs; static disassembly), VIU_HAL_SetIntMask / GetIntMask (+0x138), default mask written at channel enable = 1 (VIU_DRV_GetDefIntMask), confidence HIGH. Not verified on hardware.";
 
         enum CH_INT_MASK_bus_err_en_enum {
             MASKED = 0 { name = "Masked"; desc = "masked"; };
@@ -987,7 +1184,9 @@ Data sheet 11.1.6 CH_INT_MASK (offset 0x10438, printed page 11-36, `datasheet.tx
         name = "Channel status register";
         desc = "CH_STATUS is a channel status register.
 
-Data sheet 11.1.6 CH_STATUS (offset 0x1043C, printed page 11-37, `datasheet.txt` line 34840).";
+Source: data sheet 11.1.6 CH_STATUS (offset 0x1043C, printed page 11-37, `datasheet.txt` line 34840).
+
+Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, HiMPP kernel module from the OpenIPC Hi3520D rootfs; static disassembly), VIU_HAL_IsInCapTop reads +0x13c bit 0 (returns NOT bit0; used to decide whether the capture is in the top field), confidence MEDIUM for the meaning, HIGH for the position. Not verified on hardware.";
 
         enum CH_STATUS_busy_enum {
             IDLE = 0 { name = "Idle"; desc = "idle"; };
@@ -1092,7 +1291,9 @@ Data sheet 11.1.6 CH_STATUS (offset 0x1043C, printed page 11-37, `datasheet.txt`
         name = "Channel size indication register E";
         desc = "CH_IPI_STATUS_SIZE is a channel size indication register.
 
-Data sheet 11.1.6 CH_IPI_STATUS_SIZE (offset 0x10440, printed page 11-38, `datasheet.txt` line 34900).";
+Source: data sheet 11.1.6 CH_IPI_STATUS_SIZE (offset 0x10440, printed page 11-38, `datasheet.txt` line 34900).
+
+Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, HiMPP kernel module from the OpenIPC Hi3520D rootfs; static disassembly), VIU_HAL_GetStatusSize: a halfword read at +0x142 (= [31:16], height), confidence HIGH for the height; the width in [15:0] is NOT read by the vendor (the width field is still unknown, LOW). Not verified on hardware.";
 
         field {
             name = "height";
@@ -1107,7 +1308,9 @@ Data sheet 11.1.6 CH_IPI_STATUS_SIZE (offset 0x10440, printed page 11-38, `datas
         name = "Channel SEAV indication register AV";
         desc = "CH_IPI_STATUS_SEAV is a channel SEAV indication register.
 
-Data sheet 11.1.6 CH_IPI_STATUS_SEAV (offset 0x10444, printed page 11-38, `datasheet.txt` line 34920).";
+Source: data sheet 11.1.6 CH_IPI_STATUS_SEAV (offset 0x10444, printed page 11-38, `datasheet.txt` line 34920).
+
+Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, HiMPP kernel module from the OpenIPC Hi3520D rootfs; static disassembly), VIU_HAL_GetStatusSEAV: byte read at +0x145 (= bits [15:8]), confidence HIGH. Not verified on hardware.";
 
         field {
             name = "SEAV";
@@ -1122,7 +1325,9 @@ Data sheet 11.1.6 CH_IPI_STATUS_SEAV (offset 0x10444, printed page 11-38, `datas
         name = "Dither configuration register";
         desc = "CH_DITHER_CFG is a dither configuration register.
 
-Data sheet 11.1.6 CH_DITHER_CFG (offset 0x10500, printed page 11-39, `datasheet.txt` line 34951).";
+Source: data sheet 11.1.6 CH_DITHER_CFG (offset 0x10500, printed page 11-39, `datasheet.txt` line 34951).
+
+Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, HiMPP kernel module from the OpenIPC Hi3520D rootfs; static disassembly), VIU_HAL_SetDitherMode (bits [31:29] written at +0x200), confidence HIGH for the position. Not verified on hardware.";
 
         enum CH_DITHER_CFG_dither_md_enum {
             V_12_BIT_INPUTS = 0 { name = "V 12 Bit Inputs"; desc = "12-bit inputs, 10-bit outputs, no dithering, and direct bit truncation"; };
@@ -1148,7 +1353,7 @@ Data sheet 11.1.6 CH_DITHER_CFG (offset 0x10500, printed page 11-39, `datasheet.
         name = "Dither coefficient register 0";
         desc = "CH_DITHER_COEF0 is dither coefficient register 0.
 
-Data sheet 11.1.6 CH_DITHER_COEF0 (offset 0x10504, printed page 11-39, `datasheet.txt` line 34984).";
+Source: data sheet 11.1.6 CH_DITHER_COEF0 (offset 0x10504, printed page 11-39, `datasheet.txt` line 34984).";
 
         field {
             name = "dither_coef3";
@@ -1187,7 +1392,7 @@ Data sheet 11.1.6 CH_DITHER_COEF0 (offset 0x10504, printed page 11-39, `datashee
         name = "Dither coefficient register 1";
         desc = "CH_DITHER_COEF1 is dither coefficient register 1.
 
-Data sheet 11.1.6 CH_DITHER_COEF1 (offset 0x10508, printed page 11-40, `datasheet.txt` line 35012).";
+Source: data sheet 11.1.6 CH_DITHER_COEF1 (offset 0x10508, printed page 11-40, `datasheet.txt` line 35012).";
 
         field {
             name = "dither_coef7";
@@ -1226,7 +1431,9 @@ Data sheet 11.1.6 CH_DITHER_COEF1 (offset 0x10508, printed page 11-40, `datashee
         name = "Dither input picture width register";
         desc = "CH_DITHER_SIZE is a dither input picture width register.
 
-Data sheet 11.1.6 CH_DITHER_SIZE (offset 0x1050C, printed page 11-40, `datasheet.txt` line 35034).";
+Source: data sheet 11.1.6 CH_DITHER_SIZE (offset 0x1050C, printed page 11-40, `datasheet.txt` line 35034).
+
+Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, HiMPP kernel module from the OpenIPC Hi3520D rootfs; static disassembly), VIU_HAL_SetDitherSize ([11:0] at +0x20c), confidence HIGH. Not verified on hardware.";
 
         field {
             name = "width";
@@ -1241,7 +1448,9 @@ Data sheet 11.1.6 CH_DITHER_SIZE (offset 0x1050C, printed page 11-40, `datasheet
         name = "Raw stream mirror control register";
         desc = "CH_MIR_CTRL is a raw stream mirror control register.
 
-Data sheet 11.1.6 CH_MIR_CTRL (offset 0x10510, printed page 11-41, `datasheet.txt` line 35063).";
+Source: data sheet 11.1.6 CH_MIR_CTRL (offset 0x10510, printed page 11-41, `datasheet.txt` line 35063).
+
+Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, HiMPP kernel module from the OpenIPC Hi3520D rootfs; static disassembly), VIU_HAL_SetChnMirrorEn (bit 0), VIU_HAL_SetChnFlipEn (bit 1) at +0x210, confidence HIGH (matches the data-sheet positions). Not verified on hardware.";
 
         enum CH_MIR_CTRL_flip_en_enum {
             DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
@@ -1276,7 +1485,9 @@ Data sheet 11.1.6 CH_MIR_CTRL (offset 0x10510, printed page 11-41, `datasheet.tx
         name = "Block mask configuration register";
         desc = "CH_MSC_CFG is a block mask configuration register.
 
-Data sheet 11.1.6 CH_MSC_CFG (offset 0x10700, printed page 11-41, `datasheet.txt` line 35090).";
+Source: data sheet 11.1.6 CH_MSC_CFG (offset 0x10700, printed page 11-41, `datasheet.txt` line 35090).
+
+Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, HiMPP kernel module from the OpenIPC Hi3520D rootfs; static disassembly), Viu_HAL_SetBlockFill: bits 0..3 enable block 0..3 at +0x400 (written from a block count), confidence HIGH. The block start registers (+0x410..) take x [11:0] / y [27:16], the size registers (+0x450..) take width - 1 / height - 1 (12 bits each), the color registers (+0x490..) a 32-bit value. Not verified on hardware.";
 
         enum CH_MSC_CFG_msc3_en_enum {
             DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
@@ -1327,7 +1538,7 @@ Data sheet 11.1.6 CH_MSC_CFG (offset 0x10700, printed page 11-41, `datasheet.txt
         name = "Mask start position register for block 0";
         desc = "CH_BLOCK0_START is the mask start position register for block 0.
 
-Data sheet 11.1.6 CH_BLOCK0_START (offset 0x10710, printed page 11-42, `datasheet.txt` line 35151).";
+Source: data sheet 11.1.6 CH_BLOCK0_START (offset 0x10710, printed page 11-42, `datasheet.txt` line 35151).";
 
         field {
             name = "y_start";
@@ -1350,7 +1561,7 @@ Data sheet 11.1.6 CH_BLOCK0_START (offset 0x10710, printed page 11-42, `datashee
         name = "Mask start position register for block 1";
         desc = "CH_BLOCK1_START is the mask start position register for block 1.
 
-Data sheet 11.1.6 CH_BLOCK1_START (offset 0x10714, printed page 11-43, `datasheet.txt` line 35182).";
+Source: data sheet 11.1.6 CH_BLOCK1_START (offset 0x10714, printed page 11-43, `datasheet.txt` line 35182).";
 
         field {
             name = "y_start";
@@ -1373,7 +1584,7 @@ Data sheet 11.1.6 CH_BLOCK1_START (offset 0x10714, printed page 11-43, `datashee
         name = "Mask start position register for block 2";
         desc = "CH_BLOCK2_START is the mask start position register for block 2.
 
-Data sheet 11.1.6 CH_BLOCK2_START (offset 0x10718, printed page 11-43, `datasheet.txt` line 35204).";
+Source: data sheet 11.1.6 CH_BLOCK2_START (offset 0x10718, printed page 11-43, `datasheet.txt` line 35204).";
 
         field {
             name = "y_start";
@@ -1396,7 +1607,7 @@ Data sheet 11.1.6 CH_BLOCK2_START (offset 0x10718, printed page 11-43, `datashee
         name = "Mask start position register for block 3";
         desc = "CH_BLOCK3_START is the mask start position register for block 3.
 
-Data sheet 11.1.6 CH_BLOCK3_START (offset 0x1071C, printed page 11-43, `datasheet.txt` line 35226).";
+Source: data sheet 11.1.6 CH_BLOCK3_START (offset 0x1071C, printed page 11-43, `datasheet.txt` line 35226).";
 
         field {
             name = "y_start";
@@ -1419,7 +1630,7 @@ Data sheet 11.1.6 CH_BLOCK3_START (offset 0x1071C, printed page 11-43, `datashee
         name = "Mask size register for block 0";
         desc = "CH_BLOCK0_SIZE is the mask size register for block 0.
 
-Data sheet 11.1.6 CH_BLOCK0_SIZE (offset 0x10750, printed page 11-44, `datasheet.txt` line 35257).";
+Source: data sheet 11.1.6 CH_BLOCK0_SIZE (offset 0x10750, printed page 11-44, `datasheet.txt` line 35257).";
 
         field {
             name = "blk_height";
@@ -1442,7 +1653,7 @@ Data sheet 11.1.6 CH_BLOCK0_SIZE (offset 0x10750, printed page 11-44, `datasheet
         name = "Mask size register for block 1";
         desc = "CH_BLOCK1_SIZE is the mask size register for block 1.
 
-Data sheet 11.1.6 CH_BLOCK1_SIZE (offset 0x10754, printed page 11-44, `datasheet.txt` line 35279).";
+Source: data sheet 11.1.6 CH_BLOCK1_SIZE (offset 0x10754, printed page 11-44, `datasheet.txt` line 35279).";
 
         field {
             name = "blk_height";
@@ -1465,7 +1676,7 @@ Data sheet 11.1.6 CH_BLOCK1_SIZE (offset 0x10754, printed page 11-44, `datasheet
         name = "Mask size register for block 2";
         desc = "CH_BLOCK2_SIZE is the mask size register for block 2.
 
-Data sheet 11.1.6 CH_BLOCK2_SIZE (offset 0x10758, printed page 11-45, `datasheet.txt` line 35321).";
+Source: data sheet 11.1.6 CH_BLOCK2_SIZE (offset 0x10758, printed page 11-45, `datasheet.txt` line 35321).";
 
         field {
             name = "blk_height";
@@ -1488,7 +1699,7 @@ Data sheet 11.1.6 CH_BLOCK2_SIZE (offset 0x10758, printed page 11-45, `datasheet
         name = "Mask size register for block 3";
         desc = "CH_BLOCK3_SIZE is the mask size register for block 3.
 
-Data sheet 11.1.6 CH_BLOCK3_SIZE (offset 0x1075C, printed page 11-45, `datasheet.txt` line 35342).";
+Source: data sheet 11.1.6 CH_BLOCK3_SIZE (offset 0x1075C, printed page 11-45, `datasheet.txt` line 35342).";
 
         field {
             name = "blk_height";
@@ -1511,7 +1722,7 @@ Data sheet 11.1.6 CH_BLOCK3_SIZE (offset 0x1075C, printed page 11-45, `datasheet
         name = "Filling color register for block 0";
         desc = "CH_BLOCK0_COLOR is the filling color register for block 0.
 
-Data sheet 11.1.6 CH_BLOCK0_COLOR (offset 0x10790, printed page 11-46, `datasheet.txt` line 35385).";
+Source: data sheet 11.1.6 CH_BLOCK0_COLOR (offset 0x10790, printed page 11-46, `datasheet.txt` line 35385).";
 
         field {
             name = "blk_cr";
@@ -1542,7 +1753,7 @@ Data sheet 11.1.6 CH_BLOCK0_COLOR (offset 0x10790, printed page 11-46, `datashee
         name = "Filling color register for block 1";
         desc = "CH_BLOCK1_COLOR is the filling color register for block 1.
 
-Data sheet 11.1.6 CH_BLOCK1_COLOR (offset 0x10794, printed page 11-46, `datasheet.txt` line 35406).";
+Source: data sheet 11.1.6 CH_BLOCK1_COLOR (offset 0x10794, printed page 11-46, `datasheet.txt` line 35406).";
 
         field {
             name = "blk_cr";
@@ -1573,7 +1784,7 @@ Data sheet 11.1.6 CH_BLOCK1_COLOR (offset 0x10794, printed page 11-46, `datashee
         name = "Filling color register for block 2";
         desc = "CH_BLOCK2_COLOR is the filling color register for block 2.
 
-Data sheet 11.1.6 CH_BLOCK2_COLOR (offset 0x10798, printed page 11-47, `datasheet.txt` line 35449).";
+Source: data sheet 11.1.6 CH_BLOCK2_COLOR (offset 0x10798, printed page 11-47, `datasheet.txt` line 35449).";
 
         field {
             name = "blk_cr";
@@ -1604,7 +1815,7 @@ Data sheet 11.1.6 CH_BLOCK2_COLOR (offset 0x10798, printed page 11-47, `datashee
         name = "Filling color register for block 3";
         desc = "CH_BLOCK3_COLOR is the filling color register for block 3.
 
-Data sheet 11.1.6 CH_BLOCK3_COLOR (offset 0x1079C, printed page 11-47, `datasheet.txt` line 35470).";
+Source: data sheet 11.1.6 CH_BLOCK3_COLOR (offset 0x1079C, printed page 11-47, `datasheet.txt` line 35470).";
 
         field {
             name = "blk_cr";
@@ -1635,7 +1846,9 @@ Data sheet 11.1.6 CH_BLOCK3_COLOR (offset 0x1079C, printed page 11-47, `datashee
         name = "Major stream chrominance vertical down sampling configuration register";
         desc = "CH_VCDS_CFG is a major stream chrominance vertical down sampling configuration register.
 
-Data sheet 11.1.6 CH_VCDS_CFG (offset 0x10800, printed page 11-48, `datasheet.txt` line 35502).";
+Source: data sheet 11.1.6 CH_VCDS_CFG (offset 0x10800, printed page 11-48, `datasheet.txt` line 35502).
+
+Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, HiMPP kernel module from the OpenIPC Hi3520D rootfs; static disassembly), VIU_HAL_SetChnCdsEn (bit 0 at +0x500), confidence HIGH. Not verified on hardware.";
 
         enum CH_VCDS_CFG_cds_en_enum {
             DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
@@ -1656,7 +1869,9 @@ Data sheet 11.1.6 CH_VCDS_CFG (offset 0x10800, printed page 11-48, `datasheet.tx
         name = "Major stream chrominance vertical down sampling coefficient register";
         desc = "CH_VCDS_COEF is a major stream chrominance vertical down sampling coefficient register.
 
-Data sheet 11.1.6 CH_VCDS_COEF (offset 0x10808, printed page 11-48, `datasheet.txt` line 35525).";
+Source: data sheet 11.1.6 CH_VCDS_COEF (offset 0x10808, printed page 11-48, `datasheet.txt` line 35525).
+
+Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, HiMPP kernel module from the OpenIPC Hi3520D rootfs; static disassembly), VIU_HAL_SetChnCdsAttr: [4:0] and [20:16] at +0x508 written from the vendor tables g_stCDSAttr_NORM/_Top/_Bottom (two 5-bit coefficients per register), confidence HIGH for the positions. Not verified on hardware.";
 
         field {
             name = "coef1";
@@ -1679,7 +1894,9 @@ Data sheet 11.1.6 CH_VCDS_COEF (offset 0x10808, printed page 11-48, `datasheet.t
         name = "Luminance horizontal scaling parameter configuration register";
         desc = "CH_SCL_LHFIR_SPH is a luminance horizontal scaling parameter configuration register.
 
-Data sheet 11.1.6 CH_LHFIR_SPH (offset 0x10940, printed page 11-49, `datasheet.txt` line 35558).";
+Source: data sheet 11.1.6 CH_LHFIR_SPH (offset 0x10940, printed page 11-49, `datasheet.txt` line 35558).
+
+Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, HiMPP kernel module from the OpenIPC Hi3520D rootfs; static disassembly), VIU_HAL_SetScaleEn (bit 31 at +0x640), SetScaleStep ([15:12]), SetScaleCoef (+0x680..+0x698 hold three 10-bit coefficients per word: [9:0], [19:10], [29:20] -- NOT in this RDL, group offsets 0x980..0x998), confidence MEDIUM. Not verified on hardware.";
 
         enum CH_LHFIR_SPH_hlmsc_en_enum {
             DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
@@ -1700,7 +1917,7 @@ Data sheet 11.1.6 CH_LHFIR_SPH (offset 0x10940, printed page 11-49, `datasheet.t
         name = "Chrominance horizontal scaling parameter configuration register";
         desc = "CH_CHFIR_SPH is a chrominance horizontal scaling parameter configuration register.
 
-Data sheet 11.1.6 CH_CHFIR_SPH (offset 0x10944, printed page 11-49, `datasheet.txt` line 35586).";
+Source: data sheet 11.1.6 CH_CHFIR_SPH (offset 0x10944, printed page 11-49, `datasheet.txt` line 35586).";
 
         enum CH_CHFIR_SPH_hchmsc_en_enum {
             DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
@@ -1729,7 +1946,7 @@ Data sheet 11.1.6 CH_CHFIR_SPH (offset 0x10944, printed page 11-49, `datasheet.t
         name = "Luminance scaling horizontal offset SET register";
         desc = "CH_LHFIR_OFFSET is a luminance scaling horizontal offset register.
 
-Data sheet 11.1.6 CH_LHFIR_OFFSET (offset 0x10948, printed page 11-50, `datasheet.txt` line 35627).";
+Source: data sheet 11.1.6 CH_LHFIR_OFFSET (offset 0x10948, printed page 11-50, `datasheet.txt` line 35627).";
 
         field {
             name = "hluma_offset";
@@ -1744,7 +1961,7 @@ Data sheet 11.1.6 CH_LHFIR_OFFSET (offset 0x10948, printed page 11-50, `datashee
         name = "Chrominance scaling horizontal offset SET register";
         desc = "CH_CHFIR_OFFSET is a chrominance scaling horizontal offset register.
 
-Data sheet 11.1.6 CH_CHFIR_OFFSET (offset 0x1094C, printed page 11-50, `datasheet.txt` line 35651).";
+Source: data sheet 11.1.6 CH_CHFIR_OFFSET (offset 0x1094C, printed page 11-50, `datasheet.txt` line 35651).";
 
         field {
             name = "hchroma_offset";
@@ -1756,10 +1973,172 @@ Data sheet 11.1.6 CH_CHFIR_OFFSET (offset 0x1094C, printed page 11-50, `datashee
     } CH_CHFIR_OFFSET @ 0x94C;
 
     reg {
+        name = "UNK_0x980";
+        desc = "UNK_0x980 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, static disassembly), VIU_HAL_SetScaleCoef (0x14954): read-modify-write of three 10-bit groups [9:0], [19:10], [29:20] (vendor group offset +0x680 = group offset 0x980); the values come from the vendor coefficient tables (coeff_lanc3_*, coeff_6Phase_*, Blinear_Down*), selected by the scaling ratio; the split of the six words into luma/chroma and horizontal phase sets is not decoded. Written only when horizontal scaling is configured (scaler path, not used for plain capture). Neighbors written together: the other five UNK_0x98x/0x99x words, then CH_LHFIR_SPH / CH_CHFIR_SPH (scale enable bit 31, step [15:12]) and the CH_*FIR_OFFSET registers. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "grp0_unk";
+            desc = "Unknown 10-bit group grp0_unk (vendor-observed write only).";
+            sw = rw;
+            hw = r;
+        } grp0_unk[9:0];
+
+        field {
+            name = "grp1_unk";
+            desc = "Unknown 10-bit group grp1_unk (vendor-observed write only).";
+            sw = rw;
+            hw = r;
+        } grp1_unk[19:10];
+
+        field {
+            name = "grp2_unk";
+            desc = "Unknown 10-bit group grp2_unk (vendor-observed write only).";
+            sw = rw;
+            hw = r;
+        } grp2_unk[29:20];
+
+    } UNK_0x980 @ 0x980;
+
+    reg {
+        name = "UNK_0x984";
+        desc = "UNK_0x984 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, static disassembly), VIU_HAL_SetScaleCoef (0x14954): read-modify-write of three 10-bit groups [9:0], [19:10], [29:20] (vendor group offset +0x684 = group offset 0x984); the values come from the vendor coefficient tables (coeff_lanc3_*, coeff_6Phase_*, Blinear_Down*), selected by the scaling ratio; the split of the six words into luma/chroma and horizontal phase sets is not decoded. Written only when horizontal scaling is configured (scaler path, not used for plain capture). Neighbors written together: the other five UNK_0x98x/0x99x words, then CH_LHFIR_SPH / CH_CHFIR_SPH (scale enable bit 31, step [15:12]) and the CH_*FIR_OFFSET registers. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "grp0_unk";
+            desc = "Unknown 10-bit group grp0_unk (vendor-observed write only).";
+            sw = rw;
+            hw = r;
+        } grp0_unk[9:0];
+
+        field {
+            name = "grp1_unk";
+            desc = "Unknown 10-bit group grp1_unk (vendor-observed write only).";
+            sw = rw;
+            hw = r;
+        } grp1_unk[19:10];
+
+        field {
+            name = "grp2_unk";
+            desc = "Unknown 10-bit group grp2_unk (vendor-observed write only).";
+            sw = rw;
+            hw = r;
+        } grp2_unk[29:20];
+
+    } UNK_0x984 @ 0x984;
+
+    reg {
+        name = "UNK_0x988";
+        desc = "UNK_0x988 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, static disassembly), VIU_HAL_SetScaleCoef (0x14954): read-modify-write of three 10-bit groups [9:0], [19:10], [29:20] (vendor group offset +0x688 = group offset 0x988); the values come from the vendor coefficient tables (coeff_lanc3_*, coeff_6Phase_*, Blinear_Down*), selected by the scaling ratio; the split of the six words into luma/chroma and horizontal phase sets is not decoded. Written only when horizontal scaling is configured (scaler path, not used for plain capture). Neighbors written together: the other five UNK_0x98x/0x99x words, then CH_LHFIR_SPH / CH_CHFIR_SPH (scale enable bit 31, step [15:12]) and the CH_*FIR_OFFSET registers. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "grp0_unk";
+            desc = "Unknown 10-bit group grp0_unk (vendor-observed write only).";
+            sw = rw;
+            hw = r;
+        } grp0_unk[9:0];
+
+        field {
+            name = "grp1_unk";
+            desc = "Unknown 10-bit group grp1_unk (vendor-observed write only).";
+            sw = rw;
+            hw = r;
+        } grp1_unk[19:10];
+
+        field {
+            name = "grp2_unk";
+            desc = "Unknown 10-bit group grp2_unk (vendor-observed write only).";
+            sw = rw;
+            hw = r;
+        } grp2_unk[29:20];
+
+    } UNK_0x988 @ 0x988;
+
+    reg {
+        name = "UNK_0x990";
+        desc = "UNK_0x990 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, static disassembly), VIU_HAL_SetScaleCoef (0x14954): read-modify-write of three 10-bit groups [9:0], [19:10], [29:20] (vendor group offset +0x690 = group offset 0x990); the values come from the vendor coefficient tables (coeff_lanc3_*, coeff_6Phase_*, Blinear_Down*), selected by the scaling ratio; the split of the six words into luma/chroma and horizontal phase sets is not decoded. Written only when horizontal scaling is configured (scaler path, not used for plain capture). Neighbors written together: the other five UNK_0x98x/0x99x words, then CH_LHFIR_SPH / CH_CHFIR_SPH (scale enable bit 31, step [15:12]) and the CH_*FIR_OFFSET registers. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "grp0_unk";
+            desc = "Unknown 10-bit group grp0_unk (vendor-observed write only).";
+            sw = rw;
+            hw = r;
+        } grp0_unk[9:0];
+
+        field {
+            name = "grp1_unk";
+            desc = "Unknown 10-bit group grp1_unk (vendor-observed write only).";
+            sw = rw;
+            hw = r;
+        } grp1_unk[19:10];
+
+        field {
+            name = "grp2_unk";
+            desc = "Unknown 10-bit group grp2_unk (vendor-observed write only).";
+            sw = rw;
+            hw = r;
+        } grp2_unk[29:20];
+
+    } UNK_0x990 @ 0x990;
+
+    reg {
+        name = "UNK_0x994";
+        desc = "UNK_0x994 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, static disassembly), VIU_HAL_SetScaleCoef (0x14954): read-modify-write of three 10-bit groups [9:0], [19:10], [29:20] (vendor group offset +0x694 = group offset 0x994); the values come from the vendor coefficient tables (coeff_lanc3_*, coeff_6Phase_*, Blinear_Down*), selected by the scaling ratio; the split of the six words into luma/chroma and horizontal phase sets is not decoded. Written only when horizontal scaling is configured (scaler path, not used for plain capture). Neighbors written together: the other five UNK_0x98x/0x99x words, then CH_LHFIR_SPH / CH_CHFIR_SPH (scale enable bit 31, step [15:12]) and the CH_*FIR_OFFSET registers. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "grp0_unk";
+            desc = "Unknown 10-bit group grp0_unk (vendor-observed write only).";
+            sw = rw;
+            hw = r;
+        } grp0_unk[9:0];
+
+        field {
+            name = "grp1_unk";
+            desc = "Unknown 10-bit group grp1_unk (vendor-observed write only).";
+            sw = rw;
+            hw = r;
+        } grp1_unk[19:10];
+
+        field {
+            name = "grp2_unk";
+            desc = "Unknown 10-bit group grp2_unk (vendor-observed write only).";
+            sw = rw;
+            hw = r;
+        } grp2_unk[29:20];
+
+    } UNK_0x994 @ 0x994;
+
+    reg {
+        name = "UNK_0x998";
+        desc = "UNK_0x998 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, static disassembly), VIU_HAL_SetScaleCoef (0x14954): read-modify-write of three 10-bit groups [9:0], [19:10], [29:20] (vendor group offset +0x698 = group offset 0x998); the values come from the vendor coefficient tables (coeff_lanc3_*, coeff_6Phase_*, Blinear_Down*), selected by the scaling ratio; the split of the six words into luma/chroma and horizontal phase sets is not decoded. Written only when horizontal scaling is configured (scaler path, not used for plain capture). Neighbors written together: the other five UNK_0x98x/0x99x words, then CH_LHFIR_SPH / CH_CHFIR_SPH (scale enable bit 31, step [15:12]) and the CH_*FIR_OFFSET registers. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "grp0_unk";
+            desc = "Unknown 10-bit group grp0_unk (vendor-observed write only).";
+            sw = rw;
+            hw = r;
+        } grp0_unk[9:0];
+
+        field {
+            name = "grp1_unk";
+            desc = "Unknown 10-bit group grp1_unk (vendor-observed write only).";
+            sw = rw;
+            hw = r;
+        } grp1_unk[19:10];
+
+        field {
+            name = "grp2_unk";
+            desc = "Unknown 10-bit group grp2_unk (vendor-observed write only).";
+            sw = rw;
+            hw = r;
+        } grp2_unk[29:20];
+
+    } UNK_0x998 @ 0x998;
+
+    reg {
         name = "Chrominance clip configuration register";
         desc = "CH_Y_CLIP_CFG is a luminance clip configuration register.
 
-Data sheet 11.1.6 CH_Y_CLIP_CFG (offset 0x10B00, printed page 11-51, `datasheet.txt` line 35685).";
+Source: data sheet 11.1.6 CH_Y_CLIP_CFG (offset 0x10B00, printed page 11-51, `datasheet.txt` line 35685).";
 
         field {
             name = "max";
@@ -1782,7 +2161,7 @@ Data sheet 11.1.6 CH_Y_CLIP_CFG (offset 0x10B00, printed page 11-51, `datasheet.
         name = "Luminance clip configuration register";
         desc = "CH_C_CLIP_CFG is a chrominance clip configuration register.
 
-Data sheet 11.1.6 CH_C_CLIP_CFG (offset 0x10B04, printed page 11-51, `datasheet.txt` line 35707).";
+Source: data sheet 11.1.6 CH_C_CLIP_CFG (offset 0x10B04, printed page 11-51, `datasheet.txt` line 35707).";
 
         field {
             name = "max";
@@ -1805,7 +2184,9 @@ Data sheet 11.1.6 CH_C_CLIP_CFG (offset 0x10B04, printed page 11-51, `datasheet.
         name = "Input picture total luminance statistics register";
         desc = "CH_SUM_Y is an input picture total luminance statistics register.
 
-Data sheet 11.1.6 CH_SUM_Y (offset 0x10C00, printed page 11-52, `datasheet.txt` line 35739).";
+Source: data sheet 11.1.6 CH_SUM_Y (offset 0x10C00, printed page 11-52, `datasheet.txt` line 35739).
+
+Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, HiMPP kernel module from the OpenIPC Hi3520D rootfs; static disassembly), VIU_HAL_GetLuma (+0x900), confidence HIGH. Not verified on hardware.";
 
         field {
             name = "sum_y";
@@ -1832,7 +2213,9 @@ regfile eHISI_VICAP {
         name = "Global working configuration register";
         desc = "WK_MODE is a global working configuration register.
 
-Data sheet 11.1.6 WK_MODE (offset 0x0, printed page 11-18, `datasheet.txt` line 33726).";
+Source: data sheet 11.1.6 WK_MODE (offset 0x0, printed page 11-18, `datasheet.txt` line 33726).
+
+Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, HiMPP kernel module from the OpenIPC Hi3520D rootfs; static disassembly), VIU_HAL_SetPowerWorkMode (bit 0 = power_mode), VIU_HAL_SetPortMode (bit 16 for port 0, bit 17 for port 1), confidence HIGH for the positions. Vendor use: ptN_mode is set to 1 when the device interface type is 2, 3 or 4 (BT.1120 standard/interleaved and the digital camera type; VIU_DRV_SetDevAttrByChip: type - 2 <= 2) and to 0 for BT.656 and BT.601 -- it follows the INTERFACE type, not the line count. The board script sysctl_hi3520D.sh writes WK_MODE = 0 ('vicap lowpower'), i.e. power_mode 0. Previously: our Linux driver sets ptN_mode for inputs above 576 lines (derived from the data sheet text only). Not verified on hardware. Board: reads 0 at idle (confirmed).";
 
         enum WK_MODE_pt1_mode_enum {
             D1_960H = 0 { name = "D1 960H"; desc = "D1 or 960H"; };
@@ -1881,7 +2264,9 @@ Data sheet 11.1.6 WK_MODE (offset 0x0, printed page 11-18, `datasheet.txt` line 
         name = "Bus configuration register";
         desc = "AXI_CFG is a bus configuration register.
 
-Data sheet 11.1.6 AXI_CFG (offset 0x4, printed page 11-18, `datasheet.txt` line 33762).";
+Source: data sheet 11.1.6 AXI_CFG (offset 0x4, printed page 11-18, `datasheet.txt` line 33762).
+
+Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, HiMPP kernel module from the OpenIPC Hi3520D rootfs; static disassembly), VIU_HAL_BoardInit (0x140cc: read-modify-write of [3:0] = 2 right after ioremap of 0x20580000 size 0x20000) and board script sysctl_hi3520D.sh ('himm 0x20580004 0xf0f00002 # vicap outstanding'), confidence HIGH: the vendor always programs m0_otd = 2 (the Linux driver leaves it at the reset value 0). Whether m0_otd = 0 stalls the write master is UNKNOWN. Not verified on hardware. Board: reads 0xF0F00000 (confirmed).";
 
         field {
             name = "reserved_nz";
@@ -1912,7 +2297,9 @@ Data sheet 11.1.6 AXI_CFG (offset 0x4, printed page 11-18, `datasheet.txt` line 
         name = "Master priority configuration register";
         desc = "MIXER0_PRO_CFG0 is master priority configuration register.
 
-Data sheet 11.1.6 MIXER0_PRO_CFG0 (offset 0x8, printed page 11-19, `datasheet.txt` line 33795).";
+Source: data sheet 11.1.6 MIXER0_PRO_CFG0 (offset 0x8, printed page 11-19, `datasheet.txt` line 33795).
+
+Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, HiMPP kernel module from the OpenIPC Hi3520D rootfs; static disassembly), VIU_HAL_SetMasterPro (0x13f30): pair n (0..7) writes bit 2n and bit 2n+1 (luma/chroma priority of channel n); VIU_HAL_BoardInit writes all pairs 0 (highest priority, = reset), confidence HIGH. Not verified on hardware.";
 
         field {
             name = "ch7_c_pro";
@@ -2047,7 +2434,9 @@ Data sheet 11.1.6 MIXER0_PRO_CFG0 (offset 0x8, printed page 11-19, `datasheet.tx
         name = "Interrupt indicator register";
         desc = "VICAP_INT is an interrupt indicator register.
 
-Data sheet 11.1.6 VICAP_INT (offset 0x100, printed page 11-20, `datasheet.txt` line 33877).";
+Source: data sheet 11.1.6 VICAP_INT (offset 0x100, printed page 11-20, `datasheet.txt` line 33877).
+
+Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, HiMPP kernel module from the OpenIPC Hi3520D rootfs; static disassembly), VIU_HAL_GetIntIndicator (+0x100, one bit per channel as read by the vendor ISR before the per-channel status registers), confidence MEDIUM for the bit meaning, HIGH for the offset. Not verified on hardware.";
 
         enum VICAP_INT_int_ch7_enum {
             NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
