@@ -1,0 +1,36 @@
+`ifndef HISI_VGS_RDL
+`define HISI_VGS_RDL
+
+addrmap aHISI_VGS {
+    name = "HiSilicon VGS (registers not described)";
+    desc = "
+    Not described: no data sheet that lists the VGS has a register table for it (each has only the 64 KB memory-map window, the interrupt number, the clock/reset control register and a features chapter), and no vendor source of the register layout is in the tree.
+    The window is kept so that the block base address and size exist in the address map (same convention as HISI_TDE and HISI_VPSS). No register is described, none is named UNK_<offset>: there is no evidence for any offset yet.
+
+    The VGS (Video Graphics System) is a memory-to-memory video/graphics engine: OSD overlay (ARGB1555/ARGB4444/ARGB8888, one region), video cropping, scaling (low-frequency filter, up to 15x-16x zoom-out and 16x zoom-in; 30x zoom-out on Hi3516A V200, Hi3519 and Hi3516A V300), covering of one video region by a filled or hollow quadrilateral (a concave one is converted into a triangle),
+    90/270 degree rotation (180 degrees on Hi3516C V300/Hi3516E V100 and Hi3516A V300), luminance sum statistics of a region, single-component luminance processing, compressed video storage on the later chips, and register linked lists (jobs described in memory). Newer editions add lens/distortion correction (Hi3518E V20X / Hi3516C V200 up to 2048 x 2048, Hi3516C V300 / Hi3516E V100 vertical LDC), graphics OSD scaling, color inversion and fast transfer (Hi3516C V300 / Hi3516E V100),
+    multi-region stitching and feature point detection / global motion estimation (Hi3516A V300). It is an offline engine: a job is a frame in memory, a result is a frame in memory. The Hi3520D/Hi3515A/C, Hi3511, Hi3515, Hi3516 V100, Hi3516C V100, Hi3518 V100 and Hi3520 V100 data sheets do not have it; the Hi3518E V100 data sheet does not either.
+
+    Per-chip facts from the data sheets (checked 2026-11-11, docs/rdl-campaign/vgs.md):
+
+    | Chip | Base (64 KB) | Interrupt | Clock / reset | Max input width |
+    |---|---|---|---|---|
+    | Hi3516A / Hi3516D V100 | 0x20630000 | 70 (GIC) | PERI_CRG23 (0x5C): `vgs_cken` [1], `vgs_srst_req` [0], clock skip `vgsclk_skipcfg` [8:4] / `vgsclk_loaden` [9], source select in the CRG | 2592 |
+    | Hi3518E V20X / Hi3516C V200 | 0x20630000 | 29 (VIC) | PERI_CRG23 (0x5C), same fields | 2048 |
+    | Hi3516A V200, Hi3519 V101 | 0x11120000 | 67 (GIC) | PERI_CRG23 (0x5C): `vgs_clken` [1], `vgs_srst_req` [0]; clock select `vgs_clksel` [15:13] in PERI_CRG19 (000 300 MHz, 001 396 MHz, 010 500 MHz) | 4096 |
+    | Hi3516C V300 / Hi3516E V100 | 0x11240000 | 29 | PERI_CRG23 (0x5C): `vgs_clksel` [11:10], `vgsclk_skipcfg` [8:4], `vgsclk_loaden` [9], `vgs_cken` [1], `vgs_srst_req` [0]; MISC_CTRL `vgs_bootram_mode` [21] must be 0 when the VGS is used | 2048 |
+    | Hi3516A V300 | 0x11240000 | 70 (GIC) | PERI_CRG43 (0xAC): `vgs_cken` [1], `vgs_srst_req` [0]; clock select `vgs_cksel` [8:6] in PERI_CRG40 (300 MHz); MISC_CTRL `vgs_bootram_mode` [13] (the VGS RAM is shared with BOOTRAM), secure-access controls `vgs_slv_sec_acc_dis` / `vgs_slv_acc_ctrl` | 3840 |
+
+    The DDR controller has a VGS QoS / timeout field on every one of these chips (MDDRC `vgs_qosmap`, `vgs_to`, `vgs_r_qosmap` / `vgs_w_qosmap`).
+    ";
+
+    external mem {
+        name = "Undocumented register window";
+        desc = "The whole 64 KB window of the block. Register layout unknown; placeholder so the block base address and size exist in the map. No registers are described.";
+        mementries = 16384;
+        memwidth = 32;
+        sw = rw;
+    } REGS;
+};
+
+`endif
