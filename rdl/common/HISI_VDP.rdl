@@ -3148,7 +3148,7 @@ Data sheet 11.2.4 G0CTRL (offset 0x9000, printed page 11-128, `datasheet.txt` li
 
         field {
             name = "dcmp_mode";
-            desc = "Decompression mode (non-instant register).";
+            desc = "Decompression mode (non-instant register). Vendor use: VOU_GraphicsSetDcmpInfo sets this bit LAST, after the G0DCMP* address, bank width and stride registers, upd_mode, dcmp_inter and read_mode (= 0, automatic) are written (the layer register update VOU_GraphicsSetRegUp is a separate vendor call); the compressed A, R, G, B streams are the ones written by the VCMP block (HISI_VCMP). The HAL accepts it for layer ids 3..5 (G0 at 0x9000 and, by the HAL's layer offsets 0x400 and 0x600, the G2 and G3 CTRL registers). Source: vendor modules hi3520D_vou.ko (VOU_GraphicsSetDcmpInfo, HAL_GRAPHIC_SetGfxDcmp*) and hifb.ko (HIFB_DRV_SetDcmpInfo), confidence HIGH, word-checked: yes. Not verified on hardware. Details: docs/rdl-campaign/vcmp-vendor.md.";
             sw = rw;
             hw = r;
             encode = G0CTRL_dcmp_mode_enum;
@@ -3162,7 +3162,7 @@ Data sheet 11.2.4 G0CTRL (offset 0x9000, printed page 11-128, `datasheet.txt` li
 
         field {
             name = "dcmp_inter";
-            desc = "Interlaced decompression control (non-instant register).";
+            desc = "Interlaced decompression control (non-instant register). Vendor use (VOU_GraphicsSetDcmpInfo, selected from the layer's display channel: CTRL.iop [7] (HAL_DISP_GetDispIoP, 1 = progressive) and VTTHD.thd1_mode [15] (HAL_DISP_GetVtThdMode); for DHD0 these are DHDCTRL 0xA000 and DHDVTTHD 0xA01C): progressive display -> 0 (upd_mode 0); interlaced display with thd1_mode 0 -> 1 (upd_mode 0); interlaced with thd1_mode 1 -> 0 with upd_mode 1 (the compress info is also saved by the driver). hifb compresses an interlaced source in two passes of alternate lines into interleaved 256-byte banks (doubled VCMP stride), see HISI_VCMP DST_STRIDE; which display mode selects that on the compress side could not be determined (LOW). Source: vendor modules hi3520D_vou.ko (VOU_GraphicsSetDcmpInfo, HAL_GRAPHIC_SetGfxDcmp*) and hifb.ko (HIFB_DRV_SetDcmpInfo), confidence HIGH, word-checked: yes. Not verified on hardware. Details: docs/rdl-campaign/vcmp-vendor.md.";
             sw = rw;
             hw = r;
             encode = G0CTRL_dcmp_inter_enum;
@@ -3758,7 +3758,9 @@ Data sheet 11.2.4 G0CSCP4 (offset 0x90B8, printed page 11-138, `datasheet.txt` l
         name = "G0 compressed data bank TH width register";
         desc = "G0DCMPBANKWIDTH is the G0 compressed data bank width register.
 
-Data sheet 11.2.4 G0DCMPBANKWIDTH (offset 0x91B4, printed page 11-139, `datasheet.txt` line 40602).";
+Data sheet 11.2.4 G0DCMPBANKWIDTH (offset 0x91B4, printed page 11-139, `datasheet.txt` line 40602).
+
+Vendor use: the VOU HAL (HAL_GRAPHIC_SetGfxDcmpBank) writes bank width minus 1 into [11:0] (plain read-modify-write; hifb gives bank width 256, so 255 is written); the same bank width minus 1 is written into the VCMP DST_STRIDE register [31:16] (the VCMP stores width - 1 as well, data sheet 8.3.3: n x 256 - 1). Source: vendor modules hi3520D_vou.ko (VOU_GraphicsSetDcmpInfo, HAL_GRAPHIC_SetGfxDcmp*) and hifb.ko (HIFB_DRV_SetDcmpInfo), confidence HIGH, word-checked: yes. Not verified on hardware. Details: docs/rdl-campaign/vcmp-vendor.md.";
 
         field {
             name = "dcmp_bankwidth";
@@ -3773,7 +3775,9 @@ Data sheet 11.2.4 G0DCMPBANKWIDTH (offset 0x91B4, printed page 11-139, `datashee
         name = "G0 compressed data stride register";
         desc = "G0DCMPSTRIDE is the G0 compressed data stride register.
 
-Data sheet 11.2.4 G0DCMPSTRIDE (offset 0x91B8, printed page 11-139, `datasheet.txt` line 40622).";
+Data sheet 11.2.4 G0DCMPSTRIDE (offset 0x91B8, printed page 11-139, `datasheet.txt` line 40622).
+
+Vendor use: HAL_GRAPHIC_SetGfxDcmpStride writes the stride (16-bit, as given, no adjustment) into [15:0]; hifb gives 256, the same value the VCMP DST_STRIDE [15:0] gets in the progressive case (the VCMP doubles it to 512 for the first pass of its two-pass interlaced mode, the G0DCMPSTRIDE keeps 256). Source: vendor modules hi3520D_vou.ko (VOU_GraphicsSetDcmpInfo, HAL_GRAPHIC_SetGfxDcmp*) and hifb.ko (HIFB_DRV_SetDcmpInfo), confidence HIGH, word-checked: yes. Not verified on hardware. Details: docs/rdl-campaign/vcmp-vendor.md.";
 
         field {
             name = "dcmp_stride";
@@ -3788,7 +3792,9 @@ Data sheet 11.2.4 G0DCMPSTRIDE (offset 0x91B8, printed page 11-139, `datasheet.t
         name = "G0 compressed data start address register of A component";
         desc = "G0DCMPAADDR is the G0 compressed data start address register of A component.
 
-Data sheet 11.2.4 G0DCMPAADDR (offset 0x91BC, printed page 11-139, `datasheet.txt` line 40642).";
+Data sheet 11.2.4 G0DCMPAADDR (offset 0x91BC, printed page 11-139, `datasheet.txt` line 40642).
+
+Vendor use: HAL_GRAPHIC_SetGfxDcmpAddr writes the four stream addresses in the order A (0x91BC), R (0x91C0), G (0x91C4), B (0x91C8) with plain stores; they are the same four addresses the VCMP block was given as VCMP_A_ADDR .. VCMP_B_ADDR (HISI_VCMP 0x40-0x4C) for the frame being displayed (hifb: four planes back to back, each rounded up to 512 bytes, 16-byte aligned). Source: vendor modules hi3520D_vou.ko (VOU_GraphicsSetDcmpInfo, HAL_GRAPHIC_SetGfxDcmp*) and hifb.ko (HIFB_DRV_SetDcmpInfo), confidence HIGH, word-checked: yes. Not verified on hardware. Details: docs/rdl-campaign/vcmp-vendor.md.";
 
         field {
             name = "dcmp_addr_a";
@@ -3803,7 +3809,9 @@ Data sheet 11.2.4 G0DCMPAADDR (offset 0x91BC, printed page 11-139, `datasheet.tx
         name = "G0 compressed data start address register of R component";
         desc = "G0DCMPRADDR is the G0 compressed data start address register of R component.
 
-Data sheet 11.2.4 G0DCMPRADDR (offset 0x91C0, printed page 11-140, `datasheet.txt` line 40668).";
+Data sheet 11.2.4 G0DCMPRADDR (offset 0x91C0, printed page 11-140, `datasheet.txt` line 40668).
+
+Vendor use: HAL_GRAPHIC_SetGfxDcmpAddr writes the four stream addresses in the order A (0x91BC), R (0x91C0), G (0x91C4), B (0x91C8) with plain stores; they are the same four addresses the VCMP block was given as VCMP_A_ADDR .. VCMP_B_ADDR (HISI_VCMP 0x40-0x4C) for the frame being displayed (hifb: four planes back to back, each rounded up to 512 bytes, 16-byte aligned). Source: vendor modules hi3520D_vou.ko (VOU_GraphicsSetDcmpInfo, HAL_GRAPHIC_SetGfxDcmp*) and hifb.ko (HIFB_DRV_SetDcmpInfo), confidence HIGH, word-checked: yes. Not verified on hardware. Details: docs/rdl-campaign/vcmp-vendor.md.";
 
         field {
             name = "dcmp_addr_r";
@@ -3818,7 +3826,9 @@ Data sheet 11.2.4 G0DCMPRADDR (offset 0x91C0, printed page 11-140, `datasheet.tx
         name = "G0 compressed data start address register of G component";
         desc = "G0DCMPGADDR is the G0 compressed data start address register of G component.
 
-Data sheet 11.2.4 G0DCMPGADDR (offset 0x91C4, printed page 11-140, `datasheet.txt` line 40687).";
+Data sheet 11.2.4 G0DCMPGADDR (offset 0x91C4, printed page 11-140, `datasheet.txt` line 40687).
+
+Vendor use: HAL_GRAPHIC_SetGfxDcmpAddr writes the four stream addresses in the order A (0x91BC), R (0x91C0), G (0x91C4), B (0x91C8) with plain stores; they are the same four addresses the VCMP block was given as VCMP_A_ADDR .. VCMP_B_ADDR (HISI_VCMP 0x40-0x4C) for the frame being displayed (hifb: four planes back to back, each rounded up to 512 bytes, 16-byte aligned). Source: vendor modules hi3520D_vou.ko (VOU_GraphicsSetDcmpInfo, HAL_GRAPHIC_SetGfxDcmp*) and hifb.ko (HIFB_DRV_SetDcmpInfo), confidence HIGH, word-checked: yes. Not verified on hardware. Details: docs/rdl-campaign/vcmp-vendor.md.";
 
         field {
             name = "dcmp_addr_g";
@@ -3833,7 +3843,9 @@ Data sheet 11.2.4 G0DCMPGADDR (offset 0x91C4, printed page 11-140, `datasheet.tx
         name = "G0 compressed data start address register of B component";
         desc = "G0DCMPBADDR is the G0 compressed data start address register of B component.
 
-Data sheet 11.2.4 G0DCMPBADDR (offset 0x91C8, printed page 11-140, `datasheet.txt` line 40706).";
+Data sheet 11.2.4 G0DCMPBADDR (offset 0x91C8, printed page 11-140, `datasheet.txt` line 40706).
+
+Vendor use: HAL_GRAPHIC_SetGfxDcmpAddr writes the four stream addresses in the order A (0x91BC), R (0x91C0), G (0x91C4), B (0x91C8) with plain stores; they are the same four addresses the VCMP block was given as VCMP_A_ADDR .. VCMP_B_ADDR (HISI_VCMP 0x40-0x4C) for the frame being displayed (hifb: four planes back to back, each rounded up to 512 bytes, 16-byte aligned). Source: vendor modules hi3520D_vou.ko (VOU_GraphicsSetDcmpInfo, HAL_GRAPHIC_SetGfxDcmp*) and hifb.ko (HIFB_DRV_SetDcmpInfo), confidence HIGH, word-checked: yes. Not verified on hardware. Details: docs/rdl-campaign/vcmp-vendor.md.";
 
         field {
             name = "dcmp_addr_b";

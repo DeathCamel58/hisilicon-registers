@@ -1,17 +1,291 @@
 `ifndef HISI_VCMP_RDL
 `define HISI_VCMP_RDL
-
 addrmap aHISI_VCMP {
-    name = "HiSilicon VCMP (registers not described)";
-    desc = "Not described: no register of this block is described; the registers exist only in closed vendor libraries (the MPP binary modules), not in the data sheet or any vendor source in the tree. The 64 KB window is kept only so that the block base address and size exist in the address map (STUB). Video compress unit (data sheet 8.3, overview/features only): graphics bandwidth compression (ARGB1555 / ARGB8888 in, variable-length-code streams out to separate A, R, G, B buffers, direct-transfer self-test mode, task-completion interrupt; the VDP G0 layer decompresses them, see the G0DCMP* registers in `eHISI_VDP`). Register names that the data sheet mentions only in prose (8.3.3 limitations): SRC_ADDR, SRC_STRIDE (128-bit aligned), VCMP_A_ADDR, VCMP_R_ADDR, VCMP_G_ADDR, VCMP_B_ADDR (128-bit aligned, writeback width = n x 256 - 1); their offsets are not given. Registers may only be configured while the module is idle (after its interrupt). Clock/reset PERI_CRG29. No vendor source. Base address 0x206B0000, GIC interrupt ID 71. Listed as an open item in docs/rdl-sweep/PORT-BLOCKS.md.";
+    name = "HiSilicon VCMP video compress unit (UNVERIFIED, vendor-derived)";
+    desc = "UNVERIFIED, vendor-derived: the Hi3520D / Hi3515A / Hi3515C VCMP ('video compress unit', data sheet 8.3, overview and limitations only): graphics bandwidth compression of ARGB1555 / ARGB8888 into variable-length-code streams written to separate A, R, G and B buffers, a direct-transfer self-test mode (no vendor code uses it) and a task-completion interrupt. The display's G0 layer decompresses the streams (the G0DCMP* registers and G0CTRL.dcmp_mode / dcmp_inter in `eHISI_VDP`); in the vendor system only the framebuffer driver hifb uses it, to cut the DDR bandwidth of a graphics layer.
+
+The data sheet has no register table. These registers are derived from the vendor kernel module vcmp.ko (Hi3520D_MPP_V2.0.5.1; OpenIPC Hi3520D rootfs copy and the Xiongmai NBD7804T-F copy, identical code), which maps 0x206B0000 with a size of 0x68 bytes and touches 14 registers; hifb.ko and hi3520D_vou.ko show how it is used with the G0 decompressor. Nothing here was read or written on the board. Base address 0x206B0000, GIC interrupt ID 71 (data sheet table; vendor request_irq(71)), clock/reset PERI_CRG29 (0x20030074: bit 1 clock enable, bit 0 reset request; vendor order: clock on first, then reset released; exit: reset asserted, then clock off). DDRC QoS port VCMP: 0x20110170 (vendor scripts: 0x03F04).
+
+Per-task programming order (VcmpStart -> VcmpSetSrcInfo, VcmpSetDstInfo, VcmpHalStart): SRC_ADDR (0x34), SRC_STRIDE (0x38), SRC_RESO (0x3C), SRC_FMT[2:0] (0x08), VCMP_A/R/G/B_ADDR (0x40-0x4C), DST_STRIDE (0x50, stride then bank width), SRC_FMT[31:30] = 2 (0x08), START bit 0 (0x0C); the completion interrupt (INT_STATUS bit 0, read at 0x28, cleared by writing 3 to 0x2C) follows. Init (VcmpHalInit, once, first open): ioremap, PERI_CRG29 clock on, reset released, UNK_004 fields, INT_EN bit 0 then bit 1. Exit: UNK_004 bit 31 cleared, reset asserted, clock off.
+
+Registers never accessed by the vendor module: 0x00, 0x10-0x24, 0x54-0x64 (inside the 0x68-byte mapping), possibly further status/version registers. The remaining 64 KB window is covered by one placeholder memory so that the block size exists in the map. Data sheet 8.3.3 limits (vendor module checks none of them): SRC_ADDR, SRC_STRIDE and the four stream addresses 128-bit aligned; bank width register = n x 256 - 1; registers may only be configured while the module is idle (after its interrupt).
+
+Certainty convention: every register states 'Source: vendor module vcmp.ko (symbol/offset), confidence HIGH|MEDIUM|LOW, word-checked: yes|no' and 'Not verified on hardware'; stubs carry the fixed text 'Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware'. Document: docs/rdl-campaign/vcmp-vendor.md.
+
+previously: \"Not described: no register of this block is described; the registers exist only in closed vendor libraries (the MPP binary modules), not in the data sheet or any vendor source in the tree. The 64 KB window is kept only so that the block base address and size exist in the address map (STUB). Register names that the data sheet mentions only in prose (8.3.3 limitations): SRC_ADDR, SRC_STRIDE (128-bit aligned), VCMP_A_ADDR, VCMP_R_ADDR, VCMP_G_ADDR, VCMP_B_ADDR (128-bit aligned, writeback width = n x 256 - 1); their offsets are not given. No vendor source. Listed as an open item in docs/rdl-sweep/PORT-BLOCKS.md.\"";
+    reg {
+        name = "UNK_004 (script comment: vcmp outstanding and lowpower)";
+        desc = "Written (read-modify-write, four fields one after the other) once by VcmpHalInit, right after the clock is enabled and the reset released and before the interrupt enable (0x30); bit 31 is cleared again by VcmpHalExit before the reset is asserted. Values written: bit 31 = 1, [3:0] = 2, [7:4] = 2, [17:8] = 500 (0x1F4); i.e. 0x8001F422 when the register starts at 0. Neighbors accessed together: 0x30 (interrupt enable). The Xiongmai board script sysctl_hi3520D.sh carries the commented-out line `himm 0x206b0004 0x22` with the comment \"vcmp outstanding & lowpower\" (the same wording as its active VICAP line `himm 0x20580004 0xf0f00002 # vicap outstanding`, the VICAP AXI_CFG register); it is commented out, so the vendor image never writes that value. The comment suggests that the two low nibbles are AXI outstanding counts and that some field is a low-power setting, but the code does not say which field is which; no meaning is claimed.
+
+Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware. Source: vendor module vcmp.ko (VcmpHalInit offsets 0x8b0-0x8e0, VcmpHalExit), word-checked: yes. Not verified on hardware.";
+
+        field {
+            name = "bit31_unk";
+            desc = "bit 31: set by VcmpHalInit (orr 0x80000000), cleared by VcmpHalExit. Enable-like by its set/clear pairing around the block's lifetime, but no meaning is claimed.";
+            sw = rw;
+            hw = r;
+        } bit31_unk[31:31];
+
+        field {
+            name = "bits17_8_unk";
+            desc = "bits 17:8: written 500 (0x1F4) by VcmpHalInit, never changed afterwards.";
+            sw = rw;
+            hw = r;
+        } bits17_8_unk[17:8];
+
+        field {
+            name = "bits7_4_unk";
+            desc = "bits 7:4: written 2 by VcmpHalInit.";
+            sw = rw;
+            hw = r;
+        } bits7_4_unk[7:4];
+
+        field {
+            name = "bits3_0_unk";
+            desc = "bits 3:0: written 2 by VcmpHalInit.";
+            sw = rw;
+            hw = r;
+        } bits3_0_unk[3:0];
+
+    } UNK_004 @ 0x04;
+
+    reg {
+        name = "Source format and mode";
+        desc = "Read-modify-write by two vendor functions. VcmpHalSetSrcFmt writes the source pixel format into [2:0]; VcmpHalStart writes the 2-bit value 2 into [31:30] immediately before it sets the start bit (0x0C) in every task. The module is the only evidence: the values seen for the format field are those the graphics driver hifb.ko passes: hifb layer format 6 (ARGB1555) is mapped to 5 and hifb format 7 (ARGB8888) to 6 (HIFB_DRV_StartVcmp); no other value is ever programmed, and the module itself validates nothing. The data sheet (8.3) describes ARGB1555 and ARGB8888 as the only input formats. The format is written last when the source registers are programmed (after address, stride and size). Data sheet 8.3 also mentions a direct-transfer self-test mode; no vendor code selects it, so the meaning of [31:30] (the value 2 written at every start, the only value seen) is unknown and no mode is claimed.
+
+Source: vendor module vcmp.ko (VcmpHalSetSrcFmt str to offset 0x08 (bfi 3 bits at 0); VcmpHalStart (bfi 2 bits at 30 = 2); caller VcmpSetSrcInfo / HIFB_DRV_StartVcmp), confidence HIGH for the access and positions, MEDIUM for the format codes (derived from hifb's mapping, the data sheet gives no codes), word-checked: yes (the Hi3520D V100 module itself, Hi3520D_MPP_V2.0.5.1; the Xiongmai NBD7804T-F copy has byte-identical code). Not verified on hardware; not in the data sheet; no reset value is known. Details: docs/rdl-campaign/vcmp-vendor.md. Bits 31:30: Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+
+        field {
+            name = "src_fmt";
+            desc = "Source pixel format. Observed values: 5 = ARGB1555, 6 = ARGB8888 (hifb mapping, MEDIUM). The module masks the value to 3 bits.";
+            sw = rw;
+            hw = r;
+        } src_fmt[2:0];
+
+        field {
+            name = "bits31_30_unk";
+            desc = "Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware. Observed access: read-modify-write, value 2, written by VcmpHalStart before every start (the only value seen).";
+            sw = rw;
+            hw = r;
+        } bits31_30_unk[31:30];
+
+    } SRC_FMT @ 0x08;
+
+    reg {
+        name = "Start";
+        desc = "VcmpHalStart sets bit 0 with a read-modify-write (orr 1), after SRC_FMT[31:30] was written (see 0x08) and after all source and destination registers of the task were programmed. The code never clears the bit and never polls it: completion is signalled by the interrupt (INT_STATUS bit 0), so whether the bit self-clears is not known (an OR of 1 on every start is harmless in both cases). Registers may only be written while the module is idle, i.e. after the completion interrupt (data sheet 8.3.3; the vendor code enforces this in software with its state variable, see the document). A task in two passes (interlaced source, 'mode 1') is started twice: the second start is issued from the completion interrupt handler (VcmpIsr) after it reprograms source address, stride, height and the destination addresses.
+
+Source: vendor module vcmp.ko (VcmpHalStart str to offset 0x0C (orr 1)), confidence HIGH, word-checked: yes (the Hi3520D V100 module itself, Hi3520D_MPP_V2.0.5.1; the Xiongmai NBD7804T-F copy has byte-identical code). Not verified on hardware; not in the data sheet; no reset value is known. Details: docs/rdl-campaign/vcmp-vendor.md.";
+
+        field {
+            name = "start";
+            desc = "Write 1 to start one compression task (vendor name VcmpHalStart).";
+            sw = rw;
+            hw = r;
+        } start[0:0];
+
+    } START @ 0x0C;
+
+    reg {
+        name = "Interrupt status";
+        desc = "Read once at the top of the interrupt handler VcmpIsr (VcmpHalGetIntValue, before INT_CLEAR is written). Bit 1 set: the handler logs \"Vcmp internel err!\", marks the task failed and still calls the completion callback and wakes the waiter. Bit 0 set: task completed; for a single-pass task the handler marks the module idle, for the first pass of a two-pass task it programs and starts the second pass instead. If neither bit is set the handler still runs the callback/wake path unchanged (spurious interrupt). Whether the register is the raw or the masked status is not known. GIC interrupt ID 71 (data sheet interrupt table row 71 = VCMP; the module requests the interrupt with request_threaded_irq(71, VcmpIsr, no thread function, flags 0x20 = IRQF_DISABLED of Linux 3.0, name \"vcmp_isr\", dev id 0) at module init, before the register window is mapped, and frees it at module exit).
+
+Source: vendor module vcmp.ko (VcmpHalGetIntValue ldr from offset 0x28, consumer VcmpIsr tst #1 / tst #2), confidence HIGH for the access and the two bit positions, MEDIUM for the names (done/error from the handler's use, no register name in the module), word-checked: yes (the Hi3520D V100 module itself, Hi3520D_MPP_V2.0.5.1; the Xiongmai NBD7804T-F copy has byte-identical code). Not verified on hardware; not in the data sheet; no reset value is known. Details: docs/rdl-campaign/vcmp-vendor.md.";
+
+        field {
+            name = "done";
+            desc = "Task completed (bit 0 tested by VcmpIsr; ends or advances the task).";
+            sw = r;
+            hw = w;
+        } done[0:0];
+
+        field {
+            name = "err";
+            desc = "Error (bit 1 tested first by VcmpIsr; logs \"Vcmp internel err!\" and fails the task).";
+            sw = r;
+            hw = w;
+        } err[1:1];
+
+    } INT_STATUS @ 0x28;
+
+    reg {
+        name = "Interrupt clear";
+        desc = "Written 3 (both bits) by VcmpHalClearInt, immediately after the status was read in the interrupt handler and before the status is evaluated. A plain store, no read. Write-1-to-clear is inferred from the value 3 and the position next to INT_STATUS; the code does not read the register.
+
+Source: vendor module vcmp.ko (VcmpHalClearInt str 3 to offset 0x2C), confidence HIGH for the access and value, MEDIUM for write-1-to-clear semantics, word-checked: yes (the Hi3520D V100 module itself, Hi3520D_MPP_V2.0.5.1; the Xiongmai NBD7804T-F copy has byte-identical code). Not verified on hardware; not in the data sheet; no reset value is known. Details: docs/rdl-campaign/vcmp-vendor.md.";
+
+        field {
+            name = "clear";
+            desc = "Written 3 by VcmpHalClearInt (bit 0 = done, bit 1 = error by position next to INT_STATUS).";
+            sw = w;
+            hw = r;
+        } clear[1:0];
+
+    } INT_CLEAR @ 0x2C;
+
+    reg {
+        name = "Interrupt enable (polarity inferred)";
+        desc = "Set once by VcmpHalInit with two consecutive read-modify-writes: bit 0, then bit 1 (after UNK_004 was programmed). Never touched again (VcmpHalExit does not clear it; it asserts the reset and gates the clock instead). Because the interrupt handler is the only completion path of the module and expects bits 0 and 1 of INT_STATUS, the bits are interpreted as enables of the same two events (so a set bit = interrupt enabled); a mask polarity (set = masked) is not strictly excluded, but would leave the module without a completion interrupt.
+
+Source: vendor module vcmp.ko (VcmpHalInit offsets 0x8e4-0x8f8 (orr 1, orr 2 on offset 0x30)), confidence HIGH for the access and bit positions, MEDIUM for the meaning, word-checked: yes (the Hi3520D V100 module itself, Hi3520D_MPP_V2.0.5.1; the Xiongmai NBD7804T-F copy has byte-identical code). Not verified on hardware; not in the data sheet; no reset value is known. Details: docs/rdl-campaign/vcmp-vendor.md.";
+
+        field {
+            name = "done_en";
+            desc = "Enable of the task-completion interrupt (bit 0), set at init (meaning inferred).";
+            sw = rw;
+            hw = r;
+        } done_en[0:0];
+
+        field {
+            name = "err_en";
+            desc = "Enable of the error interrupt (bit 1), set at init (meaning inferred).";
+            sw = rw;
+            hw = r;
+        } err_en[1:1];
+
+    } INT_EN @ 0x30;
+
+    reg {
+        name = "Source address";
+        desc = "Start address of the source ARGB frame (physical address), written with a plain store (VcmpHalSetSrcAddr) as the first source register of a task, before SRC_STRIDE, SRC_RESO and SRC_FMT. For the second pass of a two-pass (interlaced) task the module writes the original address plus one source line (stride), so the pass reads the odd lines, and for the first pass the unmodified address. The data sheet 8.3.3 states that the source address must be 128-bit (16-byte) aligned; the module checks nothing. hifb passes the framebuffer address it composed with TDE.
+
+Source: vendor module vcmp.ko (VcmpHalSetSrcAddr str to offset 0x34), confidence HIGH, word-checked: yes (the Hi3520D V100 module itself, Hi3520D_MPP_V2.0.5.1; the Xiongmai NBD7804T-F copy has byte-identical code). Not verified on hardware; not in the data sheet; no reset value is known. Details: docs/rdl-campaign/vcmp-vendor.md.";
+
+        field {
+            name = "src_addr";
+            desc = "Source frame start address (data sheet: 128-bit aligned).";
+            sw = rw;
+            hw = r;
+        } src_addr[31:0];
+
+    } SRC_ADDR @ 0x34;
+
+    reg {
+        name = "Source stride";
+        desc = "Source line stride in bytes, plain store (VcmpHalSetSrcStride) after SRC_ADDR. The value is the layer stride (hifb); in two-pass (interlaced, 'mode 1') tasks the module doubles it so each pass reads every second line (the height is halved at the same time, see SRC_RESO). The data sheet 8.3.3 requires 128-bit alignment (16 bytes); the module checks nothing.
+
+Source: vendor module vcmp.ko (VcmpHalSetSrcStride str to offset 0x38; doubling in VcmpSetSrcInfo (lsl 1)), confidence HIGH for the access, MEDIUM for 'bytes' (inferred from the address arithmetic, which adds the stride to the address), word-checked: yes (the Hi3520D V100 module itself, Hi3520D_MPP_V2.0.5.1; the Xiongmai NBD7804T-F copy has byte-identical code). Not verified on hardware; not in the data sheet; no reset value is known. Details: docs/rdl-campaign/vcmp-vendor.md.";
+
+        field {
+            name = "src_stride";
+            desc = "Source stride in bytes (doubled in the two-pass mode).";
+            sw = rw;
+            hw = r;
+        } src_stride[31:0];
+
+    } SRC_STRIDE @ 0x38;
+
+    reg {
+        name = "Source resolution";
+        desc = "Two read-modify-writes in VcmpHalSetSrcReso: width - 1 into [11:0] (first), then height - 1 into [23:12], after SRC_STRIDE. Both are 'size minus one' as in the VICAP size registers. In two-pass (interlaced, 'mode 1') tasks the module programs height / 2. Values are not range-checked by the module (12-bit fields, so 4096 maximum at the register level).
+
+Source: vendor module vcmp.ko (VcmpHalSetSrcReso str to offset 0x3C (bfi 12 bits at 0, bfi 12 bits at 12)), confidence HIGH, word-checked: yes (the Hi3520D V100 module itself, Hi3520D_MPP_V2.0.5.1; the Xiongmai NBD7804T-F copy has byte-identical code). Not verified on hardware; not in the data sheet; no reset value is known. Details: docs/rdl-campaign/vcmp-vendor.md.";
+
+        field {
+            name = "width_m1";
+            desc = "Source width minus 1 (pixels).";
+            sw = rw;
+            hw = r;
+        } width_m1[11:0];
+
+        field {
+            name = "height_m1";
+            desc = "Source height minus 1 (lines; halved in the two-pass mode).";
+            sw = rw;
+            hw = r;
+        } height_m1[23:12];
+
+    } SRC_RESO @ 0x3C;
+
+    reg {
+        name = "Compressed stream address of the A component";
+        desc = "Start address of the A component output stream (physical), one of four plain stores made together by VcmpHalSetDstAddr (offsets 0x40, 0x44, 0x48, 0x4C = A, R, G, B in the order of the data sheet names VCMP_A_ADDR, VCMP_R_ADDR, VCMP_G_ADDR, VCMP_B_ADDR). The same four addresses, in the same A, R, G, B order, are handed to the display decompressor registers G0DCMPAADDR, G0DCMPRADDR, G0DCMPGADDR, G0DCMPBADDR (0x91BC-0x91C8 in the VDP) by hifb/vou. Layout used by hifb (hifb_alloc_vcmpbuf): the four planes lie back to back in one 16-byte aligned MMZ block in the order A, R, G, B, each plane size rounded up to 512 bytes (see the document for the sizes); for the second pass of a two-pass task every address is increased by the destination stride (interleaved 256-byte banks). The data sheet 8.3.3 requires 128-bit alignment; the module checks nothing.
+
+Source: vendor module vcmp.ko (VcmpHalSetDstAddr str to offset 0x40), confidence HIGH for the access, MEDIUM for the component order (argument order of the vendor helper, supported by the plane sizes hifb allocates and by the identical A, R, G, B order of the G0DCMP registers), word-checked: yes (the Hi3520D V100 module itself, Hi3520D_MPP_V2.0.5.1; the Xiongmai NBD7804T-F copy has byte-identical code). Not verified on hardware; not in the data sheet; no reset value is known. Details: docs/rdl-campaign/vcmp-vendor.md.";
+
+        field {
+            name = "addr_a";
+            desc = "A component stream start address (128-bit aligned per the data sheet).";
+            sw = rw;
+            hw = r;
+        } addr_a[31:0];
+
+    } VCMP_A_ADDR @ 0x40;
+
+    reg {
+        name = "Compressed stream address of the R component";
+        desc = "Start address of the R component output stream (physical), one of four plain stores made together by VcmpHalSetDstAddr (offsets 0x40, 0x44, 0x48, 0x4C = A, R, G, B in the order of the data sheet names VCMP_A_ADDR, VCMP_R_ADDR, VCMP_G_ADDR, VCMP_B_ADDR). The same four addresses, in the same A, R, G, B order, are handed to the display decompressor registers G0DCMPAADDR, G0DCMPRADDR, G0DCMPGADDR, G0DCMPBADDR (0x91BC-0x91C8 in the VDP) by hifb/vou. Layout used by hifb (hifb_alloc_vcmpbuf): the four planes lie back to back in one 16-byte aligned MMZ block in the order A, R, G, B, each plane size rounded up to 512 bytes (see the document for the sizes); for the second pass of a two-pass task every address is increased by the destination stride (interleaved 256-byte banks). The data sheet 8.3.3 requires 128-bit alignment; the module checks nothing.
+
+Source: vendor module vcmp.ko (VcmpHalSetDstAddr str to offset 0x44), confidence HIGH for the access, MEDIUM for the component order (argument order of the vendor helper, supported by the plane sizes hifb allocates and by the identical A, R, G, B order of the G0DCMP registers), word-checked: yes (the Hi3520D V100 module itself, Hi3520D_MPP_V2.0.5.1; the Xiongmai NBD7804T-F copy has byte-identical code). Not verified on hardware; not in the data sheet; no reset value is known. Details: docs/rdl-campaign/vcmp-vendor.md.";
+
+        field {
+            name = "addr_r";
+            desc = "R component stream start address (128-bit aligned per the data sheet).";
+            sw = rw;
+            hw = r;
+        } addr_r[31:0];
+
+    } VCMP_R_ADDR @ 0x44;
+
+    reg {
+        name = "Compressed stream address of the G component";
+        desc = "Start address of the G component output stream (physical), one of four plain stores made together by VcmpHalSetDstAddr (offsets 0x40, 0x44, 0x48, 0x4C = A, R, G, B in the order of the data sheet names VCMP_A_ADDR, VCMP_R_ADDR, VCMP_G_ADDR, VCMP_B_ADDR). The same four addresses, in the same A, R, G, B order, are handed to the display decompressor registers G0DCMPAADDR, G0DCMPRADDR, G0DCMPGADDR, G0DCMPBADDR (0x91BC-0x91C8 in the VDP) by hifb/vou. Layout used by hifb (hifb_alloc_vcmpbuf): the four planes lie back to back in one 16-byte aligned MMZ block in the order A, R, G, B, each plane size rounded up to 512 bytes (see the document for the sizes); for the second pass of a two-pass task every address is increased by the destination stride (interleaved 256-byte banks). The data sheet 8.3.3 requires 128-bit alignment; the module checks nothing.
+
+Source: vendor module vcmp.ko (VcmpHalSetDstAddr str to offset 0x48), confidence HIGH for the access, MEDIUM for the component order (argument order of the vendor helper, supported by the plane sizes hifb allocates and by the identical A, R, G, B order of the G0DCMP registers), word-checked: yes (the Hi3520D V100 module itself, Hi3520D_MPP_V2.0.5.1; the Xiongmai NBD7804T-F copy has byte-identical code). Not verified on hardware; not in the data sheet; no reset value is known. Details: docs/rdl-campaign/vcmp-vendor.md.";
+
+        field {
+            name = "addr_g";
+            desc = "G component stream start address (128-bit aligned per the data sheet).";
+            sw = rw;
+            hw = r;
+        } addr_g[31:0];
+
+    } VCMP_G_ADDR @ 0x48;
+
+    reg {
+        name = "Compressed stream address of the B component";
+        desc = "Start address of the B component output stream (physical), one of four plain stores made together by VcmpHalSetDstAddr (offsets 0x40, 0x44, 0x48, 0x4C = A, R, G, B in the order of the data sheet names VCMP_A_ADDR, VCMP_R_ADDR, VCMP_G_ADDR, VCMP_B_ADDR). The same four addresses, in the same A, R, G, B order, are handed to the display decompressor registers G0DCMPAADDR, G0DCMPRADDR, G0DCMPGADDR, G0DCMPBADDR (0x91BC-0x91C8 in the VDP) by hifb/vou. Layout used by hifb (hifb_alloc_vcmpbuf): the four planes lie back to back in one 16-byte aligned MMZ block in the order A, R, G, B, each plane size rounded up to 512 bytes (see the document for the sizes); for the second pass of a two-pass task every address is increased by the destination stride (interleaved 256-byte banks). The data sheet 8.3.3 requires 128-bit alignment; the module checks nothing.
+
+Source: vendor module vcmp.ko (VcmpHalSetDstAddr str to offset 0x4c), confidence HIGH for the access, MEDIUM for the component order (argument order of the vendor helper, supported by the plane sizes hifb allocates and by the identical A, R, G, B order of the G0DCMP registers), word-checked: yes (the Hi3520D V100 module itself, Hi3520D_MPP_V2.0.5.1; the Xiongmai NBD7804T-F copy has byte-identical code). Not verified on hardware; not in the data sheet; no reset value is known. Details: docs/rdl-campaign/vcmp-vendor.md.";
+
+        field {
+            name = "addr_b";
+            desc = "B component stream start address (128-bit aligned per the data sheet).";
+            sw = rw;
+            hw = r;
+        } addr_b[31:0];
+
+    } VCMP_B_ADDR @ 0x4C;
+
+    reg {
+        name = "Destination stride and bank width";
+        desc = "Two writes in VcmpSetDstInfo: VcmpHalSetDstStride stores the stride as a whole-register write (this clears [31:16]), then VcmpHalSetDstBankWidth read-modify-writes [31:16] with bank width - 1. Values used by hifb: stride 256 and bank width 256 (so [15:0] = 256 = 0x100 and [31:16] = 255 = 0xFF, register 0x00FF0100); in the first pass of a two-pass (interlaced) task the stride is doubled to 512 (0x00FF0200) and, for the second pass, all four stream addresses are moved up by 256. Meaning (inferred): the output is written in bursts ('banks') of 'bank width' bytes with 'stride' bytes between consecutive bursts of a plane, so a stride equal to the bank width writes a contiguous stream and the doubled stride interleaves two fields (LOW). The data sheet 8.3.3 states 'writeback width = n x 256 - 1', which agrees with the bank-width field. The same two numbers are programmed into the display side: G0DCMPSTRIDE (0x91B8) gets the stride (as given, 256, not doubled) and G0DCMPBANKWIDTH (0x91B4) gets bank width - 1 (the VOU HAL subtracts one, 255).
+
+Source: vendor module vcmp.ko (VcmpHalSetDstStride str to offset 0x50; VcmpHalSetDstBankWidth (uxth, orr lsl #16, width - 1)), confidence HIGH for positions and values, LOW for the burst interpretation, word-checked: yes (the Hi3520D V100 module itself, Hi3520D_MPP_V2.0.5.1; the Xiongmai NBD7804T-F copy has byte-identical code). Not verified on hardware; not in the data sheet; no reset value is known. Details: docs/rdl-campaign/vcmp-vendor.md.";
+
+        field {
+            name = "stride";
+            desc = "Destination stride (hifb: 256; 512 for the first pass of the two-pass mode).";
+            sw = rw;
+            hw = r;
+        } stride[15:0];
+
+        field {
+            name = "bank_width_m1";
+            desc = "Destination bank width minus 1 (hifb: 255, i.e. 256 bytes; data sheet: n x 256 - 1).";
+            sw = rw;
+            hw = r;
+        } bank_width_m1[31:16];
+
+    } DST_STRIDE @ 0x50;
 
     external mem {
-        name = "Undocumented register window";
-        desc = "The whole 64 KB window of the block. Register layout unknown; placeholder so the block base address and size exist in the map. No registers are described.";
-        mementries = 16384;
+        name = "Rest of the 64 KB window (no register seen)";
+        desc = "The rest of the 64 KB VCMP window (0x100-0xFFFF). The vendor module maps only the first 0x68 bytes and never touches anything beyond 0x50; nothing is known about 0x54-0x64 (mapped, never accessed) or above. Placeholder so the block size exists in the map. previously: the whole 64 KB window was this placeholder (REGS).";
+        mementries = 16320;
         memwidth = 32;
         sw = rw;
-    } REGS;
+    } REGS @ 0x100;
 };
 
 `endif
