@@ -3,7 +3,7 @@
 
 addrmap aHISI_VPSS {
     name = "HiSilicon VPSS (registers not described)";
-    desc = "Not described: no register of this block is described; the registers exist only in closed vendor libraries (the MPP binary modules), not in the data sheet or any vendor source in the tree. The 64 KB window is kept only so that the block base address and size exist in the address map (STUB). Video process subsystem (data sheet 8.2, `datasheet.txt` lines ~30232-30290, overview/features only, no register description): 3D Gaussian noise reduction (NR), image enhancement (IE), de-interlace (DEI), sharpening (HSP), border addition, block processing of widths over 960 (up to 1920), scaling (8x zoom out, 16x zoom in), register linked-list configuration, YUV420/YUV422. The vendor MPP VPSS is a closed-source binary module; the vendor Hi3531-family `platform.h` gives only VPSS0_REG_BASE 0x20600000 (and a VPSS1 at 0x20680000, which is Reserved in the Hi3520D table). Base address 0x20600000, GIC interrupt ID 69. Listed as an open item in docs/rdl-sweep/PORT-BLOCKS.md.";
+    desc = "Not described: no register of this block is described in any data sheet (every data sheet that has the block lists only the 64 KB memory-map window, the interrupt number and the clock/reset/QoS bits of the integration registers; the registers exist only in closed vendor libraries and modules). The 64 KB window is kept so that the block base address and size exist in the address map (STUB). Instances (data-sheet memory maps and interrupt tables, cross-chip audit 2026-11-11, docs/rdl-campaign/vpss.md): 0x20600000 on Hi3520D/Hi3515A/Hi3515C (GIC 69), Hi3516C V100 and Hi3518 A/C V100 (interrupt 17), Hi3516A/Hi3516D (GIC 68), Hi3518E V200/Hi3516C V200 (interrupt 17); 0x11180000 on Hi3516A V200 and Hi3519 V101 (GIC 64); 0x11040000 on Hi3516A V300 (GIC 75); 0x11250000 on Hi3516C V300 and Hi3516E V100 (interrupt 17). Hi3511/Hi3515 V100/Hi3516 V100/Hi3520 V100 have no VPSS. The data-sheet feature texts show at least three generations: (1) Hi3520D, Hi3516C V100, Hi3518 V100, Hi3518E V100: 3D Gaussian noise reduction, image enhancement (Hi3520D only), de-interlace, sharpening, border (Hi3520D only), block processing of wide pictures, scaling, register linked list, YUV420/YUV422; (2) Hi3516A/D, Hi3518E V200/Hi3516C V200: NR, up to 3 encoding channels plus 1 display channel, 8 cover regions per channel, cropping, linked-list configuration (offline) or APB (online mode with VICAP); (3) Hi3516A V200/V300, Hi3519, Hi3516C V300: one input, up to three outputs, online or offline with VI. Register layouts across generations are unknown and must not be assumed equal; the Hi3520D edition with the vendor-derived registers is aHISI_VPSS_V100 below. Video process subsystem data sheet text for the Hi3520D: chapter 8.2 (original Chinese issue 02), overview and features only. The vendor Hi3531-family `platform.h` gives only VPSS0_REG_BASE 0x20600000 (and a VPSS1 at 0x20680000, which is Reserved in the Hi3520D table). Listed as an open item in docs/rdl-sweep/PORT-BLOCKS.md.";
 
     external mem {
         name = "Undocumented register window";
@@ -12,6 +12,110 @@ addrmap aHISI_VPSS {
         memwidth = 32;
         sw = rw;
     } REGS;
+};
+
+addrmap aHISI_VPSS_V100 {
+    name = "HiSilicon VPSS (Hi3520D V100 edition, vendor-derived registers)";
+    desc = "VPSS, Hi3520D V100 edition, vendor-derived, NOT VERIFIED ON HARDWARE. The data sheet has no VPSS register table. Derived by static disassembly of hi3520D_vpss.ko (Hi3520D_MPP_V2.0.5.1, OpenIPC copy with local symbols; the Xiongmai NBD7804T-F copy has the same code), docs/rdl-campaign/vpss.md. CONFIRMED FACTS (vendor code, HIGH): VPSS_HAL_Init ioremaps 0x20600000 for 0x4060 bytes (the vendor code touches nothing above 0x405F); VPSS_DRV_GetIrqId returns 69; the module is one 'group' per VPSS node: software builds a register-image node in DDR (the HAL functions VPSS_HAL_SetCtrl/SetSrcImgSize/SetCurPicAddr/SetDieCfg/SetChn* write bit fields into such a node image, which mirrors the register layout and is 0x420 bytes or more), links nodes through the word at node offset 0x3F0, and starts the hardware with the node address (linked-list register configuration as the data sheet describes). Only seven locations are accessed through the ioremapped window and are listed here as UNK_ registers: 0x0E0 (node ID read back), 0x3F0 (next node address), 0x400 (start), 0x404 (interrupt status), 0x408 (interrupt clear), 0x414 (outstanding configuration), 0x4000 (debug word). Everything else in the window is not described (the per-node configuration registers live in the node images; whether they are also memory-mapped is unknown). The names are placeholders (UNK_<offset>), the purposes come from the function names of the vendor HAL. The Hi3516C V100/Hi3518 V100/Hi3518E V100 VPSS sits at the same base and has the same feature list, but no register-level comparison is possible, so only the Hi3520D family files (Hi3520D, Hi3515A, Hi3515C; the Hi3515A/C instantiation is inferred) use this edition.";
+
+    reg {
+        name = "UNK_0x0E0";
+        desc = "UNK_0x0E0 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: hi3520D_vpss.ko VPSS_HAL_GetNodeID (0x185d4): one word read from the ioremapped window, called from the interrupt path after VPSS_HAL_GetIntStatus/ClrInt (VPSS_COMM_IrqProc 0x1d430); the same offset in the node image is written by VPSS_HAL_SetNodeID (0x17698). Vendor meaning: ID of the node the hardware just finished. Confidence MEDIUM (offset and read HIGH, meaning inferred from the function name), not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Unknown 32-bit value (vendor: node ID of the completed node).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x0E0 @ 0x0E0;
+
+    reg {
+        name = "UNK_0x3F0";
+        desc = "UNK_0x3F0 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: hi3520D_vpss.ko VPSS_HAL_Start (0x186f0): writes the node address (physical address of the DDR node image) to this word and reads it back in a loop until it equals the written value (retry with printk on mismatch), then writes 1 to 0x400. VPSS_HAL_GetNextInfo (0x184b0) reads it. In the node image the same offset is the pointer to the next node (VPSS_HAL_SetNext 0x17684). Vendor meaning: address of the first or next node of the linked list. Confidence MEDIUM (offsets and access pattern HIGH, meaning from the function names), not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Node address (vendor-derived, MEDIUM).";
+            sw = rw;
+            hw = r;
+        } unk[31:0];
+
+    } UNK_0x3F0 @ 0x3F0;
+
+    reg {
+        name = "UNK_0x400";
+        desc = "UNK_0x400 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: hi3520D_vpss.ko VPSS_HAL_Start (0x186f0): after the node address was written to 0x3F0 and verified, the value 1 is written here (the only value ever written). Vendor meaning: start. Confidence MEDIUM, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Written with 1 to start processing the linked list (vendor-derived, MEDIUM). Read behavior unknown.";
+            sw = rw;
+            hw = r;
+        } unk[31:0];
+
+    } UNK_0x400 @ 0x400;
+
+    reg {
+        name = "UNK_0x404";
+        desc = "UNK_0x404 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: hi3520D_vpss.ko VPSS_HAL_GetIntStatus (0x18574): reads the whole word; called by VPSS_COMM_IrqProc (0x1d430, the interrupt handler path, IRQ 69) before the node ID is read and the interrupt cleared. Vendor meaning: interrupt status; bit meanings not seen in the HAL (the whole word is passed up). Confidence MEDIUM, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Interrupt status word (vendor-derived, MEDIUM; bits not decoded).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x404 @ 0x404;
+
+    reg {
+        name = "UNK_0x408";
+        desc = "UNK_0x408 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: hi3520D_vpss.ko VPSS_HAL_ClrInt (0x18690): writes 0xFFFFFFFF (all ones) to this word, called from the interrupt path. Vendor meaning: interrupt clear (write 1 to clear is assumed, the vendor writes all ones). Confidence MEDIUM, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Interrupt clear (vendor writes 0xFFFFFFFF; vendor-derived, MEDIUM).";
+            sw = w;
+            hw = r;
+        } unk[31:0];
+
+    } UNK_0x408 @ 0x408;
+
+    reg {
+        name = "UNK_0x414";
+        desc = "UNK_0x414 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: hi3520D_vpss.ko VPSS_HAL_SetOutstanding (0x18634): writes one whole word (argument r1) to this location of the ioremapped window. The node image has a word at the same offset (VPSS_HAL_SetMiscellaneous 0x17664 sets bits [23:16] in it, 'miscellaneous', values 3 and 100 seen in VPSS_DRV_SetModelParam 0x1610c). The data sheet says only that the block supports 'outstanding configuration'. Vendor meaning: outstanding (AXI) configuration. Confidence MEDIUM, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Outstanding configuration word (vendor-derived, MEDIUM).";
+            sw = rw;
+            hw = r;
+        } unk[31:0];
+
+    } UNK_0x414 @ 0x414;
+
+    reg {
+        name = "UNK_0x4000";
+        desc = "UNK_0x4000 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: hi3520D_vpss.ko VPSS_HAL_GetDbgInfo (0x18510): one word read (offset 0x4000 formed as a 16384 register-offset operand), exposed through the module's debug/proc output. The vendor ioremap is 0x4060 bytes, so 0x4000..0x405F exist. Vendor meaning: debug/status word. Confidence LOW, not verified on hardware.";
+
+        field {
+            name = "unk";
+            desc = "Debug word (vendor-derived, LOW).";
+            sw = r;
+            hw = w;
+        } unk[31:0];
+
+    } UNK_0x4000 @ 0x4000;
+
+    external mem {
+        name = "Rest of the window (not described)";
+        desc = "The rest of the 64 KB window above 0x4004 and the gaps between the registers listed above (no vendor access seen through the window). Kept so that the block size exists in the map. No registers are described.";
+        mementries = 12287;
+        memwidth = 32;
+        sw = rw;
+    } REST @ 0x4004;
 };
 
 `endif
