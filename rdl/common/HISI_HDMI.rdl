@@ -5,7 +5,7 @@ regfile eHISI_HDMI {
     name = "HiSilicon HDMI transmitter (SiI9134-style)";
     desc = "Partly described: offsets and names are exact for the 74 registers the vendor U-Boot header (`defstx.h`) defines (and the access method: 8-bit registers at a 32-bit stride, I2C pages memory-mapped); bit names are the vendor `BIT_*` macros; the five PHY registers at 0x1800.. are known only by the values the vendor writes. NOT known: reset values (none were read on hardware), the names and layouts of the PHY registers, every SiI9134 register the vendor header does not define (info-frame data, DDC/EDID, ...), and whether the silicon behaves exactly like a SiI9134 (the identification as a SiI9134-style core is inferred from the vendor sources, unverified). Registers whose meaning is guessed say \"Meaning unverified\". Not in the data sheet.
 
-    HiSilicon HDMI transmitter at 0x201F0000 (GIC interrupt ID 66), Table 1-1 of the data sheet lists only the 64 KB window; **the data sheet has no register description**. In the Hi3520D vendor U-Boot (`product/hiosd/hdmi/hdmi_v1/hi3520d`) the transmitter is a Silicon Image SiI9134-style TX core (Silicon Image copyright in `defstx.h`/`registers.h`) whose two I2C register pages are memory mapped: the byte registers of the slave 0x72 page are at 0x201F0000 + 4 x register (`HDMI_TX_SLV0_ADDR_BASE`), those of the slave 0x7A page at 0x201F0400 + 4 x register (`HDMI_TX_SLV1_ADDR_BASE`), i.e. 8-bit registers at a 32-bit stride (modelled as 32-bit registers, data in bits 7:0). A small PHY block sits at 0x201F1800.. (five registers written by `hdmiPhyInit()`). Clock and soft reset of the block are in PERI_CRG15 (CRG 0x2003003C, `HDMI_HARDWARE_RESET_ADDR` in `drv_hlviic.c`; `HdmiHardwareReset()` toggles it). Page 0 holds system control, HDCP, video timing/colour and interrupt registers; page 1 the audio, info-frame and packet registers. Only the registers that the vendor code uses (names from `defstx.h`; bit names from the `BIT_*` macros) are listed; the SiI9134 has many more (info-frame data at 0x40+ on page 1, EDID/DDC registers, ...), they are not defined in the vendor header copy and are not invented here. Reset values: unknown (not read on hardware). The `HDMI_REG_BASE 0x205D0000` of the Hi3531-family platform header does not apply to the Hi3520D (the data sheet puts HDMI at 0x201F0000 and 0x205D0000 is Reserved); `HDMI_PHY_BASE_ADDR 0x205d0000` in `hlviic.h` is a leftover of that family. AOP1 of the AIO feeds the transmitter over I2S.
+    HiSilicon HDMI transmitter at 0x201F0000 (GIC interrupt ID 66), Table 1-1 of the data sheet lists only the 64 KB window; **the data sheet has no register description**. In the Hi3520D vendor U-Boot (`product/hiosd/hdmi/hdmi_v1/hi3520d`) the transmitter is a Silicon Image SiI9134-style TX core (Silicon Image copyright in `defstx.h`/`registers.h`) whose two I2C register pages are memory mapped: the byte registers of the slave 0x72 page are at 0x201F0000 + 4 x register (`HDMI_TX_SLV0_ADDR_BASE`), those of the slave 0x7A page at 0x201F0400 + 4 x register (`HDMI_TX_SLV1_ADDR_BASE`), i.e. 8-bit registers at a 32-bit stride (modelled as 32-bit registers, data in bits 7:0). A small PHY block sits at 0x201F1800.. (five registers written by `hdmiPhyInit()`). Clock and soft reset of the block are in PERI_CRG15 (CRG 0x2003003C, `HDMI_HARDWARE_RESET_ADDR` in `drv_hlviic.c`; `HdmiHardwareReset()` toggles it). Page 0 holds system control, HDCP, video timing/colour and interrupt registers; page 1 the audio, info-frame and packet registers. Only the registers that the vendor code uses (names from `defstx.h`; bit names from the `BIT_*` macros) are listed; the SiI9134 has many more (info-frame data at 0x40+ on page 1, EDID/DDC registers, ...), they are not defined in the vendor header copy and are not invented here. Reset values: unknown (not read on hardware). The `HDMI_REG_BASE 0x205D0000` of the Hi3531-family platform header does not apply to the Hi3520D (the data sheet puts HDMI at 0x201F0000 and 0x205D0000 is Reserved); `HDMI_PHY_BASE_ADDR 0x205d0000` in `hlviic.h` is a leftover of that family. AOP1 of the AIO feeds the transmitter over I2S (data sheet chapter 13, I2S master, MCLK 256 x fs). Audio registers (page 1 0x01..0x24, 0x0D, 0x14, 0x1D, 0x21..0x24, 0x2F, infoframe slot 0x80, INF_CTRL1 bits 5:4) were cross-checked against the vendor module hi3520D_hdmi.ko (OEM firmware, static analysis, 2026-11-11): the I2S 2 channel PCM programming sequence is documented in docs/hdmi-audio-design.md of the workspace.
     ";
 
     reg {
@@ -1024,6 +1024,18 @@ Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`,
     } V[20] @ 0x360 += 0x4;
 
     reg {
+        name = "Audio path hold";
+        desc = "Page 1 register 0x0D (host address base + 0x400 + 4 x 0x0D). 8-bit register at a 32-bit stride. Meaning unverified: the vendor SI_SetAudioPath writes 2 before it reprograms N, Fs and the I2S registers and 0 afterwards. Not in the vendor header; found in hi3520D_hdmi.ko by static analysis. Confidence LOW (value pattern only).";
+
+        field {
+            name = "data";
+            desc = "8-bit register value.";
+            sw = rw;
+            hw = r;
+        } data[7:0];
+    } AUD_HOLD @ 0x434;
+
+    reg {
         name = "Audio clock regeneration control";
         desc = "Page 1 register 0x01 (host address base + 0x400 + 4 x 0x01). 8-bit register at a 32-bit stride.
 
@@ -1038,28 +1050,32 @@ Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`,
     } ACR_CTRL @ 0x404;
 
     reg {
-        name = "Sample frequency";
+        name = "MCLK to sample frequency ratio (SDK SI_SetMCLK)";
         desc = "Page 1 register 0x02 (host address base + 0x400 + 4 x 0x02). 8-bit register at a 32-bit stride.
 
-Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).
+
+Page 1 register 0x02: 1 = MCLK is 256 x fs (vendor default), 2 = 384 x fs (the vendor uses it at 32 kHz). Must match the MCLK that AOP1 of the AIO generates, the transmitter derives CTS from it. FREQ_SVAL is the vendor header name. Source: vendor module hi3520D_hdmi.ko (OEM firmware; static analysis of SI_SetAudioPath, SI_Set_N_Fs, SI_SetMCLK, hdmi_SetAttr) and vendor U-Boot defstx.h; the meaning follows the SiI9134 SDK convention. The stock firmware runs it on this silicon, not verified in Linux yet. Confidence MED.";
 
         field {
             name = "data";
-            desc = "8-bit register value (bit layout not given in the vendor header).";
+            desc = "8-bit register value.";
             sw = rw;
             hw = r;
         } data[7:0];
     } FREQ_SVAL @ 0x408;
 
     reg {
-        name = "N value (3 bytes)";
+        name = "ACR N value (3 bytes, low byte first)";
         desc = "Page 1 register 0x03 (host address base + 0x400 + 4 x 0x03). 8-bit register at a 32-bit stride.
 
-Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).
+
+Page 1 registers 0x03..0x05: 32k 4096, 44.1k 6272, 48k 6144, 88.2k 12544, 96k 12288, 176.4k 25088, 192k 24576 (vendor N_Val table). CTS comes from the hardware (HWCTS_VAL). Source: vendor module hi3520D_hdmi.ko (OEM firmware; static analysis of SI_SetAudioPath, SI_Set_N_Fs, SI_SetMCLK, hdmi_SetAttr) and vendor U-Boot defstx.h; the meaning follows the SiI9134 SDK convention. The stock firmware runs it on this silicon, not verified in Linux yet. Confidence MED.";
 
         field {
             name = "data";
-            desc = "8-bit register value (bit layout not given in the vendor header).";
+            desc = "8-bit register value.";
             sw = rw;
             hw = r;
         } data[7:0];
@@ -1083,14 +1099,44 @@ Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`,
         name = "Audio mode";
         desc = "Page 1 register 0x14 (host address base + 0x400 + 4 x 0x14). 8-bit register at a 32-bit stride.
 
-Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).
+
+Written by the vendor as (old & 0x05) | 0x10 | 0x01 for 2 channel I2S (SD0 on, audio on); 0x03 (S/PDIF + audio on) is its init value. Source: vendor module hi3520D_hdmi.ko (OEM firmware; static analysis of SI_SetAudioPath, SI_Set_N_Fs, SI_SetMCLK, hdmi_SetAttr) and vendor U-Boot defstx.h; the meaning follows the SiI9134 SDK convention. The stock firmware runs it on this silicon, not verified in Linux yet. Confidence MED.";
 
         field {
-            name = "data";
-            desc = "8-bit register value (bit layout not given in the vendor header).";
+            name = "sd_en";
+            desc = "I2S data pin enables SD3..SD0 (0x1 = SD0 only for 2 channels, 0xF = all four, vendor SD_0 / SD_0_3_EN).";
             sw = rw;
             hw = r;
-        } data[7:0];
+        } sd_en[7:4];
+
+        field {
+            name = "dsd_select";
+            desc = "DSD input select (BIT_DSD_SELECT).";
+            sw = rw;
+            hw = r;
+        } dsd_select[3:3];
+
+        field {
+            name = "spdif_sample";
+            desc = "S/PDIF sample select (BIT_SPDIF_SAMPLE); the vendor leaves it unchanged.";
+            sw = rw;
+            hw = r;
+        } spdif_sample[2:2];
+
+        field {
+            name = "spdif_select";
+            desc = "1 = S/PDIF input, 0 = I2S (BIT_SPDIF_SELECT).";
+            sw = rw;
+            hw = r;
+        } spdif_select[1:1];
+
+        field {
+            name = "audio_en";
+            desc = "Audio enable (BIT_AUDIO_EN); the vendor clears it while it reprograms the audio path.";
+            sw = rw;
+            hw = r;
+        } audio_en[0:0];
     } AUD_MODE @ 0x450;
 
     reg {
@@ -1153,14 +1199,37 @@ Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`,
         name = "I2S input control";
         desc = "Page 1 register 0x1D (host address base + 0x400 + 4 x 0x1D). 8-bit register at a 32-bit stride.
 
-Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).
+
+The vendor writes (old | 0x40) with bit 4 cleared for PCM; its default table has 0x40. Source: vendor module hi3520D_hdmi.ko (OEM firmware; static analysis of SI_SetAudioPath, SI_Set_N_Fs, SI_SetMCLK, hdmi_SetAttr) and vendor U-Boot defstx.h; the meaning follows the SiI9134 SDK convention. The stock firmware runs it on this silicon, not verified in Linux yet. Confidence MED.";
 
         field {
-            name = "data";
-            desc = "8-bit register value (bit layout not given in the vendor header).";
+            name = "sck_rising";
+            desc = "Sample SD on the rising SCK edge (SCK_RISING, standard I2S).";
             sw = rw;
             hw = r;
-        } data[7:0];
+        } sck_rising[6:6];
+
+        field {
+            name = "cbit_order";
+            desc = "Channel status bit order (BIT_CBIT_ORDER); meaning unverified.";
+            sw = rw;
+            hw = r;
+        } cbit_order[5:5];
+
+        field {
+            name = "compressed";
+            desc = "Compressed (non-PCM) stream (BIT_COMPRESSED); 0 for PCM.";
+            sw = rw;
+            hw = r;
+        } compressed[4:4];
+
+        field {
+            name = "rest";
+            desc = "Other bits (WS polarity, justification, shift on the SiI9134): not written by the vendor for PCM, meaning unverified.";
+            sw = rw;
+            hw = r;
+        } rest[3:0];
     } I2S_IN_CTRL @ 0x474;
 
     reg {
@@ -1178,28 +1247,32 @@ Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`,
     } I2S_CHST[3] @ 0x478 += 0x4;
 
     reg {
-        name = "I2S channel status 4";
+        name = "I2S sampling frequency (IEC 60958 channel status byte 3)";
         desc = "Page 1 register 0x21 (host address base + 0x400 + 4 x 0x21). 8-bit register at a 32-bit stride.
 
-Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).
+
+Page 1 register 0x21 (header name CHST4): the vendor writes the IEC 60958 sampling frequency code (44.1k 0, 48k 2, 32k 3, 88.2k 8, 96k 0xA, 176.4k 0xC, 192k 0xE). Source: vendor module hi3520D_hdmi.ko (OEM firmware; static analysis of SI_SetAudioPath, SI_Set_N_Fs, SI_SetMCLK, hdmi_SetAttr) and vendor U-Boot defstx.h; the meaning follows the SiI9134 SDK convention. The stock firmware runs it on this silicon, not verified in Linux yet. Confidence MED.";
 
         field {
             name = "data";
-            desc = "8-bit register value (bit layout not given in the vendor header).";
+            desc = "8-bit register value.";
             sw = rw;
             hw = r;
         } data[7:0];
     } I2S_CHST4 @ 0x484;
 
     reg {
-        name = "I2S channel status 5";
+        name = "I2S word length and original frequency (IEC 60958 channel status byte 4)";
         desc = "Page 1 register 0x22 (host address base + 0x400 + 4 x 0x22). 8-bit register at a 32-bit stride.
 
-Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).
+
+Page 1 register 0x22 (header name CHST5): the vendor writes word_length_code | (fs_code << 4). Source: vendor module hi3520D_hdmi.ko (OEM firmware; static analysis of SI_SetAudioPath, SI_Set_N_Fs, SI_SetMCLK, hdmi_SetAttr) and vendor U-Boot defstx.h; the meaning follows the SiI9134 SDK convention. The stock firmware runs it on this silicon, not verified in Linux yet. Confidence MED.";
 
         field {
             name = "data";
-            desc = "8-bit register value (bit layout not given in the vendor header).";
+            desc = "8-bit register value.";
             sw = rw;
             hw = r;
         } data[7:0];
@@ -1209,11 +1282,13 @@ Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`,
         name = "Sample rate conversion";
         desc = "Page 1 register 0x23 (host address base + 0x400 + 4 x 0x23). 8-bit register at a 32-bit stride.
 
-Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).
+
+Page 1 register 0x23: the vendor writes 0 (none), 1 or 3 from its down-sample parameter. Source: vendor module hi3520D_hdmi.ko (OEM firmware; static analysis of SI_SetAudioPath, SI_Set_N_Fs, SI_SetMCLK, hdmi_SetAttr) and vendor U-Boot defstx.h; the meaning follows the SiI9134 SDK convention. The stock firmware runs it on this silicon, not verified in Linux yet. Confidence MED.";
 
         field {
             name = "data";
-            desc = "8-bit register value (bit layout not given in the vendor header).";
+            desc = "8-bit register value.";
             sw = rw;
             hw = r;
         } data[7:0];
@@ -1223,11 +1298,13 @@ Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`,
         name = "I2S input word length";
         desc = "Page 1 register 0x24 (host address base + 0x400 + 4 x 0x24). 8-bit register at a 32-bit stride.
 
-Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).";
+Vendor U-Boot `product/hiosd/hdmi/hdmi_v1/hi3520d/` (`defstx.h`, `drv_hlviic.c`, `hdmitx.c`).
+
+Page 1 register 0x24: IEC 60958 byte 4 coding, 0x02 = 16 bit (20 bit max), 0x0A = 20 bit, 0x0B = 24 bit. Source: vendor module hi3520D_hdmi.ko (OEM firmware; static analysis of SI_SetAudioPath, SI_Set_N_Fs, SI_SetMCLK, hdmi_SetAttr) and vendor U-Boot defstx.h; the meaning follows the SiI9134 SDK convention. The stock firmware runs it on this silicon, not verified in Linux yet. Confidence MED.";
 
         field {
             name = "data";
-            desc = "8-bit register value (bit layout not given in the vendor header).";
+            desc = "8-bit register value.";
             sw = rw;
             hw = r;
         } data[7:0];
