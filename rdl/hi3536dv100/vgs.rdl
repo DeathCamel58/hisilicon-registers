@@ -1,0 +1,190 @@
+`ifndef HI3536D_VGS_RDL
+`define HI3536D_VGS_RDL
+
+regfile eHI3536D_VGS {
+    name = "VGS video graphics scaler, Hi3536D V100";
+    desc = "VGS window at 0x13100000 (GIC SPI 28 = interrupt bit 60). The data sheet has no VGS register table (features only: scaling, cropping, OSD overlay, cover, rotation, luma statistics; section 8.1). Everything here is from static disassembly of the vendor module hi3536dv100_vgs.ko (never executed), labeled PROVEN (offset accessed with the stated meaning from the HAL function names and access type), INFERRED or GUESS. The engine is a linked-list job engine: the driver builds a register image in memory (VGS_DRV_SetVgsReg) and VGS_HAL_Start writes the node address to NEXT, then pulses START. The hardware is also the executor of VPSS: the Hi3536D has no separate VPSS hardware (open_vpss calls VGS online tasks). Clock/reset: PERI_CRG38 (0x12040098) bit 1 clock, bit 0 reset; the module also maps 0x120400C8 (PERI_CRG50), purpose unknown.";
+
+    reg {
+        name = "Current node id";
+        desc = "VGS_HAL_SetNodeID writes, VGS_HAL_GetNodeID reads (PROVEN offset, access). Provenance: PROVEN. Source: hi3536dv100_vgs.ko (VGS_HAL_*, VGS_DrvInitDefaultRegs disassembly, SDK 2.0.2.0).";
+        field {
+            name = "node_id";
+            desc = "job/node identifier of the running list entry [INFERRED]";
+            sw = rw;
+            hw = r;
+        } node_id[31:0];
+    } NODE_ID @ 0xF4;
+
+    reg {
+        name = "Interrupt mask";
+        desc = "VGS_HAL_SetMask writes (PROVEN offset, access; bit meanings unknown). Provenance: PROVEN. Source: hi3536dv100_vgs.ko (VGS_HAL_*, VGS_DrvInitDefaultRegs disassembly, SDK 2.0.2.0).";
+        field {
+            name = "int_mask";
+            desc = "interrupt mask [INFERRED]";
+            sw = rw;
+            hw = r;
+        } int_mask[31:0];
+    } INT_MASK @ 0xFC;
+
+    reg {
+        name = "Next node address";
+        desc = "VGS_HAL_SetNext / VGS_HAL_Start write the physical address of the register-image node and read it back to verify (PROVEN). Provenance: PROVEN. Source: hi3536dv100_vgs.ko (VGS_HAL_*, VGS_DrvInitDefaultRegs disassembly, SDK 2.0.2.0).";
+        field {
+            name = "next_node_addr";
+            desc = "physical node address [PROVEN]";
+            sw = rw;
+            hw = r;
+        } next_node_addr[31:0];
+    } NEXT_NODE @ 0x2FC;
+
+    reg {
+        name = "Start";
+        desc = "VGS_HAL_Start writes 1 (offline) or 3 (when its third argument is nonzero) after NEXT_NODE (PROVEN offset and values; meaning of bit 1 unknown). Provenance: PROVEN. Source: hi3536dv100_vgs.ko (VGS_HAL_*, VGS_DrvInitDefaultRegs disassembly, SDK 2.0.2.0).";
+        field {
+            name = "start";
+            desc = "start [PROVEN]";
+            sw = rw;
+            hw = r;
+        } start[0:0];
+        field {
+            name = "mode_bit1";
+            desc = "set when the third argument of VGS_HAL_Start is nonzero (online task?) [GUESS]";
+            sw = rw;
+            hw = r;
+        } mode_bit1[1:1];
+        field {
+            name = "reserved_31_2";
+            desc = "reserved [INFERRED]";
+            sw = r;
+            hw = r;
+        } reserved_31_2[31:2];
+    } START @ 0x300;
+
+    reg {
+        name = "Interrupt status";
+        desc = "VGS_HAL_GetIntStatus reads (PROVEN). Provenance: PROVEN. Source: hi3536dv100_vgs.ko (VGS_HAL_*, VGS_DrvInitDefaultRegs disassembly, SDK 2.0.2.0).";
+        field {
+            name = "int_status";
+            desc = "interrupt status [INFERRED]";
+            sw = r;
+            hw = r;
+        } int_status[31:0];
+    } INT_STATUS @ 0x304;
+
+    reg {
+        name = "Interrupt clear";
+        desc = "VGS_HAL_ClrInt writes (PROVEN). Provenance: PROVEN. Source: hi3536dv100_vgs.ko (VGS_HAL_*, VGS_DrvInitDefaultRegs disassembly, SDK 2.0.2.0).";
+        field {
+            name = "int_clear";
+            desc = "write to clear [INFERRED]";
+            sw = rw;
+            hw = r;
+        } int_clear[31:0];
+    } INT_CLEAR @ 0x308;
+
+    reg {
+        name = "AXI outstanding";
+        desc = "VGS_HAL_SetOutstanding writes a value (PROVEN offset). Provenance: PROVEN. Source: hi3536dv100_vgs.ko (VGS_HAL_*, VGS_DrvInitDefaultRegs disassembly, SDK 2.0.2.0).";
+        field {
+            name = "outstanding";
+            desc = "outstanding limit [INFERRED]";
+            sw = rw;
+            hw = r;
+        } outstanding[31:0];
+    } OUTSTANDING @ 0x314;
+
+    reg {
+        name = "Register-image word 0x364 (default setup)";
+        desc = "VGS_DrvInitDefaultRegs inserts 8-bit fields at [7:0] and [15:8] and sets the upper halfword to 0xFFFE (movt) in the image; purpose unknown (GUESS: CSC offset or clip word). Provenance: PROVEN offset. Source: hi3536dv100_vgs.ko (VGS_HAL_*, VGS_DrvInitDefaultRegs disassembly, SDK 2.0.2.0).";
+        field {
+            name = "v0";
+            desc = "default 25 (0x19) in the image [PROVEN]";
+            sw = rw;
+            hw = r;
+        } v0[7:0];
+        field {
+            name = "v1";
+            desc = "second 8-bit field [PROVEN]";
+            sw = rw;
+            hw = r;
+        } v1[15:8];
+    } IMG_364 @ 0x364;
+
+    reg {
+        name = "Register-image word 0x368 (default setup)";
+        desc = "Fields [9:0] = 25, [19:10] = 25, [31:20] = 2 (PROVEN values); meaning unknown (GUESS: CSC coefficient or filter). Provenance: PROVEN offset. Source: hi3536dv100_vgs.ko (VGS_HAL_*, VGS_DrvInitDefaultRegs disassembly, SDK 2.0.2.0).";
+        field {
+            name = "f0";
+            desc = "25 [PROVEN]";
+            sw = rw;
+            hw = r;
+        } f0[9:0];
+        field {
+            name = "f1";
+            desc = "25 [PROVEN]";
+            sw = rw;
+            hw = r;
+        } f1[19:10];
+        field {
+            name = "f2";
+            desc = "2 [PROVEN]";
+            sw = rw;
+            hw = r;
+        } f2[31:20];
+    } IMG_368 @ 0x368;
+
+    reg {
+        name = "Register-image word 0x36C (default setup)";
+        desc = "[15:0] = 10, upper half = 0x14 (movt 20). Provenance: PROVEN offset. Source: hi3536dv100_vgs.ko (VGS_HAL_*, VGS_DrvInitDefaultRegs disassembly, SDK 2.0.2.0).";
+        field {
+            name = "lo";
+            desc = "10 [PROVEN]";
+            sw = rw;
+            hw = r;
+        } lo[15:0];
+        field {
+            name = "hi";
+            desc = "20 [PROVEN]";
+            sw = rw;
+            hw = r;
+        } hi[31:16];
+    } IMG_36C @ 0x36C;
+
+    reg {
+        name = "Register-image word 0x400 (default setup)";
+        desc = "Bit 27 set in the default image. Provenance: PROVEN offset. Source: hi3536dv100_vgs.ko (VGS_HAL_*, VGS_DrvInitDefaultRegs disassembly, SDK 2.0.2.0).";
+        field {
+            name = "b27";
+            desc = "set by default [PROVEN]";
+            sw = rw;
+            hw = r;
+        } b27[27:27];
+    } IMG_400 @ 0x400;
+
+    reg {
+        name = "Register-image word 0x404 (default setup)";
+        desc = "Three 9-bit fields [8:0], [17:9], [26:18] set to 128, 128, 16 (BT.601 offset-like constants, GUESS meaning). Provenance: PROVEN offset. Source: hi3536dv100_vgs.ko (VGS_HAL_*, VGS_DrvInitDefaultRegs disassembly, SDK 2.0.2.0).";
+        field {
+            name = "c0";
+            desc = "128 [PROVEN]";
+            sw = rw;
+            hw = r;
+        } c0[8:0];
+        field {
+            name = "c1";
+            desc = "128 [PROVEN]";
+            sw = rw;
+            hw = r;
+        } c1[17:9];
+        field {
+            name = "c2";
+            desc = "16 [PROVEN]";
+            sw = rw;
+            hw = r;
+        } c2[26:18];
+    } IMG_404 @ 0x404;
+
+};
+
+`endif
