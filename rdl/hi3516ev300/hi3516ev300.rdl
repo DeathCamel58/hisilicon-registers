@@ -1,0 +1,126 @@
+`include "defines.rdl"
+
+`include "CRG.rdl"
+`include "SYS_CTRL.rdl"
+`include "MISC_CTRL.rdl"
+`include "../hi3516ev200/DDR.rdl"
+`include "IOCFG.rdl"
+`include "VIDEO.rdl"
+`include "../common/ARM_PL011.rdl"
+`include "../common/ARM_PL061.rdl"
+`include "../common/HISI_FEMAC.rdl"
+`include "../common/HISI_FMC.rdl"
+`include "../common/HISI_I2C_V2.rdl"
+`include "../common/HISI_LSADC_V2.rdl"
+`include "../common/HISI_PWM.rdl"
+`include "../hi3516ev200/HISI_MIPI_RX_EV200.rdl"
+`include "../common/HISI_SPI.rdl"
+`include "../common/HISI_TIMER_SP804.rdl"
+`include "../common/HISI_TRNG.rdl"
+`include "../common/HISI_WDG_SP805.rdl"
+
+addrmap hi3516ev300 {
+    name = "hi3516ev300 registers";
+    desc = "
+        ## Status
+
+        Vendor-derived register map of the Hi3516E V300 (Cortex-A7 IP camera SoC, DDR at 0x40000000). **No data sheet is available**: the public documents are brief data sheets without register chapters. Every block here is either a shared block whose layout was cross-checked against a vendor driver, or a local block that describes only registers with direct vendor evidence (disassembly of the SDK sys.ko, vendor U-Boot, vendor device tree, Goke GPL kernel sources). Field descriptions carry PROVEN / INFERRED / GUESS marks. Nothing was read from an EV300; see docs/research/hi3516ev300-blocks.md in the hi3520d-nvr workspace. The DDR and MIPI RX blocks are included from the hi3516ev200 folder (same layout: the DDR register table of an EV300 vendor boot image uses the same DMC/PHY offsets).
+
+        ## Addresses (vendor device tree, vendor U-Boot and sys.ko; IRQ = GIC SPI number)
+
+        | Start Address | Block | IRQ | Documented Here |
+        |---------------|-------|-----|-----------------|
+        | 0x04010000    | on-chip SRAM 64 KB (U-Boot RAM_START_ADRS 0x04010500) | - | &#10060; |
+        | 0x10000000    | FMC control (memory window 0x14000000, 16 MB) | - | &#9989; |
+        | 0x10010000    | eMMC / SDIO0 (SDHCI, DWC MSHC style) | 30 | &#10060; |
+        | 0x10020000    | SDIO1 (SDHCI) | 31 | &#10060; |
+        | 0x10030000    | USB2 DWC3 (high-speed, host) | 39 | &#10060; |
+        | 0x10040000    | FEMAC (internal FE PHY, MDIO 0x10041100, GLB 0x10041300) | 33 | &#9989; |
+        | 0x10050000    | CIPHER v1.0 (version register 0x308 = 0x02018121) | 34 | &#10060; |
+        | 0x10060000    | KLAD | - | &#10060; |
+        | 0x10070000    | RSA | - | &#10060; |
+        | 0x10080000    | TRNG (registers at +0x200) | - | &#9989; |
+        | 0x10090000    | OTP controller | - | &#10060; |
+        | 0x100A0000    | OTP shadow (user) | - | &#10060; |
+        | 0x100B0000    | EDMAC hiedmacv310 (4 channels) | 38 | &#10060; |
+        | 0x100C0000    | IO config bank ahb | - | &#9989; |
+        | 0x100D0000    | USB2 PHY | - | &#10060; |
+        | 0x100E0000    | AIAO | 42 | &#10060; |
+        | 0x100F0000    | ACODEC | - | &#10060; |
+        | 0x10301000    | GIC distributor (cpu interface 0x10302000) | - | &#10060; |
+        | 0x11000000    | VI capture (2 MB) | 43 | &#9989; (subset) |
+        | 0x11200000    | VI process (VIPROC) | 44 | &#9989; (subset) |
+        | 0x11220000    | ISP (128 KB) | 43 | &#10060; |
+        | 0x11240000    | MIPI RX (one controller) | 45 | &#9989; (EV200 block) |
+        | 0x11280000    | VO | 40 / 41 (hifb) | &#10060; |
+        | 0x112C0000    | IO config bank vio | - | &#9989; |
+        | 0x11300000    | VGS | 49 | &#10060; |
+        | 0x11310000    | GZIP | 50 | &#10060; |
+        | 0x11320000    | IVE | 51 | &#10060; |
+        | 0x11400000    | VPSS | 46 | &#9989; (subset) |
+        | 0x11410000    | VEDU | 47 | &#9989; (subset) |
+        | 0x11420000    | JPGE | 48 | &#9989; (subset) |
+        | 0x12000000    | Timers 0/1 (SP804) | 5 | &#9989; |
+        | 0x12001000    | Timers 2/3 (SP804) | 6 | &#9989; |
+        | 0x12010000    | CRG | - | &#9989; (partial) |
+        | 0x12020000    | SYS_CTRL | - | &#9989; (partial) |
+        | 0x12028000    | MISC_CTRL | - | &#9989; (partial) |
+        | 0x12030000    | WDG | 2 | &#9989; |
+        | 0x12040000    | UART0 / 1 / 2 (PL011, stride 0x1000) | 7 / 8 / 9 | &#9989; |
+        | 0x12050000    | SYSCNT (50 MHz generic counter) | - | &#10060; |
+        | 0x12060000    | I2C0 / 1 / 2 (hibvt, stride 0x1000) | - | &#9989; |
+        | 0x12070000    | SPI0 / SPI1 (PL022) | 14 / 15 | &#9989; |
+        | 0x12080000    | PWM (4 channels, stride 0x20) | - | &#9989; |
+        | 0x120A0000    | LSADC (2 channels) | 4 | &#9989; |
+        | 0x120B0000    | GPIO0..9 (PL061, stride 0x1000) | 16..25 | &#9989; |
+        | 0x120C0000    | IO config bank core | - | &#9989; |
+        | 0x120D0000    | DDR AXI (DMC at 0x120D8000, PHY at 0x120DC000) | - | &#9989; (EV200 blocks, see note) |
+        | 0x120E0000    | RTC | 0 | &#10060; |
+    ";
+
+    eCRG                CRG        @ 0x12010000;
+    eSYS_CTRL_EV300     SYS_CTRL   @ 0x12020000;
+    eMISC_CTRL_EV300    MISC_CTRL  @ 0x12028000;
+    eDDR_AXI_EV200      DDR_AXI    @ 0x120D0000;
+    eDDR_DMC_EV200      DDR_DMC    @ 0x120D8000;
+    eDDR_PHY_EV200      DDR_PHY    @ 0x120DC000;
+    eIOCFG_AHB          IOCFG_AHB  @ 0x100C0000;
+    eIOCFG_VIO          IOCFG_VIO  @ 0x112C0000;
+    eIOCFG_CORE         IOCFG_CORE @ 0x120C0000;
+
+    eVEDU_V4_EV300      VEDU       @ 0x11410000;
+    eJPGE_V4_EV300      JPGE       @ 0x11420000;
+    eVPSS_V4_EV300      VPSS       @ 0x11400000;
+    eVI_CAP_V4_EV300    VI_CAP     @ 0x11000000;
+    eVI_PROC_V4_EV300   VI_PROC    @ 0x11200000;
+
+    eHISI_FMC           FMC        @ 0x10000000;
+    eHISI_FEMAC         ETH        @ 0x10040000;
+    eHISI_TRNG          TRNG       @ 0x10080000;
+    eHISI_MIPI_RX_EV200 MIPI_RX    @ 0x11240000;
+    eHISI_TIMER_SP804   TIMER0     @ 0x12000000;
+    eHISI_TIMER_SP804   TIMER1     @ 0x12000020;
+    eHISI_TIMER_SP804   TIMER2     @ 0x12001000;
+    eHISI_TIMER_SP804   TIMER3     @ 0x12001020;
+    eHISI_WDG_SP805     WDG        @ 0x12030000;
+    eARM_PL011          UART0      @ 0x12040000;
+    eARM_PL011          UART1      @ 0x12041000;
+    eARM_PL011          UART2      @ 0x12042000;
+    eHISI_I2C_V2        I2C0       @ 0x12060000;
+    eHISI_I2C_V2        I2C1       @ 0x12061000;
+    eHISI_I2C_V2        I2C2       @ 0x12062000;
+    eHISI_SPI           SPI0       @ 0x12070000;
+    eHISI_SPI           SPI1       @ 0x12071000;
+    eHISI_PWM_GRP       PWM        @ 0x12080000;
+    eHISI_LSADC_V2      LSADC      @ 0x120A0000;
+    eARM_PL061          GPIO0      @ 0x120B0000;
+    eARM_PL061          GPIO1      @ 0x120B1000;
+    eARM_PL061          GPIO2      @ 0x120B2000;
+    eARM_PL061          GPIO3      @ 0x120B3000;
+    eARM_PL061          GPIO4      @ 0x120B4000;
+    eARM_PL061          GPIO5      @ 0x120B5000;
+    eARM_PL061          GPIO6      @ 0x120B6000;
+    eARM_PL061          GPIO7      @ 0x120B7000;
+    eARM_PL061          GPIO8      @ 0x120B8000;
+    eARM_PL061          GPIO9      @ 0x120B9000;
+};
