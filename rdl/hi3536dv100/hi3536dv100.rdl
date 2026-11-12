@@ -15,7 +15,6 @@
 `include "../common/HISI_TDE.rdl"
 `include "../common/HISI_TIMER_SP804.rdl"
 `include "../common/HISI_USB_HOST.rdl"
-`include "../common/HISI_VDH.rdl"
 `include "../common/HISI_WDG_SP805.rdl"
 
 // Chip-local blocks generated from the Hi3536D V100 data sheet (Issue 00B04).
@@ -32,6 +31,8 @@
 `include "acodec.rdl"
 `include "io_config.rdl"
 `include "hdmi_tx.rdl"
+`include "vdh.rdl"
+`include "vgs.rdl"
 
 addrmap hi3536dv100 {
     name = "hi3536dv100 registers";
@@ -72,15 +73,15 @@ addrmap hi3536dv100 {
         | 0x12110000 | 0x1211FFFF | DDRC: AXI/QoS ports at 0x12110000+, DDR QoS buffer 0x12114000, DMC 0x12118000, DDR PHY 0x1211C000 | PROVEN (bases), not modelled | reg_info, lowlevel_init_v300.c |
         | 0x12120000 | 0x1212FFFF | MISC_CTRL (DDR master priorities 0x78-0x94, USB 0x50/0x54, FEPHY 0x64, SATA PHY 0x58, HPM data 0x12122000) | PROVEN (base), not modelled | platform.h, demb.dts sysctrl-ddr,pins, lowlevel_init_v300.c |
         | 0x12140000 | 0x1214FFFF | IR receiver | PROVEN | hiir.c IR_REG_BASE |
-        | 0x12150000 | 0x1222FFFF | GPIO0-13 (PL061, 0x10000 apart) | PROVEN | platform.h GPIO0..13_REG_BASE (DT enables 6) |
+        | 0x12150000 | 0x121AFFFF | GPIO0-5 (PL061, 0x10000 apart) | PROVEN | data sheet address map and interrupt table (GPIO0-5 only; 0x121B0000-0x1222FFFF reserved), DT; the vendor U-Boot platform.h defines GPIO6-13 but they do not exist |
         | 0x13000000 | 0x1303FFFF | HDMI TX (HDMI v2 hisiv100 core): ctrl 0x13000000, video path +0x800, audio path +0x1000, HDMI core +0x1800, HDCP1 +0x2000, AON +0x4000, CEC +0x4800, MCU (8051) +0x1C000 (not modelled), digital PHY 0x13030000, colour-bar generator 0x1302C400 | PROVEN (bases, register layouts from the vendor HDMI v2 register headers), INFERRED (access types) | vendor U-Boot hdmi_v2 drv/hal/ctrl/hisiv100/regs and phy regs, hdmi_product_define.h, hi3536dv100_hdmi.ko |
         | 0x13020000 | 0x1302FFFF | VOU (video output unit, 4K, HDMI) | PROVEN (base, IRQ), layout not modelled | DT vou, open_vou |
         | 0x13040000 | 0x1304FFFF | AIAO (audio interface) | PROVEN (base), layout not modelled | DT audio, open_aio; acodec at 0x130500D0 |
-        | 0x13100000 | 0x1310FFFF | VGS (video graphics scaler) | PROVEN (base), layout not modelled | DT vgs, open_vgs |
+        | 0x13100000 | 0x1310FFFF | VGS (video graphics scaler) | PROVEN (base, IRQ), registers from hi3536dv100_vgs.ko disassembly (vgs.rdl) | DT vgs, data sheet table 3-8 |
         | 0x13110000 | 0x1311FFFF | JPGD (JPEG decoder) | PROVEN (base) | DT jpgd, open_jpegd |
         | 0x13120000 | 0x1312FFFF | JPGE (JPEG encoder) | PROVEN (base) | DT jpege, open_jpege |
         | 0x13130000 | 0x1313FFFF | TDE (2D engine) | PROVEN (base) | DT tde, open_tde TdeHalInit |
-        | 0x13200000 | 0x1320BFFF | VDH (video decoder, H.264/H.265, V400R001 HAL) | PROVEN (base, IRQ), INFERRED (layout) | DT vdec vdm window, hi3536dv100_vfmw.ko OpenHAL |
+        | 0x13200000 | 0x1320BFFF | VDH (video decoder, H.264/H.265, V400R001 HAL) | PROVEN (base, IRQ, offsets used by the module), names INFERRED from V400R004 (vdh.rdl) | DT vdec vdm window, hi3536dv100_vfmw.ko OpenHAL |
         | 0x1320C000 | 0x1320FFFF | SCD (start code detector) top registers (+0x4 EMAR_ID) and SCD registers at +0x800 | PROVEN (offsets), INFERRED (names) | hi3536dv100_vfmw.ko SM_OpenSCDDrv, WriteScdVtrlReg |
         | 0x14000000 | 0x14FFFFFF | FMC memory (16 MiB flash window) | PROVEN | platform.h FMC_MEM_BASE |
         | 0x80000000 | 0x9FFFFFFF | DDR (512 MiB max, 2 Gbit x4) | PROVEN | platform.h DDR_MEM_BASE, demb.dts memory |
@@ -133,17 +134,12 @@ addrmap hi3536dv100 {
     eARM_PL061          GPIO3           @ 0x12180000;
     eARM_PL061          GPIO4           @ 0x12190000;
     eARM_PL061          GPIO5           @ 0x121A0000;
-    eARM_PL061          GPIO6           @ 0x121B0000;
-    eARM_PL061          GPIO7           @ 0x121C0000;
-    eARM_PL061          GPIO8           @ 0x121D0000;
-    eARM_PL061          GPIO9           @ 0x121E0000;
-    eARM_PL061          GPIO10          @ 0x121F0000;
-    eARM_PL061          GPIO11          @ 0x12200000;
-    eARM_PL061          GPIO12          @ 0x12210000;
-    eARM_PL061          GPIO13          @ 0x12220000;
     eHISI_JPGD          JPGD            @ 0x13110000;
     eHISI_JPGE          JPGE            @ 0x13120000;
     eHISI_TDE_G2        TDE             @ 0x13130000;
-    eHISI_VDH           VDH             @ 0x13200000;
+    eHI3536D_VGS        VGS             @ 0x13100000;
+    eHI3536D_VDH        VDH             @ 0x13200000;
+    eHI3536D_VDH_TOP    VDH_TOP         @ 0x1320C000;
     eHISI_SCD           SCD             @ 0x1320C800;
+    aHI3536D_VDH_MSG    VDH_MSG         @ 0x13210000;
 };
