@@ -1,0 +1,551 @@
+`ifndef HISI_AUDIO_CODEC_RDL
+`define HISI_AUDIO_CODEC_RDL
+
+regfile eHISI_AUDIO_CODEC {
+    name = "Internal audio CODEC (Hi3516C V300 / Hi3516E V100)";
+    desc = "
+    Integrated stereo audio CODEC, base address 0x11320000 (data sheet memory map: window 0x1132_0000..0x1132_FFFF), 9 registers at offsets 0xB4..0xE0; none of them is touched by the CODEC soft reset. Data sheet Hi3516C V300/Hi3516E V100 issue 05, 11.2.
+    The CODEC digital side talks I2S to the AIAO block (select with AUDIO_REG_1); its clock and reset are in PERI_CRG35 together with the AIAO (vendor module hi_acodec.ko also writes AIAO I2S_CRG_CFG0_08 = 0x00100000 and I2S_CRG_CFG1_08 = 0x00000115 before using the CODEC).
+    Vendor cross-check (static disassembly of the Xiongmai Hi3516CV300 hi_acodec.ko, MPP V1.0.0.0, 2018-06): it maps the window at 0x113200A0 and uses offsets +0x14..+0x40 (= 0xB4..0xE0), so the data sheet offsets are the ones software uses; its acodec_soft_reset writes AUDIO_ANA_CTRL_0 = 0x6800E402, AUDIO_ANA_CTRL_1 = 0x11C0C00C, ORs 0x700 into AUDIO_ANA_CTRL_2, then AUDIO_CTRL_REG_1 = 0xFF035168, AUDIO_DAC_REG_0 = 0x08000001, AUDIO_DAC_REG_1 = 0x1B1B2424, AUDIO_ADC_REG_0 = 0x9E9EC001.
+    Several reserved bits read non-zero (reserved_nz_*, listed as reserved in the data sheet). Not hardware verified.
+    ";
+
+    reg {
+        name = "Audio CODEC analog control register 0 (no soft reset)";
+        desc = "AUDIO_ANA_CTRL_0 is the audio CODEC analog control register 0 (no soft reset).
+
+Data sheet 11.2.5 AUDIO_ANA_CTRL_0 (offset 0xB4).";
+
+        field {
+            name = "acodec_dacl_pop_en";
+            desc = "DAC left pop-suppression circuit enable. Set to 1 only during the power-on/power-off pop suppression sequence, 0 while the DAC works.";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } acodec_dacl_pop_en[18:18];
+
+        field {
+            name = "acodec_dacr_pop_en";
+            desc = "DAC right pop-suppression circuit enable (same rule as the left channel).";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } acodec_dacr_pop_en[16:16];
+
+        field {
+            name = "acodec_mute_dacr";
+            desc = "DAC right channel analog mute: 0 normal, 1 muted.";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } acodec_mute_dacr[14:14];
+
+        field {
+            name = "acodec_mute_dacl";
+            desc = "DAC left channel analog mute: 0 normal, 1 muted.";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } acodec_mute_dacl[13:13];
+
+        field {
+            name = "acodec_pd_dacr";
+            desc = "Power-down of the analog DACR: 0 works, 1 powered down.";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } acodec_pd_dacr[12:12];
+
+        field {
+            name = "acodec_pd_dacl";
+            desc = "Power-down of the analog DACL: 0 works, 1 powered down.";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } acodec_pd_dacl[11:11];
+
+        field {
+            name = "acodec_pd_dacr_dff";
+            desc = "Power-down of the DACR D trigger: 0 works, 1 powered down.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } acodec_pd_dacr_dff[9:9];
+
+        field {
+            name = "acodec_pd_dacl_dff";
+            desc = "Power-down of the DACL D trigger: 0 works, 1 powered down.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } acodec_pd_dacl_dff[8:8];
+
+        field {
+            name = "acodec_pd_micbias";
+            desc = "MICBIAS power-down: 0 works, 1 powered down.";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } acodec_pd_micbias[6:6];
+
+        field {
+            name = "acodec_pd_linein_r";
+            desc = "LINEIN_R power-down: 0 works, 1 powered down.";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } acodec_pd_linein_r[5:5];
+
+        field {
+            name = "acodec_pd_linein_l";
+            desc = "LINEIN_L power-down: 0 works, 1 powered down.";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } acodec_pd_linein_l[4:4];
+
+        field {
+            name = "acodec_pd_adcr";
+            desc = "ADCR (digital and analog) power-down: 0 works, 1 powered down.";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } acodec_pd_adcr[3:3];
+
+        field {
+            name = "acodec_pd_adcl";
+            desc = "ADCL (digital and analog) power-down: 0 works, 1 powered down.";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } acodec_pd_adcl[2:2];
+
+        field {
+            name = "reserved_nz_1";
+            desc = "The data sheet says: set to 1 in normal mode (vendor soft reset writes 1).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } reserved_nz_1[1:1];
+
+        field {
+            name = "acodec_pd_vref";
+            desc = "Reference voltage power-down: 0 works, 1 powered down.";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } acodec_pd_vref[0:0];
+
+    } AUDIO_ANA_CTRL_0 @ 0xB4;
+
+    reg {
+        name = "Audio CODEC analog control register 1 (no soft reset)";
+        desc = "AUDIO_ANA_CTRL_1 is the audio CODEC analog control register 1 (no soft reset).
+
+Data sheet 11.2.5 AUDIO_ANA_CTRL_1 (offset 0xB8).";
+
+        field {
+            name = "acodec_linein_r_sel";
+            desc = "LINEIN right input select: 0x3 IN1R single-ended, 0x4 IN1R(+)/IN1L(-) differential, other values reserved.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } acodec_linein_r_sel[31:28];
+
+        field {
+            name = "acodec_linein_l_sel";
+            desc = "LINEIN left input select: 0x3 IN1L single-ended, 0x4 IN1L(+)/IN1R(-) differential, other values reserved.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } acodec_linein_l_sel[27:24];
+
+        field {
+            name = "acodec_adcr_gain_boost";
+            desc = "ADCR gain boost: 0 = 0 dB, 1 = 20 dB.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } acodec_adcr_gain_boost[22:22];
+
+        field {
+            name = "acodec_linein_r_gain_code";
+            desc = "LINEINR gain: 0x00..0x0F = 0..30 dB in 2 dB steps, 0x10 = -1.5 dB, other values reserved.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } acodec_linein_r_gain_code[20:16];
+
+        field {
+            name = "acodec_adcl_gain_boost";
+            desc = "ADCL gain boost: 0 = 0 dB, 1 = 20 dB.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } acodec_adcl_gain_boost[14:14];
+
+        field {
+            name = "acodec_linein_l_gain_code";
+            desc = "LINEINL gain: same coding as LINEINR.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } acodec_linein_l_gain_code[12:8];
+
+        field {
+            name = "acodec_mute_linein_r";
+            desc = "LINEINR mute: 0 works, 1 muted.";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } acodec_mute_linein_r[5:5];
+
+        field {
+            name = "acodec_mute_linein_l";
+            desc = "LINEINL mute: 0 works, 1 muted.";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } acodec_mute_linein_l[4:4];
+
+    } AUDIO_ANA_CTRL_1 @ 0xB8;
+
+    reg {
+        name = "Audio CODEC analog control register 2 (no soft reset)";
+        desc = "AUDIO_ANA_CTRL_2 is the audio CODEC analog control register 2 (no soft reset).
+
+Data sheet 11.2.5 AUDIO_ANA_CTRL_2 (offset 0xBC).";
+
+        field {
+            name = "reserved_nz_30";
+            desc = "The data sheet says: set to 0 in normal mode.";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } reserved_nz_30[30:30];
+
+        field {
+            name = "acodec_rst";
+            desc = "Analog signal reset: 0 deasserted, 1 reset.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } acodec_rst[23:23];
+
+    } AUDIO_ANA_CTRL_2 @ 0xBC;
+
+    reg {
+        name = "Audio CODEC analog control register 3 (no soft reset)";
+        desc = "AUDIO_ANA_CTRL_3 is the audio CODEC analog control register 3 (no soft reset).
+
+Data sheet 11.2.5 AUDIO_ANA_CTRL_3 (offset 0xC0).";
+
+        field {
+            name = "acodec_vref_exmode";
+            desc = "VREF pull-down: 0 normal pull-down, 1 no pull-down (external VREF supported).";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } acodec_vref_exmode[7:7];
+
+        field {
+            name = "acodec_pop_res_sel";
+            desc = "Resistor between the pop-free circuit and the main output: 0 = 100 ohm, 1 = 1 kohm, 2 = 10 kohm, 3 = 100 kohm.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } acodec_pop_res_sel[4:3];
+
+    } AUDIO_ANA_CTRL_3 @ 0xC0;
+
+    reg {
+        name = "Audio CODEC digital control register 0 (no soft reset)";
+        desc = "AUDIO_CTRL_REG_1 is the audio CODEC digital control register 0 (no soft reset).
+
+Data sheet 11.2.5 AUDIO_CTRL_REG_1 (offset 0xCC).";
+
+        field {
+            name = "dacl_rst_n";
+            desc = "DACL reset, active low: 0 reset valid, 1 invalid.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } dacl_rst_n[31:31];
+
+        field {
+            name = "dacr_rst_n";
+            desc = "DACR reset, active low.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } dacr_rst_n[30:30];
+
+        field {
+            name = "adcl_rst_n";
+            desc = "ADCL reset, active low.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } adcl_rst_n[29:29];
+
+        field {
+            name = "adcr_rst_n";
+            desc = "ADCR reset, active low.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } adcr_rst_n[28:28];
+
+        field {
+            name = "dacl_en";
+            desc = "DACL enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } dacl_en[27:27];
+
+        field {
+            name = "dacr_en";
+            desc = "DACR enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } dacr_en[26:26];
+
+        field {
+            name = "adcl_en";
+            desc = "ADCL enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } adcl_en[25:25];
+
+        field {
+            name = "adcr_en";
+            desc = "ADCR enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } adcr_en[24:24];
+
+        field {
+            name = "i2s1_fs_sel";
+            desc = "I2S sampling-rate select: 0b11000 mclk/512/2, 0b11001 mclk/256/2, 0b11010 mclk/128/2, 0b11011 mclk/64/2, 0b111xx mclk/32/2.";
+            sw = rw;
+            hw = r;
+            reset = 0x1A;
+        } i2s1_fs_sel[17:13];
+
+    } AUDIO_CTRL_REG_1 @ 0xCC;
+
+    reg {
+        name = "Audio CODEC digital control register 1: DAC soft mute (no soft reset)";
+        desc = "AUDIO_DAC_REG_0 is the audio CODEC digital control register 1: DAC soft mute (no soft reset).
+
+Data sheet 11.2.5 AUDIO_DAC_REG_0 (offset 0xD0).";
+
+        field {
+            name = "smutel";
+            desc = "DACL soft mute enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } smutel[31:31];
+
+        field {
+            name = "smuter";
+            desc = "DACR soft mute enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } smuter[30:30];
+
+        field {
+            name = "sunmutel";
+            desc = "DACL soft unmute enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } sunmutel[29:29];
+
+        field {
+            name = "sunmuter";
+            desc = "DACR soft unmute enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } sunmuter[28:28];
+
+        field {
+            name = "dacvu";
+            desc = "DAC volume update: 0 not updated, 1 updated.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } dacvu[27:27];
+
+        field {
+            name = "mutel_rate";
+            desc = "DACL soft mute rate: 0 fs/2, 1 fs/8, 2 fs/32, 3 fs/64.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } mutel_rate[26:25];
+
+        field {
+            name = "muter_rate";
+            desc = "DACR soft mute rate: 0 fs/2, 1 fs/8, 2 fs/32, 3 fs/64.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } muter_rate[24:23];
+
+        field {
+            name = "reserved_nz_0";
+            desc = "Reset 1 in the data sheet; listed reserved there.";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } reserved_nz_0[0:0];
+
+    } AUDIO_DAC_REG_0 @ 0xD0;
+
+    reg {
+        name = "Audio CODEC digital control register 2: DAC volume (no soft reset)";
+        desc = "AUDIO_DAC_REG_1 is the audio CODEC digital control register 2: DAC volume (no soft reset).
+
+Data sheet 11.2.5 AUDIO_DAC_REG_1 (offset 0xD4).";
+
+        field {
+            name = "dacl_mute";
+            desc = "DACL digital mute: 0 normal, 1 muted.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } dacl_mute[31:31];
+
+        field {
+            name = "dacl_vol";
+            desc = "DACL digital volume (6 - dacl_vol) dB: 0x00 = +6 dB, 0x7E = -120 dB, 0x7F = muted.";
+            sw = rw;
+            hw = r;
+            reset = 0x6;
+        } dacl_vol[30:24];
+
+        field {
+            name = "dacr_mute";
+            desc = "DACR digital mute: 0 normal, 1 muted.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } dacr_mute[23:23];
+
+        field {
+            name = "dacr_vol";
+            desc = "DACR digital volume (6 - dacr_vol) dB, same coding.";
+            sw = rw;
+            hw = r;
+            reset = 0x6;
+        } dacr_vol[22:16];
+
+        field {
+            name = "reserved_nz_15_0";
+            desc = "Reserved in the data sheet; reset 0x2424 and the vendor soft reset writes 0x2424 (low half of 0x1b1b2424).";
+            sw = rw;
+            hw = r;
+            reset = 0x2424;
+        } reserved_nz_15_0[15:0];
+
+    } AUDIO_DAC_REG_1 @ 0xD4;
+
+    reg {
+        name = "Audio CODEC digital control register 3: ADC volume and high-pass filter (no soft reset)";
+        desc = "AUDIO_ADC_REG_0 is the audio CODEC digital control register 3: ADC volume and high-pass filter (no soft reset).
+
+Data sheet 11.2.5 AUDIO_ADC_REG_0 (offset 0xD8).";
+
+        field {
+            name = "adcl_mute";
+            desc = "ADCL digital mute: 0 unmuted, 1 muted.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } adcl_mute[31:31];
+
+        field {
+            name = "adcl_vol";
+            desc = "ADCL digital volume (30 - adcl_vol) dB: 0x00 = +30 dB, 0x7E = -96 dB, 0x7F = -97 dB.";
+            sw = rw;
+            hw = r;
+            reset = 0x1E;
+        } adcl_vol[30:24];
+
+        field {
+            name = "adcr_mute";
+            desc = "ADCR digital mute: 0 unmuted, 1 muted.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } adcr_mute[23:23];
+
+        field {
+            name = "adcr_vol";
+            desc = "ADCR digital volume (30 - adcr_vol) dB, same coding.";
+            sw = rw;
+            hw = r;
+            reset = 0x1E;
+        } adcr_vol[22:16];
+
+        field {
+            name = "adcl_hpf_en";
+            desc = "ADCL high-pass filter enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } adcl_hpf_en[15:15];
+
+        field {
+            name = "adcr_hpf_en";
+            desc = "ADCR high-pass filter enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } adcr_hpf_en[14:14];
+
+        field {
+            name = "reserved_nz_0";
+            desc = "Reset 1 in the data sheet; listed reserved there (vendor soft reset writes 1).";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } reserved_nz_0[0:0];
+
+    } AUDIO_ADC_REG_0 @ 0xD8;
+
+    reg {
+        name = "I2S channel selection control register (no soft reset)";
+        desc = "AUDIO_REG_1 is the i2S channel selection control register (no soft reset).
+
+Data sheet 11.2.5 AUDIO_REG_1 (offset 0xE0).";
+
+        field {
+            name = "i2s_pad_enable";
+            desc = "Connects the chip I2S pads to the AIAO I2S interface (0 disabled, no output). Must not be 1 together with audio_enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } i2s_pad_enable[1:1];
+
+        field {
+            name = "audio_enable";
+            desc = "Connects the internal audio CODEC I2S to the AIAO I2S interface. Must not be 1 together with i2s_pad_enable.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } audio_enable[0:0];
+
+    } AUDIO_REG_1 @ 0xE0;
+
+};
+
+`endif
