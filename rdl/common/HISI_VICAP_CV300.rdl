@@ -1,0 +1,3176 @@
+`ifndef HISI_VICAP_CV300_RDL
+`define HISI_VICAP_CV300_RDL
+
+
+regfile eHISI_VICAP_CV300 {
+    name = "VICAP (video capture, Hi3516C V300 / Hi3516E V100)";
+    desc = "
+    Video capture (VICAP) of the Hi3516C V300 / Hi3516E V100, window 0x11380000..0x113EFFFF (448 KB, data sheet Table 1-1); this regfile covers the capture part (offsets 0x0..0x2010) and is instantiated at 0x11380000. The ISP lives in the same window (HISI_ISP_CV300, rebased, at 0x11390000). Parts: AXI/channel select (0x10..0x50), interrupt (0xF0/0xF8), the input port PT_* (0x100..0x1F8: port mode, BT.656, timing, data generator/color bar, flash and shutter triggers), DES_* (0x200..0x2F8), SRC_* (0x600..0x6F8), channel CH_* (0x1000..0x1134: write channels Y/C, crop) and the BAS registers (0x2000..0x2010).
+    Vendor cross-check (INFERRED from static analysis of hi3516cv300_viu.ko, Xiongmai V4.02.R12, MPP V1.0.0.0): its VIU_HAL_* functions access 35 of the 75 documented offsets (every PT_* port register it uses sits at the data sheet offset, e.g. VIU_HAL_SetPortEn -> 0x0/0xF0/0x100, SetDevTimingHfb/Hact/Hbb/Vfb/Vact/Vbb -> 0x180..0x194, SetDevGenTimingEn -> 0x134, SetFlashConfig -> 0x1C0/0x1C4, SetBasCtrl -> 0x2000/0x2004/0x2008/0x2010). The module also touches offsets that the data sheet does not list: 0x40, 0x60, 0x70, a line-buffer block at 0x500/0x504/0x510/0x550/0x554/0x5F0/0x5F8 (VIU_HAL_SetLineBufCtrl/EN/Id/IntMask, GetBufLineIntStatus) and 0x2020/0x2030/0x2034/0x20F8 (VIU_HAL_SetDevCrop, SetBasIntMask); their bit meanings are unknown (GUESS from function names only) and they are NOT modelled here. Channel (CH_*) registers are reached through a computed base in the module, so they could not be matched by the simple tracker (not cross-checked).
+    
+    PROVENANCE: PROVEN = register offsets, names, bit fields, access and reset values transcribed from the Hi3516C V300/Hi3516E V100 data sheet issue 05 (9.1.6); the description of every register and field is the data sheet text. Provenance of the vendor cross-check text above: INFERRED. Nothing here is hardware verified (no CV300 board in the lab).
+
+
+    Register sources: 75 registers from the data sheet (hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt, section 9.1.6); 0 registers and 0 fields from - (-), each marked `[inferred]` in its desc (names from the header, meanings inferred from the names, reset/access unknown). ";
+
+    reg {
+        name = "Bus configuration register";
+        desc = "AXI_CFG is a bus configuration register.
+
+Data sheet 9.1.6 AXI_CFG (offset 0x10, printed page 9-17, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 28543).";
+
+        field {
+            name = "r_outstanding";
+            desc = "Number of read request outstandings Value range: [1, 8]";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } r_outstanding[15:12];
+
+        field {
+            name = "w_outstanding";
+            desc = "Number of write request outstandings Value range: [1, 8]";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } w_outstanding[7:4];
+    } AXI_CFG @ 0x10;
+
+    reg {
+        name = "Channel input data selection register";
+        desc = "CH_SEL is a channel input data selection register.
+
+Data sheet 9.1.6 CH_SEL (offset 0x30, printed page 9-18, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 28578).";
+
+        enum CH_SEL_ch_sel_enum {
+            CHANNEL_CONNECTS_ISP = 0 { name = "Channel Connects Isp"; desc = "The channel connects to ISP_BE."; };
+            CHANNEL_CONNECTS_LINE = 2 { name = "Channel Connects Line"; desc = "The channel connects to LINE_BUF. Other values: reserved"; };
+        };
+
+        field {
+            name = "ch_sel";
+            desc = "Channel input data selection";
+            sw = rw;
+            hw = r;
+            encode = CH_SEL_ch_sel_enum;
+            reset = 0x0;
+        } ch_sel[2:0];
+    } CH_SEL @ 0x30;
+
+    reg {
+        name = "ISP input data selection register";
+        desc = "ISP_SEL is an ISP input data selection register.
+
+Data sheet 9.1.6 ISP_SEL (offset 0x50, printed page 9-18, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 28604).";
+
+        enum ISP_SEL_af_sel_enum {
+            AF_CONNECTS_ISP = 0 { name = "Af Connects Isp"; desc = "The AF connects to ISP_FE."; };
+            AF_CONNECTS_ISP_2 = 1 { name = "Af Connects Isp 2"; desc = "The AF connects to ISP_BE. Other values: reserved"; };
+        };
+
+        field {
+            name = "af_sel";
+            desc = "AF input data select";
+            sw = rw;
+            hw = r;
+            encode = ISP_SEL_af_sel_enum;
+            reset = 0x0;
+        } af_sel[16:16];
+
+        enum ISP_SEL_isp_be_sel_enum {
+            ISP_CONNECTS_ISP = 0 { name = "Isp Connects Isp"; desc = "ISP_BE connects to ISP_FE (for the raw input)."; };
+            ISP_CONNECTS_LINE = 1 { name = "Isp Connects Line"; desc = "ISP_BE connects to LINE_BUF (for the YUV input). Other values: reserved"; };
+        };
+
+        field {
+            name = "isp_be_sel";
+            desc = "ISP_BE input data select";
+            sw = rw;
+            hw = r;
+            encode = ISP_SEL_isp_be_sel_enum;
+            reset = 0x0;
+        } isp_be_sel[6:4];
+
+        enum ISP_SEL_isp_fe_sel_enum {
+            ISP_FE_CONNECTS = 0 { name = "Isp Fe Connects"; desc = "ISP_FE connects to LINE_BUF (for the raw input)."; };
+            ISP_FE_CONNECTS_2 = 1 { name = "Isp Fe Connects 2"; desc = "ISP_FE connects to SRC0."; };
+            RESERVED = 2 { name = "Reserved"; desc = "reserved."; };
+            RESERVED_2 = 3 { name = "Reserved 2"; desc = "reserved."; };
+            ISP_FE_CONNECTS_3 = 4 { name = "Isp Fe Connects 3"; desc = "ISP_FE connects to SRC3. Other values: reserved"; };
+        };
+
+        field {
+            name = "isp_fe_sel";
+            desc = "ISP_FE input data select";
+            sw = rw;
+            hw = r;
+            encode = ISP_SEL_isp_fe_sel_enum;
+            reset = 0x0;
+        } isp_fe_sel[2:0];
+    } ISP_SEL @ 0x50;
+
+    reg {
+        name = "Interrupt indicator register";
+        desc = "VICAP_INT is an interrupt indicator register.
+
+Data sheet 9.1.6 VICAP_INT (offset 0xF0, printed page 9-19, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 28659).";
+
+        enum VICAP_INT_int_af_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "int_af";
+            desc = "AF interrupt status";
+            sw = r;
+            hw = w;
+            encode = VICAP_INT_int_af_enum;
+            reset = 0x0;
+        } int_af[18:18];
+
+        enum VICAP_INT_int_isp_be_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "int_isp_be";
+            desc = "ISP_BE interrupt status";
+            sw = r;
+            hw = w;
+            encode = VICAP_INT_int_isp_be_enum;
+            reset = 0x0;
+        } int_isp_be[17:17];
+
+        enum VICAP_INT_int_isp_fe_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "int_isp_fe";
+            desc = "ISP_FE interrupt status";
+            sw = r;
+            hw = w;
+            encode = VICAP_INT_int_isp_fe_enum;
+            reset = 0x0;
+        } int_isp_fe[16:16];
+
+        enum VICAP_INT_int_bas_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "int_bas";
+            desc = "BAS interrupt status";
+            sw = r;
+            hw = w;
+            encode = VICAP_INT_int_bas_enum;
+            reset = 0x0;
+        } int_bas[10:10];
+
+        enum VICAP_INT_int_buf_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "int_buf";
+            desc = "LINE_BUF interrupt status";
+            sw = r;
+            hw = w;
+            encode = VICAP_INT_int_buf_enum;
+            reset = 0x0;
+        } int_buf[9:9];
+
+        enum VICAP_INT_int_src3_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "int_src3";
+            desc = "SRC3 interrupt status";
+            sw = r;
+            hw = w;
+            encode = VICAP_INT_int_src3_enum;
+            reset = 0x0;
+        } int_src3[8:8];
+
+        enum VICAP_INT_int_src0_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "int_src0";
+            desc = "SRC0 interrupt status";
+            sw = r;
+            hw = w;
+            encode = VICAP_INT_int_src0_enum;
+            reset = 0x0;
+        } int_src0[5:5];
+
+        enum VICAP_INT_int_des0_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "int_des0";
+            desc = "DES0 interrupt status";
+            sw = r;
+            hw = w;
+            encode = VICAP_INT_int_des0_enum;
+            reset = 0x0;
+        } int_des0[2:2];
+
+        enum VICAP_INT_int_ch_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "int_ch";
+            desc = "Channel interrupt status";
+            sw = r;
+            hw = w;
+            encode = VICAP_INT_int_ch_enum;
+            reset = 0x0;
+        } int_ch[1:1];
+
+        enum VICAP_INT_int_pt_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "int_pt";
+            desc = "Port interrupt status";
+            sw = r;
+            hw = w;
+            encode = VICAP_INT_int_pt_enum;
+            reset = 0x0;
+        } int_pt[0:0];
+    } VICAP_INT @ 0xF0;
+
+    reg {
+        name = "Interrupt mask register K";
+        desc = "VICAP_INT_MASK is an interrupt mask register.
+
+Data sheet 9.1.6 VICAP_INT_MASK (offset 0xF8, printed page 9-20, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 28727).";
+
+        enum VICAP_INT_MASK_int_af_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "int_af";
+            desc = "AF interrupt enable";
+            sw = rw;
+            hw = r;
+            encode = VICAP_INT_MASK_int_af_enum;
+            reset = 0x0;
+        } int_af[18:18];
+
+        enum VICAP_INT_MASK_int_isp_be_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "int_isp_be";
+            desc = "ISP_BE interrupt enable";
+            sw = rw;
+            hw = r;
+            encode = VICAP_INT_MASK_int_isp_be_enum;
+            reset = 0x0;
+        } int_isp_be[17:17];
+
+        enum VICAP_INT_MASK_int_isp_fe_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "int_isp_fe";
+            desc = "ISP_FE interrupt enable";
+            sw = rw;
+            hw = r;
+            encode = VICAP_INT_MASK_int_isp_fe_enum;
+            reset = 0x0;
+        } int_isp_fe[16:16];
+
+        enum VICAP_INT_MASK_int_bas_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "int_bas";
+            desc = "BAS interrupt enable";
+            sw = rw;
+            hw = r;
+            encode = VICAP_INT_MASK_int_bas_enum;
+            reset = 0x0;
+        } int_bas[10:10];
+
+        enum VICAP_INT_MASK_int_buf_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "int_buf";
+            desc = "LINE_BUF interrupt enable";
+            sw = rw;
+            hw = r;
+            encode = VICAP_INT_MASK_int_buf_enum;
+            reset = 0x0;
+        } int_buf[9:9];
+
+        enum VICAP_INT_MASK_int_src3_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "int_src3";
+            desc = "SRC3 interrupt enable";
+            sw = rw;
+            hw = r;
+            encode = VICAP_INT_MASK_int_src3_enum;
+            reset = 0x0;
+        } int_src3[8:8];
+
+        enum VICAP_INT_MASK_int_src0_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "int_src0";
+            desc = "SRC0 interrupt enable";
+            sw = rw;
+            hw = r;
+            encode = VICAP_INT_MASK_int_src0_enum;
+            reset = 0x0;
+        } int_src0[5:5];
+
+        enum VICAP_INT_MASK_int_des0_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "int_des0";
+            desc = "DES0 interrupt enable";
+            sw = rw;
+            hw = r;
+            encode = VICAP_INT_MASK_int_des0_enum;
+            reset = 0x0;
+        } int_des0[2:2];
+
+        enum VICAP_INT_MASK_int_ch_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "int_ch";
+            desc = "Channel interrupt enable";
+            sw = rw;
+            hw = r;
+            encode = VICAP_INT_MASK_int_ch_enum;
+            reset = 0x0;
+        } int_ch[1:1];
+
+        enum VICAP_INT_MASK_int_pt_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "int_pt";
+            desc = "Port interrupt enable";
+            sw = rw;
+            hw = r;
+            encode = VICAP_INT_MASK_int_pt_enum;
+            reset = 0x0;
+        } int_pt[0:0];
+    } VICAP_INT_MASK @ 0xF8;
+
+    reg {
+        name = "Port mode register";
+        desc = "PT_INTF_MOD is a port mode register. Hi3516C V300/Hi3516E V100 Professional HD IP Camera SoC
+
+Data sheet 9.1.6 PT_INTF_MOD (offset 0x100, printed page 9-22, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 28803).";
+
+        enum PT_INTF_MOD_enable_f_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "enable";
+            desc = "Port enable";
+            sw = rw;
+            hw = r;
+            encode = PT_INTF_MOD_enable_f_enum;
+            reset = 0x0;
+        } enable_f[31:31];
+
+        enum PT_INTF_MOD_mode_enum {
+            EXTERNAL_SYNC = 0 { name = "External Sync"; desc = "external sync"; };
+            BT_656 = 1 { name = "Bt 656"; desc = "BT.656"; };
+        };
+
+        field {
+            name = "mode";
+            desc = "Timing mode";
+            sw = rw;
+            hw = r;
+            encode = PT_INTF_MOD_mode_enum;
+            reset = 0x0;
+        } mode[0:0];
+    } PT_INTF_MOD @ 0x100;
+
+    reg {
+        name = "Component 0 offset register";
+        desc = "PT_OFFSET0 is a component 0 offset register.
+
+Data sheet 9.1.6 PT_OFFSET0 (offset 0x110, printed page 9-22, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 28829).";
+
+        field {
+            name = "mask";
+            desc = "Component 0 mask";
+            sw = rw;
+            hw = r;
+            reset = 0xFFF0;
+        } mask_f[31:16];
+
+        enum PT_OFFSET0_rev_enum {
+            NO = 0 { name = "No"; desc = "no"; };
+            YES = 1 { name = "Yes"; desc = "yes"; };
+        };
+
+        field {
+            name = "rev";
+            desc = "Whether the data line is reversed";
+            sw = rw;
+            hw = r;
+            encode = PT_OFFSET0_rev_enum;
+            reset = 0x0;
+        } rev[15:15];
+
+        field {
+            name = "offset";
+            desc = "Component 0 offset";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } offset[5:0];
+    } PT_OFFSET0 @ 0x110;
+
+    reg {
+        name = "Component 1 offset register";
+        desc = "PT_OFFSET1 is a component 1 offset register. Hi3516C V300/Hi3516E V100 Professional HD IP Camera SoC
+
+Data sheet 9.1.6 PT_OFFSET1 (offset 0x114, printed page 9-23, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 28864).";
+
+        field {
+            name = "mask";
+            desc = "Component 1 mask";
+            sw = rw;
+            hw = r;
+            reset = 0xFFF0;
+        } mask_f[31:16];
+
+        enum PT_OFFSET1_rev_enum {
+            NO = 0 { name = "No"; desc = "no"; };
+            YES = 1 { name = "Yes"; desc = "yes"; };
+        };
+
+        field {
+            name = "rev";
+            desc = "Whether the data line is reversed";
+            sw = rw;
+            hw = r;
+            encode = PT_OFFSET1_rev_enum;
+            reset = 0x0;
+        } rev[15:15];
+
+        field {
+            name = "offset";
+            desc = "Component 1 offset";
+            sw = rw;
+            hw = r;
+            reset = 0x10;
+        } offset[5:0];
+    } PT_OFFSET1 @ 0x114;
+
+    reg {
+        name = "Component 2 offset register";
+        desc = "PT_OFFSET2 is a component 2 offset register.
+
+Data sheet 9.1.6 PT_OFFSET2 (offset 0x118, printed page 9-23, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 28887).";
+
+        field {
+            name = "mask";
+            desc = "Component 2 mask";
+            sw = rw;
+            hw = r;
+            reset = 0xFFF0;
+        } mask_f[31:16];
+
+        enum PT_OFFSET2_rev_enum {
+            NO = 0 { name = "No"; desc = "no"; };
+            YES = 1 { name = "Yes"; desc = "yes"; };
+        };
+
+        field {
+            name = "rev";
+            desc = "Whether the data line is reversed";
+            sw = rw;
+            hw = r;
+            encode = PT_OFFSET2_rev_enum;
+            reset = 0x0;
+        } rev[15:15];
+
+        field {
+            name = "offset";
+            desc = "Component 2 offset";
+            sw = rw;
+            hw = r;
+            reset = 0x20;
+        } offset[5:0];
+    } PT_OFFSET2 @ 0x118;
+
+    reg {
+        name = "BT.656 configuration register";
+        desc = "PT_BT656_CFG is a BT.656 configuration register. Hi3516C V300/Hi3516E V100 Professional HD IP Camera SoC
+
+Data sheet 9.1.6 PT_BT656_CFG (offset 0x120, printed page 9-24, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 28920).";
+
+        enum PT_BT656_CFG_enable_f_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "enable";
+            desc = "BT.656 enable";
+            sw = rw;
+            hw = r;
+            encode = PT_BT656_CFG_enable_f_enum;
+            reset = 0x0;
+        } enable_f[31:31];
+
+        enum PT_BT656_CFG_field_inv_enum {
+            NOT_REVERSED = 0 { name = "Not Reversed"; desc = "not reversed"; };
+            REVERSED = 1 { name = "Reversed"; desc = "reversed"; };
+        };
+
+        field {
+            name = "field_inv";
+            desc = "field reverse control";
+            sw = rw;
+            hw = r;
+            encode = PT_BT656_CFG_field_inv_enum;
+            reset = 0x0;
+        } field_inv[10:10];
+
+        enum PT_BT656_CFG_vsync_inv_enum {
+            NOT_REVERSED = 0 { name = "Not Reversed"; desc = "not reversed"; };
+            REVERSED = 1 { name = "Reversed"; desc = "reversed"; };
+        };
+
+        field {
+            name = "vsync_inv";
+            desc = "vsync reverse control";
+            sw = rw;
+            hw = r;
+            encode = PT_BT656_CFG_vsync_inv_enum;
+            reset = 0x1;
+        } vsync_inv[9:9];
+
+        enum PT_BT656_CFG_hsync_inv_enum {
+            NOT_REVERSED = 0 { name = "Not Reversed"; desc = "not reversed"; };
+            REVERSED = 1 { name = "Reversed"; desc = "reversed"; };
+        };
+
+        field {
+            name = "hsync_inv";
+            desc = "hsync reverse control";
+            sw = rw;
+            hw = r;
+            encode = PT_BT656_CFG_hsync_inv_enum;
+            reset = 0x1;
+        } hsync_inv[8:8];
+
+        field {
+            name = "mode";
+            desc = "Mode select mode[0] 0: hsync is not an active signal. 1: hsync is an active signal. mode[1] 0: The hsync output is active low. 1: The hsync output is active high. mode[3:2] 00: Component 0 is parsed. 01: Component 1 is parsed. 10: Component 2 is parsed. 11: reserved";
+            sw = rw;
+            hw = r;
+            reset = 0x3;
+        } mode[3:0];
+    } PT_BT656_CFG @ 0x120;
+
+    reg {
+        name = "Timing configuration register G_CFG";
+        desc = "PT_UNIFY_TIMING_CFG is a timing configuration register.
+
+Data sheet 9.1.6 PT_UNIFY_TIMING_CFG (offset 0x130, printed page 9-25, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 28976).";
+
+        enum PT_UNIFY_TIMING_CFG_field_inv_enum {
+            NOT_INVERTED = 0 { name = "Not Inverted"; desc = "not inverted"; };
+            INVERTED = 1 { name = "Inverted"; desc = "inverted"; };
+        };
+
+        field {
+            name = "field_inv";
+            desc = "Field inverse (level-1 field processing)";
+            sw = rw;
+            hw = r;
+            encode = PT_UNIFY_TIMING_CFG_field_inv_enum;
+            reset = 0x0;
+        } field_inv[26:26];
+
+        enum PT_UNIFY_TIMING_CFG_field_sel_enum {
+            INPUT_FIELD = 0 { name = "Input Field"; desc = "input field"; };
+            INPUT_VSYNC = 1 { name = "Input Vsync"; desc = "input vsync"; };
+            DETECTED_BASED_RELATIONSHIP = 2 { name = "Detected Based Relationship"; desc = "detected based on the relationship between vsync and hsync"; };
+            FIXED_AT_0 = 3 { name = "Fixed At 0"; desc = "fixed at 0"; };
+        };
+
+        field {
+            name = "field_sel";
+            desc = "Field source select (level-0 field processing)";
+            sw = rw;
+            hw = r;
+            encode = PT_UNIFY_TIMING_CFG_field_sel_enum;
+            reset = 0x0;
+        } field_sel[25:24];
+
+        enum PT_UNIFY_TIMING_CFG_vsync_mode_enum {
+            NOT_PROCESSED = 0 { name = "Not Processed"; desc = "not processed"; };
+            DETECT_RISING_EDGE = 1 { name = "Detect Rising Edge"; desc = "detect the rising edge"; };
+            DETECT_RISING_EDGE_2 = 2 { name = "Detect Rising Edge 2"; desc = "detect the rising edge and falling edge"; };
+            RESERVED = 3 { name = "Reserved"; desc = "reserved"; };
+        };
+
+        field {
+            name = "vsync_mode";
+            desc = "vsync processing mode (level-2 vsync processing)";
+            sw = rw;
+            hw = r;
+            encode = PT_UNIFY_TIMING_CFG_vsync_mode_enum;
+            reset = 0x0;
+        } vsync_mode[20:19];
+
+        enum PT_UNIFY_TIMING_CFG_vsync_inv_enum {
+            NOT_INVERTED = 0 { name = "Not Inverted"; desc = "not inverted"; };
+            INVERTED = 1 { name = "Inverted"; desc = "inverted"; };
+        };
+
+        field {
+            name = "vsync_inv";
+            desc = "vsync inversion (level-1 vsync processing)";
+            sw = rw;
+            hw = r;
+            encode = PT_UNIFY_TIMING_CFG_vsync_inv_enum;
+            reset = 0x0;
+        } vsync_inv[18:18];
+
+        enum PT_UNIFY_TIMING_CFG_vsync_sel_enum {
+            INPUT_VSYNC = 0 { name = "Input Vsync"; desc = "input vsync"; };
+            INPUT_FIELD = 1 { name = "Input Field"; desc = "input field"; };
+            FIXED_AT_0 = 2 { name = "Fixed At 0"; desc = "fixed at 0"; };
+            RESERVED = 3 { name = "Reserved"; desc = "reserved"; };
+        };
+
+        field {
+            name = "vsync_sel";
+            desc = "vsync source select (level-0 vsync processing)";
+            sw = rw;
+            hw = r;
+            encode = PT_UNIFY_TIMING_CFG_vsync_sel_enum;
+            reset = 0x0;
+        } vsync_sel[17:16];
+
+        enum PT_UNIFY_TIMING_CFG_hsync_mode_enum {
+            NOT_PROCESSED = 0 { name = "Not Processed"; desc = "not processed"; };
+            DETECT_RISING_EDGE = 1 { name = "Detect Rising Edge"; desc = "detect the rising edge"; };
+        };
+
+        field {
+            name = "hsync_mode";
+            desc = "hsync processing mode (level-3 hsync processing)";
+            sw = rw;
+            hw = r;
+            encode = PT_UNIFY_TIMING_CFG_hsync_mode_enum;
+            reset = 0x0;
+        } hsync_mode[14:13];
+
+        enum PT_UNIFY_TIMING_CFG_hsync_and_enum {
+            NOT_PROCESSED = 0 { name = "Not Processed"; desc = "not processed"; };
+            ANDED = 1 { name = "Anded"; desc = "ANDed"; };
+            EXCLUSIVE_ORED = 2 { name = "Exclusive Ored"; desc = "exclusive ORed"; };
+            RESERVED = 3 { name = "Reserved"; desc = "reserved"; };
+        };
+
+        field {
+            name = "hsync_and";
+            desc = "Whether hsync is operated with the result of level-1 vsync processing (level-2 hsync processing)";
+            sw = rw;
+            hw = r;
+            encode = PT_UNIFY_TIMING_CFG_hsync_and_enum;
+            reset = 0x0;
+        } hsync_and[12:11];
+
+        enum PT_UNIFY_TIMING_CFG_hsync_inv_enum {
+            NOT_INVERTED = 0 { name = "Not Inverted"; desc = "not inverted"; };
+            INVERTED = 1 { name = "Inverted"; desc = "inverted"; };
+        };
+
+        field {
+            name = "hsync_inv";
+            desc = "hsync inversion (level-1 hsync processing)";
+            sw = rw;
+            hw = r;
+            encode = PT_UNIFY_TIMING_CFG_hsync_inv_enum;
+            reset = 0x0;
+        } hsync_inv[10:10];
+
+        enum PT_UNIFY_TIMING_CFG_hsync_sel_enum {
+            INPUT_HSYNC = 0 { name = "Input Hsync"; desc = "input hsync"; };
+            INPUT_DE = 1 { name = "Input De"; desc = "input de"; };
+            FIXED_AT_0 = 2 { name = "Fixed At 0"; desc = "fixed at 0"; };
+            RESERVED = 3 { name = "Reserved"; desc = "reserved"; };
+        };
+
+        field {
+            name = "hsync_sel";
+            desc = "hsync source select (level-0 hsync processing)";
+            sw = rw;
+            hw = r;
+            encode = PT_UNIFY_TIMING_CFG_hsync_sel_enum;
+            reset = 0x0;
+        } hsync_sel[9:8];
+
+        enum PT_UNIFY_TIMING_CFG_de_inv_enum {
+            NOT_INVERTED = 0 { name = "Not Inverted"; desc = "not inverted"; };
+            INVERTED = 1 { name = "Inverted"; desc = "inverted"; };
+        };
+
+        field {
+            name = "de_inv";
+            desc = "de inversion (level-1 de processing)";
+            sw = rw;
+            hw = r;
+            encode = PT_UNIFY_TIMING_CFG_de_inv_enum;
+            reset = 0x0;
+        } de_inv[2:2];
+
+        enum PT_UNIFY_TIMING_CFG_de_sel_enum {
+            INPUT_DE = 0 { name = "Input De"; desc = "input de"; };
+            RESULT_LEVEL_2 = 1 { name = "Result Level 2"; desc = "result of level-2 hsync processing"; };
+            FIXED_AT_1 = 2 { name = "Fixed At 1"; desc = "fixed at 1"; };
+            FIXED_AT_0 = 3 { name = "Fixed At 0"; desc = "fixed at 0"; };
+        };
+
+        field {
+            name = "de_sel";
+            desc = "de source select (level-0 de processing)";
+            sw = rw;
+            hw = r;
+            encode = PT_UNIFY_TIMING_CFG_de_sel_enum;
+            reset = 0x0;
+        } de_sel[1:0];
+    } PT_UNIFY_TIMING_CFG @ 0x130;
+
+    reg {
+        name = "Timing recovery module _CFG configuration register";
+        desc = "PT_GEN_TIMING_CFG is a timing recovery module configuration register. Hi3516C V300/Hi3516E V100 Professional HD IP Camera SoC
+
+Data sheet 9.1.6 PT_GEN_TIMING_CFG (offset 0x134, printed page 9-27, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 29072).";
+
+        enum PT_GEN_TIMING_CFG_enable_f_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "enable";
+            desc = "Timing recovery enable (timings are recovered based on timing parameters)";
+            sw = rw;
+            hw = r;
+            encode = PT_GEN_TIMING_CFG_enable_f_enum;
+            reset = 0x0;
+        } enable_f[31:31];
+
+        enum PT_GEN_TIMING_CFG_mode_enum {
+            TIMINGS_GENERATED_BASED = 0 { name = "Timings Generated Based"; desc = "Timings are generated based on the input valid signal of PT."; };
+            TIMINGS_INTERNALLY_CALCULATED = 1 { name = "Timings Internally Calculated"; desc = "Timings are internally calculated and generated."; };
+        };
+
+        field {
+            name = "mode";
+            desc = "Timing recovery mode (timings are recovered based on timing parameters)";
+            sw = rw;
+            hw = r;
+            encode = PT_GEN_TIMING_CFG_mode_enum;
+            reset = 0x1;
+        } mode[30:30];
+
+        enum PT_GEN_TIMING_CFG_vsync_mode_enum {
+            NOT_RECOVERED = 0 { name = "Not Recovered"; desc = "not recovered"; };
+            RECOVERED = 1 { name = "Recovered"; desc = "recovered"; };
+        };
+
+        field {
+            name = "vsync_mode";
+            desc = "vsync recovery";
+            sw = rw;
+            hw = r;
+            encode = PT_GEN_TIMING_CFG_vsync_mode_enum;
+            reset = 0x1;
+        } vsync_mode[2:2];
+
+        enum PT_GEN_TIMING_CFG_hsync_mode_enum {
+            NOT_RECOVERED = 0 { name = "Not Recovered"; desc = "not recovered"; };
+            RECOVERED = 1 { name = "Recovered"; desc = "recovered"; };
+        };
+
+        field {
+            name = "hsync_mode";
+            desc = "hsync recovery";
+            sw = rw;
+            hw = r;
+            encode = PT_GEN_TIMING_CFG_hsync_mode_enum;
+            reset = 0x1;
+        } hsync_mode[1:1];
+    } PT_GEN_TIMING_CFG @ 0x134;
+
+    reg {
+        name = "Data configuration register _CFG";
+        desc = "PT_UNIFY_DATA_CFG is a data configuration register. Hi3516C V300/Hi3516E V100 Professional HD IP Camera SoC
+
+Data sheet 9.1.6 PT_UNIFY_DATA_CFG (offset 0x140, printed page 9-28, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 29123).";
+
+        enum PT_UNIFY_DATA_CFG_enable_f_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "enable";
+            desc = "Data separation enable";
+            sw = rw;
+            hw = r;
+            encode = PT_UNIFY_DATA_CFG_enable_f_enum;
+            reset = 0x0;
+        } enable_f[31:31];
+
+        enum PT_UNIFY_DATA_CFG_uv_seq_enum {
+            CBCR = 0 { name = "Cbcr"; desc = "CbCr"; };
+            CRCB = 1 { name = "Crcb"; desc = "CrCb"; };
+        };
+
+        field {
+            name = "uv_seq";
+            desc = "CbCr sequence";
+            sw = rw;
+            hw = r;
+            encode = PT_UNIFY_DATA_CFG_uv_seq_enum;
+            reset = 0x0;
+        } uv_seq[3:3];
+
+        enum PT_UNIFY_DATA_CFG_yc_seq_enum {
+            CY = 0 { name = "Cy"; desc = "CY"; };
+            YC = 1 { name = "Yc"; desc = "YC"; };
+        };
+
+        field {
+            name = "yc_seq";
+            desc = "YC sequence";
+            sw = rw;
+            hw = r;
+            encode = PT_UNIFY_DATA_CFG_yc_seq_enum;
+            reset = 0x0;
+        } yc_seq[2:2];
+
+        enum PT_UNIFY_DATA_CFG_comp_num_enum {
+            COMPONENT_1 = 0 { name = "Component 1"; desc = "component 1"; };
+            COMPONENT_2 = 1 { name = "Component 2"; desc = "component 2"; };
+            COMPONENT_3 = 2 { name = "Component 3"; desc = "component 3"; };
+            RESERVED = 3 { name = "Reserved"; desc = "reserved"; };
+        };
+
+        field {
+            name = "comp_num";
+            desc = "Data component select";
+            sw = rw;
+            hw = r;
+            encode = PT_UNIFY_DATA_CFG_comp_num_enum;
+            reset = 0x0;
+        } comp_num[1:0];
+    } PT_UNIFY_DATA_CFG @ 0x140;
+
+    reg {
+        name = "Data generation module configuration FG register";
+        desc = "PT_GEN_DATA_CFG is a data generation module configuration register. Hi3516C V300/Hi3516E V100 Professional HD IP Camera SoC
+
+Data sheet 9.1.6 PT_GEN_DATA_CFG (offset 0x144, printed page 9-29, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 29171).";
+
+        enum PT_GEN_DATA_CFG_enable_f_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "enable";
+            desc = "Data generation enable. Data is generated based on the data generation parameter.";
+            sw = rw;
+            hw = r;
+            encode = PT_GEN_DATA_CFG_enable_f_enum;
+            reset = 0x0;
+        } enable_f[31:31];
+
+        enum PT_GEN_DATA_CFG_data0_move_enum {
+            NO = 0 { name = "No"; desc = "no"; };
+            YES = 1 { name = "Yes"; desc = "yes"; };
+        };
+
+        field {
+            name = "data0_move";
+            desc = "Whether data 0 is incremented progressively";
+            sw = rw;
+            hw = r;
+            encode = PT_GEN_DATA_CFG_data0_move_enum;
+            reset = 0x1;
+        } data0_move[7:7];
+
+        enum PT_GEN_DATA_CFG_data1_move_enum {
+            NO = 0 { name = "No"; desc = "no"; };
+            YES = 1 { name = "Yes"; desc = "yes"; };
+        };
+
+        field {
+            name = "data1_move";
+            desc = "Whether data 1 is incremented progressively";
+            sw = rw;
+            hw = r;
+            encode = PT_GEN_DATA_CFG_data1_move_enum;
+            reset = 0x1;
+        } data1_move[6:6];
+
+        enum PT_GEN_DATA_CFG_data2_move_enum {
+            NO = 0 { name = "No"; desc = "no"; };
+            YES = 1 { name = "Yes"; desc = "yes"; };
+        };
+
+        field {
+            name = "data2_move";
+            desc = "Whether data 2 is incremented progressively";
+            sw = rw;
+            hw = r;
+            encode = PT_GEN_DATA_CFG_data2_move_enum;
+            reset = 0x1;
+        } data2_move[5:5];
+
+        enum PT_GEN_DATA_CFG_vsync_reset_enum {
+            NOT_RESET = 0 { name = "Not Reset"; desc = "not reset"; };
+            RESET_F = 1 { name = "Reset F"; desc = "reset"; };
+        };
+
+        field {
+            name = "vsync_reset";
+            desc = "Whether to reset data based on the VS signal";
+            sw = rw;
+            hw = r;
+            encode = PT_GEN_DATA_CFG_vsync_reset_enum;
+            reset = 0x0;
+        } vsync_reset[4:4];
+
+        enum PT_GEN_DATA_CFG_hsync_reset_enum {
+            NOT_RESET = 0 { name = "Not Reset"; desc = "not reset"; };
+            RESET_F = 1 { name = "Reset F"; desc = "reset"; };
+        };
+
+        field {
+            name = "hsync_reset";
+            desc = "Whether to reset data based on the HS signal";
+            sw = rw;
+            hw = r;
+            encode = PT_GEN_DATA_CFG_hsync_reset_enum;
+            reset = 0x1;
+        } hsync_reset[3:3];
+
+        enum PT_GEN_DATA_CFG_vsync_move_enum {
+            NO = 0 { name = "No"; desc = "no"; };
+            YES = 1 { name = "Yes"; desc = "yes"; };
+        };
+
+        field {
+            name = "vsync_move";
+            desc = "Whether data is incremented progressively based on the VS signal";
+            sw = rw;
+            hw = r;
+            encode = PT_GEN_DATA_CFG_vsync_move_enum;
+            reset = 0x0;
+        } vsync_move[2:2];
+
+        enum PT_GEN_DATA_CFG_hsync_move_enum {
+            NO = 0 { name = "No"; desc = "no"; };
+            YES = 1 { name = "Yes"; desc = "yes"; };
+        };
+
+        field {
+            name = "hsync_move";
+            desc = "Whether data is incremented progressively based on the HS signal";
+            sw = rw;
+            hw = r;
+            encode = PT_GEN_DATA_CFG_hsync_move_enum;
+            reset = 0x0;
+        } hsync_move[1:1];
+
+        enum PT_GEN_DATA_CFG_de_move_enum {
+            NO = 0 { name = "No"; desc = "no"; };
+            YES = 1 { name = "Yes"; desc = "yes"; };
+        };
+
+        field {
+            name = "de_move";
+            desc = "Whether data is incremented progressively based on the de signal";
+            sw = rw;
+            hw = r;
+            encode = PT_GEN_DATA_CFG_de_move_enum;
+            reset = 0x1;
+        } de_move[0:0];
+    } PT_GEN_DATA_CFG @ 0x144;
+
+    reg {
+        name = "Data generation module coefficient OEF register";
+        desc = "PT_GEN_DATA_COEF is a data generation module coefficient register.
+
+Data sheet 9.1.6 PT_GEN_DATA_COEF (offset 0x148, printed page 9-30, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 29236).";
+
+        field {
+            name = "inc_frame";
+            desc = "Incremental value between data frames. The incremental values are accumulated in the upper eight bits of data.";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } inc_frame[31:24];
+
+        field {
+            name = "step_frame";
+            desc = "Interval for data frame increment. The configured value is the actual value minus 1. The value 0 indicates the increment by frame.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } step_frame[23:16];
+
+        field {
+            name = "inc_space";
+            desc = "Incremental value between data pixels. The incremental values are accumulated in the upper 10 bits of data.";
+            sw = rw;
+            hw = r;
+            reset = 0x1;
+        } inc_space[15:8];
+
+        field {
+            name = "step_space";
+            desc = "Interval for data pixel increment. The value 0 indicates the increment by pixel.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } step_space[7:0];
+    } PT_GEN_DATA_COEF @ 0x148;
+
+    reg {
+        name = "Data generation module initial value NIT configuration register";
+        desc = "PT_GEN_DATA_INIT is a data generation module initial value configuration register.
+
+Data sheet 9.1.6 PT_GEN_DATA_INIT (offset 0x14C, printed page 9-30, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 29265).";
+
+        field {
+            name = "data2";
+            desc = "Initial V/B value";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } data2[23:16];
+
+        field {
+            name = "data1";
+            desc = "Initial U/G value";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } data1[15:8];
+
+        field {
+            name = "data0";
+            desc = "Initial Y/R value";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } data0[7:0];
+    } PT_GEN_DATA_INIT @ 0x14C;
+
+    reg {
+        name = "YUV444 configuration register";
+        desc = "PT_YUV444_CFG is a YUV444 configuration register.
+
+Data sheet 9.1.6 PT_YUV444_CFG (offset 0x150, printed page 9-31, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 29298).";
+
+        enum PT_YUV444_CFG_enable_f_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "enable";
+            desc = "YUV enable for converting YUV422 signals into YUV444 signals";
+            sw = rw;
+            hw = r;
+            encode = PT_YUV444_CFG_enable_f_enum;
+            reset = 0x0;
+        } enable_f[31:31];
+    } PT_YUV444_CFG @ 0x150;
+
+    reg {
+        name = "Port fstart interrupt delay register";
+        desc = "PT_FSTART_DLY is a port fstart interrupt delay register.
+
+Data sheet 9.1.6 PT_FSTART_DLY (offset 0x160, printed page 9-31, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 29322).";
+
+        field {
+            name = "fstart_dly";
+            desc = "fstart interrupt delay time, in the unit of the port clock";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } fstart_dly[31:0];
+    } PT_FSTART_DLY @ 0x160;
+
+    reg {
+        name = "Horizontal front blanking width register";
+        desc = "PT_INTF_HFB is a horizontal front blanking width register. Hi3516C V300/Hi3516E V100 Professional HD IP Camera SoC
+
+Data sheet 9.1.6 PT_INTF_HFB (offset 0x180, printed page 9-32, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 29351).";
+
+        field {
+            name = "hfb";
+            desc = "Horizontal front blanking width";
+            sw = rw;
+            hw = r;
+            reset = 0x58;
+        } hfb[15:0];
+    } PT_INTF_HFB @ 0x180;
+
+    reg {
+        name = "Horizontal active width register";
+        desc = "PT_INTF_HACT is a horizontal active width register.
+
+Data sheet 9.1.6 PT_INTF_HACT (offset 0x184, printed page 9-32, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 29370).";
+
+        field {
+            name = "hact";
+            desc = "Horizontal active width (in clock cycle)";
+            sw = rw;
+            hw = r;
+            reset = 0x780;
+        } hact[31:0];
+    } PT_INTF_HACT @ 0x184;
+
+    reg {
+        name = "Horizontal back blanking width register";
+        desc = "PT_INTF_HBB is a horizontal back blanking width register.
+
+Data sheet 9.1.6 PT_INTF_HBB (offset 0x188, printed page 9-32, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 29389).";
+
+        field {
+            name = "hbb";
+            desc = "Horizontal back blanking width";
+            sw = rw;
+            hw = r;
+            reset = 0xC0;
+        } hbb[15:0];
+    } PT_INTF_HBB @ 0x188;
+
+    reg {
+        name = "Vertical front blanking width register";
+        desc = "PT_INTF_VFB is a vertical front blanking width register.
+
+Data sheet 9.1.6 PT_INTF_VFB (offset 0x18C, printed page 9-33, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 29414).";
+
+        field {
+            name = "vfb";
+            desc = "Vertical front blanking width";
+            sw = rw;
+            hw = r;
+            reset = 0x4;
+        } vfb[15:0];
+    } PT_INTF_VFB @ 0x18C;
+
+    reg {
+        name = "Vertical active width register";
+        desc = "PT_INTF_VACT is a vertical active width register.
+
+Data sheet 9.1.6 PT_INTF_VACT (offset 0x190, printed page 9-33, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 29434).";
+
+        field {
+            name = "vact";
+            desc = "Vertical active width";
+            sw = rw;
+            hw = r;
+            reset = 0x438;
+        } vact[15:0];
+    } PT_INTF_VACT @ 0x190;
+
+    reg {
+        name = "Vertical back blanking width register";
+        desc = "PT_INTF_VBB is a vertical back blanking width register.
+
+Data sheet 9.1.6 PT_INTF_VBB (offset 0x194, printed page 9-33, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 29453).";
+
+        field {
+            name = "vbb";
+            desc = "Vertical back blanking width";
+            sw = rw;
+            hw = r;
+            reset = 0x29;
+        } vbb[15:0];
+    } PT_INTF_VBB @ 0x194;
+
+    reg {
+        name = "Vertical bottom front blanking width register";
+        desc = "PT_INTF_VBFB is a vertical bottom front blanking width register.
+
+Data sheet 9.1.6 PT_INTF_VBFB (offset 0x198, printed page 9-34, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 29482).";
+
+        field {
+            name = "vbfb";
+            desc = "Vertical bottom front blanking width";
+            sw = rw;
+            hw = r;
+            reset = 0x4;
+        } vbfb[15:0];
+    } PT_INTF_VBFB @ 0x198;
+
+    reg {
+        name = "Vertical bottom active width register";
+        desc = "PT_INTF_VBACT is a vertical bottom active width register.
+
+Data sheet 9.1.6 PT_INTF_VBACT (offset 0x19C, printed page 9-34, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 29501).";
+
+        field {
+            name = "vbact";
+            desc = "Vertical bottom active width";
+            sw = rw;
+            hw = r;
+            reset = 0x438;
+        } vbact[15:0];
+    } PT_INTF_VBACT @ 0x19C;
+
+    reg {
+        name = "Vertical bottom back blanking width register";
+        desc = "PT_INTF_VBBB is a vertical bottom back blanking width register. Hi3516C V300/Hi3516E V100 Professional HD IP Camera SoC
+
+Data sheet 9.1.6 PT_INTF_VBBB (offset 0x1A0, printed page 9-35, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 29531).";
+
+        field {
+            name = "vbbb";
+            desc = "Vertical bottom back blanking width";
+            sw = rw;
+            hw = r;
+            reset = 0x29;
+        } vbbb[15:0];
+    } PT_INTF_VBBB @ 0x1A0;
+
+    reg {
+        name = "ID configuration register";
+        desc = "PT_ID_CFG is an ID configuration register.
+
+Data sheet 9.1.6 PT_ID_CFG (offset 0x1A4, printed page 9-35, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 29550).";
+
+        enum PT_ID_CFG_enable_f_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "enable";
+            desc = "ID generation enable";
+            sw = rw;
+            hw = r;
+            encode = PT_ID_CFG_enable_f_enum;
+            reset = 0x0;
+        } enable_f[31:31];
+
+        enum PT_ID_CFG_mode_enum {
+            AUTOMATIC_MODE = 0 { name = "Automatic Mode"; desc = "automatic mode (the ID automatically increases for each frame)"; };
+            NON_AUTOMATIC_MODE = 1 { name = "Non Automatic Mode"; desc = "non-automatic mode (the ID depends on the configured value)"; };
+        };
+
+        field {
+            name = "mode";
+            desc = "ID generation mode";
+            sw = rw;
+            hw = r;
+            encode = PT_ID_CFG_mode_enum;
+            reset = 0x0;
+        } mode[30:30];
+
+        field {
+            name = "reset";
+            desc = "In automatic mode, setting this field to 1 restores the ID of the next frame to the initial value. This field is automatically cleared after restoration.";
+            sw = w;
+            hw = r;
+            reset = 0x0;
+        } reset_f[29:29];
+
+        field {
+            name = "id_det";
+            desc = "ID of the frame whose width and height are detected";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } id_det[5:4];
+
+        field {
+            name = "id_max";
+            desc = "Maximum ID in automatic mode";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } id_max[3:2];
+
+        field {
+            name = "id";
+            desc = "Initial ID in automatic mode or generated ID in non-automatic mode";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } id[1:0];
+    } PT_ID_CFG @ 0x1A4;
+
+    reg {
+        name = "Flash configuration register";
+        desc = "PT_FLASH_CFG is a flash configuration register.
+
+Data sheet 9.1.6 PT_FLASH_CFG (offset 0x1B0, printed page 9-36, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 29590).";
+
+        enum PT_FLASH_CFG_id_sel_enum {
+            TRIGGERED_USING_START = 1 { name = "Triggered Using Start"; desc = "triggered by using the start interrupt of the frame whose ID is 0"; };
+            TRIGGERED_USING_START_2 = 2 { name = "Triggered Using Start 2"; desc = "triggered by using the start interrupt of the frame whose ID is 1"; };
+            TRIGGERED_USING_START_3 = 4 { name = "Triggered Using Start 3"; desc = "triggered by using the start interrupt of the frame whose ID is 2"; };
+            TRIGGERED_USING_START_4 = 8 { name = "Triggered Using Start 4"; desc = "triggered by using the start interrupt of the frame whose ID is 3"; };
+        };
+
+        field {
+            name = "id_sel";
+            desc = "Trigger frame ID";
+            sw = rw;
+            hw = r;
+            encode = PT_FLASH_CFG_id_sel_enum;
+            reset = 0x1;
+        } id_sel[31:28];
+
+        enum PT_FLASH_CFG_shutter_times_enum {
+            TWICE = 0 { name = "Twice"; desc = "twice"; };
+            ONCE = 1 { name = "Once"; desc = "once"; };
+        };
+
+        field {
+            name = "shutter_times";
+            desc = "Shutter pulse times";
+            sw = rw;
+            hw = r;
+            encode = PT_FLASH_CFG_shutter_times_enum;
+            reset = 0x0;
+        } shutter_times[18:18];
+
+        enum PT_FLASH_CFG_shutter_phase_enum {
+            NOT_REVERSED = 0 { name = "Not Reversed"; desc = "not reversed"; };
+            REVERSED = 1 { name = "Reversed"; desc = "reversed"; };
+        };
+
+        field {
+            name = "shutter_phase";
+            desc = "Shutter signal reverse";
+            sw = rw;
+            hw = r;
+            encode = PT_FLASH_CFG_shutter_phase_enum;
+            reset = 0x0;
+        } shutter_phase[17:17];
+
+        enum PT_FLASH_CFG_shutter_en_enum {
+            DISABLE = 0 { name = "Disable"; desc = "disable"; };
+            ENABLE_F = 1 { name = "Enable F"; desc = "enable"; };
+        };
+
+        field {
+            name = "shutter_en";
+            desc = "Shutter trigger enable. This field is automatically cleared.";
+            sw = w;
+            hw = r;
+            encode = PT_FLASH_CFG_shutter_en_enum;
+            reset = 0x0;
+        } shutter_en[16:16];
+
+        enum PT_FLASH_CFG_flash_phase_enum {
+            NOT_REVERSED = 0 { name = "Not Reversed"; desc = "not reversed"; };
+            REVERSED = 1 { name = "Reversed"; desc = "reversed"; };
+        };
+
+        field {
+            name = "flash_phase";
+            desc = "Flash signal reverse";
+            sw = rw;
+            hw = r;
+            encode = PT_FLASH_CFG_flash_phase_enum;
+            reset = 0x0;
+        } flash_phase[1:1];
+
+        enum PT_FLASH_CFG_flash_en_enum {
+            DISABLE = 0 { name = "Disable"; desc = "disable"; };
+            ENABLE_F = 1 { name = "Enable F"; desc = "enable"; };
+        };
+
+        field {
+            name = "flash_en";
+            desc = "Flash trigger enable. This field is automatically cleared.";
+            sw = w;
+            hw = r;
+            encode = PT_FLASH_CFG_flash_en_enum;
+            reset = 0x0;
+        } flash_en[0:0];
+    } PT_FLASH_CFG @ 0x1B0;
+
+    reg {
+        name = "Flash timing 0 width register";
+        desc = "PT_FLASH_CYC0 is a flash timing 0 width register.
+
+Data sheet 9.1.6 PT_FLASH_CYC0 (offset 0x1C0, printed page 9-37, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 29646).";
+
+        field {
+            name = "cyc";
+            desc = "Duration of flash timing 0 (in VICAP clock). The configured value is the actual value minus 1.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } cyc[31:0];
+    } PT_FLASH_CYC0 @ 0x1C0;
+
+    reg {
+        name = "Flash timing 1 width register";
+        desc = "PT_FLASH_CYC1 is a flash timing 1 width register.
+
+Data sheet 9.1.6 PT_FLASH_CYC1 (offset 0x1C4, printed page 9-37, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 29667).";
+
+        field {
+            name = "cyc";
+            desc = "Duration of flash timing 1 (in VICAP clock). The configured value is the actual value minus 1.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } cyc[31:0];
+    } PT_FLASH_CYC1 @ 0x1C4;
+
+    reg {
+        name = "Shutter timing 0 width register C0";
+        desc = "PT_SHUTTER_CYC0 is a shutter timing 0 width register.
+
+Data sheet 9.1.6 PT_SHUTTER_CYC0 (offset 0x1D0, printed page 9-37, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 29687).";
+
+        field {
+            name = "cyc";
+            desc = "Duration of shutter timing 0 (in VICAP clock). The configured value is the actual value minus 1.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } cyc[31:0];
+    } PT_SHUTTER_CYC0 @ 0x1D0;
+
+    reg {
+        name = "Shutter timing 1 width register C1";
+        desc = "PT_SHUTTER_CYC1 is a shutter timing 1 width register.
+
+Data sheet 9.1.6 PT_SHUTTER_CYC1 (offset 0x1D4, printed page 9-38, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 29713).";
+
+        field {
+            name = "cyc";
+            desc = "Duration of shutter timing 1 (in VICAP clock). The configured value is the actual value minus 1.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } cyc[31:0];
+    } PT_SHUTTER_CYC1 @ 0x1D4;
+
+    reg {
+        name = "Shutter timing 2 width register C2";
+        desc = "PT_SHUTTER_CYC2 is a shutter timing 2 width register.
+
+Data sheet 9.1.6 PT_SHUTTER_CYC2 (offset 0x1D8, printed page 9-38, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 29734).";
+
+        field {
+            name = "cyc";
+            desc = "Duration of shutter timing 2 (in VICAP clock). The configured value is the actual value minus 1.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } cyc[31:0];
+    } PT_SHUTTER_CYC2 @ 0x1D8;
+
+    reg {
+        name = "Shutter timing 3 width register C3";
+        desc = "PT_SHUTTER_CYC3 is a shutter timing 3 width register. Hi3516C V300/Hi3516E V100 Professional HD IP Camera SoC
+
+Data sheet 9.1.6 PT_SHUTTER_CYC3 (offset 0x1DC, printed page 9-39, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 29764).";
+
+        field {
+            name = "cyc";
+            desc = "Duration of shutter timing 3 (in VICAP clock). The configured value is the actual value minus 1.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } cyc[31:0];
+    } PT_SHUTTER_CYC3 @ 0x1DC;
+
+    reg {
+        name = "Port status register";
+        desc = "PT_STATUS is a port status register.
+
+Data sheet 9.1.6 PT_STATUS (offset 0x1E0, printed page 9-39, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 29784).";
+
+        field {
+            name = "id";
+            desc = "Port output ID";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } id[5:4];
+
+        field {
+            name = "field";
+            desc = "Field output over the port";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } field_f[3:3];
+
+        field {
+            name = "vsync";
+            desc = "vsync signal output over the port";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } vsync[2:2];
+
+        field {
+            name = "hsync";
+            desc = "hsync signal over the port";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } hsync[1:1];
+
+        field {
+            name = "de";
+            desc = "de signal output over the port";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } de[0:0];
+    } PT_STATUS @ 0x1E0;
+
+    reg {
+        name = "BT.656 status register US";
+        desc = "PT_BT656_STATUS is a BT.656 status register. Hi3516C V300/Hi3516E V100 Professional HD IP Camera SoC
+
+Data sheet 9.1.6 PT_BT656_STATUS (offset 0x1E4, printed page 9-40, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 29820).";
+
+        field {
+            name = "seav";
+            desc = "Synchronization code";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } seav[15:8];
+    } PT_BT656_STATUS @ 0x1E4;
+
+    reg {
+        name = "Input image active region size register";
+        desc = "PT_SIZE is an input image active region size indicator register.
+
+Data sheet 9.1.6 PT_SIZE (offset 0x1EC, printed page 9-40, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 29840).";
+
+        field {
+            name = "height";
+            desc = "Height of the image active region";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } height[31:16];
+
+        field {
+            name = "width";
+            desc = "Width of the image active region";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } width[15:0];
+    } PT_SIZE @ 0x1EC;
+
+    reg {
+        name = "Port interrupt indicator register";
+        desc = "PT_INT is a port interrupt indicator register. Hi3516C V300/Hi3516E V100 Professional HD IP Camera SoC
+
+Data sheet 9.1.6 PT_INT (offset 0x1F0, printed page 9-41, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 29870).";
+
+        enum PT_INT_height_err_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "height_err";
+            desc = "Status of the image height change interrupt. Writing 1 clears the interrupt.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = PT_INT_height_err_enum;
+            reset = 0x0;
+        } height_err[2:2];
+
+        enum PT_INT_width_err_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "width_err";
+            desc = "Status of the image width change interrupt. Writing 1 clears the interrupt.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = PT_INT_width_err_enum;
+            reset = 0x0;
+        } width_err[1:1];
+
+        enum PT_INT_fstart_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "fstart";
+            desc = "Status of the frame start interrupt. Writing 1 clears the interrupt.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = PT_INT_fstart_enum;
+            reset = 0x0;
+        } fstart[0:0];
+    } PT_INT @ 0x1F0;
+
+    reg {
+        name = "Port interrupt mask register";
+        desc = "PT_INT_MASK is a port interrupt mask register.
+
+Data sheet 9.1.6 PT_INT_MASK (offset 0x1F8, printed page 9-41, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 29906).";
+
+        enum PT_INT_MASK_height_err_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "height_err";
+            desc = "Image height change interrupt enable";
+            sw = rw;
+            hw = r;
+            encode = PT_INT_MASK_height_err_enum;
+            reset = 0x0;
+        } height_err[2:2];
+
+        enum PT_INT_MASK_width_err_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "width_err";
+            desc = "Image width change interrupt enable";
+            sw = rw;
+            hw = r;
+            encode = PT_INT_MASK_width_err_enum;
+            reset = 0x0;
+        } width_err[1:1];
+
+        enum PT_INT_MASK_fstart_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "fstart";
+            desc = "Frame start interrupt enable";
+            sw = rw;
+            hw = r;
+            encode = PT_INT_MASK_fstart_enum;
+            reset = 0x0;
+        } fstart[0:0];
+    } PT_INT_MASK @ 0x1F8;
+
+    reg {
+        name = "DES (RAW data write) control register";
+        desc = "DES_CTRL is a DES (RAW data write) control register.
+
+Data sheet 9.1.6 DES_CTRL (offset 0x200, printed page 9-42, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 29949).";
+
+        enum DES_CTRL_enable_f_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "enable";
+            desc = "DES enable";
+            sw = rw;
+            hw = r;
+            encode = DES_CTRL_enable_f_enum;
+            reset = 0x0;
+        } enable_f[31:31];
+
+        enum DES_CTRL_reg_newer_mode_enum {
+            TIMINGS_OUTPUT_WHEN = 0 { name = "Timings Output When"; desc = "Timings are output when the reg_newer register is set to 1 and the module is enabled."; };
+            TIMINGS_OUTPUT_WHEN_2 = 1 { name = "Timings Output When 2"; desc = "Timings are output when the module is enabled."; };
+        };
+
+        field {
+            name = "reg_newer_mode";
+            desc = "Enable mode control";
+            sw = rw;
+            hw = r;
+            encode = DES_CTRL_reg_newer_mode_enum;
+            reset = 0x0;
+        } reg_newer_mode[30:30];
+
+        enum DES_CTRL_finish_mode_enum {
+            REPORTED_IMMEDIATELY = 0 { name = "Reported Immediately"; desc = "reported immediately"; };
+            REPORTED_AT_START = 1 { name = "Reported At Start"; desc = "reported at the start of the next frame"; };
+        };
+
+        field {
+            name = "finish_mode";
+            desc = "Finish interrupt report time control";
+            sw = rw;
+            hw = r;
+            encode = DES_CTRL_finish_mode_enum;
+            reset = 0x1;
+        } finish_mode[17:17];
+
+        enum DES_CTRL_bit_width_enum {
+            V_8_BITS = 0x8 { name = "V 8 Bits"; desc = "8 bits"; };
+            V_10_BITS = 0xA { name = "V 10 Bits"; desc = "10 bits"; };
+            V_12_BITS = 0xC { name = "V 12 Bits"; desc = "12 bits"; };
+            V_14_BITS = 0xE { name = "V 14 Bits"; desc = "14 bits"; };
+            V_16_BITS_OTHER = 0x10 { name = "V 16 Bits Other"; desc = "16 bits Other values: reserved"; };
+        };
+
+        field {
+            name = "bit_width";
+            desc = "Width of the data written by the DES";
+            sw = rw;
+            hw = r;
+            encode = DES_CTRL_bit_width_enum;
+            reset = 0x0;
+        } bit_width[5:0];
+    } DES_CTRL @ 0x200;
+
+    reg {
+        name = "DES RX ID selection register";
+        desc = "DES_ID_CFG is a DES RX ID selection register (instant register).
+
+Data sheet 9.1.6 DES_ID_CFG (offset 0x210, printed page 9-43, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 30005).";
+
+        enum DES_ID_CFG_id_sel_enum {
+            DATA_WITH_THIS = 0 { name = "Data With This"; desc = "Data with this ID is filtered."; };
+            DATA_WITH_THIS_2 = 1 { name = "Data With This 2"; desc = "Data with this ID is received. bit[0]: DES RX enable for data with the ID 0 bit[1]: DES RX enable for data with the ID 1 bit[2]: DES RX enable for data with the ID 2 bit[3]: DES RX enable for data with the ID 3"; };
+        };
+
+        field {
+            name = "id_sel";
+            desc = "id_sel ID select";
+            sw = rw;
+            hw = r;
+            encode = DES_ID_CFG_id_sel_enum;
+            reset = 0x0;
+        } id_sel[3:0];
+    } DES_ID_CFG @ 0x210;
+
+    reg {
+        name = "DES (RAW data write) raw interrupt register";
+        desc = "DES_INT is a DES (RAW data write) raw interrupt register. Hi3516C V300/Hi3516E V100 Professional HD IP Camera SoC
+
+Data sheet 9.1.6 DES_INT (offset 0x2F0, printed page 9-44, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 30041).";
+
+        enum DES_INT_update_cfg_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "update_cfg";
+            desc = "Status of the register update interrupt. Writing 1 clears the interrupt.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = DES_INT_update_cfg_enum;
+            reset = 0x0;
+        } update_cfg[4:4];
+
+        enum DES_INT_field_throw_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "field_throw";
+            desc = "Status of the frame loss interrupt. Writing 1 clears the interrupt.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = DES_INT_field_throw_enum;
+            reset = 0x0;
+        } field_throw[3:3];
+
+        enum DES_INT_buf_ovf_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "buf_ovf";
+            desc = "Status of the internal FIFO overflow error interrupt. Writing 1 clears the interrupt.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = DES_INT_buf_ovf_enum;
+            reset = 0x0;
+        } buf_ovf[2:2];
+
+        enum DES_INT_cc_int_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "cc_int";
+            desc = "Status of the capture completion interrupt. Writing 1 clears the interrupt.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = DES_INT_cc_int_enum;
+            reset = 0x0;
+        } cc_int[1:1];
+
+        enum DES_INT_fstart_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "fstart";
+            desc = "Status of the frame start interrupt. Writing 1 clears the interrupt.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = DES_INT_fstart_enum;
+            reset = 0x0;
+        } fstart[0:0];
+    } DES_INT @ 0x2F0;
+
+    reg {
+        name = "DES (RAW data write) interrupt mask register";
+        desc = "DES_MASK is a DES (RAW data write) interrupt mask register. Hi3516C V300/Hi3516E V100 Professional HD IP Camera SoC
+
+Data sheet 9.1.6 DES_MASK (offset 0x2F8, printed page 9-45, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 30096).";
+
+        enum DES_MASK_update_cfg_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "update_cfg";
+            desc = "Register update interrupt enable";
+            sw = rw;
+            hw = r;
+            encode = DES_MASK_update_cfg_enum;
+            reset = 0x0;
+        } update_cfg[4:4];
+
+        enum DES_MASK_field_throw_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "field_throw";
+            desc = "Frame loss interrupt enable";
+            sw = rw;
+            hw = r;
+            encode = DES_MASK_field_throw_enum;
+            reset = 0x0;
+        } field_throw[3:3];
+
+        enum DES_MASK_buf_ovf_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "buf_ovf";
+            desc = "Internal FIFO overflow error interrupt enable";
+            sw = rw;
+            hw = r;
+            encode = DES_MASK_buf_ovf_enum;
+            reset = 0x0;
+        } buf_ovf[2:2];
+
+        enum DES_MASK_cc_int_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "cc_int";
+            desc = "Capture completion interrupt enable";
+            sw = rw;
+            hw = r;
+            encode = DES_MASK_cc_int_enum;
+            reset = 0x0;
+        } cc_int[1:1];
+
+        enum DES_MASK_fstart_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "fstart";
+            desc = "Frame start interrupt enable";
+            sw = rw;
+            hw = r;
+            encode = DES_MASK_fstart_enum;
+            reset = 0x0;
+        } fstart[0:0];
+    } DES_MASK @ 0x2F8;
+
+    reg {
+        name = "LINE_BUF RX ID selection register G";
+        desc = "LINE_BUF_ID_CFG is a LINE_BUF RX ID selection register (instant register).
+
+Data sheet 9.1.6 LINE_BUF_ID_CFG (offset 0x510, printed page 9-45, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 30135).";
+
+        enum LINE_BUF_ID_CFG_id_sel_enum {
+            DATA_WITH_THIS = 0 { name = "Data With This"; desc = "Data with this ID is filtered."; };
+            DATA_WITH_THIS_2 = 1 { name = "Data With This 2"; desc = "Data with this ID is received. bit[0]: LINE_BUF RX enable for data with the ID 0 bit[1]: LINE_BUF RX enable for data with the ID 1 bit[2]: LINE_BUF RX enable for data with the ID 2 bit[3]: LINE_BUF RX enable for data with the ID 3"; };
+        };
+
+        field {
+            name = "id_sel";
+            desc = "ID select";
+            sw = rw;
+            hw = r;
+            encode = LINE_BUF_ID_CFG_id_sel_enum;
+            reset = 0xF;
+        } id_sel[3:0];
+    } LINE_BUF_ID_CFG @ 0x510;
+
+    reg {
+        name = "SRC (RAW data write) control register";
+        desc = "SRC_CTRL is an SRC (RAW data write) control register.
+
+Data sheet 9.1.6 SRC_CTRL (offset 0x600, printed page 9-46, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 30170).";
+
+        enum SRC_CTRL_enable_f_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED_0X600_0X6FF = 1 { name = "Enabled 0X600 0X6Ff"; desc = "enabled 0x600-0x6FF: address space of the SRC0 register 0x900-0x9FF: address space of the SRC3 register"; };
+        };
+
+        field {
+            name = "enable";
+            desc = "SRC enable";
+            sw = rw;
+            hw = r;
+            encode = SRC_CTRL_enable_f_enum;
+            reset = 0x0;
+        } enable_f[31:31];
+
+        enum SRC_CTRL_reg_newer_mode_enum {
+            TIMINGS_OUTPUT_WHEN = 0 { name = "Timings Output When"; desc = "Timings are output when the reg_newer register is set to 1 and the module is enabled."; };
+            TIMINGS_OUTPUT_WHEN_2 = 1 { name = "Timings Output When 2"; desc = "Timings are output when the module is enabled."; };
+        };
+
+        field {
+            name = "reg_newer_mode";
+            desc = "Enable mode control";
+            sw = rw;
+            hw = r;
+            encode = SRC_CTRL_reg_newer_mode_enum;
+            reset = 0x0;
+        } reg_newer_mode[30:30];
+
+        enum SRC_CTRL_finish_mode_enum {
+            REPORTED_IMMEDIATELY = 0 { name = "Reported Immediately"; desc = "reported immediately"; };
+            REPORTED_AT_START = 1 { name = "Reported At Start"; desc = "reported at the start of the next frame"; };
+        };
+
+        field {
+            name = "finish_mode";
+            desc = "Finish interrupt report time control";
+            sw = rw;
+            hw = r;
+            encode = SRC_CTRL_finish_mode_enum;
+            reset = 0x1;
+        } finish_mode[17:17];
+
+        enum SRC_CTRL_bit_width_enum {
+            V_8_BITS = 0x8 { name = "V 8 Bits"; desc = "8 bits"; };
+            V_10_BITS = 0xA { name = "V 10 Bits"; desc = "10 bits"; };
+            V_12_BITS = 0xC { name = "V 12 Bits"; desc = "12 bits"; };
+            V_14_BITS = 0xE { name = "V 14 Bits"; desc = "14 bits"; };
+            V_16_BITS_OTHER = 0x10 { name = "V 16 Bits Other"; desc = "16 bits Other values: reserved"; };
+        };
+
+        field {
+            name = "bit_width";
+            desc = "Data bit width";
+            sw = rw;
+            hw = r;
+            encode = SRC_CTRL_bit_width_enum;
+            reset = 0x0;
+        } bit_width[5:0];
+    } SRC_CTRL @ 0x600;
+
+    reg {
+        name = "SRC (RAW data read) raw interrupt register";
+        desc = "SRC_INT is an SRC (RAW data read) raw interrupt register.
+
+Data sheet 9.1.6 SRC_INT (offset 0x6F0, printed page 9-47, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 30228).";
+
+        enum SRC_INT_dcmp_wrong_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "dcmp_wrong";
+            desc = "Status of the decompress error interrupt. Writing 1 clears the interrupt.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = SRC_INT_dcmp_wrong_enum;
+            reset = 0x0;
+        } dcmp_wrong[5:5];
+
+        enum SRC_INT_update_cfg_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "update_cfg";
+            desc = "Status of the register update interrupt. Writing 1 clears the interrupt.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = SRC_INT_update_cfg_enum;
+            reset = 0x0;
+        } update_cfg[4:4];
+
+        enum SRC_INT_field_throw_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "field_throw";
+            desc = "Status of the frame loss interrupt. Writing 1 clears the interrupt.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = SRC_INT_field_throw_enum;
+            reset = 0x0;
+        } field_throw[3:3];
+
+        enum SRC_INT_buf_ovf_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "buf_ovf";
+            desc = "Status of the internal FIFO overflow error interrupt. Writing 1 clears the interrupt.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = SRC_INT_buf_ovf_enum;
+            reset = 0x0;
+        } buf_ovf[2:2];
+
+        enum SRC_INT_cc_int_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "cc_int";
+            desc = "Status of the capture completion interrupt. Writing 1 clears the interrupt.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = SRC_INT_cc_int_enum;
+            reset = 0x0;
+        } cc_int[1:1];
+
+        enum SRC_INT_fstart_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "fstart";
+            desc = "Status of the frame start interrupt. Writing 1 clears the interrupt.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = SRC_INT_fstart_enum;
+            reset = 0x0;
+        } fstart[0:0];
+    } SRC_INT @ 0x6F0;
+
+    reg {
+        name = "SRC (RAW data read) interrupt mask register";
+        desc = "SRC_MASK is an SRC (RAW data read) interrupt mask register.
+
+Data sheet 9.1.6 SRC_MASK (offset 0x6F8, printed page 9-48, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 30290).";
+
+        enum SRC_MASK_dcmp_wrong_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "dcmp_wrong";
+            desc = "Decompress error interrupt enable";
+            sw = rw;
+            hw = r;
+            encode = SRC_MASK_dcmp_wrong_enum;
+            reset = 0x0;
+        } dcmp_wrong[5:5];
+
+        enum SRC_MASK_update_cfg_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "update_cfg";
+            desc = "Register update interrupt enable";
+            sw = rw;
+            hw = r;
+            encode = SRC_MASK_update_cfg_enum;
+            reset = 0x0;
+        } update_cfg[4:4];
+
+        enum SRC_MASK_field_throw_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "field_throw";
+            desc = "Frame loss interrupt enable";
+            sw = rw;
+            hw = r;
+            encode = SRC_MASK_field_throw_enum;
+            reset = 0x0;
+        } field_throw[3:3];
+
+        enum SRC_MASK_buf_ovf_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "buf_ovf";
+            desc = "Internal FIFO overflow error interrupt enable";
+            sw = rw;
+            hw = r;
+            encode = SRC_MASK_buf_ovf_enum;
+            reset = 0x0;
+        } buf_ovf[2:2];
+
+        enum SRC_MASK_cc_int_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "cc_int";
+            desc = "Capture completion interrupt enable";
+            sw = rw;
+            hw = r;
+            encode = SRC_MASK_cc_int_enum;
+            reset = 0x0;
+        } cc_int[1:1];
+
+        enum SRC_MASK_fstart_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "fstart";
+            desc = "Frame start interrupt enable";
+            sw = rw;
+            hw = r;
+            encode = SRC_MASK_fstart_enum;
+            reset = 0x0;
+        } fstart[0:0];
+    } SRC_MASK @ 0x6F8;
+
+    reg {
+        name = "Channel control register";
+        desc = "CH_CTRL is a channel control register.
+
+Data sheet 9.1.6 CH_CTRL (offset 0x1000, printed page 9-49, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 30344).";
+
+        enum CH_CTRL_enable_f_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "enable";
+            desc = "Channel enable";
+            sw = rw;
+            hw = r;
+            encode = CH_CTRL_enable_f_enum;
+            reset = 0x0;
+        } enable_f[31:31];
+
+        enum CH_CTRL_reg_newer_mode_enum {
+            TIMINGS_OUTPUT_WHEN = 0 { name = "Timings Output When"; desc = "Timings are output when the reg_newer register is set to 1 and the module is enabled."; };
+            TIMINGS_OUTPUT_WHEN_2 = 1 { name = "Timings Output When 2"; desc = "Timings are output when the module is enabled."; };
+        };
+
+        field {
+            name = "reg_newer_mode";
+            desc = "Enable mode control";
+            sw = rw;
+            hw = r;
+            encode = CH_CTRL_reg_newer_mode_enum;
+            reset = 0x0;
+        } reg_newer_mode[30:30];
+
+        enum CH_CTRL_finish_mode_enum {
+            REPORTED_IMMEDIATELY = 0 { name = "Reported Immediately"; desc = "reported immediately"; };
+            REPORTED_AT_START = 1 { name = "Reported At Start"; desc = "reported at the start of the next frame"; };
+        };
+
+        field {
+            name = "finish_mode";
+            desc = "Finish interrupt report time control";
+            sw = rw;
+            hw = r;
+            encode = CH_CTRL_finish_mode_enum;
+            reset = 0x0;
+        } finish_mode[17:17];
+
+        enum CH_CTRL_online_out_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "online_out_en";
+            desc = "Online timing output enable control";
+            sw = rw;
+            hw = r;
+            encode = CH_CTRL_online_out_en_enum;
+            reset = 0x0;
+        } online_out_en[16:16];
+
+        enum CH_CTRL_mode_enum {
+            NORMAL_MODE = 0 { name = "Normal Mode"; desc = "normal mode"; };
+            SINGLE_COMPONENT_MODE = 1 { name = "Single Component Mode"; desc = "single-component (luminance) mode"; };
+            SINGLE_COMPONENT_MODE_2 = 2 { name = "Single Component Mode 2"; desc = "single-component (chrominance) mode Other values: reserved"; };
+        };
+
+        field {
+            name = "mode";
+            desc = "Channel mode";
+            sw = rw;
+            hw = r;
+            encode = CH_CTRL_mode_enum;
+            reset = 0x0;
+        } mode[1:0];
+    } CH_CTRL @ 0x1000;
+
+    reg {
+        name = "Capture control register";
+        desc = "CH_REG_NEWER is a capture control register.
+
+Data sheet 9.1.6 CH_REG_NEWER (offset 0x1004, printed page 9-50, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 30398).";
+
+        field {
+            name = "reg_newer";
+            desc = "Channel update. This bit is automatically cleared for each frame.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } reg_newer[0:0];
+    } CH_REG_NEWER @ 0x1004;
+
+    reg {
+        name = "Channel input image start interrupt delay configuration register";
+        desc = "CH_DLY_CFG is a channel input image start interrupt delay configuration register.
+
+Data sheet 9.1.6 CH_DLY_CFG (offset 0x1034, printed page 9-50, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 30422).";
+
+        field {
+            name = "v_dly_cfg";
+            desc = "Number of delayed vertical lines";
+            sw = rw;
+            hw = r;
+            reset = 0x10;
+        } v_dly_cfg[31:16];
+    } CH_DLY_CFG @ 0x1034;
+
+    reg {
+        name = "Y component configuration register for the WCH module";
+        desc = "CH_WCH_Y_CFG is a Y component configuration register for the WCH module. Hi3516C V300/Hi3516E V100 Professional HD IP Camera SoC
+
+Data sheet 9.1.6 CH_WCH_Y_CFG (offset 0x1080, printed page 9-51, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 30452).";
+
+        enum CH_WCH_Y_CFG_enable_f_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "enable";
+            desc = "CH write channel enable";
+            sw = rw;
+            hw = r;
+            encode = CH_WCH_Y_CFG_enable_f_enum;
+            reset = 0x0;
+        } enable_f[31:31];
+
+        enum CH_WCH_Y_CFG_bit_width_enum {
+            V_8_BITS = 0 { name = "V 8 Bits"; desc = "8 bits"; };
+            V_16_BITS_OTHER = 2 { name = "V 16 Bits Other"; desc = "16 bits Other values: reserved"; };
+        };
+
+        field {
+            name = "bit_width";
+            desc = "Data width";
+            sw = rw;
+            hw = r;
+            encode = CH_WCH_Y_CFG_bit_width_enum;
+            reset = 0x0;
+        } bit_width[17:16];
+
+        enum CH_WCH_Y_CFG_flip_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "flip";
+            desc = "Channel flip enable";
+            sw = rw;
+            hw = r;
+            encode = CH_WCH_Y_CFG_flip_enum;
+            reset = 0x0;
+        } flip[4:4];
+
+        enum CH_WCH_Y_CFG_mirror_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "mirror";
+            desc = "Channel mirror enable";
+            sw = rw;
+            hw = r;
+            encode = CH_WCH_Y_CFG_mirror_enum;
+            reset = 0x0;
+        } mirror[3:3];
+
+        enum CH_WCH_Y_CFG_head_tword_enum {
+            V_128_BITS = 0 { name = "V 128 Bits"; desc = "128 bits (128 bits/line)"; };
+            V_256_BITS = 1 { name = "V 256 Bits"; desc = "256 bits (256 bits/line)"; };
+        };
+
+        field {
+            name = "head_tword";
+            desc = "Header information stride";
+            sw = rw;
+            hw = r;
+            encode = CH_WCH_Y_CFG_head_tword_enum;
+            reset = 0x0;
+        } head_tword[2:2];
+
+        enum CH_WCH_Y_CFG_cmp_mode_enum {
+            V_128_PIXELS = 0 { name = "V 128 Pixels"; desc = "128 pixels"; };
+            V_256_PIXELS = 1 { name = "V 256 Pixels"; desc = "256 pixels"; };
+        };
+
+        field {
+            name = "cmp_mode";
+            desc = "Compressed segment length";
+            sw = rw;
+            hw = r;
+            encode = CH_WCH_Y_CFG_cmp_mode_enum;
+            reset = 0x1;
+        } cmp_mode[1:1];
+
+        enum CH_WCH_Y_CFG_cmp_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "cmp_en";
+            desc = "Compression enable";
+            sw = rw;
+            hw = r;
+            encode = CH_WCH_Y_CFG_cmp_en_enum;
+            reset = 0x0;
+        } cmp_en[0:0];
+    } CH_WCH_Y_CFG @ 0x1080;
+
+    reg {
+        name = "Y component storage size register for the WCH module";
+        desc = "CH_WCH_Y_SIZE is a Y component storage size register for the WCH module. Hi3516C V300/Hi3516E V100 Professional HD IP Camera SoC
+
+Data sheet 9.1.6 CH_WCH_Y_SIZE (offset 0x1084, printed page 9-52, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 30509).";
+
+        field {
+            name = "height";
+            desc = "Height (in line) of the stored image. The configured value is the actual value minus 1.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } height[28:16];
+
+        field {
+            name = "width";
+            desc = "Width (in pixel) of the stored image. The configured value is the actual value minus 1.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } width[12:0];
+    } CH_WCH_Y_SIZE @ 0x1084;
+
+    reg {
+        name = "Y component storage base address DR register for the WCH module";
+        desc = "CH_WCH_Y_FADDR is a Y component storage base address register for the WCH module.
+
+Data sheet 9.1.6 CH_WCH_Y_FADDR (offset 0x1090, printed page 9-52, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 30536).";
+
+        field {
+            name = "faddr";
+            desc = "Base address for storing the Y component";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } faddr[31:0];
+    } CH_WCH_Y_FADDR @ 0x1090;
+
+    reg {
+        name = "Y component header information DR storage base address register for the WCH module";
+        desc = "CH_WCH_Y_HADDR is a Y component header information storage base address register for the WCH module. Hi3516C V300/Hi3516E V100 Professional HD IP Camera SoC
+
+Data sheet 9.1.6 CH_WCH_Y_HADDR (offset 0x1094, printed page 9-53, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 30566).";
+
+        field {
+            name = "haddr";
+            desc = "Base address for storing the Y component header information";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } haddr[31:0];
+    } CH_WCH_Y_HADDR @ 0x1094;
+
+    reg {
+        name = "Y component line offset register for DE the WCH module";
+        desc = "CH_WCH_Y_STRIDE is a Y component line offset register for the WCH module.
+
+Data sheet 9.1.6 CH_WCH_Y_STRIDE (offset 0x1098, printed page 9-53, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 30584).";
+
+        field {
+            name = "stride";
+            desc = "Stride (in byte) for storing the Y component";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } stride[15:0];
+    } CH_WCH_Y_STRIDE @ 0x1098;
+
+    reg {
+        name = "C component configuration register for the WCH module";
+        desc = "CH_WCH_C_CFG is a C component configuration register for the WCH module.
+
+Data sheet 9.1.6 CH_WCH_C_CFG (offset 0x10A0, printed page 9-53, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 30604).";
+
+        enum CH_WCH_C_CFG_enable_f_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "enable";
+            desc = "CH write channel enable";
+            sw = rw;
+            hw = r;
+            encode = CH_WCH_C_CFG_enable_f_enum;
+            reset = 0x0;
+        } enable_f[31:31];
+
+        enum CH_WCH_C_CFG_bit_width_enum {
+            V_8_BITS = 0 { name = "V 8 Bits"; desc = "8 bits"; };
+            V_16_BITS_OTHER = 2 { name = "V 16 Bits Other"; desc = "16 bits Other values: reserved"; };
+        };
+
+        field {
+            name = "bit_width";
+            desc = "Data width";
+            sw = rw;
+            hw = r;
+            encode = CH_WCH_C_CFG_bit_width_enum;
+            reset = 0x0;
+        } bit_width[17:16];
+
+        enum CH_WCH_C_CFG_flip_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "flip";
+            desc = "Channel flip enable";
+            sw = rw;
+            hw = r;
+            encode = CH_WCH_C_CFG_flip_enum;
+            reset = 0x0;
+        } flip[4:4];
+
+        enum CH_WCH_C_CFG_mirror_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "mirror";
+            desc = "Channel mirror enable";
+            sw = rw;
+            hw = r;
+            encode = CH_WCH_C_CFG_mirror_enum;
+            reset = 0x0;
+        } mirror[3:3];
+
+        enum CH_WCH_C_CFG_head_tword_enum {
+            V_128_BITS = 0 { name = "V 128 Bits"; desc = "128 bits (128 bits/line)"; };
+            V_256_BITS = 1 { name = "V 256 Bits"; desc = "256 bits (256 bits/line)"; };
+        };
+
+        field {
+            name = "head_tword";
+            desc = "Header information stride";
+            sw = rw;
+            hw = r;
+            encode = CH_WCH_C_CFG_head_tword_enum;
+            reset = 0x0;
+        } head_tword[2:2];
+
+        enum CH_WCH_C_CFG_cmp_mode_enum {
+            V_128_PIXELS = 0 { name = "V 128 Pixels"; desc = "128 pixels"; };
+            V_256_PIXELS = 1 { name = "V 256 Pixels"; desc = "256 pixels"; };
+        };
+
+        field {
+            name = "cmp_mode";
+            desc = "Compressed segment length";
+            sw = rw;
+            hw = r;
+            encode = CH_WCH_C_CFG_cmp_mode_enum;
+            reset = 0x1;
+        } cmp_mode[1:1];
+
+        enum CH_WCH_C_CFG_cmp_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "cmp_en";
+            desc = "Compression enable";
+            sw = rw;
+            hw = r;
+            encode = CH_WCH_C_CFG_cmp_en_enum;
+            reset = 0x0;
+        } cmp_en[0:0];
+    } CH_WCH_C_CFG @ 0x10A0;
+
+    reg {
+        name = "C component storage size register for the WCH module";
+        desc = "CH_WCH_C_SIZE is a C component storage size register for the WCH module.
+
+Data sheet 9.1.6 CH_WCH_C_SIZE (offset 0x10A4, printed page 9-54, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 30662).";
+
+        field {
+            name = "height";
+            desc = "Height (in line) of the stored image. The configured value is the actual value minus 1.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } height[28:16];
+
+        field {
+            name = "width";
+            desc = "Width (in pixel) of the stored image. The configured value is the actual value minus 1.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } width[12:0];
+    } CH_WCH_C_SIZE @ 0x10A4;
+
+    reg {
+        name = "C component storage base address DR register for the WCH module";
+        desc = "CH_WCH_C_FADDR is a C component storage base address register for the WCH module.
+
+Data sheet 9.1.6 CH_WCH_C_FADDR (offset 0x10B0, printed page 9-55, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 30701).";
+
+        field {
+            name = "faddr";
+            desc = "Base address for storing the C component";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } faddr[31:0];
+    } CH_WCH_C_FADDR @ 0x10B0;
+
+    reg {
+        name = "C component header information DR storage base address register for the WCH module";
+        desc = "CH_WCH_C_HADDR is a C component header information storage base address register for the WCH module.
+
+Data sheet 9.1.6 CH_WCH_C_HADDR (offset 0x10B4, printed page 9-55, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 30721).";
+
+        field {
+            name = "haddr";
+            desc = "Base address for storing the C component header information";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } haddr[31:0];
+    } CH_WCH_C_HADDR @ 0x10B4;
+
+    reg {
+        name = "C component line offset register for DE the WCH module";
+        desc = "CH_WCH_C_STRIDE is a C component line offset register for the WCH module. Hi3516C V300/Hi3516E V100 Professional HD IP Camera SoC
+
+Data sheet 9.1.6 CH_WCH_C_STRIDE (offset 0x10B8, printed page 9-56, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 30749).";
+
+        field {
+            name = "stride";
+            desc = "Stride (in byte) for storing the C component";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } stride[15:0];
+    } CH_WCH_C_STRIDE @ 0x10B8;
+
+    reg {
+        name = "Luminance channel output image active region size indicator register";
+        desc = "CH_Y_OUT_SIZE is a luminance channel output image active region size indicator register.
+
+Data sheet 9.1.6 CH_Y_OUT_SIZE (offset 0x10E8, printed page 9-56, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 30768).";
+
+        field {
+            name = "height";
+            desc = "Image height";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } height[31:16];
+
+        field {
+            name = "width";
+            desc = "Image width";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } width[15:0];
+    } CH_Y_OUT_SIZE @ 0x10E8;
+
+    reg {
+        name = "Chrominance channel output image active size indicator register";
+        desc = "CH_C_OUT_SIZE is a chrominance channel output image active region size indicator register.
+
+Data sheet 9.1.6 CH_C_OUT_SIZE (offset 0x10EC, printed page 9-56, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 30789).";
+
+        field {
+            name = "height";
+            desc = "Image height";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } height[31:16];
+
+        field {
+            name = "width";
+            desc = "Image width";
+            sw = r;
+            hw = w;
+            reset = 0x0;
+        } width[15:0];
+    } CH_C_OUT_SIZE @ 0x10EC;
+
+    reg {
+        name = "Channel raw interrupt register";
+        desc = "CH_INT is a channel raw interrupt register.
+
+Data sheet 9.1.6 CH_INT (offset 0x10F0, printed page 9-57, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 30815).";
+
+        enum CH_INT_fstart_dly_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "fstart_dly";
+            desc = "Status of the delayed frame start interrupt. Writing 1 clears the interrupt.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = CH_INT_fstart_dly_enum;
+            reset = 0x0;
+        } fstart_dly[15:15];
+
+        enum CH_INT_update_cfg_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "update_cfg";
+            desc = "Status of the register update interrupt. Writing 1 clears the interrupt.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = CH_INT_update_cfg_enum;
+            reset = 0x0;
+        } update_cfg[4:4];
+
+        enum CH_INT_field_throw_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "field_throw";
+            desc = "Status of the frame loss interrupt. Writing 1 clears the interrupt.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = CH_INT_field_throw_enum;
+            reset = 0x0;
+        } field_throw[3:3];
+
+        enum CH_INT_buf_ovf_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "buf_ovf";
+            desc = "Status of the internal FIFO overflow error interrupt. Writing 1 clears the interrupt.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = CH_INT_buf_ovf_enum;
+            reset = 0x0;
+        } buf_ovf[2:2];
+
+        enum CH_INT_cc_int_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "cc_int";
+            desc = "Status of the capture completion interrupt. Writing 1 clears the interrupt.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = CH_INT_cc_int_enum;
+            reset = 0x0;
+        } cc_int[1:1];
+
+        enum CH_INT_fstart_enum {
+            NO_INTERRUPT_GENERATED = 0 { name = "No Interrupt Generated"; desc = "No interrupt is generated."; };
+            INTERRUPT_GENERATED = 1 { name = "Interrupt Generated"; desc = "An interrupt is generated."; };
+        };
+
+        field {
+            name = "fstart";
+            desc = "Status of the frame start interrupt. Writing 1 clears the interrupt.";
+            sw = rw;
+            hw = w;
+            onwrite = woclr;
+            encode = CH_INT_fstart_enum;
+            reset = 0x0;
+        } fstart[0:0];
+    } CH_INT @ 0x10F0;
+
+    reg {
+        name = "Channel interrupt mask register";
+        desc = "CH_INT_MASK is a channel interrupt mask register.
+
+Data sheet 9.1.6 CH_INT_MASK (offset 0x10F8, printed page 9-58, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 30873).";
+
+        enum CH_INT_MASK_fstart_dly_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "fstart_dly";
+            desc = "Delayed frame start interrupt enable";
+            sw = rw;
+            hw = r;
+            encode = CH_INT_MASK_fstart_dly_enum;
+            reset = 0x0;
+        } fstart_dly[15:15];
+
+        enum CH_INT_MASK_update_cfg_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "update_cfg";
+            desc = "Register update interrupt enable";
+            sw = rw;
+            hw = r;
+            encode = CH_INT_MASK_update_cfg_enum;
+            reset = 0x0;
+        } update_cfg[4:4];
+
+        enum CH_INT_MASK_field_throw_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "field_throw";
+            desc = "Frame loss interrupt enable";
+            sw = rw;
+            hw = r;
+            encode = CH_INT_MASK_field_throw_enum;
+            reset = 0x0;
+        } field_throw[3:3];
+
+        enum CH_INT_MASK_buf_ovf_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "buf_ovf";
+            desc = "Internal FIFO overflow error interrupt enable";
+            sw = rw;
+            hw = r;
+            encode = CH_INT_MASK_buf_ovf_enum;
+            reset = 0x0;
+        } buf_ovf[2:2];
+
+        enum CH_INT_MASK_cc_int_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "cc_int";
+            desc = "Capture completion interrupt enable";
+            sw = rw;
+            hw = r;
+            encode = CH_INT_MASK_cc_int_enum;
+            reset = 0x0;
+        } cc_int[1:1];
+
+        enum CH_INT_MASK_fstart_enum {
+            MASKED = 0 { name = "Masked"; desc = "masked"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "fstart";
+            desc = "Frame start interrupt enable";
+            sw = rw;
+            hw = r;
+            encode = CH_INT_MASK_fstart_enum;
+            reset = 0x0;
+        } fstart[0:0];
+    } CH_INT_MASK @ 0x10F8;
+
+    reg {
+        name = "Channel luminance crop enable G register";
+        desc = "CH_Y_CROP_CFG is a channel luminance crop enable register. Hi3516C V300/Hi3516E V100 Professional HD IP Camera SoC
+
+Data sheet 9.1.6 CH_Y_CROP_CFG (offset 0x1100, printed page 9-59, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 30927).";
+
+        enum CH_Y_CROP_CFG_n0_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "n0_en";
+            desc = "CROP enable";
+            sw = rw;
+            hw = r;
+            encode = CH_Y_CROP_CFG_n0_en_enum;
+            reset = 0x0;
+        } n0_en[0:0];
+    } CH_Y_CROP_CFG @ 0x1100;
+
+    reg {
+        name = "Crop start position register for ART channel luminance region 0";
+        desc = "CH_Y_CROP0_START is a channel luminance crop start position register.
+
+Data sheet 9.1.6 CH_Y_CROP0_START (offset 0x1110, printed page 9-59, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 30950).";
+
+        field {
+            name = "y_start";
+            desc = "ID of the line from which the image starts to be captured";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } y_start[28:16];
+
+        field {
+            name = "x_start";
+            desc = "ID of the pixel from which the image starts to be captured";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } x_start[12:0];
+    } CH_Y_CROP0_START @ 0x1110;
+
+    reg {
+        name = "Crop size register for channel ZE luminance region 0";
+        desc = "CH_Y_CROP0_SIZE is a channel luminance crop size register. Hi3516C V300/Hi3516E V100 Professional HD IP Camera SoC
+
+Data sheet 9.1.6 CH_Y_CROP0_SIZE (offset 0x1114, printed page 9-60, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 30986).";
+
+        field {
+            name = "height";
+            desc = "Height (in line) of the obtained image. The configured value is the actual value minus 1.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } height[28:16];
+
+        field {
+            name = "width";
+            desc = "Width (in pixel) of the obtained image. The configured value is the actual value minus 1.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } width[12:0];
+    } CH_Y_CROP0_SIZE @ 0x1114;
+
+    reg {
+        name = "Channel chrominance crop enable register";
+        desc = "CH_C_CROP_CFG is a channel chrominance crop enable register.
+
+Data sheet 9.1.6 CH_C_CROP_CFG (offset 0x1120, printed page 9-60, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 31016).";
+
+        enum CH_C_CROP_CFG_n0_en_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "n0_en";
+            desc = "CROP enable";
+            sw = rw;
+            hw = r;
+            encode = CH_C_CROP_CFG_n0_en_enum;
+            reset = 0x0;
+        } n0_en[0:0];
+    } CH_C_CROP_CFG @ 0x1120;
+
+    reg {
+        name = "Crop start position register for ART channel chrominance region 0";
+        desc = "CH_C_CROP0_START is a channel chrominance crop start position register. Hi3516C V300/Hi3516E V100 Professional HD IP Camera SoC
+
+Data sheet 9.1.6 CH_C_CROP0_START (offset 0x1130, printed page 9-61, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 31049).";
+
+        field {
+            name = "y_start";
+            desc = "ID of the line from which the image starts to be captured";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } y_start[28:16];
+
+        field {
+            name = "x_start";
+            desc = "ID of the pixel from which the image starts to be captured";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } x_start[12:0];
+    } CH_C_CROP0_START @ 0x1130;
+
+    reg {
+        name = "Crop size register for channel ZE chrominance region 0";
+        desc = "CH_C_CROP0_SIZE is a channel chrominance crop size register.
+
+Data sheet 9.1.6 CH_C_CROP0_SIZE (offset 0x1134, printed page 9-61, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 31075).";
+
+        field {
+            name = "height";
+            desc = "Height (in line) of the obtained image. The configured value is the actual value minus 1.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } height[28:16];
+
+        field {
+            name = "width";
+            desc = "Width (in pixel) of the obtained image. The configured value is the actual value minus 1.";
+            sw = rw;
+            hw = r;
+            reset = 0x0;
+        } width[12:0];
+    } CH_C_CROP0_SIZE @ 0x1134;
+
+    reg {
+        name = "BAS control register";
+        desc = "BAS_CTRL is a BAS control register. Hi3516C V300/Hi3516E V100 Professional HD IP Camera SoC
+
+Data sheet 9.1.6 BAS_CTRL (offset 0x2000, printed page 9-62, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 31113).";
+
+        enum BAS_CTRL_enable_f_enum {
+            DISABLED = 0 { name = "Disabled"; desc = "disabled"; };
+            ENABLED = 1 { name = "Enabled"; desc = "enabled"; };
+        };
+
+        field {
+            name = "enable";
+            desc = "BAS enable";
+            sw = rw;
+            hw = r;
+            encode = BAS_CTRL_enable_f_enum;
+            reset = 0x1;
+        } enable_f[31:31];
+
+        enum BAS_CTRL_reg_newer_mode_enum {
+            TIMINGS_OUTPUT_WHEN = 0 { name = "Timings Output When"; desc = "Timings are output when the reg_newer register is set to 1 and the module is enabled."; };
+            TIMINGS_OUTPUT_WHEN_2 = 1 { name = "Timings Output When 2"; desc = "Timings are output when the module is enabled."; };
+        };
+
+        field {
+            name = "reg_newer_mode";
+            desc = "Enable mode control";
+            sw = rw;
+            hw = r;
+            encode = BAS_CTRL_reg_newer_mode_enum;
+            reset = 0x1;
+        } reg_newer_mode[30:30];
+    } BAS_CTRL @ 0x2000;
+
+    reg {
+        name = "Capture control register R";
+        desc = "BAS_REG_NEWER is a capture control register.
+
+Data sheet 9.1.6 BAS_REG_NEWER (offset 0x2004, printed page 9-62, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 31147).";
+
+        enum BAS_REG_NEWER_reg_newer_enum {
+            NOT_UPDATED = 0 { name = "Not Updated"; desc = "not updated (discard the frame)"; };
+            UPDATED = 1 { name = "Updated"; desc = "updated"; };
+        };
+
+        field {
+            name = "reg_newer";
+            desc = "DES update register. It is set to 0 for each frame.";
+            sw = rw;
+            hw = r;
+            encode = BAS_REG_NEWER_reg_newer_enum;
+            reset = 0x0;
+        } reg_newer[0:0];
+    } BAS_REG_NEWER @ 0x2004;
+
+    reg {
+        name = "BAS mode register";
+        desc = "BAS_MODE is a BAS mode register (instant register).
+
+Data sheet 9.1.6 BAS_MODE (offset 0x2008, printed page 9-63, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 31179).";
+
+        enum BAS_MODE_mode_enum {
+            WDR_LINE_MODE = 0 { name = "Wdr Line Mode"; desc = "WDR line mode or linear mode"; };
+            WDR_FRAME_MODE = 1 { name = "Wdr Frame Mode"; desc = "WDR frame mode"; };
+        };
+
+        field {
+            name = "mode";
+            desc = "Mode control register";
+            sw = rw;
+            hw = r;
+            encode = BAS_MODE_mode_enum;
+            reset = 0x0;
+        } mode[0:0];
+    } BAS_MODE @ 0x2008;
+
+    reg {
+        name = "BAS RX ID selection register";
+        desc = "BAS_ID_CFG is a BAS RX ID selection register (instant register).
+
+Data sheet 9.1.6 BAS_ID_CFG (offset 0x2010, printed page 9-63, `hi3516cv300--Hi3516CV300-Hi3516EV100-Datasheet.txt` line 31203).";
+
+        enum BAS_ID_CFG_id_sel_enum {
+            DATA_WITH_THIS = 0 { name = "Data With This"; desc = "Data with this ID is filtered."; };
+            DATA_WITH_THIS_2 = 1 { name = "Data With This 2"; desc = "Data with this ID is received. bit[0]: data with ID 0 bit[1]: data with ID 1 bit[2]: data with ID 2 bit[3]: data with ID 3"; };
+        };
+
+        field {
+            name = "id_sel";
+            desc = "id_sel ID selection";
+            sw = rw;
+            hw = r;
+            encode = BAS_ID_CFG_id_sel_enum;
+            reset = 0xF;
+        } id_sel[3:0];
+    } BAS_ID_CFG @ 0x2010;
+};
+
+`endif
