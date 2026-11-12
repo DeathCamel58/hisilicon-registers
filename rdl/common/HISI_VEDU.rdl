@@ -16,7 +16,7 @@ addrmap aHISI_VEDU {
 
 addrmap aHISI_VEDU_V100 {
     name = "HiSilicon VEDU (Hi3520D V100 edition, vendor-derived registers)";
-    desc = "VEDU, Hi3520D V100 edition (H.264 hardware encoder), vendor-derived, NOT VERIFIED ON HARDWARE. The data sheet has no VEDU register table (chapter 6 is overview only); this edition is derived from the vendor MPP modules of the Hi3520D_MPP_V2.0.5.1 SDK (hi3520D_chnl.ko: VEDU_HAL_*/VEDU_DRV_* and the VPU/IRQ glue; hi3520D_h264e.ko: H264E_DRV_*; hi3520D_sys.ko: CRG16 handling), static disassembly only, see docs/rdl-campaign/vedu-vendor.md. Result: 22 registers are named from vendor code evidence (offset, width and bits confirmed in the Hi3520D code; the names are the HiSTB drv_venc_reg_r006.h names, a neighbor generation whose offsets and bit layouts match the Hi3520D code in every place that could be compared: INTMASK 0x40000003, MODE bit 25 regCfgMode, PICFG0 field layout, QPTHR, PICINFO0..8 at 0xA20..0xA40, REGCFG_ADDR at 0x1E0) and 100 registers are stubbed as UNK_<offset> (all read-only in a vendor debug dump of 0x000-0x15F and 0xA50-0xA9F). Everything else in the 64 KB window is not described. CROSS-CHIP (2026-11-11): the control registers of this edition (INTSTAT 0x000 [end_of_pic 0, buf_full 1, end_of_stream 8], INTMASK 0x004, INTCLR 0x00C, START 0x010, MODE 0x020 [time_mode 11:10, clk_gate_mode 14:13, mem_clk_gate_en 15], OUTSTD 0x0A4 [3:0]) have the same offsets and bit positions in the VEDU_HAL_* functions of hi3518_chnl.ko (Hi3518 A/C V100), hi3518e_h264e.ko (Hi3518E V200, Hi3516C V200) and hi3516a_h264e.ko (the AVC encoder of Hi3516A/D); the configuration table address register 0x1E0 is used in the h264e modules of all of them and the PICINFO area 0xA20-0xA40 in their chnl/h264e code. So this edition is also instantiated on those chips, with the confidence limited to that evidence: the remaining registers (22 named + 100 stubs) are Hi3520D facts assumed to apply; interrupt numbers and clock/reset differ (Hi3520D: GIC 72, PERI_CRG16 [1:0] + skip bits; Hi3518 A/C V100: 24, PERI_CRG16 [1:0]; Hi3518E V200 / Hi3516C V200: 24, PERI_CRG16 [13:12]; Hi3516A/D AVC: 72, PERI_CRG16 [13:12]). The Hi3516C V100 (same base, IRQ 24 and CRG as Hi3518 V100) keeps the undescribed stub: no module of its own. CONFIRMED FACTS (vendor code): base 0x20620000, 64 KB, one VEDU, GIC interrupt 72 (VEDU_GetInfo returns IRQ 72, base 0x20620000, size 0x10000; request_threaded_irq with IRQF_DISABLED, handler ChnlVeduISR), clock and reset PERI_CRG16 (vedu_cken bit 1 on first, then vedu_srst_req bit 0 released, then the undocumented 'skip init' bits [9:4] pulse, then the register init), module parameter g_bVeduPowerSaveEn default 1 (selects the MODE clock-gate codes), watchdog 300 jiffies without an interrupt then reset (assert/release vedu_srst_req, redo VEDU_DRV_Init). HOW THE ENCODER IS PROGRAMMED: almost nothing is written register by register. For every frame software fills a 64-byte-aligned register-config table in DDR (about 0x264 bytes used, 1 KB reserved: source/reconstruction/reference picture addresses and strides, the 32-byte slice header bit string, PICFG0..3, image size, slice-header parameters, ME search window, ROI regions, OSD overlay, QP, scaling matrices, stream buffer address, stream read/write pointer word addresses and buffer length), flushes it, writes its physical address to REGCFG_ADDR (0x1E0), writes INTMASK (0x40000003), MODE (regcfg_mode = 1), PICFG0 and the two chroma QP offset fields of QPTHR, then writes START = 1. On the interrupt (IRQ 72) the handler reads INTSTAT, accepts bit 0, bit 1 or bit 8 as completion, reads the result registers (TIMER, PICINFO0..8, QPTHR.start_qp, MEANQP, PICBITS, TARGETBITS), writes INTCLR = 0xFFFFFFFF (0xFFFFFFFC for a non-completion status), and starts the next channel. SPS, PPS, SEI, user data, P-skip pictures and the slice header are produced by ARM software and written into the stream ring buffer or the table; rate control (hi3520D_rc.ko) is software that only reads the result registers. SED: the second gate/reset pair in PERI_CRG16 (sed_cken [11], sed_srst_req [10]) belongs to the VEDU in the vendor SYS module (SYS_HAL_VeduSedClkEn/ResetSel, commands 74/73) but no vendor module ever calls those two commands, so the vendor leaves SED at its reset state (clock on, reset asserted per the data sheet reset value 0xC03). The r006 VEDU (a combined encoder/decoder block: MODE.vedsel, VDREF addresses, VdecEndOfPic) has SED_STATE/SED_PFMC registers; SED is probably the syntax-element-decoder unit of the decode path, unused when vedsel = 0 (LOW). EDITION: other chips instantiate aHISI_VEDU (the old placeholder, unchanged) at their own bases and have other VEDU generations; this edition is instantiated by the Hi3520D family files (Hi3520D V100, Hi3515A V100, Hi3515C V100 share the data sheet and the MPP V2.0.5.1 modules; the vendor module names Hi3515A/C in its sibling VI checks, no VEDU-specific Hi3515 evidence exists, so the Hi3515A/C instantiation is inferred). Previously (data-sheet facts, still valid): PERI_CRG16 resets to 0x0000_0C03 (vedu_cken [1] = 1 clock on, vedu_srst_req [0] = 1 in reset, plus sed_cken [11] and sed_srst_req [10], both 1 at reset); working clock 225 MHz (EPLL VCO 1350 MHz / 6, shared with VPSS); DDR out-of-order access enabled by the DDR controller bit vedu_ctrl [3], QoS port 'VENC' (media0_port0_pri [2:0], priority 3 = highest, plus its timeout counter); vendor script writes DDRC QoS entry 0x2011017C = 0x10c02 (VEDU) and 0x20620020 = 0, 0x206200a4 = 3. Encoder limits per the data sheet: Semi-Planar YCbCr 4:2:0 input, 160x64 to 1920x2048, 2 kbps to 40 Mbps, H.264 High/Main/Baseline @4.2, 8 ROIs, 8-region OSD overlay, CBR/VBR; vendor channel checks: width 160..1920 and height 64..2048 (even), profile 0..2, stream buffer at least 3/4 of width x height bytes (32 KB in mini-buffer mode) and a multiple of 64. Previously: 'Not described: no register of this block is described; ... placeholder so that the block base address and size exist in the address map (STUB)'. The base address and the 64 KB size are kept (the trailing memory below). GIC interrupt ID 72. Listed as an open item in docs/rdl-sweep/PORT-BLOCKS.md.";
+    desc = "VEDU, Hi3520D V100 edition (H.264 hardware encoder), vendor-derived, NOT VERIFIED ON HARDWARE. The data sheet has no VEDU register table (chapter 6 is overview only); this edition is derived from the vendor MPP modules of the Hi3520D_MPP_V2.0.5.1 SDK (hi3520D_chnl.ko: VEDU_HAL_*/VEDU_DRV_* and the VPU/IRQ glue; hi3520D_h264e.ko: H264E_DRV_*; hi3520D_sys.ko: CRG16 handling), static disassembly only, see docs/rdl-campaign/vedu-vendor.md. Result: 22 registers are named from vendor code evidence (offset, width and bits confirmed in the Hi3520D code; the names are the HiSTB drv_venc_reg_r006.h names, a neighbor generation whose offsets and bit layouts match the Hi3520D code in every place that could be compared: INTMASK 0x40000003, MODE bit 25 regCfgMode, PICFG0 field layout, QPTHR, PICINFO0..8 at 0xA20..0xA40, REGCFG_ADDR at 0x1E0) and 100 registers are stubbed as UNK_<offset> (all read-only in a vendor debug dump of 0x000-0x15F and 0xA50-0xA9F). Everything else in the 64 KB window is not described. CROSS-CHIP (2026-11-11): the control registers of this edition (INTSTAT 0x000 [end_of_pic 0, buf_full 1, end_of_stream 8], INTMASK 0x004, INTCLR 0x00C, START 0x010, MODE 0x020 [time_mode 11:10, clk_gate_mode 14:13, mem_clk_gate_en 15], OUTSTD 0x0A4 [3:0]) have the same offsets and bit positions in the VEDU_HAL_* functions of hi3518_chnl.ko (Hi3518 A/C V100), hi3518e_h264e.ko (Hi3518E V200, Hi3516C V200) and hi3516a_h264e.ko (the AVC encoder of Hi3516A/D); the configuration table address register 0x1E0 is used in the h264e modules of all of them and the PICINFO area 0xA20-0xA40 in their chnl/h264e code. So this edition is also instantiated on those chips, with the confidence limited to that evidence: the remaining registers (22 named + 100 stubs) are Hi3520D facts assumed to apply; interrupt numbers and clock/reset differ (Hi3520D: GIC 72, PERI_CRG16 [1:0] + skip bits; Hi3518 A/C V100: 24, PERI_CRG16 [1:0]; Hi3518E V200 / Hi3516C V200: 24, PERI_CRG16 [13:12]; Hi3516A/D AVC: 72, PERI_CRG16 [13:12]). The Hi3516C V100 (same base, IRQ 24 and CRG as Hi3518 V100) keeps the undescribed stub: no module of its own. CONFIRMED FACTS (vendor code): base 0x20620000, 64 KB, one VEDU, GIC interrupt 72 (VEDU_GetInfo returns IRQ 72, base 0x20620000, size 0x10000; request_threaded_irq with IRQF_DISABLED, handler ChnlVeduISR), clock and reset PERI_CRG16 (vedu_cken bit 1 on first, then vedu_srst_req bit 0 released, then the undocumented 'skip init' bits [9:4] pulse, then the register init), module parameter g_bVeduPowerSaveEn default 1 (selects the MODE clock-gate codes), watchdog 300 jiffies without an interrupt then reset (assert/release vedu_srst_req, redo VEDU_DRV_Init). HOW THE ENCODER IS PROGRAMMED: almost nothing is written register by register. For every frame software fills a 64-byte-aligned register-config table in DDR (about 0x264 bytes used, 1 KB reserved: source/reconstruction/reference picture addresses and strides, the 32-byte slice header bit string, PICFG0..3, image size, slice-header parameters, ME search window, ROI regions, OSD overlay, QP, scaling matrices, stream buffer address, stream read/write pointer word addresses and buffer length), flushes it, writes its physical address to REGCFG_ADDR (0x1E0), writes INTMASK (0x40000003), MODE (regcfg_mode = 1), PICFG0 and the two chroma QP offset fields of QPTHR, then writes START = 1. On the interrupt (IRQ 72) the handler reads INTSTAT, accepts bit 0, bit 1 or bit 8 as completion, reads the result registers (TIMER, PICINFO0..8, QPTHR.start_qp, MEANQP, PICBITS, TARGETBITS), writes INTCLR = 0xFFFFFFFF (0xFFFFFFFC for a non-completion status), and starts the next channel. SPS, PPS, SEI, user data, P-skip pictures and the slice header are produced by ARM software and written into the stream ring buffer or the table; rate control (hi3520D_rc.ko) is software; it reads the result registers and (CORRECTION 2026-11-11, vedu-vendor.md 16.1) writes QPTHR, RC1, QPDELTATHR0..2 and TARGETBITS directly through hi3520D_chnl.ko RC_DRV_SetRc before START. SED: the second gate/reset pair in PERI_CRG16 (sed_cken [11], sed_srst_req [10]) belongs to the VEDU in the vendor SYS module (SYS_HAL_VeduSedClkEn/ResetSel, commands 74/73) but no vendor module ever calls those two commands, so the vendor leaves SED at its reset state (clock on, reset asserted per the data sheet reset value 0xC03). The r006 VEDU (a combined encoder/decoder block: MODE.vedsel, VDREF addresses, VdecEndOfPic) has SED_STATE/SED_PFMC registers; SED is probably the syntax-element-decoder unit of the decode path, unused when vedsel = 0 (LOW). EDITION: other chips instantiate aHISI_VEDU (the old placeholder, unchanged) at their own bases and have other VEDU generations; this edition is instantiated by the Hi3520D family files (Hi3520D V100, Hi3515A V100, Hi3515C V100 share the data sheet and the MPP V2.0.5.1 modules; the vendor module names Hi3515A/C in its sibling VI checks, no VEDU-specific Hi3515 evidence exists, so the Hi3515A/C instantiation is inferred). Previously (data-sheet facts, still valid): PERI_CRG16 resets to 0x0000_0C03 (vedu_cken [1] = 1 clock on, vedu_srst_req [0] = 1 in reset, plus sed_cken [11] and sed_srst_req [10], both 1 at reset); working clock 225 MHz (EPLL VCO 1350 MHz / 6, shared with VPSS); DDR out-of-order access enabled by the DDR controller bit vedu_ctrl [3], QoS port 'VENC' (media0_port0_pri [2:0], priority 3 = highest, plus its timeout counter); vendor script writes DDRC QoS entry 0x2011017C = 0x10c02 (VEDU) and 0x20620020 = 0, 0x206200a4 = 3. Encoder limits per the data sheet: Semi-Planar YCbCr 4:2:0 input, 160x64 to 1920x2048, 2 kbps to 40 Mbps, H.264 High/Main/Baseline @4.2, 8 ROIs, 8-region OSD overlay, CBR/VBR; vendor channel checks: width 160..1920 and height 64..2048 (even), profile 0..2, stream buffer at least 3/4 of width x height bytes (32 KB in mini-buffer mode) and a multiple of 64. Previously: 'Not described: no register of this block is described; ... placeholder so that the block base address and size exist in the address map (STUB)'. The base address and the 64 KB size are kept (the trailing memory below). GIC interrupt ID 72. Listed as an open item in docs/rdl-sweep/PORT-BLOCKS.md.";
 
     // SECOND PASS 2026-11-11 summary is carried in the REGCFG_ADDR description and docs/rdl-campaign/vedu-vendor.md section 13. Registers marked INFERRED below were not accessed by register in any vendor code; their offsets assume the r006 register file layout (9 directly accessed Hi3520D offsets match r006 exactly).
 
@@ -963,13 +963,27 @@ addrmap aHISI_VEDU_V100 {
 
     reg {
         name = "QP threshold / chroma QP offsets";
-        desc = "Read-modify-write per frame by H264E_DRV_WriteRegs: bits [26:22] and [31:27] both get the value (attribute word & 0x1f). Read back in the per-frame result block: bits [21:16] (H264E_DRV_ReadRegs, result word +0x30). In r006 the register is QPTHR (minQp [5:0], maxQp [13:8], startQp [21:16], chromaQpOff [26:22], secondChromaQpOff [31:27]); the vendor code confirms exactly the two upper fields as written and [21:16] as read, nothing else. The rate-control module writes min/max/start QP through the DDR table, not through this register (RC_ConfigHw only builds a parameter block; LOW). Register name and field names are the HiSTB drv_venc_reg_r006.h names (neighbor generation, naming only: the offset and the bits listed here were confirmed in the Hi3520D vendor code, the name is inferred). Source: vendor module hi3520D_h264e.ko (H264E_DRV_WriteRegs 0x1bfec, H264E_DRV_ReadRegs 0x1c080), confidence HIGH for the bit positions, MEDIUM for the meaning, word-checked: yes. Not verified on hardware.";
+        desc = "Read-modify-write per frame by H264E_DRV_WriteRegs: bits [26:22] and [31:27] both get the value (attribute word & 0x1f). Read back in the per-frame result block: bits [21:16] (H264E_DRV_ReadRegs, result word +0x30). In r006 the register is QPTHR (minQp [5:0], maxQp [13:8], startQp [21:16], chromaQpOff [26:22], secondChromaQpOff [31:27]); the vendor code confirms exactly the two upper fields as written and [21:16] as read, nothing else. CORRECTION 2026-11-11 (vedu-vendor.md 16.1): min/max/start QP are written to THIS register by hi3520D_chnl.ko RC_DRV_SetRc (the 18-word block built by rc.ko RC_ConfigHw), not through the DDR table. Register name and field names are the HiSTB drv_venc_reg_r006.h names (neighbor generation, naming only: the offset and the bits listed here were confirmed in the Hi3520D vendor code, the name is inferred). Source: vendor module hi3520D_h264e.ko (H264E_DRV_WriteRegs 0x1bfec, H264E_DRV_ReadRegs 0x1c080), confidence HIGH for the bit positions, MEDIUM for the meaning, word-checked: yes. Not verified on hardware.";
+
+        field {
+            name = "min_qp";
+            desc = "Minimum QP (r006 minQp). Written by the vendor RC_DRV_SetRc (hi3520D_chnl.ko 0x4744, read-modify-write of this register, block word 3), PROVEN access. Reads 0 in the board state seen so far (QPTHR 0x001C3300; most likely the reset default, INFERRED: the vendor H.264 minimum QP is 0). The driver writes it before START (HISI_VEDU_IOC_SET_RC, vedu-test -Q), NOT YET RUN on the board (docs/vedu-test-plan.md step 9.1).";
+            sw = rw;
+            hw = r;
+        } min_qp[5:0];
+
+        field {
+            name = "max_qp";
+            desc = "Maximum QP (r006 maxQp). Written by RC_DRV_SetRc (block word 2), PROVEN access. Reads 51 (0x33) in the board state seen so far, equal to the vendor H.264 maximum (RcGetMaxMinQp: min 0, max 51), INFERRED reset default. Not yet written on the board.";
+            sw = rw;
+            hw = r;
+        } max_qp[13:8];
 
         field {
             name = "start_qp";
-            desc = "Read per frame into the result block (r006 startQp). BOARD 2026-11-11: reads 0x1C (28) after the first encode runs (QPTHR 0x001C3300) and the hardware wrote slice_qp_delta = se(START_QP - 26) = +2 into the slice header (PROVEN, 40 runs), so this field is the slice QP the hardware encodes and signals; it is not loaded from the table (word 0x130 is not this register). A driver that wants another QP must write this field before START (untested).";
-            sw = r;
-            hw = w;
+            desc = "Read per frame into the result block (r006 startQp). BOARD 2026-11-11: reads 0x1C (28) after the first encode runs (QPTHR 0x001C3300) and the hardware wrote slice_qp_delta = se(START_QP - 26) = +2 into the slice header (PROVEN, 40 runs), so this field is the slice QP the hardware encodes and signals; it is not loaded from the table (word 0x130 is not this register). The vendor writes it (with min_qp and max_qp) through RC_DRV_SetRc after REGCFG_ADDR and before START (hi3520D_chnl.ko 0x4744, block word 1, PROVEN access), not through the table; the fixed-QP rate controller sets start = min = max = the QP. The driver does the same (HISI_VEDU_IOC_SET_RC); NOT YET RUN on the board (vedu-test-plan.md step 9.1: expect 0x001C1C1C after -Q 28).";
+            sw = rw;
+            hw = r;
         } start_qp[21:16];
 
         field {
@@ -988,15 +1002,16 @@ addrmap aHISI_VEDU_V100 {
 
     } QPTHR @ 0x350;
 
+
     reg {
         name = "Target bits";
         desc = "Read in the per-frame result block (H264E_DRV_ReadRegs, result word +0x3c, whole word); the result block goes to the rate-control module through the module callback table. r006 name VEDU_TARGETBITS at this offset. Meaning (the rate controller's target bit budget as seen by the hardware) is inferred from the r006 name only. Source: vendor module hi3520D_h264e.ko (H264E_DRV_ReadRegs 0x1c080), confidence HIGH for the access, LOW for the meaning, word-checked: yes. Not verified on hardware.";
 
         field {
             name = "targetbits";
-            desc = "Read once per frame.";
-            sw = r;
-            hw = w;
+            desc = "Target bits of the picture. Written by the vendor RC_DRV_SetRc (block word 0, whole word, PROVEN access) and read back per frame. The vendor fixed-QP mode never writes it (the board reads 0). Whether the hardware steers the QP per macroblock row towards it is GUESS (r006 name); test: vedu-test -b with -Q min,max range (vedu-test-plan.md step 9.3). NOT YET RUN.";
+            sw = rw;
+            hw = r;
         } targetbits[31:0];
 
     } TARGETBITS @ 0x364;
@@ -1013,6 +1028,58 @@ addrmap aHISI_VEDU_V100 {
         } picbits[31:0];
 
     } PICBITS @ 0x374;
+
+    reg {
+        name = "Total macroblock header bits";
+        desc = "Read by the vendor RC_DRV_GetRcInfo (hi3520D_chnl.ko 0x480c, PROVEN access; read twice into two result words). r006 name VEDU_TOTALMBHBITS: bits spent on macroblock headers in the picture (INFERRED). Returned by the driver run result (mbhbits). Not run on the board.";
+
+        field {
+            name = "mbhbits";
+            desc = "Whole word.";
+            sw = r;
+            hw = w;
+        } mbhbits[31:0];
+
+    } TOTALMBHBITS @ 0x378;
+
+    reg {
+        name = "Total texture bits";
+        desc = "Read by RC_DRV_GetRcInfo (PROVEN access). r006 name VEDU_TOTALTXTBITS: bits spent on residual (texture) data (INFERRED). Returned in the driver run result (txtbits). Not run on the board.";
+
+        field {
+            name = "txtbits";
+            desc = "Whole word.";
+            sw = r;
+            hw = w;
+        } txtbits[31:0];
+
+    } TOTALTXTBITS @ 0x37C;
+
+    reg {
+        name = "Total cost 0";
+        desc = "Read by RC_DRV_GetRcInfo (PROVEN access), low word of a 64-bit cost sum (with TOTALCOST1 as the high word). r006 name VEDU_TOTALCOST0, meaning (sum of the mode-decision cost) INFERRED. Returned in the driver run result (cost0). Not run on the board.";
+
+        field {
+            name = "cost0";
+            desc = "Whole word.";
+            sw = r;
+            hw = w;
+        } cost0[31:0];
+
+    } TOTALCOST0 @ 0x380;
+
+    reg {
+        name = "Total cost 1";
+        desc = "Read by RC_DRV_GetRcInfo (PROVEN access), high word of the 64-bit cost sum. r006 name VEDU_TOTALCOST1. Returned in the driver run result (cost1). Not run on the board.";
+
+        field {
+            name = "cost1";
+            desc = "Whole word.";
+            sw = r;
+            hw = w;
+        } cost1[31:0];
+
+    } TOTALCOST1 @ 0x384;
 
     reg {
         name = "Mean QP";
@@ -1407,7 +1474,7 @@ addrmap aHISI_VEDU_V100 {
 
     reg {
         name = "PICFG1 (INFERRED, MEDIUM)";
-        desc = "PICFG1 INFERRED, confidence MEDIUM. Reason: the vendor builds a DDR register-config table (table offset 0x44) whose word has the bit layout of the r006 register VEDU_PICFG1, and 9 offsets that the Hi3520D code accesses directly (MODE 0x020, PICFG0 0x024, REGCFG_ADDR 0x1E0, QPTHR 0x350, TARGETBITS 0x364, PICBITS 0x374, MEANQP 0x388, PICINFO0 0xA20, OUTSTD 0x0A4) all sit at the r006 offsets, so the register file is assumed to follow r006 (a neighbor generation). The offset in the window is therefore an assumption, NOT seen in any vendor register access. Register name and field names are the HiSTB drv_venc_reg_r006.h names (naming only). Not accessed by register in any vendor code (it is programmed through the DDR table, loaded by the hardware from REGCFG_ADDR; whether the hardware loads this exact register from the table is the working assumption).  Source: docs/rdl-campaign/vedu-vendor.md section 13, H264E_DRV_UpdateRegConfigParam 0x1d4d0 / H264E_DRV_InitRegConfigParam 0x1db40 / H264eDrvUpdateMeCfg 0x1c680. Not verified on hardware.";
+        desc = "PICFG1 INFERRED, confidence MEDIUM. UPDATE 2026-11-11 (vedu-vendor.md 16.6): the vendor stores SliceSize [15:0], SliceSpiltMod [16] (0 = size in bytes 128..65535, 1 = size in macroblock rows; vendor default mode 1) and SliceSplit [17] (enable) in this word (PROVEN positions from H264E_DRV_UpdateRegConfigParam and H264eCheckSliceSplitCfg; the units are INFERRED from the vendor user-message strings). Not run on the board (vedu-test -z). Reason: the vendor builds a DDR register-config table (table offset 0x44) whose word has the bit layout of the r006 register VEDU_PICFG1, and 9 offsets that the Hi3520D code accesses directly (MODE 0x020, PICFG0 0x024, REGCFG_ADDR 0x1E0, QPTHR 0x350, TARGETBITS 0x364, PICBITS 0x374, MEANQP 0x388, PICINFO0 0xA20, OUTSTD 0x0A4) all sit at the r006 offsets, so the register file is assumed to follow r006 (a neighbor generation). The offset in the window is therefore an assumption, NOT seen in any vendor register access. Register name and field names are the HiSTB drv_venc_reg_r006.h names (naming only). Not accessed by register in any vendor code (it is programmed through the DDR table, loaded by the hardware from REGCFG_ADDR; whether the hardware loads this exact register from the table is the working assumption).  Source: docs/rdl-campaign/vedu-vendor.md section 13, H264E_DRV_UpdateRegConfigParam 0x1d4d0 / H264E_DRV_InitRegConfigParam 0x1db40 / H264eDrvUpdateMeCfg 0x1c680. Not verified on hardware.";
 
         field {
             name = "slice_size";
@@ -3254,7 +3321,7 @@ addrmap aHISI_VEDU_V100 {
 
     reg {
         name = "RC1 (INFERRED, LOW)";
-        desc = "RC1 INFERRED, confidence LOW (a position guess, see below). Register name and field names are the HiSTB drv_venc_reg_r006.h names (naming only). Not accessed by register in any vendor code (it is programmed through the DDR table, loaded by the hardware from REGCFG_ADDR; whether the hardware loads this exact register from the table is the working assumption). POSITION GUESS ONLY: the vendor table words 0x130..0x13C (written once at channel creation: 0x03002100, 0x00050A02, 0x0A0A040F, 0x97888888) are four words that could be an image of QPTHR, RC1, QPDELTATHR0, QPDELTATHR1 (0x350..0x35C). Word 0x134 = 0x00050A02 fits rcQpDelta = 2, rcMadpDelta = 10 (r006 bits [31:16] reserved, value 5 there); the other words do not fit the r006 layouts cleanly. Treat the register, not its fields, as the guess. Source: docs/rdl-campaign/vedu-vendor.md section 13, H264E_DRV_UpdateRegConfigParam 0x1d4d0 / H264E_DRV_InitRegConfigParam 0x1db40 / H264eDrvUpdateMeCfg 0x1c680. Not verified on hardware.";
+        desc = "UPDATE 2026-11-11 (docs/rdl-campaign/vedu-vendor.md 16.1): the offset 0x354 is now PROVEN as a direct register write: hi3520D_chnl.ko RC_DRV_SetRc (0x4744) does a read-modify-write of 0x354, bits [5:0] from rate-control block word 5 and bits [15:8] from block word 4 (it also writes QPTHR, QPDELTATHR0..2 and TARGETBITS from the same 18-word block, after REGCFG_ADDR and before START). Field names remain the r006 names (INFERRED). The default values are unknown (the vendor RC context fields were not traced to constants). Not run on the board (vedu-test -C, test plan step 9.4). RC1 INFERRED, confidence LOW (a position guess, see below). Register name and field names are the HiSTB drv_venc_reg_r006.h names (naming only). Not accessed by register in any vendor code (it is programmed through the DDR table, loaded by the hardware from REGCFG_ADDR; whether the hardware loads this exact register from the table is the working assumption). POSITION GUESS ONLY: the vendor table words 0x130..0x13C (written once at channel creation: 0x03002100, 0x00050A02, 0x0A0A040F, 0x97888888) are four words that could be an image of QPTHR, RC1, QPDELTATHR0, QPDELTATHR1 (0x350..0x35C). Word 0x134 = 0x00050A02 fits rcQpDelta = 2, rcMadpDelta = 10 (r006 bits [31:16] reserved, value 5 there); the other words do not fit the r006 layouts cleanly. Treat the register, not its fields, as the guess. Source: docs/rdl-campaign/vedu-vendor.md section 13, H264E_DRV_UpdateRegConfigParam 0x1d4d0 / H264E_DRV_InitRegConfigParam 0x1db40 / H264eDrvUpdateMeCfg 0x1c680. Not verified on hardware.";
 
         field {
             name = "rc_qp_delta";
@@ -3274,7 +3341,7 @@ addrmap aHISI_VEDU_V100 {
 
     reg {
         name = "QPDELTATHR0 (INFERRED, LOW)";
-        desc = "QPDELTATHR0 INFERRED, confidence LOW (a position guess, see below). Register name and field names are the HiSTB drv_venc_reg_r006.h names (naming only). Not accessed by register in any vendor code (it is programmed through the DDR table, loaded by the hardware from REGCFG_ADDR; whether the hardware loads this exact register from the table is the working assumption). POSITION GUESS ONLY, see RC1: word 0x138 = 0x0A0A040F would be the four thresholds 15, 4, 10, 10. Source: docs/rdl-campaign/vedu-vendor.md section 13, H264E_DRV_UpdateRegConfigParam 0x1d4d0 / H264E_DRV_InitRegConfigParam 0x1db40 / H264eDrvUpdateMeCfg 0x1c680. Not verified on hardware.";
+        desc = "UPDATE 2026-11-11 (vedu-vendor.md 16.1): offset 0x358 PROVEN as a direct write by RC_DRV_SetRc (block words 6..9, one byte each, the bytes at [7:0], [15:8], [23:16], [31:24]). Names INFERRED (r006). Not run on the board. QPDELTATHR0 INFERRED, confidence LOW (a position guess, see below). Register name and field names are the HiSTB drv_venc_reg_r006.h names (naming only). Not accessed by register in any vendor code (it is programmed through the DDR table, loaded by the hardware from REGCFG_ADDR; whether the hardware loads this exact register from the table is the working assumption). POSITION GUESS ONLY, see RC1: word 0x138 = 0x0A0A040F would be the four thresholds 15, 4, 10, 10. Source: docs/rdl-campaign/vedu-vendor.md section 13, H264E_DRV_UpdateRegConfigParam 0x1d4d0 / H264E_DRV_InitRegConfigParam 0x1db40 / H264eDrvUpdateMeCfg 0x1c680. Not verified on hardware.";
 
         field {
             name = "rc_qp_delta_thr0";
@@ -3308,7 +3375,7 @@ addrmap aHISI_VEDU_V100 {
 
     reg {
         name = "QPDELTATHR1 (INFERRED, LOW)";
-        desc = "QPDELTATHR1 INFERRED, confidence LOW (a position guess, see below). Register name and field names are the HiSTB drv_venc_reg_r006.h names (naming only). Not accessed by register in any vendor code (it is programmed through the DDR table, loaded by the hardware from REGCFG_ADDR; whether the hardware loads this exact register from the table is the working assumption). POSITION GUESS ONLY, see RC1: word 0x13C = 0x97888888 (bytes 0x88, 0x88, 0x88, 0x97) does not look like thresholds; may be something else. Source: docs/rdl-campaign/vedu-vendor.md section 13, H264E_DRV_UpdateRegConfigParam 0x1d4d0 / H264E_DRV_InitRegConfigParam 0x1db40 / H264eDrvUpdateMeCfg 0x1c680. Not verified on hardware.";
+        desc = "UPDATE 2026-11-11 (vedu-vendor.md 16.1): offset 0x35C PROVEN as a direct write by RC_DRV_SetRc (block words 10..13). Names INFERRED. QPDELTATHR2 at 0x360 (block words 14..17) is added with the same evidence. Not run on the board. QPDELTATHR1 INFERRED, confidence LOW (a position guess, see below). Register name and field names are the HiSTB drv_venc_reg_r006.h names (naming only). Not accessed by register in any vendor code (it is programmed through the DDR table, loaded by the hardware from REGCFG_ADDR; whether the hardware loads this exact register from the table is the working assumption). POSITION GUESS ONLY, see RC1: word 0x13C = 0x97888888 (bytes 0x88, 0x88, 0x88, 0x97) does not look like thresholds; may be something else. Source: docs/rdl-campaign/vedu-vendor.md section 13, H264E_DRV_UpdateRegConfigParam 0x1d4d0 / H264E_DRV_InitRegConfigParam 0x1db40 / H264eDrvUpdateMeCfg 0x1c680. Not verified on hardware.";
 
         field {
             name = "rc_qp_delta_thr4";
@@ -3339,6 +3406,40 @@ addrmap aHISI_VEDU_V100 {
         } rc_qp_delta_thr7[31:24];
 
     } QPDELTATHR1 @ 0x35C;
+
+    reg {
+        name = "QPDELTATHR2 (INFERRED, name from r006; offset PROVEN)";
+        desc = "Direct write by the vendor RC_DRV_SetRc (hi3520D_chnl.ko 0x4744, block words 14..17, one byte each: PROVEN access at 0x360). Names INFERRED from r006 (rcQpDeltaThr8..11). See QPDELTATHR0. The driver writes it from HISI_VEDU_IOC_SET_RC (qpdelta_thr[2]). Not run on the board.";
+
+        field {
+            name = "rc_qp_delta_thr8";
+            desc = "r006 rcQpDeltaThr8 (INFERRED).";
+            sw = rw;
+            hw = r;
+        } rc_qp_delta_thr8[7:0];
+
+        field {
+            name = "rc_qp_delta_thr9";
+            desc = "r006 rcQpDeltaThr9 (INFERRED).";
+            sw = rw;
+            hw = r;
+        } rc_qp_delta_thr9[15:8];
+
+        field {
+            name = "rc_qp_delta_thr10";
+            desc = "r006 rcQpDeltaThr10 (INFERRED).";
+            sw = rw;
+            hw = r;
+        } rc_qp_delta_thr10[23:16];
+
+        field {
+            name = "rc_qp_delta_thr11";
+            desc = "r006 rcQpDeltaThr11 (INFERRED).";
+            sw = rw;
+            hw = r;
+        } rc_qp_delta_thr11[31:24];
+
+    } QPDELTATHR2 @ 0x360;
 
     external mem {
         name = "Rest of the window (not described)";
