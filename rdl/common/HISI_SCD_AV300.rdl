@@ -12,6 +12,8 @@ regfile eHISI_SCD_AV300 {
 
     Layout vs the Hi3520D eHISI_SCD: identical at 0x00-0x24 (START, LIST_ADDRESS, UP_ADDRESS, UP_LEN, BUFFER_FIRST/LAST/INI, INT_MASK, PROTOCOL, INI_CLR), 0x40 (OVER), 0x4C-0x54 (NUM, ROLL_ADDR, SRC_EATEN). Different: 0x44 (Hi3520D read-only interrupt state, V300 a written and read configuration register), plus three registers the Hi3520D RDL does not have: 0x3C (r/w), 0x48 (r), 0x5C (r). Names that exist in the Hi3520D RDL are inherited at matching offsets; the module has no register names. UNK_<offset> = access seen, purpose unknown.
 
+    Generation comparison (2026-11-11 SCD audit, docs/rdl-campaign/scd-vendor.md): the Hi3520D register semantics apply here at the matching offsets. LIST_ADDRESS is the SOURCE packet chain (3 word nodes: first byte, last byte inclusive, next node), UP_ADDRESS the record pool (2 words per start code: address in the destination buffer, offset in the source stream), BUFFER_FIRST/LAST/INI the circular DESTINATION buffer the SCD copies the stream into, UP_LEN counts 32 bit words (here min(free slots, 2048) times 2: confirms the unit). Differences to the Hi3520D: 0x44 is a configuration register (Hi3520D: interrupt state), the interrupt check reads 0x40 (Hi3520D: 0x44), extra 0x3C, 0x48 and 0x5C, forced-zero protocol bits 7 and 13, SRC_EATEN masked to 30 bits, slots up to 2048 (Hi3520D: 512), window offset 0xC000 (Hi3520D: window base). The Huawei V200 generation (GPL, +0x800 in the VDH window) matches the Hi3520D except for secure/low-delay protocol bits, the DSP message registers and flag bits in the record words.
+
     Details: docs/rdl-campaign/video-codec-crosschip.md.
     ";
 
@@ -32,7 +34,7 @@ Source: vendor module static analysis (open_vfmw.ko, scd_hal_start, offset 0x0),
 
     reg {
         name = "Segment list address";
-        desc = "scd_hal_write_reg stores the physical address of the segment (start code position) list buffer: channel structure word +0x7C, which scd_hal_set_reg copies from the stream device (+0x2C, the 0x7000 byte buffer allocated in scd_hal_open). Name inherited from the Hi3520D.
+        desc = "scd_hal_write_reg stores the physical address of the SOURCE packet chain (Hi3520D: 3 word nodes, first byte, last byte inclusive, next; the old text 'segment list' was the wrong reading of the name): channel structure word +0x7C, which scd_hal_set_reg copies from the stream device (+0x2C, the 0x7000 byte buffer allocated in scd_hal_open). Name inherited from the Hi3520D.
 
 Source: vendor module static analysis (open_vfmw.ko, scd_hal_write_reg, scd_hal_set_reg, offset 0x4), confidence HIGH for the write, MEDIUM for the meaning. Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no SCD register table).";
 
@@ -64,11 +66,11 @@ Source: vendor module static analysis (open_vfmw.ko, scd_hal_write_reg, scd_hal_
         name = "Up-message buffer length";
         desc = "Written from channel structure word +0x8C = min(free segment slots, 2048) * 2 (scd_hal_set_reg); read back by scd_hal_read_reg (the value is kept in the channel structure). Name inherited from the Hi3520D.
 
-Source: vendor module static analysis (open_vfmw.ko, scd_hal_write_reg, scd_hal_read_reg, scd_hal_set_reg, offset 0xC), confidence HIGH for the accesses, MEDIUM for the unit. Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no SCD register table).";
+Source: vendor module static analysis (open_vfmw.ko, scd_hal_write_reg, scd_hal_read_reg, scd_hal_set_reg, offset 0xC), confidence HIGH for the accesses and the unit (words: 2 per record, as on the Hi3520D, where the unit is proven). Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no SCD register table).";
 
         field {
             name = "up_len";
-            desc = "Up message length (unit as in the Hi3520D, unknown).";
+            desc = "Up message length in 32 bit words (2 per record; min(free slots, 2048) times 2 here).";
             sw = rw;
             hw = r;
         } up_len[31:0];
@@ -76,8 +78,8 @@ Source: vendor module static analysis (open_vfmw.ko, scd_hal_write_reg, scd_hal_
     } UP_LEN @ 0xC;
 
     reg {
-        name = "Stream buffer start";
-        desc = "Start of the circular stream buffer (channel structure +0x68 = stream channel word +0x0C, the buffer base). Name inherited from the Hi3520D.
+        name = "Destination buffer start";
+        desc = "Start of the circular destination buffer the SCD copies the stream into (channel structure +0x68 = stream channel word +0x0C, the buffer base). Name inherited from the Hi3520D.
 
 Source: vendor module static analysis (open_vfmw.ko, scd_hal_write_reg, scd_hal_set_reg, offset 0x10), confidence HIGH for the write, MEDIUM for the meaning. Not verified on hardware (nothing in this block has been read or written on a Hi3516A V300 board); no reset value is known; not in the data sheet (it has no SCD register table).";
 

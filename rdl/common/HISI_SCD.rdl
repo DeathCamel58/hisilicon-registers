@@ -2,20 +2,18 @@
 `define HISI_SCD_RDL
 
 regfile eHISI_SCD {
-    name = "HiSilicon SCD start-code detector (UNVERIFIED, vendor-derived)";
-    desc = "UNVERIFIED, vendor-derived: HiSilicon stream context decoder / start-code detector (SCD), the front end of the VDH decoder. Window 0x10150000 (data sheet memory map: 'reserved 64 KB'; the data sheet only documents its clock gate: PERI_CRG53 at 0x200300D4, bit 3 scd_cken, bit 1 scd_srst_req). GIC interrupt ID 75 (the data sheet lists 75 as reserved; the vendor driver requests it for the SCD service routine). Second pass 2026-11-10: confirmed in all three Hi3520D vfmw builds (OpenDrivers: request_threaded_irq(75, VCTRL_Scd_Isr, flags 0x20) and free_irq(75) in CloseDrivers; the handler SM_SCDIntServeProc reads SCD_INT (0x44), writes SCD_INI_CLR (0x24) and wakes the SCD thread), confidence HIGH, word-checked: yes, not verified on hardware; the hardware wiring of ID 75 is not documented. Vendor sequence per stream chunk: WriteScdVtrlReg writes 0x04, 0x08, 0x0C, 0x10, 0x14, 0x18, 0x20, then 0x00 = 0 and 0x00 = start & 1; completion is signaled by SCD_INT (interrupt) / SCD_OVER bit 0 (WaitSCDFinish); ResetSCD sets PERI_CRG53 bit 1, polls SCD_OVER bit 1 until clear (10000 iterations), clears the reset and restores SCD_INT_MASK bit 0. The SCD only finds start codes and writes a segment list: it does not copy or rewrite bitstream data (the VDH reads the original buffer through the slice-message byte/bit offsets), so it is not needed when software already knows the slice boundaries. Emulation prevention bytes (00 00 03) stay in the stream: neither the SCD driver nor the vfmw syntax parser strips them (confidence MEDIUM: inferred from the GPL V400R004/Hi3520D sources and the absence of any stripping code). DDRC QoS: the vendor script programs DDRC_QOS[1] (0x20110154) = 0x03F06 for 'SCD'; no QoS entry exists for the VDH. Certainty convention: each register states source, confidence and word-check status; nothing here was read or written on the board. Hi3520D DDRC QoS entry: DDRC_QOS[1] (0x20110154) is labeled 'SCD' in the vendor board script. A second instance SCD1 at 0x10160000 appears only in copied Hi3531 platform headers. Only the registers the vendor module uses are listed; the Hi3521A-and-later generations put the same registers at +0x800 inside the VDH window. Probe first: SCD_OVER (0x40) after PERI_CRG53 = 0x8 (clock on, reset released).";
+    name = "HiSilicon SCD start-code detector / stream gatherer (vendor-derived, UNVERIFIED on hardware)";
+    desc = "UNVERIFIED, vendor-derived (audited 2026-11-11, docs/rdl-campaign/scd-vendor.md). Stream context decoder / start-code detector (SCD) of the Hi3520D, Hi3515A and Hi3515C: the front end of the H.264 decoder software (VFMW). WHAT IT DOES (confidence HIGH for the structure, from the vendor module and the Huawei GPL SCD V200 driver, whose register names this file keeps): software describes the incoming stream as a chain of source packets in DDR (the 'list', 12 bytes per node: first byte address, last byte address INCLUSIVE, address of the next node, 0 ends the chain: WriteScdMsg, word-checked). The SCD walks the chain, treats the packets as ONE continuous byte stream, COPIES it into a circular destination buffer (the vendor calls it the segment buffer: BUFFER_FIRST..BUFFER_LAST, first write at BUFFER_INI) and, while copying, searches for the 00 00 01 start-code prefix. For every start code it writes one 8 byte record into the 'up message' pool in DDR: word 0 = address of the start code in the destination buffer, word 1 = byte offset of the same start code in the concatenated source stream (ProcessScdReturn, word-checked: segment length = next word 0 minus this word 0, bytes consumed = word 1 of the last record). The data sheet confirms the role (6.1: the stream buffer of the decoder 'comes from the start code detect (SCD) module'). It parses nothing above the start code: no NAL type, no emulation prevention removal (00 00 03 stays in the stream; INFERRED, MEDIUM). Window 0x10150000, data sheet memory map 'reserved 64 KB'; registers 0x00-0x54 (only these are touched). Clock and reset: PERI_CRG53 at 0x200300D4, bit 3 scd_cken, bit 1 scd_srst_req (data sheet; the vendor opens it with (reg or 8) and not 2, SCD_OpenHardware). GIC interrupt ID 75 (SPI 43), requested in all three Hi3520D vfmw builds (request_threaded_irq(75, VCTRL_Scd_Isr) in OpenDrivers); the data sheet lists 75 as reserved. The ISR (SM_SCDIntServeProc, word-checked) reads SCD_INT bit 0, returns when it is 0, otherwise writes 1 to SCD_INI_CLR and processes the result. DDRC QoS: DDRC_QOS[1] (0x20110154) is labeled 'SCD' in the vendor board script (value 0x03F06). Sequence per job (CutStreamWithSCD, ScdDriver, WriteScdVtrlReg, all word-checked): ResetSCD (save SCD_INT_MASK, set CRG53 bit 1, poll SCD_OVER bit 1 until it reads 0, at most 10000 reads, clear CRG53 bit 1, restore SCD_INT_MASK bit 0); write the node chain; write LIST_ADDRESS, UP_ADDRESS, UP_LEN, BUFFER_FIRST, BUFFER_LAST, BUFFER_INI, SCD_PROTOCOL; SCD_INT_MASK = 0 (enable); SCD_START = 0 then 1; completion by the interrupt or by polling SCD_OVER bit 0 (WaitSCDFinish); then ReadScdStateReg (SCD_OVER, SCD_INT, SCD_NUM, ROLL_ADDR, SRC_EATEN). Alignment seen in the vendor code: message pool addresses and BUFFER_INI are rounded up to 4 bytes (add 3, bic 3; the Huawei V200 generation uses 16), the destination buffer start is 4 byte aligned and leaves 4 KB unused above it and 1 KB below; packets have no alignment. Differences to the later generation (HISI_SCD_AV300, Hi3516A V300): 0x44 is a configuration register there (here: interrupt status), plus 0x3C, 0x48, 0x5C, and the interrupt check reads 0x40 there. Reset values of all registers: unknown. Nothing in this block has been read or written on the board; the first probe is read-only (docs/scd-test-plan.md). Evidence labels in the register texts: PROVEN = access and value read from the Hi3520D disassembly, INFERRED = deduced from the code that uses the register (confidence HIGH, MEDIUM or LOW), GUESS = no evidence.";
 
     reg {
         name = "SCD start";
-        desc = "The vendor code writes 0, then (start & 1) after the other registers (WriteScdVtrlReg).
+        desc = "Writing 1 starts the scan of the configured source chain. The vendor writes 0 and then 1 (a rising edge, always the last register write of a job, WriteScdVtrlReg); PrintScdVtrlReg reads it back for debug, so it is readable.
 
-Sequence: write 0, then (start & 1) after all other registers; PrintScdVtrlReg reads it back for debug.
-
-Source: vendor module hi3520D_vfmw.ko (WriteScdVtrlReg (last two writes)), confidence HIGH, word-checked against the Hi3520D disassembly: yes. Not verified on hardware (nothing in this block has been read or written on the board); no reset value is known; not in the data sheet. Details: docs/rdl-campaign/vdh-scd.md.";
+Evidence: write 0 then (start and 1): PROVEN (hi3520D_vfmw.ko WriteScdVtrlReg, last two writes). Rising-edge behavior: INFERRED, MEDIUM. Not verified on hardware; reset value unknown; not in the data sheet. Details: docs/rdl-campaign/scd-vendor.md.";
 
         field {
             name = "start";
-            desc = "Write 1 to start start-code detection of one stream segment.";
+            desc = "Write 0, then 1, to start (INFERRED rising edge).";
             sw = rw;
             hw = r;
         } start[0:0];
@@ -23,14 +21,14 @@ Source: vendor module hi3520D_vfmw.ko (WriteScdVtrlReg (last two writes)), confi
     } SCD_START @ 0x0;
 
     reg {
-        name = "Segment list address";
-        desc = "Physical address of the output list of detected NAL/start-code segments.
+        name = "Source packet list address (down message)";
+        desc = "Physical address of the first node of the SOURCE packet chain (the vendor 'down message', 'list'). Previous text of this register called it the output list: that was wrong, the output is the up message at 0x08. Each node is 3 words (12 bytes): word 0 = physical address of the first byte of a source packet, word 1 = physical address of its LAST byte (start plus length minus 1, inclusive), word 2 = physical address of the next node, 0 in the last node (WriteScdMsg). The vendor chains at most 1024 nodes, builds them in a buffer aligned to 4 bytes and zero-fills the first node before use. The packets are read as one continuous stream; they need no alignment (the vendor passes arbitrary packet addresses and lengths).
 
-Source: vendor module hi3520D_vfmw.ko (WriteScdVtrlReg), confidence HIGH, word-checked against the Hi3520D disassembly: yes. Not verified on hardware (nothing in this block has been read or written on the board); no reset value is known; not in the data sheet. Details: docs/rdl-campaign/vdh-scd.md.";
+Evidence: register write and node layout PROVEN (WriteScdVtrlReg, WriteScdMsg disassembly: stores of start, start plus length minus 1, next node address, 0 for the last). Role as input list: PROVEN by the node contents. Whether the hardware requires 4 or 16 byte node alignment: INFERRED, LOW (vendor 4, Huawei V200 16). Not verified on hardware; reset value unknown; not in the data sheet. Details: docs/rdl-campaign/scd-vendor.md.";
 
         field {
             name = "list_address";
-            desc = "Physical DDR address.";
+            desc = "Physical DDR address of the first source node.";
             sw = rw;
             hw = r;
         } list_address[31:0];
@@ -38,14 +36,14 @@ Source: vendor module hi3520D_vfmw.ko (WriteScdVtrlReg), confidence HIGH, word-c
     } LIST_ADDRESS @ 0x4;
 
     reg {
-        name = "Up-message address";
-        desc = "Physical address of the message buffer the SCD writes its result into.
+        name = "Up-message pool address";
+        desc = "Physical address of the pool the SCD writes its start-code records into. Record = 2 words: word 0 = address of the start code (the first 00 of 00 00 01) inside the destination buffer, word 1 = byte offset of the same start code in the concatenated source stream (ProcessScdReturn: the segment is from word 0 of record i to word 0 of record i plus 1; the bytes to discard from the source are word 1 of the last usable record; the Hi3520D code does not mask the top bits of either word, the Huawei V200 generation reserves bits 31 and 30 of word 1 for flags). The pool must be writable DDR; the vendor rounds its base up to 4 bytes (16 in the Huawei V200 generation).
 
-Source: vendor module hi3520D_vfmw.ko (WriteScdVtrlReg), confidence HIGH, word-checked against the Hi3520D disassembly: yes. Not verified on hardware (nothing in this block has been read or written on the board); no reset value is known; not in the data sheet. Details: docs/rdl-campaign/vdh-scd.md.";
+Evidence: write PROVEN; record layout PROVEN for the use (ScdReturnSegFilter and ProcessScdReturn read the words with stride 8 bytes), semantic of word 1 INFERRED, HIGH (its value is passed to DeleteRawLen as the consumed length and to GetSegPts as the raw offset); position convention 'first 00 of 00 00 01' INFERRED, MEDIUM (vendor sends streams that begin with 00 00 01 xx and drops 3 trailing bytes so that a start code split over two sends is found again). Not verified on hardware; reset value unknown; not in the data sheet. Details: docs/rdl-campaign/scd-vendor.md.";
 
         field {
             name = "up_address";
-            desc = "Physical DDR address.";
+            desc = "Physical DDR address of the record pool.";
             sw = rw;
             hw = r;
         } up_address[31:0];
@@ -53,14 +51,14 @@ Source: vendor module hi3520D_vfmw.ko (WriteScdVtrlReg), confidence HIGH, word-c
     } UP_ADDRESS @ 0x8;
 
     reg {
-        name = "Up-message length";
-        desc = "Length of the up-message buffer.
+        name = "Up-message pool length";
+        desc = "Size of the up-message pool in 32 bit WORDS: the vendor writes 2 words times the number of free record slots (CutStreamWithSCD: slots times 8 bytes, shifted right by 2). ProcessScdReturn reads it back and halves it to get the record capacity. The counter SCD_NUM keeps counting after the pool is full, so SCD_NUM greater than or equal to UP_LEN divided by 2 means overflow. Hardware erratum handled in the vendor software: when the pool is full the last records are not usable; the vendor then trusts only the records up to capacity minus 2. The vendor never offers fewer than 4 slots and, in its own bookkeeping, keeps at most 512 records (hi3520D) per channel.
 
-Source: vendor module hi3520D_vfmw.ko (WriteScdVtrlReg (write), ProcessScdReturn (read-back: the count is halved and compared with the segment index)), confidence HIGH for the accesses, LOW for the unit, word-checked against the Hi3520D disassembly: yes. Not verified on hardware (nothing in this block has been read or written on the board); no reset value is known; not in the data sheet. Details: docs/rdl-campaign/vdh-scd.md.";
+Evidence: write and read-back PROVEN; unit (words) PROVEN (the value is slots times 8 bytes shifted right by 2, and the read-back is halved to a record count); overflow rule and erratum PROVEN as vendor behavior (comment in the Huawei source, same arithmetic in the Hi3520D code), hardware behavior INFERRED, MEDIUM. Not verified on hardware; reset value unknown; not in the data sheet. Details: docs/rdl-campaign/scd-vendor.md.";
 
         field {
             name = "up_len";
-            desc = "Length (vendor units).";
+            desc = "Pool size in 32 bit words (2 words per record).";
             sw = rw;
             hw = r;
         } up_len[31:0];
@@ -68,14 +66,14 @@ Source: vendor module hi3520D_vfmw.ko (WriteScdVtrlReg (write), ProcessScdReturn
     } UP_LEN @ 0xC;
 
     reg {
-        name = "Stream buffer first address";
-        desc = "Start of the circular stream buffer the SCD scans.
+        name = "Destination buffer first address";
+        desc = "Start of the circular destination buffer (vendor 'segment buffer') into which the SCD copies the source stream. The Hi3520D vendor places it 4 byte aligned, leaves 4 KB unused above it and 1 KB below its end (SM_Config: base plus 4096, size minus 5120), allows 32 KB to 4 MB and never sends more source bytes in one job than fit between BUFFER_INI and BUFFER_LAST minus about 80 bytes (so the engine does not wrap onto data it has not delivered). The reason for the 4 KB and 1 KB margins is not known (GUESS: a wrap-around helper area).
 
-Source: vendor module hi3520D_vfmw.ko (WriteScdVtrlReg), confidence HIGH, word-checked against the Hi3520D disassembly: yes. Not verified on hardware (nothing in this block has been read or written on the board); no reset value is known; not in the data sheet. Details: docs/rdl-campaign/vdh-scd.md.";
+Evidence: write PROVEN; role as copy destination INFERRED, HIGH (record word 0 values are addresses in this buffer and the vendor reads the stream back from it, SMSEG_PHY2VIR in ProcessScdReturn; data sheet 6.1: the decoder stream buffer comes from the SCD). Alignment and margins: PROVEN as vendor behavior. Not verified on hardware; reset value unknown; not in the data sheet. Details: docs/rdl-campaign/scd-vendor.md.";
 
         field {
             name = "buffer_first";
-            desc = "Physical DDR address.";
+            desc = "Physical DDR address of the first byte of the destination buffer.";
             sw = rw;
             hw = r;
         } buffer_first[31:0];
@@ -83,14 +81,14 @@ Source: vendor module hi3520D_vfmw.ko (WriteScdVtrlReg), confidence HIGH, word-c
     } BUFFER_FIRST @ 0x10;
 
     reg {
-        name = "Stream buffer last address";
-        desc = "End of the circular stream buffer.
+        name = "Destination buffer last address";
+        desc = "End of the circular destination buffer. The vendor writes BUFFER_FIRST plus the buffer size, i.e. one past the last byte if the size is the byte count (inclusive versus exclusive is not established; the vendor margin of 1 KB below makes both safe).
 
-Source: vendor module hi3520D_vfmw.ko (WriteScdVtrlReg), confidence HIGH, word-checked against the Hi3520D disassembly: yes. Not verified on hardware (nothing in this block has been read or written on the board); no reset value is known; not in the data sheet. Details: docs/rdl-campaign/vdh-scd.md.";
+Evidence: write PROVEN (value is segment base plus segment size); exclusive end INFERRED, LOW. Not verified on hardware; reset value unknown; not in the data sheet. Details: docs/rdl-campaign/scd-vendor.md.";
 
         field {
             name = "buffer_last";
-            desc = "Physical DDR address.";
+            desc = "Physical DDR address of the end of the destination buffer.";
             sw = rw;
             hw = r;
         } buffer_last[31:0];
@@ -98,14 +96,14 @@ Source: vendor module hi3520D_vfmw.ko (WriteScdVtrlReg), confidence HIGH, word-c
     } BUFFER_LAST @ 0x14;
 
     reg {
-        name = "Stream buffer scan start address";
-        desc = "Address where scanning starts inside the buffer.
+        name = "Destination buffer write start address";
+        desc = "Address inside the destination buffer where the first byte of this job is written (the vendor's free-space pointer, rounded up to 4 bytes; the Huawei V200 generation rounds to 16). Between jobs the vendor advances it past the bytes already handed to the decoder, so successive jobs fill the ring.
 
-Source: vendor module hi3520D_vfmw.ko (WriteScdVtrlReg), confidence HIGH, word-checked against the Hi3520D disassembly: yes. Not verified on hardware (nothing in this block has been read or written on the board); no reset value is known; not in the data sheet. Details: docs/rdl-campaign/vdh-scd.md.";
+Evidence: write PROVEN; meaning INFERRED, HIGH (value is the free-space write pointer, record word 0 values start at it). Not verified on hardware; reset value unknown; not in the data sheet. Details: docs/rdl-campaign/scd-vendor.md.";
 
         field {
             name = "buffer_ini";
-            desc = "Physical DDR address.";
+            desc = "Physical DDR address of the first write.";
             sw = rw;
             hw = r;
         } buffer_ini[31:0];
@@ -114,15 +112,13 @@ Source: vendor module hi3520D_vfmw.ko (WriteScdVtrlReg), confidence HIGH, word-c
 
     reg {
         name = "SCD interrupt mask";
-        desc = "EnableInt writes 0 (unmask); MaskInt masks; ResetSCD saves and restores bit 0. Polarity inferred.
+        desc = "0 = interrupt enabled, 1 = masked. SCDDRV_EnableInt writes 0 (the vendor does this in WriteScdVtrlReg before the start), SCDDRV_MaskInt writes 1, ResetSCD saves the register before the reset and restores bit 0 after it, so it is readable and survives the register file. The Hi3520D vendor ties the SCD interrupt to GIC ID 75.
 
-VCTRL_RunProcess masks the SCD interrupt around its loop; the SCD is the only interrupt the Hi3520D vfmw modules request (GIC ID 75).
-
-Source: vendor module hi3520D_vfmw.ko (SCDDRV_EnableInt (writes 0), SCDDRV_MaskInt, ResetSCD (saves and restores bit 0)), confidence HIGH for the accesses, LOW for the polarity, word-checked against the Hi3520D disassembly: yes. Not verified on hardware (nothing in this block has been read or written on the board); no reset value is known; not in the data sheet. Details: docs/rdl-campaign/vdh-scd.md.";
+Evidence: accesses and values PROVEN (EnableInt 0, MaskInt 1, ResetSCD save/restore with an and 1 on the restore); polarity INFERRED, HIGH (the names, and the vendor starts with the value 0). Not verified on hardware; reset value unknown; not in the data sheet. Details: docs/rdl-campaign/scd-vendor.md.";
 
         field {
             name = "mask";
-            desc = "0 = interrupt enabled (inferred).";
+            desc = "1 = interrupt masked, 0 = enabled.";
             sw = rw;
             hw = r;
         } mask[0:0];
@@ -131,20 +127,20 @@ Source: vendor module hi3520D_vfmw.ko (SCDDRV_EnableInt (writes 0), SCDDRV_MaskI
 
     reg {
         name = "SCD protocol select";
-        desc = "Vendor value = (slice_check_flag << 4 & 0x10) | (protocol & 0xF); the Huawei V400 driver adds bit 7 (secure) and bit 8 (low delay), unused on Hi3520D.
+        desc = "Start-code format. The vendor writes (slice_check shifted left 4, and 0x10) or (protocol and 0xF). The protocol value is the vendor standard code: 0 = H.264, and the vendor software maps VC-1, MVC and HEVC to 0 as well (the 00 00 01 search is the same), 2 = MPEG-4, 3 = MPEG-2, 4 = H.263 and 6 = AVS by the vendor standard enumeration (the enumeration itself is not in the corpus: only 0, 1 mapped to 0, and 6 with slice check are word-checked in the Hi3520D CutStreamWithSCD). Slice check (bit 4) is set for AVS only in the Hi3520D vendor code; the Huawei comment says it also detects slice start codes and must stay off for MPEG-4. The Huawei V200 generation adds bit 7 (secure mode) and bit 8 (low delay); the Hi3520D code does not write them (they are zero), and they probably do not exist here (GUESS).
 
-Source: vendor module hi3520D_vfmw.ko (WriteScdVtrlReg (write ((slice_check << 4) & 0x10) | (protocol & 0xF)), ProcessScdReturn (read-back)), confidence HIGH, word-checked against the Hi3520D disassembly: yes. Not verified on hardware (nothing in this block has been read or written on the board); no reset value is known; not in the data sheet. Details: docs/rdl-campaign/vdh-scd.md.";
+Evidence: composition (low 4 bits, bit 4) PROVEN (WriteScdVtrlReg, ProcessScdReturn reads the low 4 bits back); standard codes INFERRED, MEDIUM; effect of the values on the hardware: INFERRED, LOW. Not verified on hardware; reset value unknown; not in the data sheet. Details: docs/rdl-campaign/scd-vendor.md.";
 
         field {
             name = "protocol";
-            desc = "Video standard / start-code format (0 = H.264 assumed).";
+            desc = "Vendor standard code (0 = H.264 and also used for HEVC, VC-1, MVC).";
             sw = rw;
             hw = r;
         } protocol[3:0];
 
         field {
             name = "slice_check_flag";
-            desc = "Slice check enable.";
+            desc = "1 = also detect slice start codes (vendor: AVS only).";
             sw = rw;
             hw = r;
         } slice_check_flag[4:4];
@@ -153,9 +149,9 @@ Source: vendor module hi3520D_vfmw.ko (WriteScdVtrlReg (write ((slice_check << 4
 
     reg {
         name = "SCD interrupt clear";
-        desc = "Written 1 in the interrupt service routine.
+        desc = "Write 1 to acknowledge the interrupt. Written in the interrupt service routine only, after SCD_INT bit 0 was found set (SM_SCDIntServeProc). The vendor never writes it from the job set-up, although the job structure carries a value of 1 for it.
 
-Source: vendor module hi3520D_vfmw.ko (SM_SCDIntServeProc (write in the interrupt handler after reading SCD_INT)), confidence HIGH for the access, MEDIUM for the meaning, word-checked against the Hi3520D disassembly: yes. Not verified on hardware (nothing in this block has been read or written on the board); no reset value is known; not in the data sheet. Details: docs/rdl-campaign/vdh-scd.md.";
+Evidence: write of 1 in the ISR PROVEN; meaning (clears SCD_INT) INFERRED, HIGH. Not verified on hardware; reset value unknown; not in the data sheet. Details: docs/rdl-campaign/scd-vendor.md.";
 
         field {
             name = "clear";
@@ -168,35 +164,35 @@ Source: vendor module hi3520D_vfmw.ko (SM_SCDIntServeProc (write in the interrup
 
     reg {
         name = "SCD over";
-        desc = "Huawei code reads bit 0 as 'segment done'; the Hi3520D ResetSCD polls bit 1 until it reads 0.
+        desc = "Bit 0: scan finished (WaitSCDFinish polls it for 1 after the start, at most 200 reads or 1000 ms in the Huawei source; ReadScdStateReg stores it). Bit 1: polled for 0 by ResetSCD right after the reset request, at most 10000 reads; so it reads 1 while the engine is busy or resetting (INFERRED: busy/reset-in-progress). Independent of the interrupt mask, which makes it the polling fallback when the interrupt does not arrive.
 
-Source: vendor module hi3520D_vfmw.ko (ReadScdStateReg, WaitSCDFinish (bit 0), ResetSCD (waits for bit 1 to clear, 10000 iterations)), confidence HIGH for the accesses, MEDIUM for the meaning, word-checked against the Hi3520D disassembly: yes. Not verified on hardware (nothing in this block has been read or written on the board); no reset value is known; not in the data sheet. Details: docs/rdl-campaign/vdh-scd.md.";
+Evidence: reads PROVEN (ReadScdStateReg, WaitSCDFinish, ResetSCD); bit 0 = done INFERRED, HIGH (name of the register, Huawei comment, the wait loop); bit 1 = busy INFERRED, MEDIUM. Not verified on hardware; reset value unknown; not in the data sheet. Details: docs/rdl-campaign/scd-vendor.md.";
 
         field {
             name = "over";
-            desc = "Detection finished (Huawei HiSCDV200).";
+            desc = "1 = the scan of the chain finished.";
             sw = r;
             hw = w;
         } over[0:0];
 
         field {
-            name = "bit1";
-            desc = "Polled low by ResetSCD (meaning unknown).";
+            name = "rst_busy";
+            desc = "Polled low by ResetSCD (INFERRED busy or reset in progress). Was named bit1.";
             sw = r;
             hw = w;
-        } bit1[1:1];
+        } rst_busy[1:1];
 
     } SCD_OVER @ 0x40;
 
     reg {
         name = "SCD interrupt state";
-        desc = "Read in the interrupt service routine.
+        desc = "Bit 0: interrupt pending. SM_SCDIntServeProc reads it first and returns without any action if bit 0 is 0 (so the interrupt handler compares exactly this bit); otherwise it writes 1 to SCD_INI_CLR and processes the records. ReadScdStateReg stores bit 0 as well. On the later generation (Hi3516A V300) this offset is a written configuration register and the interrupt check uses 0x40 (HISI_SCD_AV300).
 
-Source: vendor module hi3520D_vfmw.ko (SM_SCDIntServeProc, ReadScdStateReg (bit 0)), confidence HIGH for the access, word-checked against the Hi3520D disassembly: yes. Not verified on hardware (nothing in this block has been read or written on the board); no reset value is known; not in the data sheet. Details: docs/rdl-campaign/vdh-scd.md.";
+Evidence: reads and the bit-0 test PROVEN (ISR and ReadScdStateReg disassembly); whether it is the raw or the masked status: unknown (GUESS: raw). Not verified on hardware; reset value unknown; not in the data sheet. Details: docs/rdl-campaign/scd-vendor.md.";
 
         field {
             name = "pending";
-            desc = "SCD interrupt pending (Huawei: bit 0).";
+            desc = "1 = SCD interrupt pending.";
             sw = r;
             hw = w;
         } pending[0:0];
@@ -204,21 +200,21 @@ Source: vendor module hi3520D_vfmw.ko (SM_SCDIntServeProc, ReadScdStateReg (bit 
     } SCD_INT @ 0x44;
 
     reg {
-        name = "SCD segment count";
-        desc = "Huawei ReadScdStateReg: ScdNum = bits [21:0], ShortScdNum = bits [31:22].
+        name = "SCD start-code count";
+        desc = "Number of start codes found by the last scan. scd_num [21:0] is the count of records the engine would write: it keeps counting when the up-message pool is full (the vendor treats a value above 100000 as an error, and clamps to the pool capacity and to 512), the record writes simply stop. short_scd_num [31:22] counts short (H.263 style) start codes; the Hi3520D vendor reads it and passes it on but never uses it for H.264. ReadScdStateReg masks the low field with 0x3FFFFF (clears bits 31:24 and 23:22) and shifts the high field down by 22.
 
-Source: vendor module hi3520D_vfmw.ko (ReadScdStateReg), confidence HIGH for the read access, MEDIUM for the field split, word-checked against the Hi3520D disassembly: yes. Not verified on hardware (nothing in this block has been read or written on the board); no reset value is known; not in the data sheet. Details: docs/rdl-campaign/vdh-scd.md.";
+Evidence: reads and the field split PROVEN (disassembly of ReadScdStateReg: logical shift right 22, and bic of 0xFF000000 and 0x00C00000); meaning of the count INFERRED, HIGH (ProcessScdReturn compares it with UP_LEN divided by 2); short count INFERRED, LOW. Not verified on hardware; reset value unknown; not in the data sheet. Details: docs/rdl-campaign/scd-vendor.md.";
 
         field {
             name = "scd_num";
-            desc = "Detected segment count.";
+            desc = "Start codes found (may exceed the pool capacity).";
             sw = r;
             hw = w;
         } scd_num[21:0];
 
         field {
             name = "short_scd_num";
-            desc = "Short start-code segment count.";
+            desc = "Short start-code count (MPEG-4/H.263 style; INFERRED).";
             sw = r;
             hw = w;
         } short_scd_num[31:22];
@@ -226,14 +222,14 @@ Source: vendor module hi3520D_vfmw.ko (ReadScdStateReg), confidence HIGH for the
     } SCD_NUM @ 0x4C;
 
     reg {
-        name = "Rollback address";
-        desc = "Address the SCD stopped at (used to resume).
+        name = "Destination roll address";
+        desc = "Address in the destination buffer just after the last byte the scan wrote before it stopped or wrapped. The vendor uses it as the end of the data at the buffer tail: when a record's successor lies at the start of the buffer, the segment length is ROLL_ADDR minus word 0, and a start code that wraps is stitched from the tail and the head (the MPEG-4 path copies one word from the buffer start to ROLL_ADDR). A value of 0 is treated as a hardware error by the vendor (CheckScdStateReg).
 
-Source: vendor module hi3520D_vfmw.ko (ReadScdStateReg), confidence HIGH for the read access, MEDIUM for the meaning, word-checked against the Hi3520D disassembly: yes. Not verified on hardware (nothing in this block has been read or written on the board); no reset value is known; not in the data sheet. Details: docs/rdl-campaign/vdh-scd.md.";
+Evidence: read PROVEN; meaning INFERRED, MEDIUM (from the arithmetic in ProcessScdReturn and the wrap handling). Whether it is also valid without a wrap (end of written data) is unknown. Not verified on hardware; reset value unknown; not in the data sheet. Details: docs/rdl-campaign/scd-vendor.md.";
 
         field {
             name = "roll_addr";
-            desc = "Physical DDR address.";
+            desc = "Physical DDR address after the last written byte.";
             sw = r;
             hw = w;
         } roll_addr[31:0];
@@ -242,13 +238,13 @@ Source: vendor module hi3520D_vfmw.ko (ReadScdStateReg), confidence HIGH for the
 
     reg {
         name = "Source bytes consumed";
-        desc = "Number of stream bytes consumed by the SCD.
+        desc = "Number of source bytes consumed by the scan. Read and logged by ReadScdStateReg; the vendor does not use it for flow control (it takes the consumed length from word 1 of the last usable record instead). On the Hi3516A V300 the vendor masks the top two bits, i.e. a 30 bit count; on the Hi3520D no mask is applied.
 
-Source: vendor module hi3520D_vfmw.ko (ReadScdStateReg), confidence HIGH for the read access, MEDIUM for the meaning, word-checked against the Hi3520D disassembly: yes. Not verified on hardware (nothing in this block has been read or written on the board); no reset value is known; not in the data sheet. Details: docs/rdl-campaign/vdh-scd.md.";
+Evidence: read PROVEN; meaning INFERRED, MEDIUM (name, logging). Not verified on hardware; reset value unknown; not in the data sheet. Details: docs/rdl-campaign/scd-vendor.md.";
 
         field {
             name = "src_eaten";
-            desc = "Bytes consumed.";
+            desc = "Source bytes consumed.";
             sw = r;
             hw = w;
         } src_eaten[31:0];
