@@ -1,0 +1,1503 @@
+`ifndef HI3536D_VDH_RDL
+`define HI3536D_VDH_RDL
+
+regfile eHI3536D_VDH {
+    name = "VDH video decoder, V400R001 generation (H.264 / H.265), Hi3536D V100";
+    desc = "VDH register window at 0x13200000 (GIC SPI 21 = interrupt bit 53 in the data sheet table 3-8). The data sheet has NO register table for the VDH (feature text only: H.265 Main@L4.1 and H.264 High@L4.2 up to 3072 x 3072, 4 x 1080p@20). Evidence: static disassembly of hi3536dv100_vfmw.ko (the HAL functions VDMHAL_V400R001_*, H264HAL_V400R001_*, HEVCHAL_V400R001_*) plus the GPL source of the later generation V400R004 for names and bit layouts. Every register and field carries PROVEN (offset and value seen in the Hi3536D vendor module), INFERRED (taken from V400R004 or from register semantics) or GUESS. Nothing was verified on hardware. The H.264 and HEVC paths use the same register set; HEVC differs only in the message words (see eHI3536D_VDH_PICMSG / SLICEMSG) and in BASIC_CFG0/1 values. Clock and reset: PERI_CRG41 (0x120400A4) bit 0 clock, bits 4/5/6 reset requests (MFD/SCD/ALL), status in PERI_CRG_PLL61 (0x120400F4) bits 1/2; VDM_OpenHardware writes 1 to CRG41 and, when the chip-revision byte at 0x12060024 equals 2, ORs 0xC. Documented in docs/research/hi3536dv100-blocks.md.";
+
+    reg {
+        name = "Decode start";
+        desc = "Pulse 0, 1, 0 starts decoding one picture (slice chain). PROVEN: VDMHAL_V400R001_StartHwDecode writes 0,1,0 after INT_MASK. Provenance: PROVEN. Source: hi3536dv100_vfmw.ko (VDMHAL_V400R001 / HEVCHAL_V400R001 disassembly, SDK 2.0.2.0).";
+        field {
+            name = "dec_start";
+            desc = "1 starts the decode [PROVEN]";
+            sw = rw;
+            hw = r;
+        } dec_start[0:0];
+    } VDH_START @ 0x0;
+
+    reg {
+        name = "Repair start";
+        desc = "Hardware error-repair copy start (pulse). Not used by the paths read. Provenance: INFERRED. Source: Huawei Kirin GPL VDH V400R004 header vdm_hal_local.h (a later generation of the same VDH).";
+        field {
+            name = "repair_start";
+            desc = "start repair [INFERRED]";
+            sw = rw;
+            hw = r;
+        } repair_start[0:0];
+    } VDH_REPAIR @ 0x4;
+
+    reg {
+        name = "Basic configuration 0";
+        desc = "HEVC path value: mbamt_to_dec = CTB count - 1, bit 24 set, bit 30 = scaling_list_enabled_flag, bit 28 also set by R001 (named luma_sum_en in R004, which the R004 source leaves 0: unexplained, may be a different bit in R001), bit 23 = 0. Provenance: PROVEN for offset, mbamt, bits 24/30. Source: hi3536dv100_vfmw.ko (VDMHAL_V400R001 / HEVCHAL_V400R001 disassembly, SDK 2.0.2.0); field names Huawei Kirin GPL VDH V400R004 header vdm_hal_local.h (a later generation of the same VDH).";
+        field {
+            name = "mbamt_to_dec";
+            desc = "Macroblock/CTB count to decode minus 1 [PROVEN]";
+            sw = rw;
+            hw = r;
+        } mbamt_to_dec[19:0];
+        field {
+            name = "memory_clock_gating_en";
+            desc = "Memory clock gating enable (name from R004; R001 leaves 0) [INFERRED]";
+            sw = rw;
+            hw = r;
+        } memory_clock_gating_en[20:20];
+        field {
+            name = "module_clock_gating_en";
+            desc = "Module clock gating enable (R004; R001 leaves 0) [INFERRED]";
+            sw = rw;
+            hw = r;
+        } module_clock_gating_en[21:21];
+        field {
+            name = "marker_bit_detect_en";
+            desc = "MPEG-4 marker bit detect (0) [INFERRED]";
+            sw = rw;
+            hw = r;
+        } marker_bit_detect_en[22:22];
+        field {
+            name = "ac_last_detect_en";
+            desc = "AC last detect (0 in R001) [PROVEN]";
+            sw = rw;
+            hw = r;
+        } ac_last_detect_en[23:23];
+        field {
+            name = "coef_idx_detect_en";
+            desc = "Coefficient index detect (1 in R001) [PROVEN]";
+            sw = rw;
+            hw = r;
+        } coef_idx_detect_en[24:24];
+        field {
+            name = "vop_type_detect_en";
+            desc = "VOP type detect (0) [INFERRED]";
+            sw = rw;
+            hw = r;
+        } vop_type_detect_en[25:25];
+        field {
+            name = "work_mode";
+            desc = "Work mode (R004 HEVC struct; R001 writes 0) [INFERRED]";
+            sw = rw;
+            hw = r;
+        } work_mode[27:26];
+        field {
+            name = "luma_sum_en";
+            desc = "R004 name; R001 writes 1 here (see register text) [INFERRED]";
+            sw = rw;
+            hw = r;
+        } luma_sum_en[28:28];
+        field {
+            name = "luma_histogram_en";
+            desc = "Luma histogram enable (0) [INFERRED]";
+            sw = rw;
+            hw = r;
+        } luma_histogram_en[29:29];
+        field {
+            name = "load_qmatrix_flag";
+            desc = "Load scaling list (HEVC: scaling_list_enabled_flag; R001 inserts it at bit 30) [PROVEN]";
+            sw = rw;
+            hw = r;
+        } load_qmatrix_flag[30:30];
+        field {
+            name = "vdh_safe_flag";
+            desc = "Secure mode flag (0 in the normal build) [INFERRED]";
+            sw = rw;
+            hw = r;
+        } vdh_safe_flag[31:31];
+    } BASIC_CFG0 @ 0x8;
+
+    reg {
+        name = "Basic configuration 1";
+        desc = "HEVC: video_standard 0xD, fst_slc_grp = NewPicFlag, mv_output_en 1, vdh_2d_en 1, max_slcgrp_num 3, frm_cmp_en = Compress_en, ppfd_en 0 (R004 source values; R001 writes video_standard 13 and max_slcgrp_num 3, PROVEN from the stores). H.264 uses video_standard 0. Provenance: PROVEN for video_standard, max_slcgrp_num; others INFERRED. Source: hi3536dv100_vfmw.ko (VDMHAL_V400R001 / HEVCHAL_V400R001 disassembly, SDK 2.0.2.0); names Huawei Kirin GPL VDH V400R004 header vdm_hal_local.h (a later generation of the same VDH).";
+        field {
+            name = "video_standard";
+            desc = "0 = H.264, 0xD = HEVC (the module dispatches on standard code 0 / 16 = H.264 / HEVC) [PROVEN]";
+            sw = rw;
+            hw = r;
+        } video_standard[3:0];
+        field {
+            name = "reserved_12_4";
+            desc = "reserved (ddr_stride in the H.264 struct) [INFERRED]";
+            sw = r;
+            hw = r;
+        } reserved_12_4[12:4];
+        field {
+            name = "uv_order_en";
+            desc = "UV order swap for CRC on NV12 [INFERRED]";
+            sw = rw;
+            hw = r;
+        } uv_order_en[13:13];
+        field {
+            name = "fst_slc_grp";
+            desc = "first slice group of a picture [INFERRED]";
+            sw = rw;
+            hw = r;
+        } fst_slc_grp[14:14];
+        field {
+            name = "mv_output_en";
+            desc = "write motion vectors to DDR (1) [INFERRED]";
+            sw = rw;
+            hw = r;
+        } mv_output_en[15:15];
+        field {
+            name = "max_slcgrp_num";
+            desc = "max slice groups per batch (3) [PROVEN]";
+            sw = rw;
+            hw = r;
+        } max_slcgrp_num[27:16];
+        field {
+            name = "line_num_output_en";
+            desc = "line number output (0) [INFERRED]";
+            sw = rw;
+            hw = r;
+        } line_num_output_en[28:28];
+        field {
+            name = "vdh_2d_en";
+            desc = "2D (tiled) output enable (1) [INFERRED]";
+            sw = rw;
+            hw = r;
+        } vdh_2d_en[29:29];
+        field {
+            name = "frm_cmp_en";
+            desc = "frame compression (Compress_en) [INFERRED]";
+            sw = rw;
+            hw = r;
+        } frm_cmp_en[30:30];
+        field {
+            name = "ppfd_en";
+            desc = "PPFD enable (0) [INFERRED]";
+            sw = rw;
+            hw = r;
+        } ppfd_en[31:31];
+    } BASIC_CFG1 @ 0xC;
+
+    reg {
+        name = "Down message (AV) address";
+        desc = "Physical address of the picture+slice message chain, bits [3:0] zero. PROVEN: stored as MsgSlotAddr & 0xFFFFFFF0. Provenance: PROVEN. Source: hi3536dv100_vfmw.ko (VDMHAL_V400R001 / HEVCHAL_V400R001 disassembly, SDK 2.0.2.0).";
+        field {
+            name = "av_msg_addr";
+            desc = "message pool address >> 0, 16-byte aligned [PROVEN]";
+            sw = rw;
+            hw = r;
+        } av_msg_addr[31:0];
+    } AVM_ADDR @ 0x10;
+
+    reg {
+        name = "Up message (VA) address";
+        desc = "Physical address of the up (report) message, 16-byte aligned. PROVEN. Provenance: PROVEN. Source: hi3536dv100_vfmw.ko (VDMHAL_V400R001 / HEVCHAL_V400R001 disassembly, SDK 2.0.2.0).";
+        field {
+            name = "va_msg_addr";
+            desc = "up message address [PROVEN]";
+            sw = rw;
+            hw = r;
+        } va_msg_addr[31:0];
+    } VAM_ADDR @ 0x14;
+
+    reg {
+        name = "Stream base address";
+        desc = "Physical start of the stream buffer, & ~0xF. PROVEN; slice offsets in the message are relative to it. Provenance: PROVEN. Source: hi3536dv100_vfmw.ko (VDMHAL_V400R001 / HEVCHAL_V400R001 disassembly, SDK 2.0.2.0).";
+        field {
+            name = "stream_base_addr";
+            desc = "stream base [PROVEN]";
+            sw = rw;
+            hw = r;
+        } stream_base_addr[31:0];
+    } STREAM_BASE_ADDR @ 0x18;
+
+    reg {
+        name = "VDH state";
+        desc = "Decoded slice count, over/error status and version id. R004 layout; offset 0x1C INFERRED. A version_id read would identify the die (hardware needed). Provenance: INFERRED. Source: Huawei Kirin GPL VDH V400R004 header vdm_hal_local.h (a later generation of the same VDH).";
+        field {
+            name = "decoded_slice_num";
+            desc = "decoded slice count [INFERRED]";
+            sw = r;
+            hw = r;
+        } decoded_slice_num[16:0];
+        field {
+            name = "intrs_vdh_dec_over";
+            desc = "decode over [INFERRED]";
+            sw = r;
+            hw = r;
+        } intrs_vdh_dec_over[17:17];
+        field {
+            name = "intrs_vdh_dec_err";
+            desc = "decode error [INFERRED]";
+            sw = r;
+            hw = r;
+        } intrs_vdh_dec_err[18:18];
+        field {
+            name = "version_id";
+            desc = "hardware version [INFERRED]";
+            sw = r;
+            hw = r;
+        } version_id[26:19];
+        field {
+            name = "reserved_31_27";
+            desc = "reserved [INFERRED]";
+            sw = r;
+            hw = r;
+        } reserved_31_27[31:27];
+    } VDH_STATE @ 0x1C;
+
+    reg {
+        name = "Interrupt status";
+        desc = "PROVEN: ClearIntState writes 0xFFFFFFFF (write-1-to-clear assumed). bit 0 dec over, bit 1 dec error (R004 names). Provenance: PROVEN offset/clear. Source: hi3536dv100_vfmw.ko (VDMHAL_V400R001 / HEVCHAL_V400R001 disassembly, SDK 2.0.2.0); names Huawei Kirin GPL VDH V400R004 header vdm_hal_local.h (a later generation of the same VDH).";
+        field {
+            name = "intrs_vdm_dec_over";
+            desc = "decode finished [INFERRED]";
+            sw = rw;
+            hw = r;
+        } intrs_vdm_dec_over[0:0];
+        field {
+            name = "intrs_vdm_dec_err";
+            desc = "decode error [INFERRED]";
+            sw = rw;
+            hw = r;
+        } intrs_vdm_dec_err[1:1];
+        field {
+            name = "reserved_31_2";
+            desc = "reserved [INFERRED]";
+            sw = r;
+            hw = r;
+        } reserved_31_2[31:2];
+    } INT_STATE @ 0x20;
+
+    reg {
+        name = "Interrupt mask";
+        desc = "PROVEN: EnableInt/StartHwDecode write 0xFFFFFFFE (bit 0 unmasked, 1 = masked); the busy-wait build writes 0xFFFFFFFF. Provenance: PROVEN. Source: hi3536dv100_vfmw.ko (VDMHAL_V400R001 / HEVCHAL_V400R001 disassembly, SDK 2.0.2.0).";
+        field {
+            name = "mask_dec_over";
+            desc = "0 = interrupt enabled [PROVEN]";
+            sw = rw;
+            hw = r;
+        } mask_dec_over[0:0];
+        field {
+            name = "mask_dec_err";
+            desc = "0 = interrupt enabled (0xFFFFFFFE leaves it masked) [PROVEN]";
+            sw = rw;
+            hw = r;
+        } mask_dec_err[1:1];
+        field {
+            name = "reserved_31_2";
+            desc = "reserved [INFERRED]";
+            sw = r;
+            hw = r;
+        } reserved_31_2[31:2];
+    } INT_MASK @ 0x24;
+
+    reg {
+        name = "VCTRL state";
+        desc = "PROVEN: IsVdmRun reads this register and treats value 1 as idle. Provenance: PROVEN. Source: hi3536dv100_vfmw.ko (VDMHAL_V400R001 / HEVCHAL_V400R001 disassembly, SDK 2.0.2.0).";
+        field {
+            name = "vctrl_state";
+            desc = "1 = idle, else running [PROVEN]";
+            sw = r;
+            hw = r;
+        } vctrl_state[31:0];
+    } VCTRL_STATE @ 0x28;
+
+    reg {
+        name = "AXI master id / outstanding";
+        desc = "R004 location; in R001 the EMAR_ID value is written in the SCD top window (0x1320C004), not here. Provenance: INFERRED. Source: Huawei Kirin GPL VDH V400R004 header vdm_hal_local.h (a later generation of the same VDH).";
+        field {
+            name = "emar_id";
+            desc = "AXI master configuration [INFERRED]";
+            sw = rw;
+            hw = r;
+        } emar_id[31:0];
+    } EMAR_ID @ 0x30;
+
+    reg {
+        name = "Sed To";
+        desc = "Module timeout counter. PROVEN: HEVC CfgVdmReg writes 0x00300C03 to every timeout register 0x3C-0x54. Provenance: PROVEN. Source: hi3536dv100_vfmw.ko (VDMHAL_V400R001 / HEVCHAL_V400R001 disassembly, SDK 2.0.2.0).";
+        field {
+            name = "sed_to";
+            desc = "timeout value, written 0x00300C03 [PROVEN]";
+            sw = rw;
+            hw = r;
+        } sed_to[31:0];
+    } SED_TO @ 0x3C;
+
+    reg {
+        name = "Itrans To";
+        desc = "Module timeout counter. PROVEN: HEVC CfgVdmReg writes 0x00300C03 to every timeout register 0x3C-0x54. Provenance: PROVEN. Source: hi3536dv100_vfmw.ko (VDMHAL_V400R001 / HEVCHAL_V400R001 disassembly, SDK 2.0.2.0).";
+        field {
+            name = "itrans_to";
+            desc = "timeout value, written 0x00300C03 [PROVEN]";
+            sw = rw;
+            hw = r;
+        } itrans_to[31:0];
+    } ITRANS_TO @ 0x40;
+
+    reg {
+        name = "Pmv To";
+        desc = "Module timeout counter. PROVEN: HEVC CfgVdmReg writes 0x00300C03 to every timeout register 0x3C-0x54. Provenance: PROVEN. Source: hi3536dv100_vfmw.ko (VDMHAL_V400R001 / HEVCHAL_V400R001 disassembly, SDK 2.0.2.0).";
+        field {
+            name = "pmv_to";
+            desc = "timeout value, written 0x00300C03 [PROVEN]";
+            sw = rw;
+            hw = r;
+        } pmv_to[31:0];
+    } PMV_TO @ 0x44;
+
+    reg {
+        name = "Prc To";
+        desc = "Module timeout counter. PROVEN: HEVC CfgVdmReg writes 0x00300C03 to every timeout register 0x3C-0x54. Provenance: PROVEN. Source: hi3536dv100_vfmw.ko (VDMHAL_V400R001 / HEVCHAL_V400R001 disassembly, SDK 2.0.2.0).";
+        field {
+            name = "prc_to";
+            desc = "timeout value, written 0x00300C03 [PROVEN]";
+            sw = rw;
+            hw = r;
+        } prc_to[31:0];
+    } PRC_TO @ 0x48;
+
+    reg {
+        name = "Rcn To";
+        desc = "Module timeout counter. PROVEN: HEVC CfgVdmReg writes 0x00300C03 to every timeout register 0x3C-0x54. Provenance: PROVEN. Source: hi3536dv100_vfmw.ko (VDMHAL_V400R001 / HEVCHAL_V400R001 disassembly, SDK 2.0.2.0).";
+        field {
+            name = "rcn_to";
+            desc = "timeout value, written 0x00300C03 [PROVEN]";
+            sw = rw;
+            hw = r;
+        } rcn_to[31:0];
+    } RCN_TO @ 0x4C;
+
+    reg {
+        name = "Dblk To";
+        desc = "Module timeout counter. PROVEN: HEVC CfgVdmReg writes 0x00300C03 to every timeout register 0x3C-0x54. Provenance: PROVEN. Source: hi3536dv100_vfmw.ko (VDMHAL_V400R001 / HEVCHAL_V400R001 disassembly, SDK 2.0.2.0).";
+        field {
+            name = "dblk_to";
+            desc = "timeout value, written 0x00300C03 [PROVEN]";
+            sw = rw;
+            hw = r;
+        } dblk_to[31:0];
+    } DBLK_TO @ 0x50;
+
+    reg {
+        name = "Ppfd To";
+        desc = "Module timeout counter. PROVEN: HEVC CfgVdmReg writes 0x00300C03 to every timeout register 0x3C-0x54. Provenance: PROVEN. Source: hi3536dv100_vfmw.ko (VDMHAL_V400R001 / HEVCHAL_V400R001 disassembly, SDK 2.0.2.0).";
+        field {
+            name = "ppfd_to";
+            desc = "timeout value, written 0x00300C03 [PROVEN]";
+            sw = rw;
+            hw = r;
+        } ppfd_to[31:0];
+    } PPFD_TO @ 0x54;
+
+    reg {
+        name = "Luma frame address (1D)";
+        desc = "PROVEN: ImgPhyAddr & 0xFFFFFF00 (256-byte aligned). Provenance: PROVEN. Source: hi3536dv100_vfmw.ko (VDMHAL_V400R001 / HEVCHAL_V400R001 disassembly, SDK 2.0.2.0).";
+        field {
+            name = "ystaddr_1d";
+            desc = "luma base address of the output picture [PROVEN]";
+            sw = rw;
+            hw = r;
+        } ystaddr_1d[31:0];
+    } YSTADDR_1D @ 0x60;
+
+    reg {
+        name = "Luma stride";
+        desc = "PROVEN: imgstride. Provenance: PROVEN. Source: hi3536dv100_vfmw.ko (VDMHAL_V400R001 / HEVCHAL_V400R001 disassembly, SDK 2.0.2.0).";
+        field {
+            name = "ystride_1d";
+            desc = "line stride in bytes [PROVEN]";
+            sw = rw;
+            hw = r;
+        } ystride_1d[31:0];
+    } YSTRIDE_1D @ 0x64;
+
+    reg {
+        name = "Chroma offset";
+        desc = "PROVEN: UVOffset, chroma plane offset from the luma base. Provenance: PROVEN. Source: hi3536dv100_vfmw.ko (VDMHAL_V400R001 / HEVCHAL_V400R001 disassembly, SDK 2.0.2.0).";
+        field {
+            name = "uvoffset_1d";
+            desc = "chroma offset [PROVEN]";
+            sw = rw;
+            hw = r;
+        } uvoffset_1d[31:0];
+    } UVOFFSET_1D @ 0x68;
+
+    reg {
+        name = "Header info offset (compression)";
+        desc = "PROVEN: written 0. Provenance: PROVEN. Source: hi3536dv100_vfmw.ko (VDMHAL_V400R001 / HEVCHAL_V400R001 disassembly, SDK 2.0.2.0).";
+        field {
+            name = "head_inf_offset";
+            desc = "compression header offset [PROVEN]";
+            sw = rw;
+            hw = r;
+        } head_inf_offset[31:0];
+    } HEAD_INF_OFFSET @ 0x6C;
+
+    reg {
+        name = "Line number output address";
+        desc = "R004 alias PRCMEM1_1D_CNT; written only with the low-delay build option. Provenance: INFERRED. Source: Huawei Kirin GPL VDH V400R004 header vdm_hal_local.h (a later generation of the same VDH).";
+        field {
+            name = "line_num_staddr";
+            desc = "line number buffer [INFERRED]";
+            sw = rw;
+            hw = r;
+        } line_num_staddr[31:0];
+    } LINE_NUM_STADDR @ 0x70;
+
+    reg {
+        name = "PPFD buffer address";
+        desc = "PROVEN offset, value 0 (PPFD unused). Provenance: PROVEN. Source: hi3536dv100_vfmw.ko (VDMHAL_V400R001 / HEVCHAL_V400R001 disassembly, SDK 2.0.2.0).";
+        field {
+            name = "ppfd_buf_addr";
+            desc = "PPFD buffer [PROVEN]";
+            sw = rw;
+            hw = r;
+        } ppfd_buf_addr[31:0];
+    } PPFD_BUF_ADDR @ 0x80;
+
+    reg {
+        name = "PPFD buffer length";
+        desc = "PROVEN offset, value 0. Provenance: PROVEN. Source: hi3536dv100_vfmw.ko (VDMHAL_V400R001 / HEVCHAL_V400R001 disassembly, SDK 2.0.2.0).";
+        field {
+            name = "ppfd_buf_len";
+            desc = "length [PROVEN]";
+            sw = rw;
+            hw = r;
+        } ppfd_buf_len[15:0];
+        field {
+            name = "reserved_31_16";
+            desc = "reserved [INFERRED]";
+            sw = r;
+            hw = r;
+        } reserved_31_16[31:16];
+    } PPFD_BUF_LEN @ 0x84;
+
+    reg {
+        name = "Reference picture type";
+        desc = "2 bits per reference picture (16 entries); R004 layout, offset INFERRED (R001 H.264 path writes it). Provenance: INFERRED. Source: Huawei Kirin GPL VDH V400R004 header vdm_hal_local.h (a later generation of the same VDH).";
+        field {
+            name = "ref_pic_type_0";
+            desc = "reference type [INFERRED]";
+            sw = rw;
+            hw = r;
+        } ref_pic_type_0[1:0];
+        field {
+            name = "ref_pic_type_1";
+            desc = "reference type [INFERRED]";
+            sw = rw;
+            hw = r;
+        } ref_pic_type_1[3:2];
+        field {
+            name = "ref_pic_type_2";
+            desc = "reference type [INFERRED]";
+            sw = rw;
+            hw = r;
+        } ref_pic_type_2[5:4];
+        field {
+            name = "ref_pic_type_3";
+            desc = "reference type [INFERRED]";
+            sw = rw;
+            hw = r;
+        } ref_pic_type_3[7:6];
+        field {
+            name = "ref_pic_type_4";
+            desc = "reference type [INFERRED]";
+            sw = rw;
+            hw = r;
+        } ref_pic_type_4[9:8];
+        field {
+            name = "ref_pic_type_5";
+            desc = "reference type [INFERRED]";
+            sw = rw;
+            hw = r;
+        } ref_pic_type_5[11:10];
+        field {
+            name = "ref_pic_type_6";
+            desc = "reference type [INFERRED]";
+            sw = rw;
+            hw = r;
+        } ref_pic_type_6[13:12];
+        field {
+            name = "ref_pic_type_7";
+            desc = "reference type [INFERRED]";
+            sw = rw;
+            hw = r;
+        } ref_pic_type_7[15:14];
+        field {
+            name = "ref_pic_type_8";
+            desc = "reference type [INFERRED]";
+            sw = rw;
+            hw = r;
+        } ref_pic_type_8[17:16];
+        field {
+            name = "ref_pic_type_9";
+            desc = "reference type [INFERRED]";
+            sw = rw;
+            hw = r;
+        } ref_pic_type_9[19:18];
+        field {
+            name = "ref_pic_type_10";
+            desc = "reference type [INFERRED]";
+            sw = rw;
+            hw = r;
+        } ref_pic_type_10[21:20];
+        field {
+            name = "ref_pic_type_11";
+            desc = "reference type [INFERRED]";
+            sw = rw;
+            hw = r;
+        } ref_pic_type_11[23:22];
+        field {
+            name = "ref_pic_type_12";
+            desc = "reference type [INFERRED]";
+            sw = rw;
+            hw = r;
+        } ref_pic_type_12[25:24];
+        field {
+            name = "ref_pic_type_13";
+            desc = "reference type [INFERRED]";
+            sw = rw;
+            hw = r;
+        } ref_pic_type_13[27:26];
+        field {
+            name = "ref_pic_type_14";
+            desc = "reference type [INFERRED]";
+            sw = rw;
+            hw = r;
+        } ref_pic_type_14[29:28];
+        field {
+            name = "ref_pic_type_15";
+            desc = "reference type [INFERRED]";
+            sw = rw;
+            hw = r;
+        } ref_pic_type_15[31:30];
+    } REF_PIC_TYPE @ 0x94;
+
+    reg {
+        name = "Frame-flush / adaptive enable";
+        desc = "PROVEN offset (HEVC CfgVdmReg stores to 0x98); R004 writes 2. Provenance: PROVEN. Source: hi3536dv100_vfmw.ko (VDMHAL_V400R001 / HEVCHAL_V400R001 disassembly, SDK 2.0.2.0).";
+        field {
+            name = "ff_apt_en";
+            desc = "enable (R004 writes the value 2: bit 1) [INFERRED]";
+            sw = rw;
+            hw = r;
+        } ff_apt_en[0:0];
+        field {
+            name = "reserved_31_1";
+            desc = "reserved [INFERRED]";
+            sw = r;
+            hw = r;
+        } reserved_31_1[31:1];
+    } FF_APT_EN @ 0x98;
+
+    reg {
+        name = "Decode cycles per picture";
+        desc = "Performance counter (R004). Provenance: INFERRED. Source: Huawei Kirin GPL VDH V400R004 header vdm_hal_local.h (a later generation of the same VDH).";
+        field {
+            name = "dec_cycleperpic";
+            desc = "cycles [INFERRED]";
+            sw = r;
+            hw = r;
+        } dec_cycleperpic[31:0];
+    } DEC_CYCLEPERPIC @ 0xB0;
+
+    reg {
+        name = "Read bandwidth per picture";
+        desc = "Counter (R004). Provenance: INFERRED. Source: Huawei Kirin GPL VDH V400R004 header vdm_hal_local.h (a later generation of the same VDH).";
+        field {
+            name = "rd_bdwidth_perpic";
+            desc = "bytes [INFERRED]";
+            sw = r;
+            hw = r;
+        } rd_bdwidth_perpic[31:0];
+    } RD_BDWIDTH_PERPIC @ 0xB4;
+
+    reg {
+        name = "Write bandwidth per picture";
+        desc = "Counter (R004). Provenance: INFERRED. Source: Huawei Kirin GPL VDH V400R004 header vdm_hal_local.h (a later generation of the same VDH).";
+        field {
+            name = "wr_bdwidth_perpic";
+            desc = "bytes [INFERRED]";
+            sw = r;
+            hw = r;
+        } wr_bdwidth_perpic[31:0];
+    } WR_BDWIDTH_PERPIC @ 0xB8;
+
+    reg {
+        name = "Read requests per picture";
+        desc = "Counter (R004). Provenance: INFERRED. Source: Huawei Kirin GPL VDH V400R004 header vdm_hal_local.h (a later generation of the same VDH).";
+        field {
+            name = "rd_req_perpic";
+            desc = "requests [INFERRED]";
+            sw = r;
+            hw = r;
+        } rd_req_perpic[31:0];
+    } RD_REQ_PERPIC @ 0xBC;
+
+    reg {
+        name = "Write requests per picture";
+        desc = "Counter (R004). Provenance: INFERRED. Source: Huawei Kirin GPL VDH V400R004 header vdm_hal_local.h (a later generation of the same VDH).";
+        field {
+            name = "wr_req_perpic";
+            desc = "requests [INFERRED]";
+            sw = r;
+            hw = r;
+        } wr_req_perpic[31:0];
+    } WR_REQ_PERPIC @ 0xC0;
+
+};
+
+regfile eHI3536D_VDH_TOP {
+    name = "VDH top / SCD glue registers (0x1320C000 window), Hi3536D V100";
+    desc = "Four glue registers at the start of the SCD window (the SCD proper is eHISI_SCD at 0x1320C800). PROVEN offsets: hi3536dv100_vfmw.ko writes 0xC000 (VDMHAL_V400R001_PrepareDec: 1 when the standard code is 6 else 0), 0xC004 (WriteScdEMARID: 0x0481A1F7; HEVC CfgVdmReg also read-modify-writes bit 16 depending on picture width <= 4096, from R004 source), 0xC008 (PrepareDec: 1, only for VDH 0), 0xC00C (StartHwDecode, VDH id > 0 only). Names AVS_FLAG / EMAR_ID / VDH_SELRST / VDH_CK_GT follow the V400R004 documentation in docs/rdl-campaign/vdh-scd.md (INFERRED).";
+    reg {
+        name = "AVS flag";
+        desc = "1 when the stream standard code is 6 (AVS), else 0. PROVEN offset and value. Provenance: PROVEN. Source: hi3536dv100_vfmw.ko (VDMHAL_V400R001 / HEVCHAL_V400R001 disassembly, SDK 2.0.2.0).";
+        field {
+            name = "avs_flag";
+            desc = "AVS mode [PROVEN]";
+            sw = rw;
+            hw = r;
+        } avs_flag[0:0];
+    } AVS_FLAG @ 0x0;
+
+    reg {
+        name = "AXI master ID / limits";
+        desc = "PROVEN: VDMHAL_V400R001_WriteScdEMARID writes 0x0481A1F7; HEVC CfgVdmReg then sets/clears bit 16 by width (R004 source). Provenance: PROVEN. Source: hi3536dv100_vfmw.ko (VDMHAL_V400R001 / HEVCHAL_V400R001 disassembly, SDK 2.0.2.0); Huawei Kirin GPL VDH V400R004 header vdm_hal_local.h (a later generation of the same VDH).";
+        field {
+            name = "emar_id";
+            desc = "AXI master configuration word (fields unknown) [INFERRED]";
+            sw = rw;
+            hw = r;
+        } emar_id[31:0];
+    } EMAR_ID @ 0x4;
+
+    reg {
+        name = "VDH reset select";
+        desc = "PROVEN: PrepareDec writes 1 for VDH 0. Provenance: PROVEN. Source: hi3536dv100_vfmw.ko (VDMHAL_V400R001 / HEVCHAL_V400R001 disassembly, SDK 2.0.2.0).";
+        field {
+            name = "vdh_selrst";
+            desc = "select [INFERRED]";
+            sw = rw;
+            hw = r;
+        } vdh_selrst[0:0];
+    } VDH_SELRST @ 0x8;
+
+    reg {
+        name = "VDH clock gate";
+        desc = "Written 2 or 3 depending on the standard (only on the VDH1 path, never taken on this single-VDH chip). Provenance: INFERRED. Source: hi3536dv100_vfmw.ko (VDMHAL_V400R001 / HEVCHAL_V400R001 disassembly, SDK 2.0.2.0).";
+        field {
+            name = "vdh_ck_gt";
+            desc = "clock gating [INFERRED]";
+            sw = rw;
+            hw = r;
+        } vdh_ck_gt[1:0];
+    } VDH_CK_GT @ 0xC;
+
+};
+
+regfile eHI3536D_VDH_PICMSG {
+    name = "VDH HEVC picture message (DDR, NOT registers), Hi3536D V100";
+    desc = "NOT A REGISTER FILE: layout of the 64-word picture message ('burst 0', D0-D63) the HEVC driver writes into the message pool (slot DN_MSG_SLOT_INDEX) before the slice messages; the VDH reads it through AVM_ADDR. Offsets are word index x 4. Names and bit positions from the GPL Kirin V400R004 source; the R001 module of this chip was checked by its stored word offsets (1-7, 25, 43, 54-61, 63, plus the loops for D8-D24 and D26-D41) and by the shift constants of D0 (25, 23, 22, 21, 19, 18), D2 (29, 28, 27, 24, 21, 18, 15, 12, 9, 6, 3), D3 (22, 16, 12, 8, 4), D54 (16), D60 (24-19, 16, 13-10, 5): all agree. Words not listed are not written. Words 64-319 (bursts 1-4) hold the scaling lists (4 x 64 words, HEVC_WriteQmatrix, order 4x4/8x8/16x16/32x32 as the driver's Qmatrix array); the tile table is a separate buffer pointed to by D55 (TileId 2 x 128 words of 4 packed bytes, TilePosX 20 words, TilePosY 22 words, 16-bit pairs).";
+    reg {
+        name = "D0 sequence flags and size";
+        desc = "D0 sequence flags and size Provenance: PROVEN (shift constants). Source: HEVCHAL_V400R004_SetPicMsg / SetSliceMsg (GPL Kirin source); shift constants and stored word offsets of HEVCHAL_V400R001_SetPicMsg / SetSliceMsg (hi3536dv100_vfmw.ko) agree.";
+        field {
+            name = "pic_width_in_ctbs_minus1";
+            desc = "PicWidthInCtbsYMinus1 [INFERRED]";
+            sw = rw;
+            hw = r;
+        } pic_width_in_ctbs_minus1[8:0];
+        field {
+            name = "pic_height_in_ctbs_minus1";
+            desc = "PicHightInCtbsYMinus1 [INFERRED]";
+            sw = rw;
+            hw = r;
+        } pic_height_in_ctbs_minus1[17:9];
+        field {
+            name = "pcm_enabled_flag";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } pcm_enabled_flag[18:18];
+        field {
+            name = "chroma_format_idc";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } chroma_format_idc[20:19];
+        field {
+            name = "amp_enabled_flag";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } amp_enabled_flag[21:21];
+        field {
+            name = "sample_adaptive_offset_enabled_flag";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } sample_adaptive_offset_enabled_flag[22:22];
+        field {
+            name = "pcm_loop_filter_disabled_flag";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } pcm_loop_filter_disabled_flag[23:23];
+        field {
+            name = "scaling_list_enabled_flag";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } scaling_list_enabled_flag[24:24];
+        field {
+            name = "strong_intra_smoothing_enabled_flag";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } strong_intra_smoothing_enabled_flag[25:25];
+    } D0 @ 0x0;
+
+    reg {
+        name = "D1 POC";
+        desc = "D1 POC Provenance: PROVEN (word offset). Source: HEVCHAL_V400R004_SetPicMsg / SetSliceMsg (GPL Kirin source); shift constants and stored word offsets of HEVCHAL_V400R001_SetPicMsg / SetSliceMsg (hi3536dv100_vfmw.ko) agree.";
+        field {
+            name = "this_poc";
+            desc = "ThisPoc [INFERRED]";
+            sw = rw;
+            hw = r;
+        } this_poc[31:0];
+    } D1 @ 0x4;
+
+    reg {
+        name = "D2 coding tree parameters";
+        desc = "D2 coding tree parameters Provenance: PROVEN (shift constants). Source: HEVCHAL_V400R004_SetPicMsg / SetSliceMsg (GPL Kirin source); shift constants and stored word offsets of HEVCHAL_V400R001_SetPicMsg / SetSliceMsg (hi3536dv100_vfmw.ko) agree.";
+        field {
+            name = "ctb_log2_size_y";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } ctb_log2_size_y[2:0];
+        field {
+            name = "log2_min_cb_size_y";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } log2_min_cb_size_y[5:3];
+        field {
+            name = "max_cu_depth";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } max_cu_depth[8:6];
+        field {
+            name = "log2_max_trafo_size";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } log2_max_trafo_size[11:9];
+        field {
+            name = "log2_min_trafo_size";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } log2_min_trafo_size[14:12];
+        field {
+            name = "log2_max_ipcm_cb_size_y";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } log2_max_ipcm_cb_size_y[17:15];
+        field {
+            name = "log2_min_ipcm_cb_size_y";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } log2_min_ipcm_cb_size_y[20:18];
+        field {
+            name = "max_transform_hierarchy_depth_intra";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } max_transform_hierarchy_depth_intra[23:21];
+        field {
+            name = "max_transform_hierarchy_depth_inter";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } max_transform_hierarchy_depth_inter[26:24];
+        field {
+            name = "weighted_pred_flag";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } weighted_pred_flag[27:27];
+        field {
+            name = "weighted_bipred_flag";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } weighted_bipred_flag[28:28];
+        field {
+            name = "log2_parallel_merge_level_minus2";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } log2_parallel_merge_level_minus2[31:29];
+    } D2 @ 0x8;
+
+    reg {
+        name = "D3 bit depths";
+        desc = "D3 bit depths Provenance: PROVEN (shift constants). Source: HEVCHAL_V400R004_SetPicMsg / SetSliceMsg (GPL Kirin source); shift constants and stored word offsets of HEVCHAL_V400R001_SetPicMsg / SetSliceMsg (hi3536dv100_vfmw.ko) agree.";
+        field {
+            name = "bit_depth_y";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } bit_depth_y[3:0];
+        field {
+            name = "bit_depth_c";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } bit_depth_c[7:4];
+        field {
+            name = "pcm_bit_depth_y";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } pcm_bit_depth_y[11:8];
+        field {
+            name = "pcm_bit_depth_c";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } pcm_bit_depth_c[15:12];
+        field {
+            name = "qp_bd_offset_y";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } qp_bd_offset_y[21:16];
+        field {
+            name = "qp_bd_offset_c";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } qp_bd_offset_c[27:22];
+    } D3 @ 0xC;
+
+    reg {
+        name = "D4 SED top line buffer";
+        desc = "D4 SED top line buffer Provenance: PROVEN (word offset). Source: HEVCHAL_V400R004_SetPicMsg / SetSliceMsg (GPL Kirin source); shift constants and stored word offsets of HEVCHAL_V400R001_SetPicMsg / SetSliceMsg (hi3536dv100_vfmw.ko) agree.";
+        field {
+            name = "sed_top_addr";
+            desc = "physical address [INFERRED]";
+            sw = rw;
+            hw = r;
+        } sed_top_addr[31:0];
+    } D4 @ 0x10;
+
+    reg {
+        name = "D5 PMV top line buffer";
+        desc = "D5 PMV top line buffer Provenance: PROVEN (word offset). Source: HEVCHAL_V400R004_SetPicMsg / SetSliceMsg (GPL Kirin source); shift constants and stored word offsets of HEVCHAL_V400R001_SetPicMsg / SetSliceMsg (hi3536dv100_vfmw.ko) agree.";
+        field {
+            name = "pmv_top_addr";
+            desc = "physical address [INFERRED]";
+            sw = rw;
+            hw = r;
+        } pmv_top_addr[31:0];
+    } D5 @ 0x14;
+
+    reg {
+        name = "D6 PMV buffer of the current picture";
+        desc = "D6 PMV buffer of the current picture Provenance: PROVEN (word offset). Source: HEVCHAL_V400R004_SetPicMsg / SetSliceMsg (GPL Kirin source); shift constants and stored word offsets of HEVCHAL_V400R001_SetPicMsg / SetSliceMsg (hi3536dv100_vfmw.ko) agree.";
+        field {
+            name = "pmv_cur_addr";
+            desc = "physical address [INFERRED]";
+            sw = rw;
+            hw = r;
+        } pmv_cur_addr[31:0];
+    } D6 @ 0x18;
+
+    reg {
+        name = "D7 RCN top line buffer";
+        desc = "D7 RCN top line buffer Provenance: PROVEN (word offset). Source: HEVCHAL_V400R004_SetPicMsg / SetSliceMsg (GPL Kirin source); shift constants and stored word offsets of HEVCHAL_V400R001_SetPicMsg / SetSliceMsg (hi3536dv100_vfmw.ko) agree.";
+        field {
+            name = "rcn_top_addr";
+            desc = "physical address [INFERRED]";
+            sw = rw;
+            hw = r;
+        } rcn_top_addr[31:0];
+    } D7 @ 0x1C;
+
+    reg {
+        name = "D8-D24 reference picture addresses";
+        desc = "D8-D24 reference picture addresses Provenance: INFERRED. Source: HEVCHAL_V400R004_SetPicMsg / SetSliceMsg (GPL Kirin source); shift constants and stored word offsets of HEVCHAL_V400R001_SetPicMsg / SetSliceMsg (hi3536dv100_vfmw.ko) agree.";
+        field {
+            name = "ref_pic_addr";
+            desc = "D8..D23: picture address per APC index (16 words) [INFERRED]";
+            sw = rw;
+            hw = r;
+        } ref_pic_addr[31:0];
+    } D8 @ 0x20;
+
+    reg {
+        name = "D25 MN (CABAC init) table address";
+        desc = "D25 MN (CABAC init) table address Provenance: PROVEN (word offset). Source: HEVCHAL_V400R004_SetPicMsg / SetSliceMsg (GPL Kirin source); shift constants and stored word offsets of HEVCHAL_V400R001_SetPicMsg / SetSliceMsg (hi3536dv100_vfmw.ko) agree.";
+        field {
+            name = "mn_addr";
+            desc = "CABAC m/n table, written once [INFERRED]";
+            sw = rw;
+            hw = r;
+        } mn_addr[31:0];
+    } D25 @ 0x64;
+
+    reg {
+        name = "D26-D41 POC table";
+        desc = "D26-D41 POC table Provenance: INFERRED. Source: HEVCHAL_V400R004_SetPicMsg / SetSliceMsg (GPL Kirin source); shift constants and stored word offsets of HEVCHAL_V400R001_SetPicMsg / SetSliceMsg (hi3536dv100_vfmw.ko) agree.";
+        field {
+            name = "apc_poc";
+            desc = "D26..D41: POC of each APC entry (16 words) [INFERRED]";
+            sw = rw;
+            hw = r;
+        } apc_poc[31:0];
+    } D26 @ 0x68;
+
+    reg {
+        name = "D43 PMV left buffer";
+        desc = "D43 PMV left buffer Provenance: PROVEN (word offset). Source: HEVCHAL_V400R004_SetPicMsg / SetSliceMsg (GPL Kirin source); shift constants and stored word offsets of HEVCHAL_V400R001_SetPicMsg / SetSliceMsg (hi3536dv100_vfmw.ko) agree.";
+        field {
+            name = "pmv_left_addr";
+            desc = "physical address [INFERRED]";
+            sw = rw;
+            hw = r;
+        } pmv_left_addr[31:0];
+    } D43 @ 0xAC;
+
+    reg {
+        name = "D54 picture size in luma samples";
+        desc = "D54 picture size in luma samples Provenance: PROVEN (shift constant 16). Source: HEVCHAL_V400R004_SetPicMsg / SetSliceMsg (GPL Kirin source); shift constants and stored word offsets of HEVCHAL_V400R001_SetPicMsg / SetSliceMsg (hi3536dv100_vfmw.ko) agree.";
+        field {
+            name = "pic_width_luma";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } pic_width_luma[15:0];
+        field {
+            name = "pic_height_luma";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } pic_height_luma[31:16];
+    } D54 @ 0xD8;
+
+    reg {
+        name = "D55 tile info buffer address";
+        desc = "D55 tile info buffer address Provenance: PROVEN (word offset). Source: HEVCHAL_V400R004_SetPicMsg / SetSliceMsg (GPL Kirin source); shift constants and stored word offsets of HEVCHAL_V400R001_SetPicMsg / SetSliceMsg (hi3536dv100_vfmw.ko) agree.";
+        field {
+            name = "tile_info_addr";
+            desc = "tile segment table address [INFERRED]";
+            sw = rw;
+            hw = r;
+        } tile_info_addr[31:0];
+    } D55 @ 0xDC;
+
+    reg {
+        name = "D56 line buffer";
+        desc = "D56 line buffer Provenance: PROVEN (word offset). Source: HEVCHAL_V400R004_SetPicMsg / SetSliceMsg (GPL Kirin source); shift constants and stored word offsets of HEVCHAL_V400R001_SetPicMsg / SetSliceMsg (hi3536dv100_vfmw.ko) agree.";
+        field {
+            name = "sao_left_addr";
+            desc = "physical address [INFERRED]";
+            sw = rw;
+            hw = r;
+        } sao_left_addr[31:0];
+    } D56 @ 0xE0;
+
+    reg {
+        name = "D57 line buffer";
+        desc = "D57 line buffer Provenance: PROVEN (word offset). Source: HEVCHAL_V400R004_SetPicMsg / SetSliceMsg (GPL Kirin source); shift constants and stored word offsets of HEVCHAL_V400R001_SetPicMsg / SetSliceMsg (hi3536dv100_vfmw.ko) agree.";
+        field {
+            name = "dblk_left_addr";
+            desc = "physical address [INFERRED]";
+            sw = rw;
+            hw = r;
+        } dblk_left_addr[31:0];
+    } D57 @ 0xE4;
+
+    reg {
+        name = "D58 line buffer";
+        desc = "D58 line buffer Provenance: PROVEN (word offset). Source: HEVCHAL_V400R004_SetPicMsg / SetSliceMsg (GPL Kirin source); shift constants and stored word offsets of HEVCHAL_V400R001_SetPicMsg / SetSliceMsg (hi3536dv100_vfmw.ko) agree.";
+        field {
+            name = "sao_top_addr";
+            desc = "physical address [INFERRED]";
+            sw = rw;
+            hw = r;
+        } sao_top_addr[31:0];
+    } D58 @ 0xE8;
+
+    reg {
+        name = "D59 line buffer";
+        desc = "D59 line buffer Provenance: PROVEN (word offset). Source: HEVCHAL_V400R004_SetPicMsg / SetSliceMsg (GPL Kirin source); shift constants and stored word offsets of HEVCHAL_V400R001_SetPicMsg / SetSliceMsg (hi3536dv100_vfmw.ko) agree.";
+        field {
+            name = "dblk_top_addr";
+            desc = "physical address [INFERRED]";
+            sw = rw;
+            hw = r;
+        } dblk_top_addr[31:0];
+    } D59 @ 0xEC;
+
+    reg {
+        name = "D60 PPS flags";
+        desc = "D60 PPS flags Provenance: PROVEN (shift constants). Source: HEVCHAL_V400R004_SetPicMsg / SetSliceMsg (GPL Kirin source); shift constants and stored word offsets of HEVCHAL_V400R001_SetPicMsg / SetSliceMsg (hi3536dv100_vfmw.ko) agree.";
+        field {
+            name = "pps_cr_qp_offset";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } pps_cr_qp_offset[4:0];
+        field {
+            name = "pps_cb_qp_offset";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } pps_cb_qp_offset[9:5];
+        field {
+            name = "constrained_intra_pred_flag";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } constrained_intra_pred_flag[10:10];
+        field {
+            name = "transquant_bypass_enabled_flag";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } transquant_bypass_enabled_flag[11:11];
+        field {
+            name = "cu_qp_delta_enabled_flag";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } cu_qp_delta_enabled_flag[12:12];
+        field {
+            name = "diff_cu_qp_delta_depth";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } diff_cu_qp_delta_depth[15:13];
+        field {
+            name = "log2_min_cu_qp_delta_size";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } log2_min_cu_qp_delta_size[18:16];
+        field {
+            name = "tiles_enabled_flag";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } tiles_enabled_flag[19:19];
+        field {
+            name = "uniform_spacing_flag";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } uniform_spacing_flag[20:20];
+        field {
+            name = "entropy_coding_sync_enabled_flag";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } entropy_coding_sync_enabled_flag[21:21];
+        field {
+            name = "sign_data_hiding_enabled_flag";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } sign_data_hiding_enabled_flag[22:22];
+        field {
+            name = "transform_skip_enabled_flag";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } transform_skip_enabled_flag[23:23];
+        field {
+            name = "loop_filter_across_tiles_enabled_flag";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } loop_filter_across_tiles_enabled_flag[24:24];
+    } D60 @ 0xF0;
+
+    reg {
+        name = "D61 tile counts";
+        desc = "D61 tile counts Provenance: INFERRED. Source: HEVCHAL_V400R004_SetPicMsg / SetSliceMsg (GPL Kirin source); shift constants and stored word offsets of HEVCHAL_V400R001_SetPicMsg / SetSliceMsg (hi3536dv100_vfmw.ko) agree.";
+        field {
+            name = "num_tile_columns_minus1";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } num_tile_columns_minus1[15:0];
+        field {
+            name = "num_tile_rows_minus1";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } num_tile_rows_minus1[31:16];
+    } D61 @ 0xF4;
+
+    reg {
+        name = "D63 first slice message address";
+        desc = "D63 first slice message address Provenance: PROVEN (word offset). Source: HEVCHAL_V400R004_SetPicMsg / SetSliceMsg (GPL Kirin source); shift constants and stored word offsets of HEVCHAL_V400R001_SetPicMsg / SetSliceMsg (hi3536dv100_vfmw.ko) agree.";
+        field {
+            name = "first_slice_msg_addr";
+            desc = "physical address of the first slice message slot [INFERRED]";
+            sw = rw;
+            hw = r;
+        } first_slice_msg_addr[31:0];
+    } D63 @ 0xFC;
+
+};
+
+regfile eHI3536D_VDH_SLICEMSG {
+    name = "VDH HEVC slice message (DDR, NOT registers), Hi3536D V100";
+    desc = "NOT A REGISTER FILE: layout of one 64-word slice message slot (burst 0), chained through D63 (next slot address). Followed by burst 1/2 (words 64-191) with the explicit weighted-prediction tables when (weighted_pred_flag and P slice) or (weighted_bipred_flag and B slice): burst 1 D0-D15 luma list0, D16-D31 luma list1; burst 2 D0-D15 chroma Cb list0, D16-D31 Cb list1, D32-D47 Cr list0, D48-D63 Cr list1; luma/Cb word = offset[7:0] << 12 | weight[8:0] << 3 | log2_denom[2:0]; Cr word = offset[7:0] << 9 | weight[8:0]. Positions: GPL Kirin V400R004 source, checked in the Hi3536D module by the stored word offsets (1-14, 23, 24, 43, 44, 63) and the D6/D7/D12 shift constants (27, 18; 28, 24, 20, 16, 15, 14, 8, 2; 16, 3, 1). R001 additionally writes D24 = 0.";
+    reg {
+        name = "D0/D3 stream segment 0 byte offset";
+        desc = "D0/D3 stream segment 0 byte offset Provenance: PROVEN (word offsets). Source: HEVCHAL_V400R004_SetPicMsg / SetSliceMsg (GPL Kirin source); shift constants and stored word offsets of HEVCHAL_V400R001_SetPicMsg / SetSliceMsg (hi3536dv100_vfmw.ko) agree.";
+        field {
+            name = "byte_offset";
+            desc = " (stream_start & ~0xF) - (stream_base & ~0xF) of segment i; segment 1 is D3-D5 [INFERRED]";
+            sw = rw;
+            hw = r;
+        } byte_offset[31:0];
+    } D0 @ 0x0;
+
+    reg {
+        name = "D1 bit offset segment 0";
+        desc = "D1 bit offset segment 0 Provenance: INFERRED. Source: HEVCHAL_V400R004_SetPicMsg / SetSliceMsg (GPL Kirin source); shift constants and stored word offsets of HEVCHAL_V400R001_SetPicMsg / SetSliceMsg (hi3536dv100_vfmw.ko) agree.";
+        field {
+            name = "bit_offset";
+            desc = "(bitsoffset + 8 x (bytespos & 0xF)) & 0x7F [INFERRED]";
+            sw = rw;
+            hw = r;
+        } bit_offset[6:0];
+        field {
+            name = "reserved_31_7";
+            desc = " [INFERRED]";
+            sw = r;
+            hw = r;
+        } reserved_31_7[31:7];
+    } D1 @ 0x4;
+
+    reg {
+        name = "D2 valid bit length segment 0";
+        desc = "D2 valid bit length segment 0 Provenance: INFERRED. Source: HEVCHAL_V400R004_SetPicMsg / SetSliceMsg (GPL Kirin source); shift constants and stored word offsets of HEVCHAL_V400R001_SetPicMsg / SetSliceMsg (hi3536dv100_vfmw.ko) agree.";
+        field {
+            name = "valid_bitlen";
+            desc = "bits of slice data in this segment [INFERRED]";
+            sw = rw;
+            hw = r;
+        } valid_bitlen[31:0];
+    } D2 @ 0x8;
+
+    reg {
+        name = "D6 slice control";
+        desc = "D6 slice control Provenance: PROVEN (shift constants). Source: HEVCHAL_V400R004_SetPicMsg / SetSliceMsg (GPL Kirin source); shift constants and stored word offsets of HEVCHAL_V400R001_SetPicMsg / SetSliceMsg (hi3536dv100_vfmw.ko) agree.";
+        field {
+            name = "independent_slice_segment_addr";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } independent_slice_segment_addr[17:0];
+        field {
+            name = "cabac_init_flag";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } cabac_init_flag[18:18];
+        field {
+            name = "slice_qp_y";
+            desc = "SliceQpY & 0x3F [INFERRED]";
+            sw = rw;
+            hw = r;
+        } slice_qp_y[24:19];
+        field {
+            name = "dependent_slice_segment_flag";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } dependent_slice_segment_flag[26:26];
+        field {
+            name = "is_low_delay";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } is_low_delay[27:27];
+    } D6 @ 0x18;
+
+    reg {
+        name = "D7 slice reference setup";
+        desc = "D7 slice reference setup Provenance: PROVEN (shift constants). Source: HEVCHAL_V400R004_SetPicMsg / SetSliceMsg (GPL Kirin source); shift constants and stored word offsets of HEVCHAL_V400R001_SetPicMsg / SetSliceMsg (hi3536dv100_vfmw.ko) agree.";
+        field {
+            name = "slice_type_for_pmv";
+            desc = "s_SliceTypeForPMV[SliceType] [INFERRED]";
+            sw = rw;
+            hw = r;
+        } slice_type_for_pmv[1:0];
+        field {
+            name = "list0_size";
+            desc = "listXsize[0] [INFERRED]";
+            sw = rw;
+            hw = r;
+        } list0_size[7:2];
+        field {
+            name = "list1_size";
+            desc = "listXsize[1] [INFERRED]";
+            sw = rw;
+            hw = r;
+        } list1_size[13:8];
+        field {
+            name = "mvd_l1_zero_flag";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } mvd_l1_zero_flag[14:14];
+        field {
+            name = "slice_temporal_mvp_enabled_flag";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } slice_temporal_mvp_enabled_flag[15:15];
+        field {
+            name = "num_ref_idx_l0_active_minus1";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } num_ref_idx_l0_active_minus1[19:16];
+        field {
+            name = "num_ref_idx_l1_active_minus1";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } num_ref_idx_l1_active_minus1[23:20];
+        field {
+            name = "max_num_merge_cand";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } max_num_merge_cand[26:24];
+        field {
+            name = "collocated_from_l0_flag";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } collocated_from_l0_flag[27:27];
+        field {
+            name = "col_pic_apc";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } col_pic_apc[31:28];
+    } D7 @ 0x1C;
+
+    reg {
+        name = "D8 slice segment address (CTB raster)";
+        desc = "D8 slice segment address (CTB raster) Provenance: PROVEN (word offset). Source: HEVCHAL_V400R004_SetPicMsg / SetSliceMsg (GPL Kirin source); shift constants and stored word offsets of HEVCHAL_V400R001_SetPicMsg / SetSliceMsg (hi3536dv100_vfmw.ko) agree.";
+        field {
+            name = "slice_segment_address";
+            desc = "first CTB of the slice segment [INFERRED]";
+            sw = rw;
+            hw = r;
+        } slice_segment_address[31:0];
+    } D8 @ 0x20;
+
+    reg {
+        name = "D9 slice start x/y";
+        desc = "D9 slice start x/y Provenance: INFERRED. Source: HEVCHAL_V400R004_SetPicMsg / SetSliceMsg (GPL Kirin source); shift constants and stored word offsets of HEVCHAL_V400R001_SetPicMsg / SetSliceMsg (hi3536dv100_vfmw.ko) agree.";
+        field {
+            name = "x";
+            desc = "address % width in CTBs [INFERRED]";
+            sw = rw;
+            hw = r;
+        } x[15:0];
+        field {
+            name = "y";
+            desc = "address / width [INFERRED]";
+            sw = rw;
+            hw = r;
+        } y[31:16];
+    } D9 @ 0x24;
+
+    reg {
+        name = "D10 slice segment tile address";
+        desc = "D10 slice segment tile address Provenance: INFERRED. Source: HEVCHAL_V400R004_SetPicMsg / SetSliceMsg (GPL Kirin source); shift constants and stored word offsets of HEVCHAL_V400R001_SetPicMsg / SetSliceMsg (hi3536dv100_vfmw.ko) agree.";
+        field {
+            name = "slice_segment_tile_address";
+            desc = "tile-scan address [INFERRED]";
+            sw = rw;
+            hw = r;
+        } slice_segment_tile_address[31:0];
+    } D10 @ 0x28;
+
+    reg {
+        name = "D11 chroma QP offsets";
+        desc = "D11 chroma QP offsets Provenance: INFERRED. Source: HEVCHAL_V400R004_SetPicMsg / SetSliceMsg (GPL Kirin source); shift constants and stored word offsets of HEVCHAL_V400R001_SetPicMsg / SetSliceMsg (hi3536dv100_vfmw.ko) agree.";
+        field {
+            name = "slice_cr_qp_offset";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } slice_cr_qp_offset[4:0];
+        field {
+            name = "slice_cb_qp_offset";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } slice_cb_qp_offset[12:8];
+    } D11 @ 0x2C;
+
+    reg {
+        name = "D12 loop filter";
+        desc = "D12 loop filter Provenance: PROVEN (shift constants). Source: HEVCHAL_V400R004_SetPicMsg / SetSliceMsg (GPL Kirin source); shift constants and stored word offsets of HEVCHAL_V400R001_SetPicMsg / SetSliceMsg (hi3536dv100_vfmw.ko) agree.";
+        field {
+            name = "slice_loop_filter_across_slices_enabled_flag";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } slice_loop_filter_across_slices_enabled_flag[0:0];
+        field {
+            name = "slice_deblocking_filter_disabled_flag";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } slice_deblocking_filter_disabled_flag[1:1];
+        field {
+            name = "slice_sao_chroma_flag";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } slice_sao_chroma_flag[2:2];
+        field {
+            name = "slice_sao_luma_flag";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } slice_sao_luma_flag[3:3];
+        field {
+            name = "slice_beta_offset_div2";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } slice_beta_offset_div2[11:8];
+        field {
+            name = "slice_tc_offset_div2";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } slice_tc_offset_div2[19:16];
+    } D12 @ 0x30;
+
+    reg {
+        name = "D13 list0 long-term bits";
+        desc = "D13 list0 long-term bits Provenance: INFERRED. Source: HEVCHAL_V400R004_SetPicMsg / SetSliceMsg (GPL Kirin source); shift constants and stored word offsets of HEVCHAL_V400R001_SetPicMsg / SetSliceMsg (hi3536dv100_vfmw.ko) agree.";
+        field {
+            name = "is_long_term_l0";
+            desc = "bit i = entry i of list 0 is long-term [INFERRED]";
+            sw = rw;
+            hw = r;
+        } is_long_term_l0[31:0];
+    } D13 @ 0x34;
+
+    reg {
+        name = "D14 list1 long-term bits";
+        desc = "D14 list1 long-term bits Provenance: INFERRED. Source: HEVCHAL_V400R004_SetPicMsg / SetSliceMsg (GPL Kirin source); shift constants and stored word offsets of HEVCHAL_V400R001_SetPicMsg / SetSliceMsg (hi3536dv100_vfmw.ko) agree.";
+        field {
+            name = "is_long_term_l1";
+            desc = "bit i = entry i of list 1 is long-term [INFERRED]";
+            sw = rw;
+            hw = r;
+        } is_long_term_l1[31:0];
+    } D14 @ 0x38;
+
+    reg {
+        name = "D15-D16 list0 APC indices";
+        desc = "D15-D16 list0 APC indices Provenance: INFERRED. Source: HEVCHAL_V400R004_SetPicMsg / SetSliceMsg (GPL Kirin source); shift constants and stored word offsets of HEVCHAL_V400R001_SetPicMsg / SetSliceMsg (hi3536dv100_vfmw.ko) agree.";
+        field {
+            name = "apc";
+            desc = "4 bits per entry, 8 entries per word (D15, D16) [INFERRED]";
+            sw = rw;
+            hw = r;
+        } apc[31:0];
+    } D15 @ 0x3C;
+
+    reg {
+        name = "D17-D18 list1 APC indices";
+        desc = "D17-D18 list1 APC indices Provenance: INFERRED. Source: HEVCHAL_V400R004_SetPicMsg / SetSliceMsg (GPL Kirin source); shift constants and stored word offsets of HEVCHAL_V400R001_SetPicMsg / SetSliceMsg (hi3536dv100_vfmw.ko) agree.";
+        field {
+            name = "apc";
+            desc = "4 bits per entry, 8 entries per word (D17, D18) [INFERRED]";
+            sw = rw;
+            hw = r;
+        } apc[31:0];
+    } D17 @ 0x44;
+
+    reg {
+        name = "D23 collocated MV address (Apc2MvAddr)";
+        desc = "D23 collocated MV address (Apc2MvAddr) Provenance: PROVEN (word offset). Source: HEVCHAL_V400R004_SetPicMsg / SetSliceMsg (GPL Kirin source); shift constants and stored word offsets of HEVCHAL_V400R001_SetPicMsg / SetSliceMsg (hi3536dv100_vfmw.ko) agree.";
+        field {
+            name = "apc2mvaddr";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } apc2mvaddr[31:0];
+    } D23 @ 0x5C;
+
+    reg {
+        name = "D24 (R001 writes 0)";
+        desc = "D24 (R001 writes 0) Provenance: PROVEN. Source: HEVCHAL_V400R001_SetSliceMsg (str to word 24).";
+        field {
+            name = "zero";
+            desc = "written 0 by the Hi3536D module, not present in R004 [PROVEN]";
+            sw = rw;
+            hw = r;
+        } zero[31:0];
+    } D24 @ 0x60;
+
+    reg {
+        name = "D43 end CTB (raster)";
+        desc = "D43 end CTB (raster) Provenance: PROVEN (word offset). Source: HEVCHAL_V400R004_SetPicMsg / SetSliceMsg (GPL Kirin source); shift constants and stored word offsets of HEVCHAL_V400R001_SetPicMsg / SetSliceMsg (hi3536dv100_vfmw.ko) agree.";
+        field {
+            name = "end_ctb_in_slice_raster";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } end_ctb_in_slice_raster[31:0];
+    } D43 @ 0xAC;
+
+    reg {
+        name = "D44 end CTB (tile scan)";
+        desc = "D44 end CTB (tile scan) Provenance: PROVEN (word offset). Source: HEVCHAL_V400R004_SetPicMsg / SetSliceMsg (GPL Kirin source); shift constants and stored word offsets of HEVCHAL_V400R001_SetPicMsg / SetSliceMsg (hi3536dv100_vfmw.ko) agree.";
+        field {
+            name = "end_ctb_in_slice_tile";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } end_ctb_in_slice_tile[31:0];
+    } D44 @ 0xB0;
+
+    reg {
+        name = "D63 next slice message address";
+        desc = "D63 next slice message address Provenance: PROVEN (word offset). Source: HEVCHAL_V400R004_SetPicMsg / SetSliceMsg (GPL Kirin source); shift constants and stored word offsets of HEVCHAL_V400R001_SetPicMsg / SetSliceMsg (hi3536dv100_vfmw.ko) agree.";
+        field {
+            name = "next_slice_msg_addr";
+            desc = " [INFERRED]";
+            sw = rw;
+            hw = r;
+        } next_slice_msg_addr[31:0];
+    } D63 @ 0xFC;
+
+};
+
+addrmap aHI3536D_VDH_MSG {
+    name = "VDH HEVC DDR message layouts (placeholder window, NOT hardware)";
+    desc = "Placeholder address 0x13210000 just past the VDH window (reserved in the data sheet): this only shows the two DDR message layouts in the register browser. The words live in the message pool in DDR, never at this address.";
+    eHI3536D_VDH_PICMSG   PICMSG   @ 0x0;
+    eHI3536D_VDH_SLICEMSG SLICEMSG @ 0x1000;
+};
+
+`endif
