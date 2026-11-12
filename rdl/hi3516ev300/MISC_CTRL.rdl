@@ -90,14 +90,20 @@ regfile eMISC_CTRL_EV300 {
     } MISC_CTRL8 @ 0x20;
 
     reg {
-        name = "Fast Ethernet PHY control 1 / PHY address";
-        desc = "Named REG_FEPHY_CTRL1 by the vendor U-Boot; the vendor DT passes 0x12028024 as the second reg of the MDIO node (hisilicon,hisi-femac-mdio), where the driver writes the PHY address (docs/femac-variants.md). Evidence: PROVEN offset, UNKNOWN fields.";
+        name = "Fast Ethernet PHY control 1 (PHY address)";
+        desc = "RESOLVED (2026-11-11, source analysis): the register is in MISC at 0x12028024, not in SYS_CTRL. Evidence: both vendor DTs (Xiongmai and OpenIPC) pass 0x12028024 as the second reg of the hisi-femac-mdio node; the vendor/OpenIPC mdio driver (mdio-hisi-femac.c) reads and writes it as fephy_iobase (PHY address in [4:0], bit 5 FEPHY_SEL read as 'internal PHY in use' when 0); platform.h defines MISC_REG_BASE 0x12028000 + MISC_CTRL9 0x24 = REG_FEPHY_CTRL1 (the same macro idiom as the Hi3536DV100 branch of sys.c). The vendor U-Boot hisfv300 sys.c adds MISC_CTRL9 to SYS_CTRL_REG_BASE for the EV200/EV300/Hi3518EV300/Hi3516DV200 (0x12020024): treat as a U-Boot macro slip (in the same file the 3536 branch uses MISC_REG_BASE). The U-Boot bits ETH_INTERNAL_PHY_CLK_EN bit 2 / ETH_INTERNAL_PHY_RESET bit 3 overlap the PHY address field [4:0]; Linux drives clock and reset through the CRG (PERI_CRG91 bit 1 / bit 3, DT resets <crg 0x16c 3>), so the U-Boot bits are not used for the EV300 (INFERRED). Board confirmation still welcome.";
         field {
-            name = "fephy_ctrl1";
-            desc = "Raw register. PROVEN offset.";
+            name = "phy_addr";
+            desc = "MDIO address given to the internal FE PHY (DT: PHY at address 1). PROVEN (mdio-hisi-femac.c BIT_MASK_FEPHY_ADDR).";
             sw = rw;
             hw = r;
-        } fephy_ctrl1[31:0];
+        } phy_addr[4:0];
+        field {
+            name = "fephy_sel";
+            desc = "0 = internal FE PHY in use (driver reads it that way). PROVEN position, polarity INFERRED from the driver.";
+            sw = rw;
+            hw = r;
+        } fephy_sel[5:5];
     } MISC_CTRL9 @ 0x24;
 
     reg {
