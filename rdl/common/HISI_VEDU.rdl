@@ -255,7 +255,7 @@ addrmap aHISI_VEDU_V100 {
 
         field {
             name = "ipicture";
-            desc = "Set for an intra picture, cleared otherwise.";
+            desc = "Set for an intra picture, cleared otherwise. P PICTURE (vedu-vendor.md section 15, 2026-11-11, vendor code only, NOT yet run on the board): the vendor clears this bit for a P picture (H264E_DRV_UpdateRegConfigParam 0x1d4d0 clears bit 13 when the picture type is 5; type 4 = I sets it). The other PICFG0 fields of a P picture keep what the I picture wrote (the vendor table persists): our P word is 0x00034000 (trans_mode 1, nal_ref_idc 3), the I word 0x00036000. MEDIUM.";
             sw = rw;
             hw = r;
         } ipicture[13:13];
@@ -276,7 +276,7 @@ addrmap aHISI_VEDU_V100 {
 
         field {
             name = "num_ref_index";
-            desc = "Cleared in the decoded branch.";
+            desc = "Cleared in the decoded branch. P PICTURE (vedu-vendor.md section 15, 2026-11-11, vendor code only, NOT yet run on the board): the vendor does not touch this bit for a P picture (it clears it while building the I picture, bfc at 0x1d990). Assumed 0 = one reference frame (GUESS, LOW: 1 = two references).";
             sw = rw;
             hw = r;
         } num_ref_index[18:18];
@@ -1482,7 +1482,7 @@ addrmap aHISI_VEDU_V100 {
 
     reg {
         name = "PICFG3 (INFERRED, MEDIUM)";
-        desc = "PICFG3 INFERRED, confidence MEDIUM. Reason: the vendor builds a DDR register-config table (table offset 0x4C) whose word has the bit layout of the r006 register VEDU_PICFG3, and 9 offsets that the Hi3520D code accesses directly (MODE 0x020, PICFG0 0x024, REGCFG_ADDR 0x1E0, QPTHR 0x350, TARGETBITS 0x364, PICBITS 0x374, MEANQP 0x388, PICINFO0 0xA20, OUTSTD 0x0A4) all sit at the r006 offsets, so the register file is assumed to follow r006 (a neighbor generation). The offset in the window is therefore an assumption, NOT seen in any vendor register access. Register name and field names are the HiSTB drv_venc_reg_r006.h names (naming only). Not accessed by register in any vendor code (it is programmed through the DDR table, loaded by the hardware from REGCFG_ADDR; whether the hardware loads this exact register from the table is the working assumption). The vendor leaves the inter prediction enables 0 for an I picture (picture type 4) and takes them from the channel configuration otherwise. Source: docs/rdl-campaign/vedu-vendor.md section 13, H264E_DRV_UpdateRegConfigParam 0x1d4d0 / H264E_DRV_InitRegConfigParam 0x1db40 / H264eDrvUpdateMeCfg 0x1c680. Not verified on hardware.";
+        desc = "PICFG3 INFERRED, confidence MEDIUM. Reason: the vendor builds a DDR register-config table (table offset 0x4C) whose word has the bit layout of the r006 register VEDU_PICFG3, and 9 offsets that the Hi3520D code accesses directly (MODE 0x020, PICFG0 0x024, REGCFG_ADDR 0x1E0, QPTHR 0x350, TARGETBITS 0x364, PICBITS 0x374, MEANQP 0x388, PICINFO0 0xA20, OUTSTD 0x0A4) all sit at the r006 offsets, so the register file is assumed to follow r006 (a neighbor generation). The offset in the window is therefore an assumption, NOT seen in any vendor register access. Register name and field names are the HiSTB drv_venc_reg_r006.h names (naming only). Not accessed by register in any vendor code (it is programmed through the DDR table, loaded by the hardware from REGCFG_ADDR; whether the hardware loads this exact register from the table is the working assumption). The vendor leaves the inter prediction enables 0 for an I picture (picture type 4) and takes them from the channel configuration otherwise. Source: docs/rdl-campaign/vedu-vendor.md section 13, H264E_DRV_UpdateRegConfigParam 0x1d4d0 / H264E_DRV_InitRegConfigParam 0x1db40 / H264eDrvUpdateMeCfg 0x1c680. Not verified on hardware. P PICTURE (vedu-vendor.md section 15, 2026-11-11, vendor code only, NOT yet run on the board): the vendor writes this word for EVERY picture type (the I path joins the same code at 0x1d684): bits 3..0 come from the user inter prediction config, whose defaults are all 1 (H264eInitInterPred 0x1347c sets 16x16, 16x8, 8x16, 8x8 and the extedge flag to 1; the struct order 16x16, 16x8, 8x16, 8x8 maps to bits 3, 2, 1, 0), bit 4 from H264E_EnableInterPskip (context +0x2afc, cleared at channel creation, so the vendor default is 0), bit 31 from the extedge flag (default 1), bits 30 and 29 are cleared. Vendor default for a P picture: 0x8000000F (0x8000001F with P_Skip). The I runs of our tool use 0 (proven to encode). Bit positions HIGH, the effect of every bit is unobserved.";
 
         field {
             name = "inter8x8_pred_en";
@@ -1514,7 +1514,7 @@ addrmap aHISI_VEDU_V100 {
 
         field {
             name = "psk_en";
-            desc = "r006 field pskEn (INFERRED, naming and position from the table word, MEDIUM)";
+            desc = "r006 field pskEn (INFERRED, naming and position from the table word, MEDIUM) P PICTURE (vedu-vendor.md section 15, 2026-11-11, vendor code only, NOT yet run on the board): hardware P_Skip enable. Vendor default 0 (user API H264E_EnableInterPskip); set it to get skip runs for static content (vedu-test -p 1). Effect GUESS.";
             sw = rw;
             hw = r;
         } psk_en[4:4];
@@ -1535,7 +1535,7 @@ addrmap aHISI_VEDU_V100 {
 
         field {
             name = "extedge_en";
-            desc = "r006 field extedgeEn (INFERRED, naming and position from the table word, MEDIUM)";
+            desc = "r006 field extedgeEn (INFERRED, naming and position from the table word, MEDIUM) P PICTURE (vedu-vendor.md section 15, 2026-11-11, vendor code only, NOT yet run on the board): vendor default 1 (extedge flag of the user inter prediction config, struct +0x18, written by H264eInitInterPred); GUESS: allows motion vectors beyond the picture edge (edge extension of the reference).";
             sw = rw;
             hw = r;
         } extedge_en[31:31];
@@ -1679,7 +1679,7 @@ addrmap aHISI_VEDU_V100 {
 
         field {
             name = "idrind";
-            desc = "r006 field IDRind. 1 for an IDR picture: the hardware writes the NAL header 0x65 (nal_ref_idc from PICFG0 [17:16], type 5; PROVEN that the value 1 gives 0x65 in the 40 runs; the vendor sets it for IDR, 0 otherwise is INFERRED).";
+            desc = "r006 field IDRind. 1 for an IDR picture: the hardware writes the NAL header 0x65 (nal_ref_idc from PICFG0 [17:16], type 5; PROVEN that the value 1 gives 0x65 in the 40 runs; the vendor sets it for IDR, 0 otherwise is INFERRED). P PICTURE (vedu-vendor.md section 15, 2026-11-11, vendor code only, NOT yet run on the board): the vendor derives this bit from PICFG0.ipicture (ubfx of bit 13 into bit 1 at 0x1d6f8), so it is 0 for a P picture: SLCHDRPARA = ParaWd shifted to bit 8, ReorderWd to bit 16, MarkingWd to bit 22. HIGH.";
             sw = rw;
             hw = r;
         } idrind[1:1];
@@ -1693,14 +1693,14 @@ addrmap aHISI_VEDU_V100 {
 
         field {
             name = "reorder_wd";
-            desc = "r006 field ReorderWd. INFERRED 2026-11-11: reordering part bit count minus 1 (SLCHDRSTRM4-5, capacity 64 bits); with 0 nothing was emitted in the 40 runs (the vendor writes the part only for non-I slices). Untested for non-zero values.";
+            desc = "r006 field ReorderWd. INFERRED 2026-11-11: reordering part bit count minus 1 (SLCHDRSTRM4-5, capacity 64 bits); with 0 nothing was emitted in the 40 runs (the vendor writes the part only for non-I slices). Untested for non-zero values. P PICTURE (vedu-vendor.md section 15, 2026-11-11, vendor code only, NOT yet run on the board): a P slice has one reordering bit (ref_pic_list_modification_flag_l0 = 0; the vendor writes it for slice types other than 2 and stores count minus 1 = 0), exactly the value an I slice stores for NO bits. The field cannot tell the two cases apart, so the hardware must decide from the picture type (GUESS: it emits ReorderWd+1 bits for non-I pictures). If it emits nothing, the flag has to move into the PARA part (vedu-test -J). The resulting P header was checked with ffmpeg on the host (valid slice header, frames decode as P).";
             sw = rw;
             hw = r;
         } reorder_wd[21:16];
 
         field {
             name = "marking_wd";
-            desc = "r006 field MarkingWd. PROVEN for the length 2026-11-11 (40 runs: each step of MarkingWd moved the data by exactly one bit): the number of software bits of the MARKING part MINUS 1 (SLCHDRSTRM6-7, capacity 64 bits). IDR picture: 2 flag bits (no_output_of_prior_pics, long_term_reference) = MarkingWd 1.";
+            desc = "r006 field MarkingWd. PROVEN for the length 2026-11-11 (40 runs: each step of MarkingWd moved the data by exactly one bit): the number of software bits of the MARKING part MINUS 1 (SLCHDRSTRM6-7, capacity 64 bits). IDR picture: 2 flag bits (no_output_of_prior_pics, long_term_reference) = MarkingWd 1. P PICTURE (vedu-vendor.md section 15, 2026-11-11, vendor code only, NOT yet run on the board): a non-IDR reference P slice has one marking bit (adaptive_ref_pic_marking_mode_flag = 0, sliding window), stored as MarkingWd = 0 (vendor code at 0x5be4).";
             sw = rw;
             hw = r;
         } marking_wd[27:22];
@@ -1935,7 +1935,7 @@ addrmap aHISI_VEDU_V100 {
 
         field {
             name = "hswsize";
-            desc = "r006 field HSWSize (INFERRED, naming and position from the table word, MEDIUM)";
+            desc = "r006 field HSWSize (INFERRED, naming and position from the table word, MEDIUM) P PICTURE (vedu-vendor.md section 15, 2026-11-11, vendor code only, NOT yet run on the board): vendor value for a picture narrower than 15 macroblocks is 0, not lowered: H264E_DRV_InitMeAttr (0x1bb2c, HIGH) starts from HSW 5, VSW 2 and CLEARS HSW when the MB column count is below 2*HSW+5 = 15 and VSW when the MB row count is below 2*VSW+4 = 8 (or (2*VSW+3)*columns exceeds 360), so a 160x64 picture (10 x 4 macroblocks) has HSW = VSW = 0 in the vendor stack; section 13.3 said lowered. The I runs of our tool write 0x25 (ME unused for I pictures).";
             sw = rw;
             hw = r;
         } hswsize[3:0];
@@ -1958,7 +1958,7 @@ addrmap aHISI_VEDU_V100 {
 
     reg {
         name = "MECFG1 (INFERRED, MEDIUM)";
-        desc = "MECFG1 INFERRED, confidence MEDIUM. Reason: the vendor builds a DDR register-config table (table offset 0x250) whose word has the bit layout of the r006 register VEDU_MECFG1, and 9 offsets that the Hi3520D code accesses directly (MODE 0x020, PICFG0 0x024, REGCFG_ADDR 0x1E0, QPTHR 0x350, TARGETBITS 0x364, PICBITS 0x374, MEANQP 0x388, PICINFO0 0xA20, OUTSTD 0x0A4) all sit at the r006 offsets, so the register file is assumed to follow r006 (a neighbor generation). The offset in the window is therefore an assumption, NOT seen in any vendor register access. Register name and field names are the HiSTB drv_venc_reg_r006.h names (naming only). Not accessed by register in any vendor code (it is programmed through the DDR table, loaded by the hardware from REGCFG_ADDR; whether the hardware loads this exact register from the table is the working assumption).  Source: docs/rdl-campaign/vedu-vendor.md section 13, H264E_DRV_UpdateRegConfigParam 0x1d4d0 / H264E_DRV_InitRegConfigParam 0x1db40 / H264eDrvUpdateMeCfg 0x1c680. Not verified on hardware.";
+        desc = "MECFG1 INFERRED, confidence MEDIUM. Reason: the vendor builds a DDR register-config table (table offset 0x250) whose word has the bit layout of the r006 register VEDU_MECFG1, and 9 offsets that the Hi3520D code accesses directly (MODE 0x020, PICFG0 0x024, REGCFG_ADDR 0x1E0, QPTHR 0x350, TARGETBITS 0x364, PICBITS 0x374, MEANQP 0x388, PICINFO0 0xA20, OUTSTD 0x0A4) all sit at the r006 offsets, so the register file is assumed to follow r006 (a neighbor generation). The offset in the window is therefore an assumption, NOT seen in any vendor register access. Register name and field names are the HiSTB drv_venc_reg_r006.h names (naming only). Not accessed by register in any vendor code (it is programmed through the DDR table, loaded by the hardware from REGCFG_ADDR; whether the hardware loads this exact register from the table is the working assumption).  Source: docs/rdl-campaign/vedu-vendor.md section 13, H264E_DRV_UpdateRegConfigParam 0x1d4d0 / H264E_DRV_InitRegConfigParam 0x1db40 / H264eDrvUpdateMeCfg 0x1c680. Not verified on hardware. P PICTURE (vedu-vendor.md section 15, 2026-11-11, vendor code only, NOT yet run on the board): vendor value 0xF (all four rectangle modes on; InitMeAttr stores 0xF in ME struct +4, copied to table 0x250 by H264eDrvUpdateMeCfg 0x1c680). The I runs of our tool leave the word 0, so the P pictures need it written.";
 
         field {
             name = "rect0_mod";
@@ -1992,7 +1992,7 @@ addrmap aHISI_VEDU_V100 {
 
     reg {
         name = "MERECTCFG0 (INFERRED, MEDIUM)";
-        desc = "MERECTCFG INFERRED, confidence MEDIUM. Reason: the vendor builds a DDR register-config table (table offset 0x254) whose word has the bit layout of the r006 register VEDU_MERECTCFG, and 9 offsets that the Hi3520D code accesses directly (MODE 0x020, PICFG0 0x024, REGCFG_ADDR 0x1E0, QPTHR 0x350, TARGETBITS 0x364, PICBITS 0x374, MEANQP 0x388, PICINFO0 0xA20, OUTSTD 0x0A4) all sit at the r006 offsets, so the register file is assumed to follow r006 (a neighbor generation). The offset in the window is therefore an assumption, NOT seen in any vendor register access. Register name and field names are the HiSTB drv_venc_reg_r006.h names (naming only). Not accessed by register in any vendor code (it is programmed through the DDR table, loaded by the hardware from REGCFG_ADDR; whether the hardware loads this exact register from the table is the working assumption). Index 0 of 4. Source: docs/rdl-campaign/vedu-vendor.md section 13, H264E_DRV_UpdateRegConfigParam 0x1d4d0 / H264E_DRV_InitRegConfigParam 0x1db40 / H264eDrvUpdateMeCfg 0x1c680. Not verified on hardware.";
+        desc = "MERECTCFG INFERRED, confidence MEDIUM. Reason: the vendor builds a DDR register-config table (table offset 0x254) whose word has the bit layout of the r006 register VEDU_MERECTCFG, and 9 offsets that the Hi3520D code accesses directly (MODE 0x020, PICFG0 0x024, REGCFG_ADDR 0x1E0, QPTHR 0x350, TARGETBITS 0x364, PICBITS 0x374, MEANQP 0x388, PICINFO0 0xA20, OUTSTD 0x0A4) all sit at the r006 offsets, so the register file is assumed to follow r006 (a neighbor generation). The offset in the window is therefore an assumption, NOT seen in any vendor register access. Register name and field names are the HiSTB drv_venc_reg_r006.h names (naming only). Not accessed by register in any vendor code (it is programmed through the DDR table, loaded by the hardware from REGCFG_ADDR; whether the hardware loads this exact register from the table is the working assumption). Index 0 of 4. Source: docs/rdl-campaign/vedu-vendor.md section 13, H264E_DRV_UpdateRegConfigParam 0x1d4d0 / H264E_DRV_InitRegConfigParam 0x1db40 / H264eDrvUpdateMeCfg 0x1c680. Not verified on hardware. P PICTURE (vedu-vendor.md section 15, 2026-11-11, vendor code only, NOT yet run on the board): vendor default (H264E_DRV_InitMeAttr): 2 x 2, steps 0 -> 0x00000202 (HIGH for the values). Not written by our I runs; needed for inter prediction.";
 
         field {
             name = "rect_width";
@@ -2026,7 +2026,7 @@ addrmap aHISI_VEDU_V100 {
 
     reg {
         name = "MERECTCFG1 (INFERRED, MEDIUM)";
-        desc = "MERECTCFG INFERRED, confidence MEDIUM. Reason: the vendor builds a DDR register-config table (table offset 0x258) whose word has the bit layout of the r006 register VEDU_MERECTCFG, and 9 offsets that the Hi3520D code accesses directly (MODE 0x020, PICFG0 0x024, REGCFG_ADDR 0x1E0, QPTHR 0x350, TARGETBITS 0x364, PICBITS 0x374, MEANQP 0x388, PICINFO0 0xA20, OUTSTD 0x0A4) all sit at the r006 offsets, so the register file is assumed to follow r006 (a neighbor generation). The offset in the window is therefore an assumption, NOT seen in any vendor register access. Register name and field names are the HiSTB drv_venc_reg_r006.h names (naming only). Not accessed by register in any vendor code (it is programmed through the DDR table, loaded by the hardware from REGCFG_ADDR; whether the hardware loads this exact register from the table is the working assumption). Index 1 of 4. Source: docs/rdl-campaign/vedu-vendor.md section 13, H264E_DRV_UpdateRegConfigParam 0x1d4d0 / H264E_DRV_InitRegConfigParam 0x1db40 / H264eDrvUpdateMeCfg 0x1c680. Not verified on hardware.";
+        desc = "MERECTCFG INFERRED, confidence MEDIUM. Reason: the vendor builds a DDR register-config table (table offset 0x258) whose word has the bit layout of the r006 register VEDU_MERECTCFG, and 9 offsets that the Hi3520D code accesses directly (MODE 0x020, PICFG0 0x024, REGCFG_ADDR 0x1E0, QPTHR 0x350, TARGETBITS 0x364, PICBITS 0x374, MEANQP 0x388, PICINFO0 0xA20, OUTSTD 0x0A4) all sit at the r006 offsets, so the register file is assumed to follow r006 (a neighbor generation). The offset in the window is therefore an assumption, NOT seen in any vendor register access. Register name and field names are the HiSTB drv_venc_reg_r006.h names (naming only). Not accessed by register in any vendor code (it is programmed through the DDR table, loaded by the hardware from REGCFG_ADDR; whether the hardware loads this exact register from the table is the working assumption). Index 1 of 4. Source: docs/rdl-campaign/vedu-vendor.md section 13, H264E_DRV_UpdateRegConfigParam 0x1d4d0 / H264E_DRV_InitRegConfigParam 0x1db40 / H264eDrvUpdateMeCfg 0x1c680. Not verified on hardware. P PICTURE (vedu-vendor.md section 15, 2026-11-11, vendor code only, NOT yet run on the board): vendor default (H264E_DRV_InitMeAttr): 8 x 8, steps 0 -> 0x00000808 (HIGH for the values). Not written by our I runs; needed for inter prediction.";
 
         field {
             name = "rect_width";
@@ -2060,7 +2060,7 @@ addrmap aHISI_VEDU_V100 {
 
     reg {
         name = "MERECTCFG2 (INFERRED, MEDIUM)";
-        desc = "MERECTCFG INFERRED, confidence MEDIUM. Reason: the vendor builds a DDR register-config table (table offset 0x25C) whose word has the bit layout of the r006 register VEDU_MERECTCFG, and 9 offsets that the Hi3520D code accesses directly (MODE 0x020, PICFG0 0x024, REGCFG_ADDR 0x1E0, QPTHR 0x350, TARGETBITS 0x364, PICBITS 0x374, MEANQP 0x388, PICINFO0 0xA20, OUTSTD 0x0A4) all sit at the r006 offsets, so the register file is assumed to follow r006 (a neighbor generation). The offset in the window is therefore an assumption, NOT seen in any vendor register access. Register name and field names are the HiSTB drv_venc_reg_r006.h names (naming only). Not accessed by register in any vendor code (it is programmed through the DDR table, loaded by the hardware from REGCFG_ADDR; whether the hardware loads this exact register from the table is the working assumption). Index 2 of 4. Source: docs/rdl-campaign/vedu-vendor.md section 13, H264E_DRV_UpdateRegConfigParam 0x1d4d0 / H264E_DRV_InitRegConfigParam 0x1db40 / H264eDrvUpdateMeCfg 0x1c680. Not verified on hardware.";
+        desc = "MERECTCFG INFERRED, confidence MEDIUM. Reason: the vendor builds a DDR register-config table (table offset 0x25C) whose word has the bit layout of the r006 register VEDU_MERECTCFG, and 9 offsets that the Hi3520D code accesses directly (MODE 0x020, PICFG0 0x024, REGCFG_ADDR 0x1E0, QPTHR 0x350, TARGETBITS 0x364, PICBITS 0x374, MEANQP 0x388, PICINFO0 0xA20, OUTSTD 0x0A4) all sit at the r006 offsets, so the register file is assumed to follow r006 (a neighbor generation). The offset in the window is therefore an assumption, NOT seen in any vendor register access. Register name and field names are the HiSTB drv_venc_reg_r006.h names (naming only). Not accessed by register in any vendor code (it is programmed through the DDR table, loaded by the hardware from REGCFG_ADDR; whether the hardware loads this exact register from the table is the working assumption). Index 2 of 4. Source: docs/rdl-campaign/vedu-vendor.md section 13, H264E_DRV_UpdateRegConfigParam 0x1d4d0 / H264E_DRV_InitRegConfigParam 0x1db40 / H264eDrvUpdateMeCfg 0x1c680. Not verified on hardware. P PICTURE (vedu-vendor.md section 15, 2026-11-11, vendor code only, NOT yet run on the board): vendor default (H264E_DRV_InitMeAttr): 13 x 13, Hstep 1, Vstep 1 -> 0x01010D0D (HIGH for the values). Not written by our I runs; needed for inter prediction.";
 
         field {
             name = "rect_width";
@@ -2094,7 +2094,7 @@ addrmap aHISI_VEDU_V100 {
 
     reg {
         name = "MERECTCFG3 (INFERRED, MEDIUM)";
-        desc = "MERECTCFG INFERRED, confidence MEDIUM. Reason: the vendor builds a DDR register-config table (table offset 0x260) whose word has the bit layout of the r006 register VEDU_MERECTCFG, and 9 offsets that the Hi3520D code accesses directly (MODE 0x020, PICFG0 0x024, REGCFG_ADDR 0x1E0, QPTHR 0x350, TARGETBITS 0x364, PICBITS 0x374, MEANQP 0x388, PICINFO0 0xA20, OUTSTD 0x0A4) all sit at the r006 offsets, so the register file is assumed to follow r006 (a neighbor generation). The offset in the window is therefore an assumption, NOT seen in any vendor register access. Register name and field names are the HiSTB drv_venc_reg_r006.h names (naming only). Not accessed by register in any vendor code (it is programmed through the DDR table, loaded by the hardware from REGCFG_ADDR; whether the hardware loads this exact register from the table is the working assumption). Index 3 of 4. Source: docs/rdl-campaign/vedu-vendor.md section 13, H264E_DRV_UpdateRegConfigParam 0x1d4d0 / H264E_DRV_InitRegConfigParam 0x1db40 / H264eDrvUpdateMeCfg 0x1c680. Not verified on hardware.";
+        desc = "MERECTCFG INFERRED, confidence MEDIUM. Reason: the vendor builds a DDR register-config table (table offset 0x260) whose word has the bit layout of the r006 register VEDU_MERECTCFG, and 9 offsets that the Hi3520D code accesses directly (MODE 0x020, PICFG0 0x024, REGCFG_ADDR 0x1E0, QPTHR 0x350, TARGETBITS 0x364, PICBITS 0x374, MEANQP 0x388, PICINFO0 0xA20, OUTSTD 0x0A4) all sit at the r006 offsets, so the register file is assumed to follow r006 (a neighbor generation). The offset in the window is therefore an assumption, NOT seen in any vendor register access. Register name and field names are the HiSTB drv_venc_reg_r006.h names (naming only). Not accessed by register in any vendor code (it is programmed through the DDR table, loaded by the hardware from REGCFG_ADDR; whether the hardware loads this exact register from the table is the working assumption). Index 3 of 4. Source: docs/rdl-campaign/vedu-vendor.md section 13, H264E_DRV_UpdateRegConfigParam 0x1d4d0 / H264E_DRV_InitRegConfigParam 0x1db40 / H264eDrvUpdateMeCfg 0x1c680. Not verified on hardware. P PICTURE (vedu-vendor.md section 15, 2026-11-11, vendor code only, NOT yet run on the board): vendor default (H264E_DRV_InitMeAttr): 4 x 4, steps 0 -> 0x00000404 (HIGH for the values). Not written by our I runs; needed for inter prediction.";
 
         field {
             name = "rect_width";
