@@ -5,7 +5,7 @@ addrmap aHISI_VGS {
     name = "HiSilicon VGS (registers not described)";
     desc = " [BOARD-READ Hi3518E V200 2026-11-11: with PERI_CRG23 clock on and reset released +0x000..+0x0FC all read 0, no ID word.] 
     Not described: no data sheet that lists the VGS has a register table for it (each has only the 64 KB memory-map window, the interrupt number, the clock/reset control register and a features chapter), and no vendor source of the register layout is in the tree.
-    The window is kept so that the block base address and size exist in the address map (same convention as HISI_TDE and HISI_VPSS). No register is described, none is named UNK_<offset>: there is no evidence for any offset yet.
+    The window is kept so that the block base address and size exist in the address map (same convention as HISI_TDE and HISI_VPSS). UPDATE 2026-11-11: seven registers (0x1F4 node ID, 0x1FC mask, 0x2FC next node address, 0x300 start, 0x304 interrupt status, 0x308 interrupt clear, 0x314 AXI outstanding) were added from static analysis of hi3518e_vgs.ko (Hi3518EV200_MPP_V1.0.5.0); each description states provenance and confidence, they are not verified on hardware and other chips' VGS may differ. Earlier text: no register is described, none is named UNK_<offset>: there is no evidence for any offset yet.
 
     The VGS (Video Graphics System) is a memory-to-memory video/graphics engine: OSD overlay (ARGB1555/ARGB4444/ARGB8888, one region), video cropping, scaling (low-frequency filter, up to 15x-16x zoom-out and 16x zoom-in; 30x zoom-out on Hi3516A V200, Hi3519 and Hi3516A V300), covering of one video region by a filled or hollow quadrilateral (a concave one is converted into a triangle),
     90/270 degree rotation (180 degrees on Hi3516C V300/Hi3516E V100 and Hi3516A V300), luminance sum statistics of a region, single-component luminance processing, compressed video storage on the later chips, and register linked lists (jobs described in memory). Newer editions add lens/distortion correction (Hi3518E V20X / Hi3516C V200 up to 2048 x 2048, Hi3516C V300 / Hi3516E V100 vertical LDC), graphics OSD scaling, color inversion and fast transfer (Hi3516C V300 / Hi3516E V100),
@@ -24,13 +24,90 @@ addrmap aHISI_VGS {
     The DDR controller has a VGS QoS / timeout field on every one of these chips (MDDRC `vgs_qosmap`, `vgs_to`, `vgs_r_qosmap` / `vgs_w_qosmap`).
     ";
 
+    reg {
+        name = "VGS node ID";
+        desc = "Provenance: offset, access direction and the value written are PROVEN from hi3518e_vgs.ko (OpenIPC package, Hi3518EV200_MPP_V1.0.5.0) function VGS_HAL_SetNodeID (store) and VGS_HAL_GetNodeID (load); an identifier of the job node, the driver reads it back after completion (INFERRED). (static analysis, nothing run on hardware); observed on the Hi3518E V200 module only, other VGS generations may differ; the meaning is INFERRED from the function name.";
+        field {
+            name = "node_id";
+            desc = "VGS node ID. Layout of the bits: not known, treated as one 32-bit value (GUESS for any finer meaning).";
+            sw = rw;
+            hw = r;
+        } node_id[31:0];
+    } VGS_NODE_ID @ 0x1F4;
+
+    reg {
+        name = "VGS mask";
+        desc = "Provenance: offset, access direction and the value written are PROVEN from hi3518e_vgs.ko (OpenIPC package, Hi3518EV200_MPP_V1.0.5.0) function VGS_HAL_SetMask (store only); written with an interrupt/node mask value (INFERRED, GUESS which). (static analysis, nothing run on hardware); observed on the Hi3518E V200 module only, other VGS generations may differ; the meaning is INFERRED from the function name.";
+        field {
+            name = "mask";
+            desc = "VGS mask. Layout of the bits: not known, treated as one 32-bit value (GUESS for any finer meaning).";
+            sw = rw;
+            hw = r;
+        } mask[31:0];
+    } VGS_MASK @ 0x1FC;
+
+    reg {
+        name = "VGS next node address";
+        desc = "Provenance: offset, access direction and the value written are PROVEN from hi3518e_vgs.ko (OpenIPC package, Hi3518EV200_MPP_V1.0.5.0) function VGS_HAL_SetNext and VGS_HAL_Start (the value is written then read back and compared, up to 16 retries with a cache barrier, before start is written); the physical address of the first node of the register linked list in memory (INFERRED from the data sheet feature text 'register linked list'). (static analysis, nothing run on hardware); observed on the Hi3518E V200 module only, other VGS generations may differ; the meaning is INFERRED from the function name.";
+        field {
+            name = "next_addr";
+            desc = "VGS next node address. Layout of the bits: not known, treated as one 32-bit value (GUESS for any finer meaning).";
+            sw = rw;
+            hw = r;
+        } next_addr[31:0];
+    } VGS_NEXT @ 0x2FC;
+
+    reg {
+        name = "VGS start";
+        desc = "Provenance: offset, access direction and the value written are PROVEN from hi3518e_vgs.ko (OpenIPC package, Hi3518EV200_MPP_V1.0.5.0) function VGS_HAL_Start: writes 1, or 3 when its third argument is non-zero, after VGS_NEXT is verified; bit 0 = start (INFERRED), bit 1 = unknown extra mode (GUESS). (static analysis, nothing run on hardware); observed on the Hi3518E V200 module only, other VGS generations may differ; the meaning is INFERRED from the function name.";
+        field {
+            name = "start";
+            desc = "VGS start. Layout of the bits: not known, treated as one 32-bit value (GUESS for any finer meaning).";
+            sw = rw;
+            hw = r;
+        } start[1:0];
+    } VGS_START @ 0x300;
+
+    reg {
+        name = "VGS interrupt status";
+        desc = "Provenance: offset, access direction and the value written are PROVEN from hi3518e_vgs.ko (OpenIPC package, Hi3518EV200_MPP_V1.0.5.0) function VGS_HAL_GetIntStatus (load only); bit meaning unknown. (static analysis, nothing run on hardware); observed on the Hi3518E V200 module only, other VGS generations may differ; the meaning is INFERRED from the function name.";
+        field {
+            name = "int_status";
+            desc = "VGS interrupt status. Layout of the bits: not known, treated as one 32-bit value (GUESS for any finer meaning).";
+            sw = r;
+            hw = r;
+        } int_status[31:0];
+    } VGS_INT_STATUS @ 0x304;
+
+    reg {
+        name = "VGS interrupt clear";
+        desc = "Provenance: offset, access direction and the value written are PROVEN from hi3518e_vgs.ko (OpenIPC package, Hi3518EV200_MPP_V1.0.5.0) function VGS_HAL_ClrInt (writes 0xFFFFFFFF); write-1-to-clear is INFERRED. (static analysis, nothing run on hardware); observed on the Hi3518E V200 module only, other VGS generations may differ; the meaning is INFERRED from the function name.";
+        field {
+            name = "int_clear";
+            desc = "VGS interrupt clear. Layout of the bits: not known, treated as one 32-bit value (GUESS for any finer meaning).";
+            sw = rw;
+            hw = r;
+        } int_clear[31:0];
+    } VGS_INT_CLEAR @ 0x308;
+
+    reg {
+        name = "VGS AXI outstanding";
+        desc = "Provenance: offset, access direction and the value written are PROVEN from hi3518e_vgs.ko (OpenIPC package, Hi3518EV200_MPP_V1.0.5.0) function VGS_HAL_SetOutstanding (store only); the AXI outstanding-request count (INFERRED from the name, compare VICAP AXI_CFG / JPGE_OUTSTD). (static analysis, nothing run on hardware); observed on the Hi3518E V200 module only, other VGS generations may differ; the meaning is INFERRED from the function name.";
+        field {
+            name = "outstanding";
+            desc = "VGS AXI outstanding. Layout of the bits: not known, treated as one 32-bit value (GUESS for any finer meaning).";
+            sw = rw;
+            hw = r;
+        } outstanding[31:0];
+    } VGS_OUTSTANDING @ 0x314;
+
     external mem {
         name = "Undocumented register window";
-        desc = "The whole 64 KB window of the block. Register layout unknown; placeholder so the block base address and size exist in the map. No registers are described.";
-        mementries = 16384;
+        desc = "The rest of the 64 KB window of the block (0x400-0xFFFF). Register layout unknown; placeholder so the block base address and size exist in the map. Only the seven registers at 0x1F4-0x314 are known (from vendor-module code of the Hi3518E V200, see their descriptions); the data sheets describe none.";
+        mementries = 16128;
         memwidth = 32;
         sw = rw;
-    } REGS;
+    } REGS @ 0x400;
 };
 
 `endif
