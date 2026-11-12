@@ -229,36 +229,30 @@ regfile eMISC_CTRL_EV300 {
 
     reg {
         name = "SVB PWM (core voltage)";
-        desc = "The vendor U-Boot start_svb writes ((duty << 16) | 0x0C75) to 0x120280B0, duty = ((1099 - volt) * 460 >> 10) - 1, with volt derived from the HPM measurement (1287 - 1514 * hpm / 1024 between hpm 190 and 310, 1006 mV below, 829 mV above). The EV200 U-Boot uses the PWM0 block instead. sys.ko pm.ko also touches 0x120280B0 and 0x120280B4. The AV300 sheet has the same kind of SVB PWM at MISC_CTRL36 (0x90), so the field layout [25:16] duty / [13:4] period / [2] load / [1] invert / [0] enable is INFERRED. 0x0C75 = period 0xC7, load/inv/en = 0b101. Evidence: PROVEN (U-Boot source) for the write, INFERRED layout.";
+        desc = "Written word format PROVEN twice: vendor U-Boot start_svb writes ((duty << 16) | 0x0C75) with duty = ((1099 - volt) * 460 >> 10) - 1, and the SDK power module hi3516ev200_pm.ko (volt_timer_handler, the 0x3516E300 / 0x3516D200 branch, static disassembly) stores ((V >> 10) << 16) - 0xF38B, i.e. ((duty - 1) << 16) | 0x0C75 (0x10000 - 0xF38B = 0x0C75): the low half is a constant 0x0C75, the upper 16 bits carry the duty. For the other chips pm.ko instead programs PWM channel n of 0x12080000 (n = SYS_CTRL 0x9C [3:0]; CFG1 duty, CTRL = 5). The boot table writes 0x00580C75 (duty 0x58) and waits one second. Field boundaries inside the constant are INFERRED from the AV300 sheet (period [13:4] = 0xC7, [2] and [0] set); the 0x0C75 constant itself is the only thing the code shows.";
         field {
-            name = "svb_pwm_enable";
-            desc = "PWM enable. INFERRED (0x0C75 bit 0 = 1).";
+            name = "const_0c75";
+            desc = "Constant 0x0C75 written by U-Boot and pm.ko (AV300 sheet analog: [0] enable, [13:4] period). PROVEN value, field split INFERRED.";
             sw = rw;
             hw = r;
-        } svb_pwm_enable[0:0];
-        field {
-            name = "svb_pwm_period";
-            desc = "PWM period. INFERRED (0x0C75 -> 0xC7).";
-            sw = rw;
-            hw = r;
-        } svb_pwm_period[13:4];
+        } const_0c75[15:0];
         field {
             name = "svb_pwm_duty";
-            desc = "PWM duty (the U-Boot shifts the duty by 16 and masks 0xFFFF0000, so the field may be wider). INFERRED.";
+            desc = "PWM duty minus 1 (16-bit in the written word). PROVEN (U-Boot, pm.ko).";
             sw = rw;
             hw = r;
-        } svb_pwm_duty[25:16];
+        } svb_pwm_duty[31:16];
     } MISC_CTRL44 @ 0xB0;
 
     reg {
         name = "Temperature sensor status 0";
-        desc = "Read by the vendor U-Boot (TSENSOR_STATUS0 = 0x120280BC) in the SVB flow. Evidence: PROVEN offset, UNKNOWN layout.";
+        desc = "Read by the vendor U-Boot (TSENSOR_STATUS0) and by pm.ko (temp_ctrl_init maps 0x120280B4 size 0x18; volt_timer_handler reads +8 = this register, ubfx [9:0]). pm.ko clamps the code to 117..915 and computes T = (code - 117) x 0.20625 - 40 degrees C ((165 x code - 19305) / 2 x 0xA4402911 >> 32 >> 8, minus 40). Evidence: PROVEN (static disassembly, formula only decoded, not run).";
         field {
-            name = "tsensor_status0";
-            desc = "Raw register.";
+            name = "tsensor_code";
+            desc = "10-bit temperature code. PROVEN (pm.ko ubfx #0,#10; U-Boot).";
             sw = r;
             hw = w;
-        } tsensor_status0[31:0];
+        } tsensor_code[9:0];
     } MISC_CTRL47 @ 0xBC;
 
     reg {
