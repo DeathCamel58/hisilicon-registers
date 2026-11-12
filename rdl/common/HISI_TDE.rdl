@@ -1434,13 +1434,13 @@ regfile eHISI_TDE_G1_NODE {
         desc = "Node word 0 at node offset 0x00. Selects the operation. The module starts every node with only this word updated and AqIrqMask = 8 (TdeHalNodeInitNd). Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names).";
         field {
             name = "src1_mod";
-            desc = "Source 1 mode: 0 disabled, 1 bitmap, 2 pattern, 3 fill, 5 quick copy, 7 quick fill (TdeHalNodeSetBaseOperate switch: the 11 cases and the [2:0] field position are in the module, the values 0, 1 seen directly; 2, 3, 5, 7 by the HiSTB enum, MEDIUM). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            desc = "Source 1 mode: 0 disabled, 1 bitmap, 2 pattern, 3 fill, 5 quick copy, 7 quick fill (TdeHalNodeSetBaseOperate switch: the 11 cases and the [2:0] field position are in the module, the values 0, 1 seen directly; 2, 3, 5, 7 by the HiSTB enum, MEDIUM). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware. OPERATION MODES (third pass, 2026-11-11, PROVEN in TdeHalNodeSetBaseOperate jump table of hi3520D_tde.ko): quick fill 7 with src2 0; quick copy 5 with src2 0; normal one-source blit 0 with src2 1 (bitmap); two-source blit 1 and src2 1; fill with a bitmap 1 and src2 3; single-source pattern fill 0 and src2 2; double-source pattern fill 1 and src2 2. Unverified on hardware.";
             sw = rw;
             hw = r;
         } src1_mod[2:0];
         field {
             name = "src2_mod";
-            desc = "Source 2 mode: 0 disabled, 1 bitmap, 2 pattern, 3 fill (SetBaseOperate). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            desc = "Source 2 mode: 0 disabled, 1 bitmap, 2 pattern, 3 fill (SetBaseOperate). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware. Values per operation: see src1_mod (third pass). The normal one-source blit of the vendor (format convert, colorize, mirror, resize) uses the SOURCE 2 slot with src1 disabled and ALU mode 7.";
             sw = rw;
             hw = r;
         } src2_mod[4:3];
@@ -2026,7 +2026,7 @@ regfile eHISI_TDE_G1_NODE {
 
     reg {
         name = "Horizontal filter coefficient address";
-        desc = "Node word 17 at node offset 0x44. The module loads five filter-parameter tables (TdeHalInit / TdeHalLoadFiltParam, allocated in MMZ) and writes the address chosen by the scale step (TdeHalGetResizeParaHTable). Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names).";
+        desc = "Node word 17 at node offset 0x44. The module loads five filter-parameter tables (TdeHalInit / TdeHalLoadFiltParam, allocated in MMZ) and writes the address chosen by the scale step (TdeHalGetResizeParaHTable). Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names). Third pass (PROVEN from TdeHalLoadFiltParam and TdeHalFillHFilterAddrByType): the horizontal table block holds 6 tables in 160 byte slots (33 words, 4 signed bytes each = 8 symmetric taps in the stored half-form; 132 bytes used). The slot is chosen by the horizontal step (12 bit fraction, 4096 = 1.0): up to 2048 slot 0, up to 4096 slot 1, up to 8192 slot 2, up to 12412 slot 3, up to 16384 slot 4, above slot 5 (type 0). The module has 7 coefficient sets; set 0 was used. Meaning of the taps per phase is not decoded. Unverified on hardware.";
         field {
             name = "addr";
             desc = "Physical address. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
@@ -2037,7 +2037,7 @@ regfile eHISI_TDE_G1_NODE {
 
     reg {
         name = "Vertical filter coefficient address";
-        desc = "Node word 18 at node offset 0x48.  Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names).";
+        desc = "Node word 18 at node offset 0x48.  Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names). Third pass (PROVEN from TdeHalLoadFiltParam): 12 vertical tables of 8 words (32 bytes); each word packs five signed taps (bytes of the 40 byte source table, 8 phases of 5 taps) as bits 4:0, 10:5, 18:11, 25:19, 31:26. The table is chosen by the vertical step: below 3724 table 0, 3724 to 4095 table 1, 4096 to 4500 table 2, 4501 to 4934 table 3 (limits read from the module); the next limits 4935, 5327, 5729, 6142, 8193, 12289, 16385, 20481 are from the HiSTB ratio comments (INFERRED). The vertical block is placed after the 960 byte horizontal block in the same allocation.";
         field {
             name = "addr";
             desc = "Physical address. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
@@ -2048,7 +2048,7 @@ regfile eHISI_TDE_G1_NODE {
 
     reg {
         name = "Horizontal resize step";
-        desc = "Node word 19 at node offset 0x4C. Fixed point, 0x1000 = 1.0 (NO_SCALE_STEP in the HiSTB source; the module compares steps with the same table limits). Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names).";
+        desc = "Node word 19 at node offset 0x4C. Fixed point, 0x1000 = 1.0 (NO_SCALE_STEP in the HiSTB source; the module compares steps with the same table limits). Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names). Third pass (INFERRED from the HiSTB OSI layer): step = ((input size - 1) shifted left 12) divided by (output size - 1); the vendor rejects a minification beyond 255 and its tables cover steps up to 0.2 (20480). A 1:1 direction (4096) sends no coefficient table and filter mode 0.";
         field {
             name = "step";
             desc = "Step value. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
@@ -2140,7 +2140,7 @@ regfile eHISI_TDE_G1_NODE {
         desc = "Node word 26 at node offset 0x68.  Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names).";
         field {
             name = "alu_mod";
-            desc = "ALU mode: 0 source 1 bypass, 1 ROP, 2 blend, 3 blend with source 2, 4 mask ROP 1, 5 mask blend, 6 concatenate, 7 source 2 bypass, 8 mask ROP 2 (HiSTB enum; the module writes the field through TdeHalNodeGetAluMod). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            desc = "ALU mode: 0 source 1 bypass, 1 ROP, 2 blend, 3 blend with source 2, 4 mask ROP 1, 5 mask blend, 6 concatenate, 7 source 2 bypass, 8 mask ROP 2 (HiSTB enum; the module writes the field through TdeHalNodeGetAluMod). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware. Third pass (PROVEN in TdeHalNodeSetBaseOperate): when the caller passes no ALU command the field is 7 (source 2 bypass) for every normal blit and pattern case, 0 for quick fill/copy; an alpha blend writes 2. Unverified on hardware.";
             sw = rw;
             hw = r;
         } alu_mod[3:0];
@@ -2170,7 +2170,7 @@ regfile eHISI_TDE_G1_NODE {
         } global_alpha[20:13];
         field {
             name = "ck_b_mod";
-            desc = "Color key mode, blue/V/index (0 inside, 1 outside, 2 ignore per the HiSTB constants). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            desc = "Color key mode, blue/V/index (0 inside, 1 outside, 2 ignore per the HiSTB constants). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware. Third pass (PROVEN, TdeHalNodeSetColorKey ARGB branch): the component mode is 2 if the ignore flag is set, else 1 if the out-of-range flag is set, else 0 (inside the [min, max] range). Unverified on hardware.";
             sw = rw;
             hw = r;
         } ck_b_mod[22:21];
@@ -2194,7 +2194,7 @@ regfile eHISI_TDE_G1_NODE {
         } ck_a_mod[28:27];
         field {
             name = "ck_sel";
-            desc = "Color key source select. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            desc = "Color key source select. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware. Third pass: the value is the first word of the vendor color key command (PROVEN). The OSI layer passes 0 for a background key and, for a foreground key on a non-CLUT format, 3 (HiSTB OSI source, MEDIUM; 2 is used when a CLUT expands first). Unverified on hardware.";
             sw = rw;
             hw = r;
         } ck_sel[30:29];
@@ -2208,7 +2208,7 @@ regfile eHISI_TDE_G1_NODE {
 
     reg {
         name = "Color key minimum";
-        desc = "Node word 27 at node offset 0x6C. Per-component minimum, bytes in the order B, G, R, A (little end first). Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names).";
+        desc = "Node word 27 at node offset 0x6C. Per-component minimum, bytes in the order B, G, R, A (little end first). Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names). Third pass (PROVEN): for ARGB formats the word is blue minimum in bits 7:0, green 15:8, red 23:16, alpha 31:24 (the vendor key command holds min, max, out flag, ignore flag per component). The key is set together with INS bit 12 and the five words ALU, CK_MIN, CK_MAX, CK_MASK.";
         field {
             name = "val";
             desc = "Packed minimum. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
@@ -2348,7 +2348,7 @@ regfile eHISI_TDE_G1_NODE {
 
     reg {
         name = "Color key mask";
-        desc = "Node word 37 at node offset 0x94.  Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names).";
+        desc = "Node word 37 at node offset 0x94.  Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names). Third pass (PROVEN): every branch of TdeHalNodeSetColorKey (ARGB, CLUT, YCbCr) writes 0xFFFFFFFF to this word; the per-component mask bytes of the vendor command are not used.";
         field {
             name = "blue";
             desc = "Blue/V mask. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
@@ -2391,7 +2391,7 @@ regfile eHISI_TDE_G1_NODE {
         desc = "Node word 39 at node offset 0x9C.  Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names).";
         field {
             name = "src1_blend_mode";
-            desc = "Source 1 blend mode (TdeHalNodeSetBlend). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            desc = "Source 1 blend mode (TdeHalNodeSetBlend). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware. Third pass (PROVEN, TdeHalNodeSetBlend jump table): factor codes are 0 zero, 1 one, 4 source 2 alpha, 5 one minus source 2 alpha, 8 source 1 alpha, 9 one minus source 1 alpha (10 is source 2 alpha saturate in the vendor enum, not used by the command table). Per command (source 1 mode, source 2 mode): none 5,4; clear 0,0; src 0,1; src-over 5,1; dst-over 1,9; src-in 0,8; dst-in 4,0; src-out 0,9; dst-out 5,0; src-atop 5,8; dst-atop 4,9; add 1,1; xor 5,9; dst 1,0. In a double-source blit source 1 is the background and source 2 the foreground (vendor TdeOsiDoubleSrcBlit). SetBlend always sets bit 6, clears bits 5, 7 and 13 and takes bits 4, 12, 14, 15 from the option struct. Unverified on hardware.";
             sw = rw;
             hw = r;
         } src1_blend_mode[3:0];
