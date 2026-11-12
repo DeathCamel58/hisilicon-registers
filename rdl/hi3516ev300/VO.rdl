@@ -2,179 +2,79 @@
 `define HI3516EV300_VO_RDL
 
 regfile eVO_V4_EV300 {
-    name = "VO / VDP display output, Hi3516EV200/EV300 generation (heuristic map)";
-    desc = "VO window 0x11280000 (0x40000, DT; SPI 40, hifb SPI 41). Register addresses recovered by static disassembly of the SDK module hi3516ev200_vo.ko (HAL_DISP_*, HAL_LAYER_*, HAL_VIDEO_* / VOU_HAL functions through HAL_ReadReg/HAL_WriteReg, which also bound the accessible ranges to 0x11280000..0x11291FFF and a second window up to 0x11292BFF). The structure is the classic HiSilicon VDP HAL (device registers at 0xD000.., layer registers at 0x1000.., 0x7000.., zoom engine 0x1400/0x15400, CSC 0x1200/0x7100). Only addresses >= 0x1000 are placed here; the following addresses are added to a layer/device base by the HAL and cannot be placed without the base map (offset: first function): 0x10000 (DCMP_SEG_GetBsErr, DCMP_SEG_GetConsume); 0x88 (DISP_GetIntState, DISP_GetIntStateVcnt); 0x90 (DISP_SetIntfMuxSel); 0xB0 (DISP_SetDitherDataInOut, DISP_SetDitherDomainMode); 0xB4 (DISP_SetDitherSed); 0xB8 (DISP_SetDitherSed); 0xBC (DISP_SetDitherSed); 0xC0 (DISP_SetDitherSed); 0xC4 (DISP_SetDitherSed); 0xC8 (DISP_SetDitherSed); 0xCC (DISP_SetDitherSed); 0xD0 (DISP_SetDitherSed); 0xD4 (DISP_SetDitherSed); 0xD8 (DISP_SetDitherSed); 0xDC (DISP_SetDitherSed); 0xE0 (DISP_SetDitherSed); 0xE4 (DISP_SetDitherSed); 0xE8 (DISP_SetDitherSed); 0xEC (DISP_SetDitherSed); 0xF0 (DISP_SetDitherSed); 0xF4 (DISP_SetDitherThrMinMax); 0x80 (VIDEO_SetLayerDispRect); 0x84 (LAYER_SetVerRatio, VIDEO_SetLayerDispRect); 0x8C (VIDEO_SetLayerVideoRect); 0x254 (VIDEO_GetMultiAreaLAddr, VIDEO_SetMultiAreaLAddr); 0x250 (VIDEO_GetMultiAreaLAddr, VIDEO_SetMultiAreaLAddr); 0x270 (VIDEO_SetMultiAreaCAddr, VIDEO_SetMultiAreaLAddr); 0x25C (VIDEO_GetMultiAreaCAddr, VIDEO_SetMultiAreaCAddr); 0x258 (VIDEO_GetMultiAreaCAddr, VIDEO_SetMultiAreaCAddr); 0x104 (LAYER_SetVerRatio, LAYER_SetZmeFirEnable); 0x240 (FDR_VID_SetDcmpEn, LAYER_GetLayerDataFmt); 0x244 (LAYER_SetSrcResolution); 0x44 (LAYER_CSC_SetParam); 0x4C (LAYER_CSC_SetParam); 0x24C (LAYER_SetLayerInRect); 0x300 (CBM_SetCbmBkg); 0x308 (CBM_SetCbmMixerPrio); 0x380 (DCMP_SEG_SetIceEn); 0x390 (DCMP_SEG_GetBsErr, DCMP_SEG_GetConsume); 0x210 (FDR_VID_SetVidOutUVOrder). The EV300 VO is NOT identical to any of the VDP blocks in rdl/common (HISI_VDP, _AV100, _AV200, _V2, _CV300; dither registers 0xB0..0xF4 match HISI_VDP, the layer registers match the AV100/AV200 family). Field names are derived from HAL function names: INFERRED.";
+    name = "VO / VDP display output, Hi3516EV200/EV300 generation (static map)";
+    desc = "VO / VDP of the Hi3516EV300, window 0x11280000 (0x40000, DT; SPI 40, hifb SPI 41). Register addresses recovered by static disassembly of the SDK module hi3516ev200_vo.ko: every HAL_DISP_*, HAL_LAYER_*, HAL_VIDEO_*, HAL_CBM_* and HAL_FDR_* function builds its register address as a chain of add-immediates on the VO base pointer and then calls HAL_ReadReg / HAL_WriteReg (which bound the accessible range to 0x11280000..0x11291FFF plus a second window up to 0x11292BFF). The chains are summed here, so the layer-relative offsets of round 2 (0x80, 0x84, ... ) are now placed: they belong to layer bases 0x1000 and 0x7000 (HAL_VIDEO_SetLayerDispRect programs 0x7080/0x7084 for one layer id and 0x1080/0x1084 for another; which id maps to which base is not decoded, GUESS: 0x7000 = the video layer the VPSS feeds, 0x1000 = the second layer). Map: device registers 0xD000.. (interface control 0xD000, clip 0xD200, LCD serial 0xD300, dither 0xD0B0..0xD0F4, mux 0xD090), layer registers at 0x1000/0x7000 + 0x00 (enable/update), +0x80..0x94 (display/video rect, alpha, background), +0x100.. (CSC 0x1200/0x7100, zoom 0x1400.. and 0x1500.. HFIR), compositor CBM 0x300/0x308, frame-data reader FDR 0x10240..0x10270 + 0x10000 (system outstanding), decompressor 0x10380/0x10390 (indexed). Indexed registers are shown at their base instance. The EV300 VO is not identical to any VDP block in rdl/common (HISI_VDP, _AV100, _AV200, _V2, _CV300): dither registers resemble HISI_VDP, layer registers the AV100/AV200 family. Field names derive from HAL function names: INFERRED.";
 
     reg {
-        name = "VO register at 0xD000";
-        desc = "Address formed by an add-immediate 0xD000 in HAL_DISP_GetDispIoP, HAL_DISP_GetIntState, HAL_DISP_GetIntStateVcnt, HAL_DISP_GetIntfEnable, HAL_DISP_GetVtThdMode, HAL_DISP_SetDitherDataInOut. Layer/device instances are probably replicated at a stride (layer n at +n x 0x?, device n at +n x 0x?): stride UNKNOWN. Evidence: PROVEN (offset in vendor binary), role INFERRED from function names.";
+        name = "VO register at 0x300";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_CBM_SetCbmBkg. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
         field {
-            name = "disp_setintfenable";
-            desc = "Bits [31:31] are inserted/extracted by HAL_DISP_SetIntfEnable, HAL_DISP_SetVtThdMode. Field name derived from the function name: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            name = "cbm_setcbmbkg";
+            desc = "Bits [29:20] inserted/extracted by HAL_CBM_SetCbmBkg. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
             sw = rw;
             hw = r;
-        } disp_setintfenable[31:31];
+        } cbm_setcbmbkg[29:20];
         field {
-            name = "disp_getdispiop";
-            desc = "Bits [4:4] are inserted/extracted by HAL_DISP_GetDispIoP, HAL_DISP_SetIntfSync. Field name derived from the function name: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            name = "cbm_setcbmbkg_10";
+            desc = "Bits [19:10] inserted/extracted by HAL_CBM_SetCbmBkg. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
             sw = rw;
             hw = r;
-        } disp_getdispiop[4:4];
+        } cbm_setcbmbkg_10[19:10];
         field {
-            name = "disp_setintfsync";
-            desc = "Bits [6:6] are inserted/extracted by HAL_DISP_SetIntfSync. Field name derived from the function name: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            name = "cbm_setcbmbkg_0";
+            desc = "Bits [9:0] inserted/extracted by HAL_CBM_SetCbmBkg. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
             sw = rw;
             hw = r;
-        } disp_setintfsync[6:6];
-        field {
-            name = "disp_setintfsync_5";
-            desc = "Bits [5:5] are inserted/extracted by HAL_DISP_SetIntfSync. Field name derived from the function name: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
-            sw = rw;
-            hw = r;
-        } disp_setintfsync_5[5:5];
-        field {
-            name = "disp_setintfsync_7";
-            desc = "Bits [7:7] are inserted/extracted by HAL_DISP_SetIntfSync. Field name derived from the function name: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
-            sw = rw;
-            hw = r;
-        } disp_setintfsync_7[7:7];
-        field {
-            name = "disp_setintfsync_16";
-            desc = "Bits [23:16] are inserted/extracted by HAL_DISP_SetIntfSync. Field name derived from the function name: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
-            sw = rw;
-            hw = r;
-        } disp_setintfsync_16[23:16];
-        field {
-            name = "disp_getvtthdmode";
-            desc = "Bits [15:15] are inserted/extracted by HAL_DISP_GetVtThdMode, HAL_DISP_SetVtThdMode. Field name derived from the function name: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
-            sw = rw;
-            hw = r;
-        } disp_getvtthdmode[15:15];
-    } VO_0D000 @ 0xD000;
+        } cbm_setcbmbkg_0[9:0];
+    } VO_00300 @ 0x300;
 
     reg {
-        name = "VO register at 0xD300";
-        desc = "Address formed by an add-immediate 0xD300 in HAL_DISP_SetLcdSerialPerd. Layer/device instances are probably replicated at a stride (layer n at +n x 0x?, device n at +n x 0x?): stride UNKNOWN. Evidence: PROVEN (offset in vendor binary), role INFERRED from function names.";
+        name = "VO register at 0x308";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_CBM_SetCbmMixerPrio. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
         field {
-            name = "disp_setlcdserialperd";
-            desc = "Bits [28:28] are inserted/extracted by HAL_DISP_SetLcdSerialPerd. Field name derived from the function name: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            name = "cbm_setcbmmixerprio";
+            desc = "Bits [15:12] inserted/extracted by HAL_CBM_SetCbmMixerPrio. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
             sw = rw;
             hw = r;
-        } disp_setlcdserialperd[28:28];
-    } VO_0D300 @ 0xD300;
-
-    reg {
-        name = "VO register at 0xD100";
-        desc = "Address formed by an add-immediate 0xD100 in HAL_DISP_SetIntfCtrl. Layer/device instances are probably replicated at a stride (layer n at +n x 0x?, device n at +n x 0x?): stride UNKNOWN. Evidence: PROVEN (offset in vendor binary), role INFERRED from function names.";
+        } cbm_setcbmmixerprio[15:12];
         field {
-            name = "disp_setintfctrl";
-            desc = "Bits [5:5] are inserted/extracted by HAL_DISP_SetIntfCtrl. Field name derived from the function name: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            name = "cbm_setcbmmixerprio_8";
+            desc = "Bits [11:8] inserted/extracted by HAL_CBM_SetCbmMixerPrio. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
             sw = rw;
             hw = r;
-        } disp_setintfctrl[5:5];
+        } cbm_setcbmmixerprio_8[11:8];
         field {
-            name = "disp_setintfctrl_3";
-            desc = "Bits [3:3] are inserted/extracted by HAL_DISP_SetIntfCtrl. Field name derived from the function name: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            name = "cbm_setcbmmixerprio_4";
+            desc = "Bits [7:4] inserted/extracted by HAL_CBM_SetCbmMixerPrio. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
             sw = rw;
             hw = r;
-        } disp_setintfctrl_3[3:3];
+        } cbm_setcbmmixerprio_4[7:4];
         field {
-            name = "disp_setintfctrl_2";
-            desc = "Bits [2:2] are inserted/extracted by HAL_DISP_SetIntfCtrl. Field name derived from the function name: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            name = "cbm_setcbmmixerprio_0";
+            desc = "Bits [3:0] inserted/extracted by HAL_CBM_SetCbmMixerPrio. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
             sw = rw;
             hw = r;
-        } disp_setintfctrl_2[2:2];
-        field {
-            name = "disp_setintfctrl_1";
-            desc = "Bits [1:1] are inserted/extracted by HAL_DISP_SetIntfCtrl. Field name derived from the function name: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
-            sw = rw;
-            hw = r;
-        } disp_setintfctrl_1[1:1];
-        field {
-            name = "disp_setintfctrl_31";
-            desc = "Bits [31:31] are inserted/extracted by HAL_DISP_SetIntfCtrl. Field name derived from the function name: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
-            sw = rw;
-            hw = r;
-        } disp_setintfctrl_31[31:31];
-        field {
-            name = "disp_setintfctrl_29";
-            desc = "Bits [29:29] are inserted/extracted by HAL_DISP_SetIntfCtrl. Field name derived from the function name: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
-            sw = rw;
-            hw = r;
-        } disp_setintfctrl_29[29:29];
-        field {
-            name = "disp_setintfctrl_27";
-            desc = "Bits [27:27] are inserted/extracted by HAL_DISP_SetIntfCtrl. Field name derived from the function name: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
-            sw = rw;
-            hw = r;
-        } disp_setintfctrl_27[27:27];
-        field {
-            name = "disp_setintfctrl_26";
-            desc = "Bits [26:26] are inserted/extracted by HAL_DISP_SetIntfCtrl. Field name derived from the function name: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
-            sw = rw;
-            hw = r;
-        } disp_setintfctrl_26[26:26];
-        field {
-            name = "disp_setintfctrl_25";
-            desc = "Bits [25:25] are inserted/extracted by HAL_DISP_SetIntfCtrl. Field name derived from the function name: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
-            sw = rw;
-            hw = r;
-        } disp_setintfctrl_25[25:25];
-    } VO_0D100 @ 0xD100;
-
-    reg {
-        name = "VO register at 0xD200";
-        desc = "Address formed by an add-immediate 0xD200 in HAL_DISP_SetIntfClip, HAL_INTF_BT_SetDfirEn. Layer/device instances are probably replicated at a stride (layer n at +n x 0x?, device n at +n x 0x?): stride UNKNOWN. Evidence: PROVEN (offset in vendor binary), role INFERRED from function names.";
-        field {
-            name = "disp_setintfclip";
-            desc = "Bits [31:31] are inserted/extracted by HAL_DISP_SetIntfClip. Field name derived from the function name: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
-            sw = rw;
-            hw = r;
-        } disp_setintfclip[31:31];
-        field {
-            name = "disp_setintfclip_20";
-            desc = "Bits [29:20] are inserted/extracted by HAL_DISP_SetIntfClip. Field name derived from the function name: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
-            sw = rw;
-            hw = r;
-        } disp_setintfclip_20[29:20];
-        field {
-            name = "disp_setintfclip_10";
-            desc = "Bits [19:10] are inserted/extracted by HAL_DISP_SetIntfClip. Field name derived from the function name: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
-            sw = rw;
-            hw = r;
-        } disp_setintfclip_10[19:10];
-        field {
-            name = "disp_setintfclip_0";
-            desc = "Bits [9:0] are inserted/extracted by HAL_DISP_SetIntfClip. Field name derived from the function name: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
-            sw = rw;
-            hw = r;
-        } disp_setintfclip_0[9:0];
-        field {
-            name = "intf_bt_setdfiren";
-            desc = "Bits [30:30] are inserted/extracted by HAL_INTF_BT_SetDfirEn. Field name derived from the function name: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
-            sw = rw;
-            hw = r;
-        } intf_bt_setdfiren[30:30];
-    } VO_0D200 @ 0xD200;
+        } cbm_setcbmmixerprio_0[3:0];
+    } VO_00308 @ 0x308;
 
     reg {
         name = "VO register at 0x1000";
-        desc = "Address formed by an add-immediate 0x1000 in HAL_LAYER_EnableLayer, HAL_LAYER_GetLayerEnable, HAL_LAYER_SetLayerGAlpha, HAL_LAYER_SetRegUp, HAL_VIDEO_SetLayerUpMode. Layer/device instances are probably replicated at a stride (layer n at +n x 0x?, device n at +n x 0x?): stride UNKNOWN. Evidence: PROVEN (offset in vendor binary), role INFERRED from function names.";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_LAYER_EnableLayer, HAL_LAYER_GetLayerEnable, HAL_LAYER_SetLayerGAlpha, HAL_VIDEO_SetLayerUpMode. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
         field {
             name = "video_setlayerupmode";
-            desc = "Bits [29:29] are inserted/extracted by HAL_VIDEO_SetLayerUpMode. Field name derived from the function name: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            desc = "Bits [29:29] inserted/extracted by HAL_VIDEO_SetLayerUpMode. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
             sw = rw;
             hw = r;
         } video_setlayerupmode[29:29];
         field {
             name = "layer_enablelayer";
-            desc = "Bits [31:31] are inserted/extracted by HAL_LAYER_EnableLayer. Field name derived from the function name: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            desc = "Bits [31:31] inserted/extracted by HAL_LAYER_EnableLayer. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
             sw = rw;
             hw = r;
         } layer_enablelayer[31:31];
         field {
             name = "layer_setlayergalpha";
-            desc = "Bits [7:0] are inserted/extracted by HAL_LAYER_SetLayerGAlpha. Field name derived from the function name: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            desc = "Bits [7:0] inserted/extracted by HAL_LAYER_SetLayerGAlpha. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
             sw = rw;
             hw = r;
         } layer_setlayergalpha[7:0];
@@ -182,191 +82,1372 @@ regfile eVO_V4_EV300 {
 
     reg {
         name = "VO register at 0x1080";
-        desc = "Address formed by an add-immediate 0x1080 in HAL_LAYER_SetLayerBgColor, HAL_VIDEO_SetLayerAlpha, HAL_VIDEO_SetLayerDispRect, HAL_VIDEO_SetLayerVideoRect. Layer/device instances are probably replicated at a stride (layer n at +n x 0x?, device n at +n x 0x?): stride UNKNOWN. Evidence: PROVEN (offset in vendor binary), role INFERRED from function names.";
-        field {
-            name = "video_setlayeralpha";
-            desc = "Bits [7:0] are inserted/extracted by HAL_VIDEO_SetLayerAlpha. Field name derived from the function name: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
-            sw = rw;
-            hw = r;
-        } video_setlayeralpha[7:0];
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_VIDEO_SetLayerDispRect. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
         field {
             name = "video_setlayerdisprect";
-            desc = "Bits [31:16] are inserted/extracted by HAL_VIDEO_SetLayerDispRect, HAL_VIDEO_SetLayerVideoRect. Field name derived from the function name: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            desc = "Bits [15:0] inserted/extracted by HAL_VIDEO_SetLayerDispRect. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
             sw = rw;
             hw = r;
-        } video_setlayerdisprect[31:16];
+        } video_setlayerdisprect[15:0];
+        field {
+            name = "video_setlayerdisprect_16";
+            desc = "Bits [31:16] inserted/extracted by HAL_VIDEO_SetLayerDispRect. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } video_setlayerdisprect_16[31:16];
     } VO_01080 @ 0x1080;
 
     reg {
-        name = "VO register at 0x7000";
-        desc = "Address formed by an add-immediate 0x7000 in HAL_LAYER_EnableLayer, HAL_LAYER_GetLayerEnable, HAL_LAYER_SetRegUp, HAL_VIDEO_SetLayerDispRect, HAL_VIDEO_SetLayerVideoRect. Layer/device instances are probably replicated at a stride (layer n at +n x 0x?, device n at +n x 0x?): stride UNKNOWN. Evidence: PROVEN (offset in vendor binary), role INFERRED from function names.";
+        name = "VO register at 0x1084";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_VIDEO_SetLayerDispRect. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
         field {
-            name = "layer_enablelayer";
-            desc = "Bits [31:31] are inserted/extracted by HAL_LAYER_EnableLayer. Field name derived from the function name: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            name = "video_setlayerdisprect";
+            desc = "Bits [15:0] inserted/extracted by HAL_VIDEO_SetLayerDispRect. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
             sw = rw;
             hw = r;
-        } layer_enablelayer[31:31];
-    } VO_07000 @ 0x7000;
+        } video_setlayerdisprect[15:0];
+        field {
+            name = "video_setlayerdisprect_16";
+            desc = "Bits [31:16] inserted/extracted by HAL_VIDEO_SetLayerDispRect. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } video_setlayerdisprect_16[31:16];
+    } VO_01084 @ 0x1084;
 
     reg {
-        name = "VO register at 0x1400";
-        desc = "Address formed by an add-immediate 0x1400 in HAL_LAYER_SetZmeFirEnable, HAL_LAYER_SetZmeInfo, HAL_VIDEO_CVFIR_SetCoef, HAL_VIDEO_CVFIR_SetCvfirEn, HAL_VIDEO_CVFIR_SetCvfirMode, HAL_VIDEO_CVFIR_SetCvmidEn. Layer/device instances are probably replicated at a stride (layer n at +n x 0x?, device n at +n x 0x?): stride UNKNOWN. Evidence: PROVEN (offset in vendor binary), role INFERRED from function names.";
+        name = "VO register at 0x1088";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_VIDEO_SetLayerVideoRect. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
         field {
-            name = "layer_setzmeinfo";
-            desc = "Bits [15:0] are inserted/extracted by HAL_LAYER_SetZmeInfo, HAL_VIDEO_CVFIR_SetOutHeight, HAL_VIDEO_CVFIR_SetVChromaOffset. Field name derived from the function name: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            name = "video_setlayervideorect";
+            desc = "Bits [15:0] inserted/extracted by HAL_VIDEO_SetLayerVideoRect. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
             sw = rw;
             hw = r;
-        } layer_setzmeinfo[15:0];
+        } video_setlayervideorect[15:0];
         field {
-            name = "layer_setzmeinfo_16";
-            desc = "Bits [17:16] are inserted/extracted by HAL_LAYER_SetZmeInfo, HAL_VIDEO_CVFIR_SetOutFmt. Field name derived from the function name: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            name = "video_setlayervideorect_16";
+            desc = "Bits [31:16] inserted/extracted by HAL_VIDEO_SetLayerVideoRect. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
             sw = rw;
             hw = r;
-        } layer_setzmeinfo_16[17:16];
-        field {
-            name = "layer_setzmefirenable";
-            desc = "Bits [30:30] are inserted/extracted by HAL_LAYER_SetZmeFirEnable, HAL_VIDEO_CVFIR_SetCvfirEn. Field name derived from the function name: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
-            sw = rw;
-            hw = r;
-        } layer_setzmefirenable[30:30];
-        field {
-            name = "layer_setzmefirenable_28";
-            desc = "Bits [28:28] are inserted/extracted by HAL_LAYER_SetZmeFirEnable, HAL_VIDEO_CVFIR_SetCvmidEn. Field name derived from the function name: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
-            sw = rw;
-            hw = r;
-        } layer_setzmefirenable_28[28:28];
-        field {
-            name = "video_cvfir_setoutpro";
-            desc = "Bits [18:18] are inserted/extracted by HAL_VIDEO_CVFIR_SetOutPro. Field name derived from the function name: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
-            sw = rw;
-            hw = r;
-        } video_cvfir_setoutpro[18:18];
-        field {
-            name = "video_cvfir_setvzmeckgten";
-            desc = "Bits [19:19] are inserted/extracted by HAL_VIDEO_CVFIR_SetVzmeCkGtEn. Field name derived from the function name: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
-            sw = rw;
-            hw = r;
-        } video_cvfir_setvzmeckgten[19:19];
-        field {
-            name = "video_cvfir_setcvfirmode";
-            desc = "Bits [25:25] are inserted/extracted by HAL_VIDEO_CVFIR_SetCvfirMode. Field name derived from the function name: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
-            sw = rw;
-            hw = r;
-        } video_cvfir_setcvfirmode[25:25];
-    } VO_01400 @ 0x1400;
+        } video_setlayervideorect_16[31:16];
+    } VO_01088 @ 0x1088;
 
     reg {
-        name = "VO register at 0x15400";
-        desc = "Address formed by an add-immediate 0x15400 in HAL_LAYER_SetVerRatio, HAL_LAYER_SetZmeFirEnable. Layer/device instances are probably replicated at a stride (layer n at +n x 0x?, device n at +n x 0x?): stride UNKNOWN. Evidence: PROVEN (offset in vendor binary), role INFERRED from function names.";
+        name = "VO register at 0x108C";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_VIDEO_SetLayerVideoRect. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
         field {
-            name = "layer_setzmefirenable";
-            desc = "Bits [30:30] are inserted/extracted by HAL_LAYER_SetZmeFirEnable. Field name derived from the function name: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            name = "video_setlayervideorect";
+            desc = "Bits [15:0] inserted/extracted by HAL_VIDEO_SetLayerVideoRect. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
             sw = rw;
             hw = r;
-        } layer_setzmefirenable[30:30];
+        } video_setlayervideorect[15:0];
         field {
-            name = "layer_setzmefirenable_31";
-            desc = "Bits [31:31] are inserted/extracted by HAL_LAYER_SetZmeFirEnable. Field name derived from the function name: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            name = "video_setlayervideorect_16";
+            desc = "Bits [31:16] inserted/extracted by HAL_VIDEO_SetLayerVideoRect. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
             sw = rw;
             hw = r;
-        } layer_setzmefirenable_31[31:31];
-    } VO_15400 @ 0x15400;
+        } video_setlayervideorect_16[31:16];
+    } VO_0108C @ 0x108C;
 
     reg {
-        name = "VO register at 0x10C00";
-        desc = "Address formed by an add-immediate 0x10C00 in HAL_LAYER_SetLayerDataFmt, HAL_LAYER_SetLayerInRect. Layer/device instances are probably replicated at a stride (layer n at +n x 0x?, device n at +n x 0x?): stride UNKNOWN. Evidence: PROVEN (offset in vendor binary), role INFERRED from function names.";
+        name = "VO register at 0x1090";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_LAYER_SetLayerBgColor. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
         field {
-            name = "raw";
-            desc = "Raw register; no bit-field access seen. UNKNOWN layout.";
+            name = "layer_setlayerbgcolor";
+            desc = "Bits [29:20] inserted/extracted by HAL_LAYER_SetLayerBgColor. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
             sw = rw;
             hw = r;
-        } raw[31:0];
-    } VO_10C00 @ 0x10C00;
+        } layer_setlayerbgcolor[29:20];
+        field {
+            name = "layer_setlayerbgcolor_10";
+            desc = "Bits [19:10] inserted/extracted by HAL_LAYER_SetLayerBgColor. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } layer_setlayerbgcolor_10[19:10];
+        field {
+            name = "layer_setlayerbgcolor_0";
+            desc = "Bits [9:0] inserted/extracted by HAL_LAYER_SetLayerBgColor. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } layer_setlayerbgcolor_0[9:0];
+    } VO_01090 @ 0x1090;
 
     reg {
-        name = "VO register at 0x1500";
-        desc = "Address formed by an add-immediate 0x1500 in HAL_VIDEO_HFIR_SetCkGtEn, HAL_VIDEO_HFIR_SetCoef, HAL_VIDEO_HFIR_SetHfirMode, HAL_VIDEO_HFIR_SetMidEn. Layer/device instances are probably replicated at a stride (layer n at +n x 0x?, device n at +n x 0x?): stride UNKNOWN. Evidence: PROVEN (offset in vendor binary), role INFERRED from function names.";
+        name = "VO register at 0x1094";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_VIDEO_SetLayerAlpha. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
         field {
-            name = "video_hfir_setckgten";
-            desc = "Bits [4:4] are inserted/extracted by HAL_VIDEO_HFIR_SetCkGtEn. Field name derived from the function name: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            name = "video_setlayeralpha";
+            desc = "Bits [7:0] inserted/extracted by HAL_VIDEO_SetLayerAlpha. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
             sw = rw;
             hw = r;
-        } video_hfir_setckgten[4:4];
-        field {
-            name = "video_hfir_setmiden";
-            desc = "Bits [3:3] are inserted/extracted by HAL_VIDEO_HFIR_SetMidEn. Field name derived from the function name: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
-            sw = rw;
-            hw = r;
-        } video_hfir_setmiden[3:3];
-        field {
-            name = "video_hfir_sethfirmode";
-            desc = "Bits [2:1] are inserted/extracted by HAL_VIDEO_HFIR_SetHfirMode. Field name derived from the function name: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
-            sw = rw;
-            hw = r;
-        } video_hfir_sethfirmode[2:1];
-        field {
-            name = "video_hfir_setcoef";
-            desc = "Bits [25:16] are inserted/extracted by HAL_VIDEO_HFIR_SetCoef. Field name derived from the function name: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
-            sw = rw;
-            hw = r;
-        } video_hfir_setcoef[25:16];
-    } VO_01500 @ 0x1500;
+        } video_setlayeralpha[7:0];
+    } VO_01094 @ 0x1094;
 
     reg {
         name = "VO register at 0x1200";
-        desc = "Address formed by an add-immediate 0x1200 in HAL_LAYER_CSC_SetCkGtEn, HAL_LAYER_CSC_SetEnable, HAL_LAYER_CSC_SetParam. Layer/device instances are probably replicated at a stride (layer n at +n x 0x?, device n at +n x 0x?): stride UNKNOWN. Evidence: PROVEN (offset in vendor binary), role INFERRED from function names.";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_LAYER_CSC_SetCkGtEn, HAL_LAYER_CSC_SetEnable. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
         field {
             name = "layer_csc_setenable";
-            desc = "Bits [0:0] are inserted/extracted by HAL_LAYER_CSC_SetEnable. Field name derived from the function name: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            desc = "Bits [0:0] inserted/extracted by HAL_LAYER_CSC_SetEnable. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
             sw = rw;
             hw = r;
         } layer_csc_setenable[0:0];
         field {
             name = "layer_csc_setckgten";
-            desc = "Bits [2:2] are inserted/extracted by HAL_LAYER_CSC_SetCkGtEn. Field name derived from the function name: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            desc = "Bits [2:2] inserted/extracted by HAL_LAYER_CSC_SetCkGtEn. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
             sw = rw;
             hw = r;
         } layer_csc_setckgten[2:2];
     } VO_01200 @ 0x1200;
 
     reg {
-        name = "VO register at 0x7100";
-        desc = "Address formed by an add-immediate 0x7100 in HAL_LAYER_CSC_SetCkGtEn, HAL_LAYER_CSC_SetCscMode, HAL_LAYER_CSC_SetEnable, HAL_LAYER_CSC_SetParam. Layer/device instances are probably replicated at a stride (layer n at +n x 0x?, device n at +n x 0x?): stride UNKNOWN. Evidence: PROVEN (offset in vendor binary), role INFERRED from function names.";
-        field {
-            name = "layer_csc_setenable";
-            desc = "Bits [0:0] are inserted/extracted by HAL_LAYER_CSC_SetEnable. Field name derived from the function name: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
-            sw = rw;
-            hw = r;
-        } layer_csc_setenable[0:0];
-        field {
-            name = "layer_csc_setckgten";
-            desc = "Bits [2:2] are inserted/extracted by HAL_LAYER_CSC_SetCkGtEn. Field name derived from the function name: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
-            sw = rw;
-            hw = r;
-        } layer_csc_setckgten[2:2];
-    } VO_07100 @ 0x7100;
-
-    reg {
-        name = "VO register at 0x1240";
-        desc = "Address formed by an add-immediate 0x1240 in HAL_LAYER_CSC_SetParam. Layer/device instances are probably replicated at a stride (layer n at +n x 0x?, device n at +n x 0x?): stride UNKNOWN. Evidence: PROVEN (offset in vendor binary), role INFERRED from function names.";
+        name = "VO register at 0x1228";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_LAYER_CSC_SetParam. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
         field {
             name = "layer_csc_setparam";
-            desc = "Bits [9:0] are inserted/extracted by HAL_LAYER_CSC_SetParam. Field name derived from the function name: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            desc = "Bits [3:0] inserted/extracted by HAL_LAYER_CSC_SetParam. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } layer_csc_setparam[3:0];
+    } VO_01228 @ 0x1228;
+
+    reg {
+        name = "VO register at 0x1244";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_LAYER_CSC_SetParam. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "layer_csc_setparam";
+            desc = "Bits [9:0] inserted/extracted by HAL_LAYER_CSC_SetParam. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
             sw = rw;
             hw = r;
         } layer_csc_setparam[9:0];
-    } VO_01240 @ 0x1240;
+    } VO_01244 @ 0x1244;
 
     reg {
-        name = "VO register at 0x7300";
-        desc = "Address formed by an add-immediate 0x7300 in HAL_LAYER_SetVerRatio. Layer/device instances are probably replicated at a stride (layer n at +n x 0x?, device n at +n x 0x?): stride UNKNOWN. Evidence: PROVEN (offset in vendor binary), role INFERRED from function names.";
+        name = "VO register at 0x1248";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_LAYER_CSC_SetParam. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "layer_csc_setparam";
+            desc = "Bits [9:0] inserted/extracted by HAL_LAYER_CSC_SetParam. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } layer_csc_setparam[9:0];
+    } VO_01248 @ 0x1248;
+
+    reg {
+        name = "VO register at 0x124C";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_LAYER_CSC_SetParam. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "layer_csc_setparam";
+            desc = "Bits [9:0] inserted/extracted by HAL_LAYER_CSC_SetParam. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } layer_csc_setparam[9:0];
+    } VO_0124C @ 0x124C;
+
+    reg {
+        name = "VO register at 0x1250";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_LAYER_CSC_SetParam. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "layer_csc_setparam";
+            desc = "Bits [9:0] inserted/extracted by HAL_LAYER_CSC_SetParam. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } layer_csc_setparam[9:0];
+    } VO_01250 @ 0x1250;
+
+    reg {
+        name = "VO register at 0x1400";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_LAYER_SetZmeInfo, HAL_VIDEO_CVFIR_SetOutFmt, HAL_VIDEO_CVFIR_SetOutHeight, HAL_VIDEO_CVFIR_SetOutPro, HAL_VIDEO_CVFIR_SetVzmeCkGtEn. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "layer_setzmeinfo";
+            desc = "Bits [15:0] inserted/extracted by HAL_LAYER_SetZmeInfo, HAL_VIDEO_CVFIR_SetOutHeight. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } layer_setzmeinfo[15:0];
+        field {
+            name = "layer_setzmeinfo_16";
+            desc = "Bits [17:16] inserted/extracted by HAL_LAYER_SetZmeInfo, HAL_VIDEO_CVFIR_SetOutFmt. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } layer_setzmeinfo_16[17:16];
+        field {
+            name = "video_cvfir_setoutpro";
+            desc = "Bits [18:18] inserted/extracted by HAL_VIDEO_CVFIR_SetOutPro. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } video_cvfir_setoutpro[18:18];
+        field {
+            name = "video_cvfir_setvzmeckgten";
+            desc = "Bits [19:19] inserted/extracted by HAL_VIDEO_CVFIR_SetVzmeCkGtEn. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } video_cvfir_setvzmeckgten[19:19];
+    } VO_01400 @ 0x1400;
+
+    reg {
+        name = "VO register at 0x1404";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_LAYER_SetZmeFirEnable, HAL_VIDEO_CVFIR_SetCvfirEn, HAL_VIDEO_CVFIR_SetCvfirMode, HAL_VIDEO_CVFIR_SetCvmidEn, HAL_VIDEO_CVFIR_SetVratio. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "layer_setzmefirenable";
+            desc = "Bits [30:30] inserted/extracted by HAL_LAYER_SetZmeFirEnable, HAL_VIDEO_CVFIR_SetCvfirEn. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } layer_setzmefirenable[30:30];
+        field {
+            name = "layer_setzmefirenable_28";
+            desc = "Bits [28:28] inserted/extracted by HAL_LAYER_SetZmeFirEnable, HAL_VIDEO_CVFIR_SetCvmidEn. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } layer_setzmefirenable_28[28:28];
+        field {
+            name = "video_cvfir_setcvfirmode";
+            desc = "Bits [25:25] inserted/extracted by HAL_VIDEO_CVFIR_SetCvfirMode. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } video_cvfir_setcvfirmode[25:25];
+        field {
+            name = "video_cvfir_setvratio";
+            desc = "Bits [15:0] inserted/extracted by HAL_VIDEO_CVFIR_SetVratio. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } video_cvfir_setvratio[15:0];
+    } VO_01404 @ 0x1404;
+
+    reg {
+        name = "VO register at 0x1408";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_VIDEO_CVFIR_SetVChromaOffset. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "video_cvfir_setvchromaoffset";
+            desc = "Bits [15:0] inserted/extracted by HAL_VIDEO_CVFIR_SetVChromaOffset. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } video_cvfir_setvchromaoffset[15:0];
+    } VO_01408 @ 0x1408;
+
+    reg {
+        name = "VO register at 0x140C";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_VIDEO_CVFIR_SetVbChromaOffset. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "video_cvfir_setvbchromaoffset";
+            desc = "Bits [15:0] inserted/extracted by HAL_VIDEO_CVFIR_SetVbChromaOffset. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } video_cvfir_setvbchromaoffset[15:0];
+    } VO_0140C @ 0x140C;
+
+    reg {
+        name = "VO register at 0x1430";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_VIDEO_CVFIR_SetCoef. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "video_cvfir_setcoef";
+            desc = "Bits [29:20] inserted/extracted by HAL_VIDEO_CVFIR_SetCoef. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } video_cvfir_setcoef[29:20];
+        field {
+            name = "video_cvfir_setcoef_10";
+            desc = "Bits [19:10] inserted/extracted by HAL_VIDEO_CVFIR_SetCoef. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } video_cvfir_setcoef_10[19:10];
+        field {
+            name = "video_cvfir_setcoef_0";
+            desc = "Bits [9:0] inserted/extracted by HAL_VIDEO_CVFIR_SetCoef. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } video_cvfir_setcoef_0[9:0];
+    } VO_01430 @ 0x1430;
+
+    reg {
+        name = "VO register at 0x1434";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_VIDEO_CVFIR_SetCoef. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "video_cvfir_setcoef";
+            desc = "Bits [29:20] inserted/extracted by HAL_VIDEO_CVFIR_SetCoef. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } video_cvfir_setcoef[29:20];
+        field {
+            name = "video_cvfir_setcoef_10";
+            desc = "Bits [19:10] inserted/extracted by HAL_VIDEO_CVFIR_SetCoef. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } video_cvfir_setcoef_10[19:10];
+        field {
+            name = "video_cvfir_setcoef_0";
+            desc = "Bits [9:0] inserted/extracted by HAL_VIDEO_CVFIR_SetCoef. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } video_cvfir_setcoef_0[9:0];
+    } VO_01434 @ 0x1434;
+
+    reg {
+        name = "VO register at 0x1438";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_VIDEO_CVFIR_SetCoef. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "video_cvfir_setcoef";
+            desc = "Bits [19:10] inserted/extracted by HAL_VIDEO_CVFIR_SetCoef. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } video_cvfir_setcoef[19:10];
+        field {
+            name = "video_cvfir_setcoef_0";
+            desc = "Bits [9:0] inserted/extracted by HAL_VIDEO_CVFIR_SetCoef. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } video_cvfir_setcoef_0[9:0];
+    } VO_01438 @ 0x1438;
+
+    reg {
+        name = "VO register at 0x1500";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_VIDEO_HFIR_SetCkGtEn, HAL_VIDEO_HFIR_SetHfirMode, HAL_VIDEO_HFIR_SetMidEn. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "video_hfir_setckgten";
+            desc = "Bits [4:4] inserted/extracted by HAL_VIDEO_HFIR_SetCkGtEn. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } video_hfir_setckgten[4:4];
+        field {
+            name = "video_hfir_setmiden";
+            desc = "Bits [3:3] inserted/extracted by HAL_VIDEO_HFIR_SetMidEn. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } video_hfir_setmiden[3:3];
+        field {
+            name = "video_hfir_sethfirmode";
+            desc = "Bits [2:1] inserted/extracted by HAL_VIDEO_HFIR_SetHfirMode. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } video_hfir_sethfirmode[2:1];
+    } VO_01500 @ 0x1500;
+
+    reg {
+        name = "VO register at 0x1504";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_VIDEO_HFIR_SetCoef. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "video_hfir_setcoef";
+            desc = "Bits [9:0] inserted/extracted by HAL_VIDEO_HFIR_SetCoef. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } video_hfir_setcoef[9:0];
+        field {
+            name = "video_hfir_setcoef_16";
+            desc = "Bits [25:16] inserted/extracted by HAL_VIDEO_HFIR_SetCoef. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } video_hfir_setcoef_16[25:16];
+    } VO_01504 @ 0x1504;
+
+    reg {
+        name = "VO register at 0x1508";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_VIDEO_HFIR_SetCoef. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "video_hfir_setcoef";
+            desc = "Bits [9:0] inserted/extracted by HAL_VIDEO_HFIR_SetCoef. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } video_hfir_setcoef[9:0];
+        field {
+            name = "video_hfir_setcoef_16";
+            desc = "Bits [25:16] inserted/extracted by HAL_VIDEO_HFIR_SetCoef. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } video_hfir_setcoef_16[25:16];
+    } VO_01508 @ 0x1508;
+
+    reg {
+        name = "VO register at 0x150C";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_VIDEO_HFIR_SetCoef. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "video_hfir_setcoef";
+            desc = "Bits [9:0] inserted/extracted by HAL_VIDEO_HFIR_SetCoef. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } video_hfir_setcoef[9:0];
+        field {
+            name = "video_hfir_setcoef_16";
+            desc = "Bits [25:16] inserted/extracted by HAL_VIDEO_HFIR_SetCoef. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } video_hfir_setcoef_16[25:16];
+    } VO_0150C @ 0x150C;
+
+    reg {
+        name = "VO register at 0x1510";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_VIDEO_HFIR_SetCoef. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "video_hfir_setcoef";
+            desc = "Bits [9:0] inserted/extracted by HAL_VIDEO_HFIR_SetCoef. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } video_hfir_setcoef[9:0];
+        field {
+            name = "video_hfir_setcoef_16";
+            desc = "Bits [25:16] inserted/extracted by HAL_VIDEO_HFIR_SetCoef. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } video_hfir_setcoef_16[25:16];
+    } VO_01510 @ 0x1510;
+
+    reg {
+        name = "VO register at 0x7000";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_LAYER_EnableLayer, HAL_LAYER_GetLayerEnable. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "layer_enablelayer";
+            desc = "Bits [31:31] inserted/extracted by HAL_LAYER_EnableLayer. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } layer_enablelayer[31:31];
+    } VO_07000 @ 0x7000;
+
+    reg {
+        name = "VO register at 0x7004";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_LAYER_SetRegUp. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
         field {
             name = "raw";
             desc = "Raw register; no bit-field access seen. UNKNOWN layout.";
             sw = rw;
             hw = r;
         } raw[31:0];
-    } VO_07300 @ 0x7300;
+    } VO_07004 @ 0x7004;
+
+    reg {
+        name = "VO register at 0x7080";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_VIDEO_SetLayerDispRect. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "video_setlayerdisprect";
+            desc = "Bits [15:0] inserted/extracted by HAL_VIDEO_SetLayerDispRect. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } video_setlayerdisprect[15:0];
+        field {
+            name = "video_setlayerdisprect_16";
+            desc = "Bits [31:16] inserted/extracted by HAL_VIDEO_SetLayerDispRect. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } video_setlayerdisprect_16[31:16];
+    } VO_07080 @ 0x7080;
+
+    reg {
+        name = "VO register at 0x7084";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_VIDEO_SetLayerDispRect. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "video_setlayerdisprect";
+            desc = "Bits [15:0] inserted/extracted by HAL_VIDEO_SetLayerDispRect. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } video_setlayerdisprect[15:0];
+        field {
+            name = "video_setlayerdisprect_16";
+            desc = "Bits [31:16] inserted/extracted by HAL_VIDEO_SetLayerDispRect. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } video_setlayerdisprect_16[31:16];
+    } VO_07084 @ 0x7084;
+
+    reg {
+        name = "VO register at 0x7088";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_VIDEO_SetLayerVideoRect. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "video_setlayervideorect";
+            desc = "Bits [15:0] inserted/extracted by HAL_VIDEO_SetLayerVideoRect. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } video_setlayervideorect[15:0];
+        field {
+            name = "video_setlayervideorect_16";
+            desc = "Bits [31:16] inserted/extracted by HAL_VIDEO_SetLayerVideoRect. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } video_setlayervideorect_16[31:16];
+    } VO_07088 @ 0x7088;
+
+    reg {
+        name = "VO register at 0x708C";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_VIDEO_SetLayerVideoRect. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "video_setlayervideorect";
+            desc = "Bits [15:0] inserted/extracted by HAL_VIDEO_SetLayerVideoRect. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } video_setlayervideorect[15:0];
+        field {
+            name = "video_setlayervideorect_16";
+            desc = "Bits [31:16] inserted/extracted by HAL_VIDEO_SetLayerVideoRect. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } video_setlayervideorect_16[31:16];
+    } VO_0708C @ 0x708C;
+
+    reg {
+        name = "VO register at 0x7100";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_LAYER_CSC_SetCkGtEn, HAL_LAYER_CSC_SetCscMode, HAL_LAYER_CSC_SetEnable. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "layer_csc_setenable";
+            desc = "Bits [0:0] inserted/extracted by HAL_LAYER_CSC_SetEnable. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } layer_csc_setenable[0:0];
+        field {
+            name = "layer_csc_setckgten";
+            desc = "Bits [2:2] inserted/extracted by HAL_LAYER_CSC_SetCkGtEn. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } layer_csc_setckgten[2:2];
+    } VO_07100 @ 0x7100;
+
+    reg {
+        name = "VO register at 0x7144";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_LAYER_CSC_SetParam. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "layer_csc_setparam";
+            desc = "Bits [9:0] inserted/extracted by HAL_LAYER_CSC_SetParam. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } layer_csc_setparam[9:0];
+    } VO_07144 @ 0x7144;
+
+    reg {
+        name = "VO register at 0x7384";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_LAYER_SetVerRatio. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "layer_setverratio";
+            desc = "Bits [15:0] inserted/extracted by HAL_LAYER_SetVerRatio. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } layer_setverratio[15:0];
+    } VO_07384 @ 0x7384;
+
+    reg {
+        name = "VO register at 0xD000";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_DISP_GetDispIoP, HAL_DISP_GetIntfEnable, HAL_DISP_SetIntfEnable, HAL_DISP_SetIntfSync, HAL_DISP_SetRegUp. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "disp_setintfenable";
+            desc = "Bits [31:31] inserted/extracted by HAL_DISP_SetIntfEnable. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_setintfenable[31:31];
+        field {
+            name = "disp_getdispiop";
+            desc = "Bits [4:4] inserted/extracted by HAL_DISP_GetDispIoP, HAL_DISP_SetIntfSync. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_getdispiop[4:4];
+        field {
+            name = "disp_setintfsync";
+            desc = "Bits [6:6] inserted/extracted by HAL_DISP_SetIntfSync. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_setintfsync[6:6];
+        field {
+            name = "disp_setintfsync_5";
+            desc = "Bits [5:5] inserted/extracted by HAL_DISP_SetIntfSync. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_setintfsync_5[5:5];
+        field {
+            name = "disp_setintfsync_7";
+            desc = "Bits [7:7] inserted/extracted by HAL_DISP_SetIntfSync. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_setintfsync_7[7:7];
+    } VO_0D000 @ 0xD000;
+
+    reg {
+        name = "VO register at 0xD004";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_DISP_SetIntfSync. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "disp_setintfsync";
+            desc = "Bits [15:0] inserted/extracted by HAL_DISP_SetIntfSync. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_setintfsync[15:0];
+        field {
+            name = "disp_setintfsync_16";
+            desc = "Bits [31:16] inserted/extracted by HAL_DISP_SetIntfSync. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_setintfsync_16[31:16];
+    } VO_0D004 @ 0xD004;
+
+    reg {
+        name = "VO register at 0xD008";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_DISP_SetIntfSync. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "disp_setintfsync";
+            desc = "Bits [15:0] inserted/extracted by HAL_DISP_SetIntfSync. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_setintfsync[15:0];
+    } VO_0D008 @ 0xD008;
+
+    reg {
+        name = "VO register at 0xD00C";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_DISP_SetIntfSync. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "disp_setintfsync";
+            desc = "Bits [15:0] inserted/extracted by HAL_DISP_SetIntfSync. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_setintfsync[15:0];
+        field {
+            name = "disp_setintfsync_16";
+            desc = "Bits [31:16] inserted/extracted by HAL_DISP_SetIntfSync. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_setintfsync_16[31:16];
+    } VO_0D00C @ 0xD00C;
+
+    reg {
+        name = "VO register at 0xD010";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_DISP_SetIntfSync. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "disp_setintfsync";
+            desc = "Bits [31:16] inserted/extracted by HAL_DISP_SetIntfSync. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_setintfsync[31:16];
+        field {
+            name = "disp_setintfsync_0";
+            desc = "Bits [15:0] inserted/extracted by HAL_DISP_SetIntfSync. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_setintfsync_0[15:0];
+    } VO_0D010 @ 0xD010;
+
+    reg {
+        name = "VO register at 0xD014";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_DISP_SetIntfSync. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "disp_setintfsync";
+            desc = "Bits [15:0] inserted/extracted by HAL_DISP_SetIntfSync. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_setintfsync[15:0];
+        field {
+            name = "disp_setintfsync_16";
+            desc = "Bits [31:16] inserted/extracted by HAL_DISP_SetIntfSync. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_setintfsync_16[31:16];
+    } VO_0D014 @ 0xD014;
+
+    reg {
+        name = "VO register at 0xD018";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_DISP_SetIntfSync. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "disp_setintfsync";
+            desc = "Bits [15:0] inserted/extracted by HAL_DISP_SetIntfSync. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_setintfsync[15:0];
+    } VO_0D018 @ 0xD018;
+
+    reg {
+        name = "VO register at 0xD01C";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_DISP_SetIntfSync. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "disp_setintfsync";
+            desc = "Bits [15:0] inserted/extracted by HAL_DISP_SetIntfSync. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_setintfsync[15:0];
+        field {
+            name = "disp_setintfsync_16";
+            desc = "Bits [23:16] inserted/extracted by HAL_DISP_SetIntfSync. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_setintfsync_16[23:16];
+    } VO_0D01C @ 0xD01C;
+
+    reg {
+        name = "VO register at 0xD024";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_DISP_GetVtThdMode, HAL_DISP_SetVtThd, HAL_DISP_SetVtThdMode. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "disp_getvtthdmode";
+            desc = "Bits [15:15] inserted/extracted by HAL_DISP_GetVtThdMode, HAL_DISP_SetVtThdMode. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_getvtthdmode[15:15];
+        field {
+            name = "disp_setvtthdmode";
+            desc = "Bits [31:31] inserted/extracted by HAL_DISP_SetVtThdMode. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_setvtthdmode[31:31];
+        field {
+            name = "disp_setvtthd";
+            desc = "Bits [12:0] inserted/extracted by HAL_DISP_SetVtThd. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_setvtthd[12:0];
+        field {
+            name = "disp_setvtthd_16";
+            desc = "Bits [28:16] inserted/extracted by HAL_DISP_SetVtThd. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_setvtthd_16[28:16];
+    } VO_0D024 @ 0xD024;
+
+    reg {
+        name = "VO register at 0xD02C";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_DISP_SetIntvsyncTeMode. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "disp_setintvsynctemode";
+            desc = "Bits [20:20] inserted/extracted by HAL_DISP_SetIntvsyncTeMode. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_setintvsynctemode[20:20];
+    } VO_0D02C @ 0xD02C;
+
+    reg {
+        name = "VO register at 0xD088";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_DISP_GetIntState, HAL_DISP_GetIntStateVcnt. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "disp_getintstate";
+            desc = "Bits [2:2] inserted/extracted by HAL_DISP_GetIntState. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_getintstate[2:2];
+        field {
+            name = "disp_getintstatevcnt";
+            desc = "Bits [15:3] inserted/extracted by HAL_DISP_GetIntStateVcnt. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_getintstatevcnt[15:3];
+    } VO_0D088 @ 0xD088;
+
+    reg {
+        name = "VO register at 0xD090";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_DISP_SetIntfMuxSel. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "disp_setintfmuxsel";
+            desc = "Bits [31:28] inserted/extracted by HAL_DISP_SetIntfMuxSel. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_setintfmuxsel[31:28];
+    } VO_0D090 @ 0xD090;
+
+    reg {
+        name = "VO register at 0xD0B0";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_DISP_SetDitherDataInOut, HAL_DISP_SetDitherDomainMode, HAL_DISP_SetDitherEn, HAL_DISP_SetDitherMode, HAL_DISP_SetDitherRound, HAL_DISP_SetDitherTapMode. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "disp_setditherdatainout";
+            desc = "Bits [9:7] inserted/extracted by HAL_DISP_SetDitherDataInOut. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_setditherdatainout[9:7];
+        field {
+            name = "disp_setditherdatainout_10";
+            desc = "Bits [12:10] inserted/extracted by HAL_DISP_SetDitherDataInOut. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_setditherdatainout_10[12:10];
+        field {
+            name = "disp_setditheren";
+            desc = "Bits [5:5] inserted/extracted by HAL_DISP_SetDitherEn. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_setditheren[5:5];
+        field {
+            name = "disp_setdithermode";
+            desc = "Bits [4:4] inserted/extracted by HAL_DISP_SetDitherMode. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_setdithermode[4:4];
+        field {
+            name = "disp_setditherround";
+            desc = "Bits [3:3] inserted/extracted by HAL_DISP_SetDitherRound. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_setditherround[3:3];
+        field {
+            name = "disp_setditherdomainmode";
+            desc = "Bits [2:2] inserted/extracted by HAL_DISP_SetDitherDomainMode. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_setditherdomainmode[2:2];
+        field {
+            name = "disp_setdithertapmode";
+            desc = "Bits [1:0] inserted/extracted by HAL_DISP_SetDitherTapMode. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_setdithertapmode[1:0];
+    } VO_0D0B0 @ 0xD0B0;
+
+    reg {
+        name = "VO register at 0xD0B4";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_DISP_SetDitherSed. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "raw";
+            desc = "Raw register; no bit-field access seen. UNKNOWN layout.";
+            sw = rw;
+            hw = r;
+        } raw[31:0];
+    } VO_0D0B4 @ 0xD0B4;
+
+    reg {
+        name = "VO register at 0xD0B8";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_DISP_SetDitherSed. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "raw";
+            desc = "Raw register; no bit-field access seen. UNKNOWN layout.";
+            sw = rw;
+            hw = r;
+        } raw[31:0];
+    } VO_0D0B8 @ 0xD0B8;
+
+    reg {
+        name = "VO register at 0xD0BC";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_DISP_SetDitherSed. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "raw";
+            desc = "Raw register; no bit-field access seen. UNKNOWN layout.";
+            sw = rw;
+            hw = r;
+        } raw[31:0];
+    } VO_0D0BC @ 0xD0BC;
+
+    reg {
+        name = "VO register at 0xD0C0";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_DISP_SetDitherSed. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "raw";
+            desc = "Raw register; no bit-field access seen. UNKNOWN layout.";
+            sw = rw;
+            hw = r;
+        } raw[31:0];
+    } VO_0D0C0 @ 0xD0C0;
+
+    reg {
+        name = "VO register at 0xD0C4";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_DISP_SetDitherSed. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "raw";
+            desc = "Raw register; no bit-field access seen. UNKNOWN layout.";
+            sw = rw;
+            hw = r;
+        } raw[31:0];
+    } VO_0D0C4 @ 0xD0C4;
+
+    reg {
+        name = "VO register at 0xD0C8";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_DISP_SetDitherSed. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "raw";
+            desc = "Raw register; no bit-field access seen. UNKNOWN layout.";
+            sw = rw;
+            hw = r;
+        } raw[31:0];
+    } VO_0D0C8 @ 0xD0C8;
+
+    reg {
+        name = "VO register at 0xD0CC";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_DISP_SetDitherSed. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "raw";
+            desc = "Raw register; no bit-field access seen. UNKNOWN layout.";
+            sw = rw;
+            hw = r;
+        } raw[31:0];
+    } VO_0D0CC @ 0xD0CC;
+
+    reg {
+        name = "VO register at 0xD0D0";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_DISP_SetDitherSed. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "raw";
+            desc = "Raw register; no bit-field access seen. UNKNOWN layout.";
+            sw = rw;
+            hw = r;
+        } raw[31:0];
+    } VO_0D0D0 @ 0xD0D0;
+
+    reg {
+        name = "VO register at 0xD0D4";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_DISP_SetDitherSed. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "raw";
+            desc = "Raw register; no bit-field access seen. UNKNOWN layout.";
+            sw = rw;
+            hw = r;
+        } raw[31:0];
+    } VO_0D0D4 @ 0xD0D4;
+
+    reg {
+        name = "VO register at 0xD0D8";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_DISP_SetDitherSed. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "raw";
+            desc = "Raw register; no bit-field access seen. UNKNOWN layout.";
+            sw = rw;
+            hw = r;
+        } raw[31:0];
+    } VO_0D0D8 @ 0xD0D8;
+
+    reg {
+        name = "VO register at 0xD0DC";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_DISP_SetDitherSed. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "raw";
+            desc = "Raw register; no bit-field access seen. UNKNOWN layout.";
+            sw = rw;
+            hw = r;
+        } raw[31:0];
+    } VO_0D0DC @ 0xD0DC;
+
+    reg {
+        name = "VO register at 0xD0E0";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_DISP_SetDitherSed. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "raw";
+            desc = "Raw register; no bit-field access seen. UNKNOWN layout.";
+            sw = rw;
+            hw = r;
+        } raw[31:0];
+    } VO_0D0E0 @ 0xD0E0;
+
+    reg {
+        name = "VO register at 0xD0E4";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_DISP_SetDitherSed. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "raw";
+            desc = "Raw register; no bit-field access seen. UNKNOWN layout.";
+            sw = rw;
+            hw = r;
+        } raw[31:0];
+    } VO_0D0E4 @ 0xD0E4;
+
+    reg {
+        name = "VO register at 0xD0E8";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_DISP_SetDitherSed. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "raw";
+            desc = "Raw register; no bit-field access seen. UNKNOWN layout.";
+            sw = rw;
+            hw = r;
+        } raw[31:0];
+    } VO_0D0E8 @ 0xD0E8;
+
+    reg {
+        name = "VO register at 0xD0EC";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_DISP_SetDitherSed. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "raw";
+            desc = "Raw register; no bit-field access seen. UNKNOWN layout.";
+            sw = rw;
+            hw = r;
+        } raw[31:0];
+    } VO_0D0EC @ 0xD0EC;
+
+    reg {
+        name = "VO register at 0xD0F0";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_DISP_SetDitherSed. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "raw";
+            desc = "Raw register; no bit-field access seen. UNKNOWN layout.";
+            sw = rw;
+            hw = r;
+        } raw[31:0];
+    } VO_0D0F0 @ 0xD0F0;
+
+    reg {
+        name = "VO register at 0xD0F4";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_DISP_SetDitherThrMinMax. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "disp_setditherthrminmax";
+            desc = "Bits [15:0] inserted/extracted by HAL_DISP_SetDitherThrMinMax. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_setditherthrminmax[15:0];
+        field {
+            name = "disp_setditherthrminmax_16";
+            desc = "Bits [31:16] inserted/extracted by HAL_DISP_SetDitherThrMinMax. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_setditherthrminmax_16[31:16];
+    } VO_0D0F4 @ 0xD0F4;
+
+    reg {
+        name = "VO register at 0xD100";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_DISP_SetIntfCtrl. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "disp_setintfctrl";
+            desc = "Bits [5:5] inserted/extracted by HAL_DISP_SetIntfCtrl. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_setintfctrl[5:5];
+        field {
+            name = "disp_setintfctrl_3";
+            desc = "Bits [3:3] inserted/extracted by HAL_DISP_SetIntfCtrl. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_setintfctrl_3[3:3];
+        field {
+            name = "disp_setintfctrl_2";
+            desc = "Bits [2:2] inserted/extracted by HAL_DISP_SetIntfCtrl. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_setintfctrl_2[2:2];
+        field {
+            name = "disp_setintfctrl_1";
+            desc = "Bits [1:1] inserted/extracted by HAL_DISP_SetIntfCtrl. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_setintfctrl_1[1:1];
+        field {
+            name = "disp_setintfctrl_31";
+            desc = "Bits [31:31] inserted/extracted by HAL_DISP_SetIntfCtrl. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_setintfctrl_31[31:31];
+        field {
+            name = "disp_setintfctrl_29";
+            desc = "Bits [29:29] inserted/extracted by HAL_DISP_SetIntfCtrl. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_setintfctrl_29[29:29];
+        field {
+            name = "disp_setintfctrl_27";
+            desc = "Bits [27:27] inserted/extracted by HAL_DISP_SetIntfCtrl. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_setintfctrl_27[27:27];
+        field {
+            name = "disp_setintfctrl_26";
+            desc = "Bits [26:26] inserted/extracted by HAL_DISP_SetIntfCtrl. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_setintfctrl_26[26:26];
+        field {
+            name = "disp_setintfctrl_25";
+            desc = "Bits [25:25] inserted/extracted by HAL_DISP_SetIntfCtrl. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_setintfctrl_25[25:25];
+    } VO_0D100 @ 0xD100;
+
+    reg {
+        name = "VO register at 0xD200";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_INTF_BT_SetDfirEn. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "intf_bt_setdfiren";
+            desc = "Bits [30:30] inserted/extracted by HAL_INTF_BT_SetDfirEn. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } intf_bt_setdfiren[30:30];
+    } VO_0D200 @ 0xD200;
+
+    reg {
+        name = "VO register at 0xD210";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_DISP_SetIntfClip. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "disp_setintfclip";
+            desc = "Bits [31:31] inserted/extracted by HAL_DISP_SetIntfClip. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_setintfclip[31:31];
+        field {
+            name = "disp_setintfclip_20";
+            desc = "Bits [29:20] inserted/extracted by HAL_DISP_SetIntfClip. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_setintfclip_20[29:20];
+        field {
+            name = "disp_setintfclip_10";
+            desc = "Bits [19:10] inserted/extracted by HAL_DISP_SetIntfClip. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_setintfclip_10[19:10];
+        field {
+            name = "disp_setintfclip_0";
+            desc = "Bits [9:0] inserted/extracted by HAL_DISP_SetIntfClip. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_setintfclip_0[9:0];
+    } VO_0D210 @ 0xD210;
+
+    reg {
+        name = "VO register at 0xD214";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_DISP_SetIntfClip. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "disp_setintfclip";
+            desc = "Bits [29:20] inserted/extracted by HAL_DISP_SetIntfClip. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_setintfclip[29:20];
+        field {
+            name = "disp_setintfclip_10";
+            desc = "Bits [19:10] inserted/extracted by HAL_DISP_SetIntfClip. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_setintfclip_10[19:10];
+        field {
+            name = "disp_setintfclip_0";
+            desc = "Bits [9:0] inserted/extracted by HAL_DISP_SetIntfClip. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_setintfclip_0[9:0];
+    } VO_0D214 @ 0xD214;
+
+    reg {
+        name = "VO register at 0xD300";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_DISP_SetLcdSerialPerd. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "disp_setlcdserialperd";
+            desc = "Bits [28:28] inserted/extracted by HAL_DISP_SetLcdSerialPerd. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } disp_setlcdserialperd[28:28];
+    } VO_0D300 @ 0xD300;
+
+    reg {
+        name = "VO register at 0x10000";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_SYS_SetOutstanding. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "sys_setoutstanding";
+            desc = "Bits [3:0] inserted/extracted by HAL_SYS_SetOutstanding. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } sys_setoutstanding[3:0];
+        field {
+            name = "sys_setoutstanding_4";
+            desc = "Bits [7:4] inserted/extracted by HAL_SYS_SetOutstanding. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } sys_setoutstanding_4[7:4];
+        field {
+            name = "sys_setoutstanding_8";
+            desc = "Bits [11:8] inserted/extracted by HAL_SYS_SetOutstanding. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } sys_setoutstanding_8[11:8];
+        field {
+            name = "sys_setoutstanding_12";
+            desc = "Bits [15:12] inserted/extracted by HAL_SYS_SetOutstanding. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } sys_setoutstanding_12[15:12];
+        field {
+            name = "sys_setoutstanding_16";
+            desc = "Bits [19:16] inserted/extracted by HAL_SYS_SetOutstanding. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } sys_setoutstanding_16[19:16];
+        field {
+            name = "sys_setoutstanding_20";
+            desc = "Bits [23:20] inserted/extracted by HAL_SYS_SetOutstanding. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } sys_setoutstanding_20[23:20];
+    } VO_10000 @ 0x10000;
+
+    reg {
+        name = "VO register at 0x10210 (indexed)";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_FDR_VID_SetVidOutUVOrder plus a run-time index (layer/channel stride UNKNOWN; the register shown is the base instance). Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "fdr_vid_setvidoutuvorder";
+            desc = "Bits [4:4] inserted/extracted by HAL_FDR_VID_SetVidOutUVOrder. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } fdr_vid_setvidoutuvorder[4:4];
+    } VO_10210_IDX @ 0x10210;
+
+    reg {
+        name = "VO register at 0x10240 (indexed)";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_FDR_VID_SetDcmpEn, HAL_LAYER_GetLayerDataFmt, HAL_LAYER_SetLayerBitWidth, HAL_LAYER_SetLayerDataFmt plus a run-time index (layer/channel stride UNKNOWN; the register shown is the base instance). Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "layer_setlayerdatafmt";
+            desc = "Bits [2:0] inserted/extracted by HAL_LAYER_SetLayerDataFmt. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } layer_setlayerdatafmt[2:0];
+        field {
+            name = "layer_setlayerbitwidth";
+            desc = "Bits [9:8] inserted/extracted by HAL_LAYER_SetLayerBitWidth. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } layer_setlayerbitwidth[9:8];
+        field {
+            name = "fdr_vid_setdcmpen";
+            desc = "Bits [20:20] inserted/extracted by HAL_FDR_VID_SetDcmpEn. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } fdr_vid_setdcmpen[20:20];
+    } VO_10240_IDX @ 0x10240;
+
+    reg {
+        name = "VO register at 0x10244";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_LAYER_SetSrcResolution. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "layer_setsrcresolution";
+            desc = "Bits [15:0] inserted/extracted by HAL_LAYER_SetSrcResolution. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } layer_setsrcresolution[15:0];
+        field {
+            name = "layer_setsrcresolution_16";
+            desc = "Bits [31:16] inserted/extracted by HAL_LAYER_SetSrcResolution. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } layer_setsrcresolution_16[31:16];
+    } VO_10244 @ 0x10244;
+
+    reg {
+        name = "VO register at 0x1024C";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_LAYER_SetLayerInRect. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "layer_setlayerinrect";
+            desc = "Bits [15:0] inserted/extracted by HAL_LAYER_SetLayerInRect. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } layer_setlayerinrect[15:0];
+        field {
+            name = "layer_setlayerinrect_16";
+            desc = "Bits [31:16] inserted/extracted by HAL_LAYER_SetLayerInRect. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } layer_setlayerinrect_16[31:16];
+    } VO_1024C @ 0x1024C;
+
+    reg {
+        name = "VO register at 0x10250";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_VIDEO_GetMultiAreaLAddr. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "raw";
+            desc = "Raw register; no bit-field access seen. UNKNOWN layout.";
+            sw = rw;
+            hw = r;
+        } raw[31:0];
+    } VO_10250 @ 0x10250;
+
+    reg {
+        name = "VO register at 0x10254";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_VIDEO_GetMultiAreaLAddr. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "raw";
+            desc = "Raw register; no bit-field access seen. UNKNOWN layout.";
+            sw = rw;
+            hw = r;
+        } raw[31:0];
+    } VO_10254 @ 0x10254;
+
+    reg {
+        name = "VO register at 0x10258";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_VIDEO_GetMultiAreaCAddr. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "raw";
+            desc = "Raw register; no bit-field access seen. UNKNOWN layout.";
+            sw = rw;
+            hw = r;
+        } raw[31:0];
+    } VO_10258 @ 0x10258;
+
+    reg {
+        name = "VO register at 0x1025C";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_VIDEO_GetMultiAreaCAddr. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "raw";
+            desc = "Raw register; no bit-field access seen. UNKNOWN layout.";
+            sw = rw;
+            hw = r;
+        } raw[31:0];
+    } VO_1025C @ 0x1025C;
+
+    reg {
+        name = "VO register at 0x10270";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_VIDEO_SetMultiAreaCAddr, HAL_VIDEO_SetMultiAreaLAddr. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "raw";
+            desc = "Raw register; no bit-field access seen. UNKNOWN layout.";
+            sw = rw;
+            hw = r;
+        } raw[31:0];
+    } VO_10270 @ 0x10270;
+
+    reg {
+        name = "VO register at 0x10380 (indexed)";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_DCMP_SEG_SetIceEn plus a run-time index (layer/channel stride UNKNOWN; the register shown is the base instance). Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "raw";
+            desc = "Raw register; no bit-field access seen. UNKNOWN layout.";
+            sw = rw;
+            hw = r;
+        } raw[31:0];
+    } VO_10380_IDX @ 0x10380;
+
+    reg {
+        name = "VO register at 0x10390 (indexed)";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_DCMP_SEG_GetBsErr, HAL_DCMP_SEG_GetConsume, HAL_DCMP_SEG_GetForgive, HAL_DCMP_SEG_SetBsErr, HAL_DCMP_SEG_SetConsume, HAL_DCMP_SEG_SetForgive plus a run-time index (layer/channel stride UNKNOWN; the register shown is the base instance). Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "dcmp_seg_setbserr";
+            desc = "Bits [0:0] inserted/extracted by HAL_DCMP_SEG_SetBsErr. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } dcmp_seg_setbserr[0:0];
+        field {
+            name = "dcmp_seg_getconsume";
+            desc = "Bits [2:2] inserted/extracted by HAL_DCMP_SEG_GetConsume, HAL_DCMP_SEG_SetConsume. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } dcmp_seg_getconsume[2:2];
+        field {
+            name = "dcmp_seg_getforgive";
+            desc = "Bits [1:1] inserted/extracted by HAL_DCMP_SEG_GetForgive, HAL_DCMP_SEG_SetForgive. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } dcmp_seg_getforgive[1:1];
+    } VO_10390_IDX @ 0x10390;
+
+    reg {
+        name = "VO register at 0x10E40";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_LAYER_SetLayerDataFmt. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "layer_setlayerdatafmt";
+            desc = "Bits [7:0] inserted/extracted by HAL_LAYER_SetLayerDataFmt. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } layer_setlayerdatafmt[7:0];
+    } VO_10E40 @ 0x10E40;
+
+    reg {
+        name = "VO register at 0x15404";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_LAYER_SetZmeFirEnable. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "layer_setzmefirenable";
+            desc = "Bits [30:30] inserted/extracted by HAL_LAYER_SetZmeFirEnable. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } layer_setzmefirenable[30:30];
+        field {
+            name = "layer_setzmefirenable_31";
+            desc = "Bits [31:31] inserted/extracted by HAL_LAYER_SetZmeFirEnable. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } layer_setzmefirenable_31[31:31];
+    } VO_15404 @ 0x15404;
+
+    reg {
+        name = "VO register at 0x15504";
+        desc = "Address = sum of the add-immediates of the base chain leading to HAL_ReadReg/WriteReg in HAL_LAYER_SetVerRatio, HAL_LAYER_SetZmeFirEnable. Evidence: PROVEN (offset in the SDK binary hi3516ev200_vo.ko, static), role INFERRED from function names.";
+        field {
+            name = "layer_setzmefirenable";
+            desc = "Bits [31:31] inserted/extracted by HAL_LAYER_SetZmeFirEnable. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } layer_setzmefirenable[31:31];
+        field {
+            name = "layer_setzmefirenable_30";
+            desc = "Bits [30:30] inserted/extracted by HAL_LAYER_SetZmeFirEnable. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } layer_setzmefirenable_30[30:30];
+        field {
+            name = "layer_setverratio";
+            desc = "Bits [15:0] inserted/extracted by HAL_LAYER_SetVerRatio. Name derived from the function: INFERRED; bit range PROVEN (bfi/ubfx in the SDK binary).";
+            sw = rw;
+            hw = r;
+        } layer_setverratio[15:0];
+    } VO_15504 @ 0x15504;
 
 };
 
