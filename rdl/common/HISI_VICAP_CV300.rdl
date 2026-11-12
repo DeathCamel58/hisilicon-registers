@@ -6,7 +6,7 @@ regfile eHISI_VICAP_CV300 {
     name = "VICAP (video capture, Hi3516C V300 / Hi3516E V100)";
     desc = "
     Video capture (VICAP) of the Hi3516C V300 / Hi3516E V100, window 0x11380000..0x113EFFFF (448 KB, data sheet Table 1-1); this regfile covers the capture part (offsets 0x0..0x2010) and is instantiated at 0x11380000. The ISP lives in the same window (HISI_ISP_CV300, rebased, at 0x11390000). Parts: AXI/channel select (0x10..0x50), interrupt (0xF0/0xF8), the input port PT_* (0x100..0x1F8: port mode, BT.656, timing, data generator/color bar, flash and shutter triggers), DES_* (0x200..0x2F8), SRC_* (0x600..0x6F8), channel CH_* (0x1000..0x1134: write channels Y/C, crop) and the BAS registers (0x2000..0x2010).
-    Vendor cross-check (INFERRED from static analysis of hi3516cv300_viu.ko, Xiongmai V4.02.R12, MPP V1.0.0.0): its VIU_HAL_* functions access 35 of the 75 documented offsets (every PT_* port register it uses sits at the data sheet offset, e.g. VIU_HAL_SetPortEn -> 0x0/0xF0/0x100, SetDevTimingHfb/Hact/Hbb/Vfb/Vact/Vbb -> 0x180..0x194, SetDevGenTimingEn -> 0x134, SetFlashConfig -> 0x1C0/0x1C4, SetBasCtrl -> 0x2000/0x2004/0x2008/0x2010). The module also touches offsets that the data sheet does not list: 0x40, 0x60, 0x70, a line-buffer block at 0x500/0x504/0x550/0x554/0x5F0/0x5F8 (VIU_HAL_SetLineBufCtrl/EN/IntMask, GetBufLineIntStatus; 0x510 LINE_BUF_ID_CFG is in the data sheet) and 0x2020/0x2030/0x2034/0x20F8 (VIU_HAL_SetDevCrop, SetBasIntMask); they are modelled at the end of this file as registers whose description starts with [VENDOR-ONLY REGISTER] (offset and bit extents PROVEN from the instruction stream, names INFERRED from the function names, bit meanings GUESS or UNKNOWN). Channel (CH_*) registers are reached through a computed base in the module, so they could not be matched by the simple tracker (not cross-checked).
+    Vendor cross-check (INFERRED from static analysis of hi3516cv300_viu.ko, Xiongmai V4.02.R12, MPP V1.0.0.0): its VIU_HAL_* functions access 35 of the 75 documented offsets (every PT_* port register it uses sits at the data sheet offset, e.g. VIU_HAL_SetPortEn -> 0x0/0xF0/0x100, SetDevTimingHfb/Hact/Hbb/Vfb/Vact/Vbb -> 0x180..0x194, SetDevGenTimingEn -> 0x134, SetFlashConfig -> 0x1C0/0x1C4, SetBasCtrl -> 0x2000/0x2004/0x2008/0x2010). The module also touches offsets that the data sheet does not list: 0x40, 0x60, 0x70, a line-buffer block at 0x500/0x504/0x550/0x554/0x5F0/0x5F8 (VIU_HAL_SetLineBufCtrl/EN/IntMask, GetBufLineIntStatus; 0x510 LINE_BUF_ID_CFG is in the data sheet) and 0x2020/0x2030/0x2034/0x20F8 (VIU_HAL_SetDevCrop, SetBasIntMask); they are modelled at the end of this file as registers whose description starts with [VENDOR-ONLY REGISTER] (offset and bit extents PROVEN from the instruction stream, names INFERRED from the function names, bit meanings GUESS or UNKNOWN). Block structure found 2026-11-12 (static index terms and the ko-harness dynamic run of the VIU_HAL_* functions with ids 0..3): the DES block repeats with stride 0x300 (DES1 at 0x500: its words 0x504, 0x510, 0x550, 0x554, 0x5F0, 0x5F8 are the DES_CTRL+4, DES_ID_CFG, ... DES_INT, DES_MASK layout of instance 0, which the vendor calls the line buffer: INFERRED) and the SRC block repeats with stride 0x100 (SRC1 0x700, SRC2 0x800, SRC3 0x900; SRC_INT of instance i at 0x6F0 + i x 0x100, so 0x7F0 and 0x9F0 are instances 1 and 3).. Channel (CH_*) registers are reached through a computed base in the module, so they could not be matched by the simple tracker (not cross-checked).
     
     PROVENANCE: PROVEN = register offsets, names, bit fields, access and reset values transcribed from the Hi3516C V300/Hi3516E V100 data sheet issue 05 (9.1.6); the description of every register and field is the data sheet text. Provenance of the vendor cross-check text above: INFERRED. Nothing here is hardware verified (no CV300 board in the lab).
 
@@ -3362,6 +3362,137 @@ Data sheet 9.1.6 BAS_ID_CFG (offset 0x2010, printed page 9-63, `hi3516cv300--Hi3
         } mask[31:0];
 
     } BAS_INT_MASK @ 0x20F8;
+
+    reg {
+        name = "VICAP_PWR_VENDOR";
+        desc = "[VENDOR-ONLY REGISTER] VICAP power/work mode word (VIU_HAL_SetPowerWorkMode, VIU_HAL_BoardDeInit, VIU_Init, VIU_DRV_DeInit_ByChip). Not in the data sheet table. PROVENANCE: PROVEN offset 0x0 and the 2-bit write extent [1:0] (clear_mask 3 in VIU_Init / DeInit; the dynamic run of SetPowerWorkMode and BoardDeInit also touches it); INFERRED name from the function names; meaning of the values GUESS. Source: hi3516cv300_viu.ko (Xiongmai V4.02.R12), arm-re static run plus ko-harness dynamic run (2026-11-12). Reset unknown. Not hardware verified.";
+
+        field {
+            name = "mode";
+            desc = "Work/power mode bits written by the vendor code (GUESS).";
+            sw = rw;
+            hw = r;
+        } mode[1:0];
+
+    } VICAP_PWR_VENDOR @ 0x0;
+
+    reg {
+        name = "DES_REG_NEWER_VENDOR";
+        desc = "[VENDOR-ONLY REGISTER] Descriptor (DES) register-update strobe (VIU_HAL_SetDesRegNewer). Not in the data sheet table. PROVENANCE: PROVEN offset (static and dynamic: ko-harness run of VIU_HAL_SetDesRegNewer reads/writes it); INFERRED: DES instance i is at 0x200 + i x 0x300 (static index term lsl(i + 2i, 8) = i x 0x300 in VIU_DRV_InterruptPreProcess), so this is DES_CTRL + 4. Source: hi3516cv300_viu.ko (Xiongmai V4.02.R12), arm-re static run plus ko-harness dynamic run (2026-11-12). Reset unknown. Not hardware verified.";
+
+        field {
+            name = "regnewer";
+            desc = "Register update request (INFERRED like CH_REG_NEWER).";
+            sw = rw;
+            hw = r;
+        } regnewer[0:0];
+
+    } DES_REG_NEWER_VENDOR @ 0x204;
+
+    reg {
+        name = "DES_CROP_CFG_VENDOR";
+        desc = "[VENDOR-ONLY REGISTER] Descriptor crop configuration (VIU_HAL_SetDesCrop, VIU_HAL_SetDesCropEn). Not in the data sheet table. PROVENANCE: PROVEN offset (static, dynamic: both functions access it); bit meaning UNKNOWN; name INFERRED from the function names. Source: hi3516cv300_viu.ko (Xiongmai V4.02.R12), arm-re static run plus ko-harness dynamic run (2026-11-12). Reset unknown. Not hardware verified.";
+
+        field {
+            name = "value";
+            desc = "Crop enable/configuration word (UNKNOWN layout).";
+            sw = rw;
+            hw = r;
+        } value[31:0];
+
+    } DES_CROP_CFG_VENDOR @ 0x220;
+
+    reg {
+        name = "DES_CROP_START_VENDOR";
+        desc = "[VENDOR-ONLY REGISTER] Descriptor crop word 0 (VIU_HAL_SetDesCrop). Not in the data sheet table. PROVENANCE: PROVEN offset and the cleared extents [28:16] / [12:0] style fields (clear_mask 0x1FFF1FFF seen in VIU_DRV_SetDevAttrByChip); dynamic run confirms access by VIU_HAL_SetDesCrop; GUESS: start x/y. Source: hi3516cv300_viu.ko (Xiongmai V4.02.R12), arm-re static run plus ko-harness dynamic run (2026-11-12). Reset unknown. Not hardware verified.";
+
+        field {
+            name = "value";
+            desc = "Crop start word (GUESS).";
+            sw = rw;
+            hw = r;
+        } value[31:0];
+
+    } DES_CROP_START_VENDOR @ 0x230;
+
+    reg {
+        name = "DES_CROP_SIZE_VENDOR";
+        desc = "[VENDOR-ONLY REGISTER] Descriptor crop word 1 (VIU_HAL_SetDesCrop). Not in the data sheet table. PROVENANCE: PROVEN offset (static VIU_DRV_SetDevAttrByChip; the dynamic run of VIU_HAL_SetDevCrop also reaches it); GUESS: crop width/height. Source: hi3516cv300_viu.ko (Xiongmai V4.02.R12), arm-re static run plus ko-harness dynamic run (2026-11-12). Reset unknown. Not hardware verified.";
+
+        field {
+            name = "value";
+            desc = "Crop size word (GUESS).";
+            sw = rw;
+            hw = r;
+        } value[31:0];
+
+    } DES_CROP_SIZE_VENDOR @ 0x234;
+
+    reg {
+        name = "DES_CMP_CFG_VENDOR";
+        desc = "[VENDOR-ONLY REGISTER] Descriptor compression / pack width (VIU_HAL_SetDesCmpEn, VIU_HAL_SetDesPackWidth). Not in the data sheet table. PROVENANCE: PROVEN offset (static: bit 31 and bits [30:27] write extents in VIU_DRV_DisableDevByChip / InterruptPreProcess; dynamic: both functions access it); names INFERRED; bit 31 is the enable written by DisableDev (INFERRED). Source: hi3516cv300_viu.ko (Xiongmai V4.02.R12), arm-re static run plus ko-harness dynamic run (2026-11-12). Reset unknown. Not hardware verified.";
+
+        field {
+            name = "cmp_en";
+            desc = "Compression enable (INFERRED from SetDesCmpEn).";
+            sw = rw;
+            hw = r;
+        } cmp_en[31:31];
+
+        field {
+            name = "field_30_27";
+            desc = "Field written as a 4-bit group (extent PROVEN, meaning UNKNOWN).";
+            sw = rw;
+            hw = r;
+        } field_30_27[30:27];
+
+    } DES_CMP_CFG_VENDOR @ 0x270;
+
+    reg {
+        name = "DES_YC_SIZE_VENDOR";
+        desc = "[VENDOR-ONLY REGISTER] Descriptor Y/C size (VIU_HAL_SetDesYCSize). Not in the data sheet table. PROVENANCE: PROVEN offset and write extents (clear_mask 0x1FFF1FFF-like in the static record; dynamic confirmed); name INFERRED; the index term of the static record is i x 0x300 (DES instance stride). Source: hi3516cv300_viu.ko (Xiongmai V4.02.R12), arm-re static run plus ko-harness dynamic run (2026-11-12). Reset unknown. Not hardware verified.";
+
+        field {
+            name = "value";
+            desc = "Size word (GUESS: height/width packed).";
+            sw = rw;
+            hw = r;
+        } value[31:0];
+
+    } DES_YC_SIZE_VENDOR @ 0x284;
+
+    reg {
+        name = "SRC_REG_NEWER_VENDOR";
+        desc = "[VENDOR-ONLY REGISTER] Source (SRC) register-update strobe (VIU_HAL_SetSrcRegNewer). Not in the data sheet table. PROVENANCE: PROVEN offset (static and dynamic); INFERRED: SRC instance i is at 0x600 + i x 0x100 (static index term i1*256; the dynamic run with id 3 accesses 0x900/0x904, ids 1 and 3 reach 0x7F0/0x9F0 = SRC_INT of instances 1 and 3). Source: hi3516cv300_viu.ko (Xiongmai V4.02.R12), arm-re static run plus ko-harness dynamic run (2026-11-12). Reset unknown. Not hardware verified.";
+
+        field {
+            name = "regnewer";
+            desc = "Register update request (INFERRED).";
+            sw = rw;
+            hw = r;
+        } regnewer[0:0];
+
+    } SRC_REG_NEWER_VENDOR @ 0x604;
+
+    reg {
+        name = "SRC_DCMP_CFG_VENDOR";
+        desc = "[VENDOR-ONLY REGISTER] Source decompression configuration (VIU_HAL_SetSrcDCmpEn). Not in the data sheet table. PROVENANCE: PROVEN offset (static write extents bit 31 and [30:27]; dynamic confirmed); names INFERRED. Source: hi3516cv300_viu.ko (Xiongmai V4.02.R12), arm-re static run plus ko-harness dynamic run (2026-11-12). Reset unknown. Not hardware verified.";
+
+        field {
+            name = "dcmp_en";
+            desc = "Decompression enable (INFERRED from the function name).";
+            sw = rw;
+            hw = r;
+        } dcmp_en[31:31];
+
+        field {
+            name = "field_30_27";
+            desc = "4-bit field (meaning UNKNOWN).";
+            sw = rw;
+            hw = r;
+        } field_30_27[30:27];
+
+    } SRC_DCMP_CFG_VENDOR @ 0x670;
 
 };
 
