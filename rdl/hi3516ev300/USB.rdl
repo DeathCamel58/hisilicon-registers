@@ -1,0 +1,126 @@
+`ifndef HI3516EV300_USBPHY_RDL
+`define HI3516EV300_USBPHY_RDL
+
+regfile eUSB2_PHY_HIXVP {
+    name = "USB 2.0 PHY (hixvp), Hi3516EV200/EV300 generation";
+    desc = "PHY register page at 0x100D0000. Bring-up order (U-Boot phy_hiusb_init, PROVEN): pad VBUS 0x100C007C = 0x431 and PWREN 0x100C0080 = 1; CRG 0x140 = 0x3B2F then 200 us; set UTMI, PHY APB, ref, bus, PLL, XTAL clocks and free-clock select; release PHY APB reset (bit 10), POR (bit 0), write PLL_CFG = 3 and wait 2 ms, release TPOR (bit 1), release controller reset (bit 3); then the controller setup in eDWC3_GLOBAL_V4 and the eye/trim/SVB writes above.";
+
+    reg {
+        name = "PHY analog configuration 0";
+        desc = "Source: vendor U-Boot drivers/phy/hibvt/phy-hi3516ev300-usb.c (EV300 tree) and the vendor Linux DT `hixvp-usb2-phy` node. PROVEN offsets/bits (source), values are board-independent defaults. Vendor DT ana_cfg_0_eye_val 0x0433C003. [27:24] is written twice by U-Boot: HSTX pre-drive = 4 (usb2_eye_config) and then the SVB-dependent value 2..5 chosen from SYS_CTRL 0x158 (usb2_svb_config).";
+        field {
+            name = "pre_drive";
+            desc = "HSTX pre-drive strength / SVB-dependent trim (4 by eye config; 5/4/3/2 by SVB range 0x2BC/0x32A/0x398/0x3CA/0x44C). PROVEN.";
+            sw = rw;
+            hw = r;
+        } pre_drive[27:24];
+    } ANA_CFG_0 @ 0x0;
+
+    reg {
+        name = "PHY analog configuration 2";
+        desc = "Source: vendor U-Boot drivers/phy/hibvt/phy-hi3516ev300-usb.c (EV300 tree) and the vendor Linux DT `hixvp-usb2-phy` node. PROVEN offsets/bits (source), values are board-independent defaults. Vendor DT ana_cfg_2_eye_val 0x00120E0F.";
+        field {
+            name = "trim";
+            desc = "Calibration trim from MISC 0x12028004 [4:0] (valid 0x09..0x1D, default 0x0E). PROVEN.";
+            sw = rw;
+            hw = r;
+        } trim[12:8];
+        field {
+            name = "disc_ref";
+            desc = "Disconnect reference voltage select, 2 by U-Boot. PROVEN.";
+            sw = rw;
+            hw = r;
+        } disc_ref[18:16];
+        field {
+            name = "tx_test";
+            desc = "TX test bit, set by U-Boot. PROVEN.";
+            sw = rw;
+            hw = r;
+        } tx_test[20:20];
+    } ANA_CFG_2 @ 0x8;
+
+    reg {
+        name = "PHY analog configuration 4";
+        desc = "Source: vendor U-Boot drivers/phy/hibvt/phy-hi3516ev300-usb.c (EV300 tree) and the vendor Linux DT `hixvp-usb2-phy` node. PROVEN offsets/bits (source), values are board-independent defaults. Vendor DT ana_cfg_4_eye_val 0x00000655.";
+        field {
+            name = "tx_ref";
+            desc = "TX reference voltage select, 5 by U-Boot. PROVEN.";
+            sw = rw;
+            hw = r;
+        } tx_ref[6:4];
+    } ANA_CFG_4 @ 0x10;
+
+    reg {
+        name = "PHY PLL enable";
+        desc = "Source: vendor U-Boot drivers/phy/hibvt/phy-hi3516ev300-usb.c (EV300 tree) and the vendor Linux DT `hixvp-usb2-phy` node. PROVEN offsets/bits (source), values are board-independent defaults. phy_pll_offset 0x14, mask 3, value 3 (RG_PLL_EN).";
+        field {
+            name = "rg_pll_en";
+            desc = "PLL enable; U-Boot writes 3 after releasing the POR reset. PROVEN.";
+            sw = rw;
+            hw = r;
+        } rg_pll_en[1:0];
+    } PLL_CFG @ 0x14;
+
+};
+
+`endif
+`ifndef HI3516EV300_DWC3_RDL
+`define HI3516EV300_DWC3_RDL
+
+regfile eDWC3_GLOBAL_V4 {
+    name = "DWC3 global registers touched by the vendor glue, Hi3516EV200/EV300 generation";
+    desc = "Standard Synopsys DWC3 global register block (public driver knowledge), only the four registers the vendor U-Boot writes. Instance base 0x1003C100 (= DWC3 base 0x10030000 + 0xC100). Not a description of the DWC3 core.";
+
+    reg {
+        name = "Global TX threshold";
+        desc = "Vendor U-Boot writes 0x23100000 (USB2_G_TXTHRCFG, offset 0xC108). Layout: DWC3 databook (UNVERIFIED here). Evidence: PROVEN write, INFERRED layout.";
+        field {
+            name = "value";
+            desc = "Raw value.";
+            sw = rw;
+            hw = r;
+        } value[31:0];
+    } GTXTHRCFG @ 0x8;
+
+    reg {
+        name = "Global RX threshold";
+        desc = "Vendor U-Boot writes 0x23100000 (offset 0xC10C). PROVEN write.";
+        field {
+            name = "value";
+            desc = "Raw value.";
+            sw = rw;
+            hw = r;
+        } value[31:0];
+    } GRXTHRCFG @ 0xC;
+
+    reg {
+        name = "Global control";
+        desc = "Offset 0xC110. U-Boot sets PRTCAPDIR [13:12] = 1 (host). PROVEN.";
+        field {
+            name = "prtcapdir";
+            desc = "1 = host, 2 = device, 3 = OTG. PROVEN.";
+            sw = rw;
+            hw = r;
+        } prtcapdir[13:12];
+    } GCTL @ 0x10;
+
+    reg {
+        name = "Global USB3 PIPE control 0";
+        desc = "Offset 0xC2C0. U-Boot toggles bit 31 (PCS soft reset) and clears bit 17 ('disable suspend'). PROVEN.";
+        field {
+            name = "suspend_phy";
+            desc = "U-Boot clears this bit. PROVEN position.";
+            sw = rw;
+            hw = r;
+        } suspend_phy[17:17];
+        field {
+            name = "pcs_soft_reset";
+            desc = "PHY soft reset. PROVEN.";
+            sw = rw;
+            hw = r;
+        } pcs_soft_reset[31:31];
+    } GUSB3PIPECTL0 @ 0x1C0;
+
+};
+
+`endif
