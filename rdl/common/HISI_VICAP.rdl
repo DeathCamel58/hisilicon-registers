@@ -212,7 +212,9 @@ Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, HiMPP kernel module 
         name = "R component mask register";
         desc = "PT_R_MASK_L is R component mask register.
 
-Source: data sheet 11.1.6 PT_R_MASK_L (offset 0x10004, printed page 11-23, `datasheet.txt` line 34036).";
+Source: data sheet 11.1.6 PT_R_MASK_L (offset 0x10004, printed page 11-23, `datasheet.txt` line 34036).
+
+Source: vendor module hi3520D_viu.ko (VIU_DRV_SetDataLayout -> VIU_HAL_SetDataMask), confidence HIGH: the vendor ALWAYS writes this register with the byte lane of the 32 bit pad data bus that carries the 8 bit BT.656 data (0xFF000000 or 0x00FF0000, the vendor device attribute au32CompMask[0]; the first component of every interface type uses this register). BOARD-VERIFIED (2026-11-12, Hi3520D NVR0408, color bar generator): the reset value 0 passes no data bit and the channel never sees a frame start; 0xFF000000 (with PT_R_OFFSET_L = 0) gives frame start/frame complete interrupts; 0x00FF0000, 0x0000FF00 and 0x000000FF give no frames; 0xFFFF0000 and 0xFFFFFFFF behave like 0xFF000000; any non-zero offset gives no frames.";
 
         field {
             name = "r_mask";
@@ -257,7 +259,9 @@ Source: data sheet 11.1.6 PT_G_MASK_L (offset 0x1000C, printed page 11-24, `data
         name = "R component offset register";
         desc = "PT_R_OFFSET_L is R component offset register.
 
-Source: data sheet 11.1.6 PT_R_OFFSET_L (offset 0x10014, printed page 11-24, `datasheet.txt` line 34102).";
+Source: data sheet 11.1.6 PT_R_OFFSET_L (offset 0x10014, printed page 11-24, `datasheet.txt` line 34102).
+
+Source: vendor module hi3520D_viu.ko (VIU_HAL_SetDataOffset, CalcOffset), confidence HIGH: [7:0] = number of leading zero bits of the component mask (0 for 0xFF000000, 8 for 0x00FF0000), bit 31 = bit reverse flag (0). BOARD-VERIFIED 2026-11-12: offset 0 with mask 0xFF000000 works; offsets 8/16/24 with that mask give no frames.";
 
         field {
             name = "r_offset";
@@ -324,7 +328,7 @@ Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, HiMPP kernel module 
 
         field {
             name = "cbar_en";
-            desc = "cbar_en Source: vendor module hi3520D_viu.ko, VIU_HAL_SetColorBarEn, confidence HIGH for the bit position; behavior unknown. Not verified on hardware.";
+            desc = "cbar_en Source: vendor module hi3520D_viu.ko, VIU_HAL_SetColorBarEn, confidence HIGH for the bit position; behavior unknown. BOARD-VERIFIED 2026-11-12 (Hi3520D NVR0408): cbar_en = 1 makes the port generate a frame timing (frame start, frame complete interrupts, about 9 frames/s observed with the 24 MHz self-test clock and a 720x480 window, IPI size register 0x021C0000) and cbar_en = 0 gives no frame at all, so the generator is functional; it needs PT_R_MASK_L = 0xFF000000, vichN_divsel = div1 (code 2) and AXI_CFG.m0_otd = 2 (see those registers). The captured PIXEL DATA is all zero (Y 0x00, chroma 0x00) in every mode tried (PT_TEST_CFG 1/3/5/7, interface types 0-3, WK_MODE.pt0_mode, channel port_mode 0-2, Y/C separate, B/G masks): no color bar pattern was ever seen. Open.";
             sw = rw;
             hw = r;
             reset = 0x0;
@@ -2266,7 +2270,7 @@ Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, HiMPP kernel module 
 
 Source: data sheet 11.1.6 AXI_CFG (offset 0x4, printed page 11-18, `datasheet.txt` line 33762).
 
-Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, HiMPP kernel module from the OpenIPC Hi3520D rootfs; static disassembly), VIU_HAL_BoardInit (0x140cc: read-modify-write of [3:0] = 2 right after ioremap of 0x20580000 size 0x20000) and board script sysctl_hi3520D.sh ('himm 0x20580004 0xf0f00002 # vicap outstanding'), confidence HIGH: the vendor always programs m0_otd = 2 (the Linux driver leaves it at the reset value 0). Whether m0_otd = 0 stalls the write master is UNKNOWN. Not verified on hardware. Board: reads 0xF0F00000 (confirmed).";
+Source: vendor module hi3520D_viu.ko (Hi3520D_MPP_V2.0.5.1, HiMPP kernel module from the OpenIPC Hi3520D rootfs; static disassembly), VIU_HAL_BoardInit (0x140cc: read-modify-write of [3:0] = 2 right after ioremap of 0x20580000 size 0x20000) and board script sysctl_hi3520D.sh ('himm 0x20580004 0xf0f00002 # vicap outstanding'), confidence HIGH: the vendor always programs m0_otd = 2 (the Linux driver leaves it at the reset value 0). BOARD-VERIFIED 2026-11-12: with m0_otd = 0 (reset) the channel input FIFO overflows continuously (CH_INT_RAW bit 17 about 1400 times/s, no frame complete, buffers never written); with m0_otd = 2 frames complete (bit 16) and no overflow. Board: reads 0xF0F00000 at reset (confirmed).";
 
         field {
             name = "reserved_nz";
