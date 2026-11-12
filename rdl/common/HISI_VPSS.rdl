@@ -16,11 +16,11 @@ addrmap aHISI_VPSS {
 
 addrmap aHISI_VPSS_V100 {
     name = "HiSilicon VPSS (Hi3520D V100 edition, vendor-derived registers)";
-    desc = "VPSS, Hi3520D V100 edition, vendor-derived, NOT VERIFIED ON HARDWARE. The data sheet has no VPSS register table. Derived by static disassembly of hi3520D_vpss.ko (Hi3520D_MPP_V2.0.5.1, OpenIPC copy with local symbols; the Xiongmai NBD7804T-F copy has the same code), docs/rdl-campaign/vpss.md. CONFIRMED FACTS (vendor code, HIGH): VPSS_HAL_Init ioremaps 0x20600000 for 0x4060 bytes (the vendor code touches nothing above 0x405F); VPSS_DRV_GetIrqId returns 69; the module is one 'group' per VPSS node: software builds a register-image node in DDR (the HAL functions VPSS_HAL_SetCtrl/SetSrcImgSize/SetCurPicAddr/SetDieCfg/SetChn* write bit fields into such a node image, which mirrors the register layout and is 0x420 bytes or more), links nodes through the word at node offset 0x3F0, and starts the hardware with the node address (linked-list register configuration as the data sheet describes). Only seven locations are accessed through the ioremapped window and are listed here as UNK_ registers: 0x0E0 (node ID read back), 0x3F0 (next node address), 0x400 (start), 0x404 (interrupt status), 0x408 (interrupt clear), 0x414 (outstanding configuration), 0x4000 (debug word). Everything else in the window is not described (the per-node configuration registers live in the node images; whether they are also memory-mapped is unknown). The names are placeholders (UNK_<offset>), the purposes come from the function names of the vendor HAL. The Hi3516C V100/Hi3518 V100/Hi3518E V100 VPSS sits at the same base and has the same feature list, but no register-level comparison is possible, so only the Hi3520D family files (Hi3520D, Hi3515A, Hi3515C; the Hi3515A/C instantiation is inferred) use this edition.";
+    desc = "VPSS, Hi3520D V100 edition, vendor-derived, NOT VERIFIED ON HARDWARE. The data sheet has no VPSS register table. Derived by static disassembly of hi3520D_vpss.ko (Hi3520D_MPP_V2.0.5.1, OpenIPC copy with local symbols; the Xiongmai NBD7804T-F copy has the same code), docs/rdl-campaign/vpss.md. CONFIRMED FACTS (vendor code, HIGH): VPSS_HAL_Init ioremaps 0x20600000 for 0x4060 bytes (the vendor code touches nothing above 0x405F); VPSS_DRV_GetIrqId returns 69; the module is one 'group' per VPSS node: software builds a register-image node in DDR (the HAL functions VPSS_HAL_SetCtrl/SetSrcImgSize/SetCurPicAddr/SetDieCfg/SetChn* write bit fields into such a node image, which mirrors the register layout and is 0x420 bytes or more), links nodes through the word at node offset 0x3F0, and starts the hardware with the node address (linked-list register configuration as the data sheet describes). Only seven locations are accessed through the ioremapped window and are listed here as UNK_ registers: 0x0E0 (node ID read back), 0x3F0 (next node address), 0x400 (start), 0x404 (interrupt status), 0x408 (interrupt clear), 0x414 (outstanding configuration), 0x4000 (debug word). Everything else in the window is not described (SECOND PASS 2026-11-11: the DDR node image is now documented in eHISI_VPSS_V100_NODE; the VPSS bring-up order from the vendor SYS calls is PERI_CRG18 (0x20030048) bit 0 = 1 then 0 (reset pulse) THEN bit 1 = 1 (clock on): reset is released BEFORE the clock is enabled, unlike TDE/VEDU; HIGH, VPSS_DRV_AbolishReset). The names VPSS_* are GUESSES (the per-node configuration registers live in the node images; whether they are also memory-mapped is unknown). The names are placeholders (UNK_<offset>), the purposes come from the function names of the vendor HAL. The Hi3516C V100/Hi3518 V100/Hi3518E V100 VPSS sits at the same base and has the same feature list, but no register-level comparison is possible, so only the Hi3520D family files (Hi3520D, Hi3515A, Hi3515C; the Hi3515A/C instantiation is inferred) use this edition.";
 
     reg {
-        name = "UNK_0x0E0";
-        desc = "UNK_0x0E0 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: hi3520D_vpss.ko VPSS_HAL_GetNodeID (0x185d4): one word read from the ioremapped window, called from the interrupt path after VPSS_HAL_GetIntStatus/ClrInt (VPSS_COMM_IrqProc 0x1d430); the same offset in the node image is written by VPSS_HAL_SetNodeID (0x17698). Vendor meaning: ID of the node the hardware just finished. Confidence MEDIUM (offset and read HIGH, meaning inferred from the function name), not verified on hardware.";
+        name = "VPSS_NODE_ID";
+        desc = "VPSS_NODE_ID (GUESS: the name is inferred from the vendor HAL function name; it is not a vendor register name). NOT IN THE DATA SHEET. Source: hi3520D_vpss.ko VPSS_HAL_GetNodeID (0x185d4): one word read from the ioremapped window, called from the interrupt path after VPSS_HAL_GetIntStatus/ClrInt (VPSS_COMM_IrqProc 0x1d430); the same offset in the node image is written by VPSS_HAL_SetNodeID (0x17698). Vendor meaning: ID of the node the hardware just finished. Confidence MEDIUM (offset and read HIGH, meaning inferred from the function name), not verified on hardware. SECOND PASS (2026-11-11, docs/rdl-campaign/vpss-vendor.md): read once per interrupt after the status read and the clear; the interrupt handler compares it with the ID of the node it expects (VPSS_COMM_IrqProc logs a mismatch and still runs the list completion, HIGH for the access pattern). GUESS: node ID of the last completed node (MEDIUM).";
 
         field {
             name = "unk";
@@ -29,11 +29,11 @@ addrmap aHISI_VPSS_V100 {
             hw = w;
         } unk[31:0];
 
-    } UNK_0x0E0 @ 0x0E0;
+    } VPSS_NODE_ID @ 0x0E0;
 
     reg {
-        name = "UNK_0x3F0";
-        desc = "UNK_0x3F0 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: hi3520D_vpss.ko VPSS_HAL_Start (0x186f0): writes the node address (physical address of the DDR node image) to this word and reads it back in a loop until it equals the written value (retry with printk on mismatch), then writes 1 to 0x400. VPSS_HAL_GetNextInfo (0x184b0) reads it. In the node image the same offset is the pointer to the next node (VPSS_HAL_SetNext 0x17684). Vendor meaning: address of the first or next node of the linked list. Confidence MEDIUM (offsets and access pattern HIGH, meaning from the function names), not verified on hardware.";
+        name = "VPSS_NEXT_NODE";
+        desc = "VPSS_NEXT_NODE (GUESS: the name is inferred from the vendor HAL function name; it is not a vendor register name). NOT IN THE DATA SHEET. Source: hi3520D_vpss.ko VPSS_HAL_Start (0x186f0): writes the node address (physical address of the DDR node image) to this word and reads it back in a loop until it equals the written value (retry with printk on mismatch), then writes 1 to 0x400. VPSS_HAL_GetNextInfo (0x184b0) reads it. In the node image the same offset is the pointer to the next node (VPSS_HAL_SetNext 0x17684). Vendor meaning: address of the first or next node of the linked list. Confidence MEDIUM (offsets and access pattern HIGH, meaning from the function names), not verified on hardware. SECOND PASS: the start sequence writes the first node address here and reads it back until it matches (a retry loop with a printk), so the register is a latch that may take time to accept the write (HIGH for the pattern; the reason is unknown). GUESS: next/first node address (MEDIUM).";
 
         field {
             name = "unk";
@@ -42,11 +42,11 @@ addrmap aHISI_VPSS_V100 {
             hw = r;
         } unk[31:0];
 
-    } UNK_0x3F0 @ 0x3F0;
+    } VPSS_NEXT_NODE @ 0x3F0;
 
     reg {
-        name = "UNK_0x400";
-        desc = "UNK_0x400 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: hi3520D_vpss.ko VPSS_HAL_Start (0x186f0): after the node address was written to 0x3F0 and verified, the value 1 is written here (the only value ever written). Vendor meaning: start. Confidence MEDIUM, not verified on hardware.";
+        name = "VPSS_START";
+        desc = "VPSS_START (GUESS: the name is inferred from the vendor HAL function name; it is not a vendor register name). NOT IN THE DATA SHEET. Source: hi3520D_vpss.ko VPSS_HAL_Start (0x186f0): after the node address was written to 0x3F0 and verified, the value 1 is written here (the only value ever written). Vendor meaning: start. Confidence MEDIUM, not verified on hardware. SECOND PASS: GUESS: start trigger (MEDIUM). Written once per list, always after the node address was verified.";
 
         field {
             name = "unk";
@@ -55,11 +55,11 @@ addrmap aHISI_VPSS_V100 {
             hw = r;
         } unk[31:0];
 
-    } UNK_0x400 @ 0x400;
+    } VPSS_START @ 0x400;
 
     reg {
-        name = "UNK_0x404";
-        desc = "UNK_0x404 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: hi3520D_vpss.ko VPSS_HAL_GetIntStatus (0x18574): reads the whole word; called by VPSS_COMM_IrqProc (0x1d430, the interrupt handler path, IRQ 69) before the node ID is read and the interrupt cleared. Vendor meaning: interrupt status; bit meanings not seen in the HAL (the whole word is passed up). Confidence MEDIUM, not verified on hardware.";
+        name = "VPSS_INT_STATUS";
+        desc = "VPSS_INT_STATUS (GUESS: the name is inferred from the vendor HAL function name; it is not a vendor register name). NOT IN THE DATA SHEET. Source: hi3520D_vpss.ko VPSS_HAL_GetIntStatus (0x18574): reads the whole word; called by VPSS_COMM_IrqProc (0x1d430, the interrupt handler path, IRQ 69) before the node ID is read and the interrupt cleared. Vendor meaning: interrupt status; bit meanings not seen in the HAL (the whole word is passed up). Confidence MEDIUM, not verified on hardware. SECOND PASS: the vendor classifier VPSS_DRV_IsWrongInt looks only at bits [3:0]: the value 4 is treated as an abnormal interrupt (logged, counted, not processed as a completion), 2 is an assertion failure (panic: never expected), 0 is logged but processed, everything else (for example bit 0 or bit 3) is a normal completion. So bit 2 is probably an error (timeout or bus error) and bit 0 or 3 the completion (INFERRED, LOW-MEDIUM).";
 
         field {
             name = "unk";
@@ -68,11 +68,11 @@ addrmap aHISI_VPSS_V100 {
             hw = w;
         } unk[31:0];
 
-    } UNK_0x404 @ 0x404;
+    } VPSS_INT_STATUS @ 0x404;
 
     reg {
-        name = "UNK_0x408";
-        desc = "UNK_0x408 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: hi3520D_vpss.ko VPSS_HAL_ClrInt (0x18690): writes 0xFFFFFFFF (all ones) to this word, called from the interrupt path. Vendor meaning: interrupt clear (write 1 to clear is assumed, the vendor writes all ones). Confidence MEDIUM, not verified on hardware.";
+        name = "VPSS_INT_CLEAR";
+        desc = "VPSS_INT_CLEAR (GUESS: the name is inferred from the vendor HAL function name; it is not a vendor register name). NOT IN THE DATA SHEET. Source: hi3520D_vpss.ko VPSS_HAL_ClrInt (0x18690): writes 0xFFFFFFFF (all ones) to this word, called from the interrupt path. Vendor meaning: interrupt clear (write 1 to clear is assumed, the vendor writes all ones). Confidence MEDIUM, not verified on hardware. SECOND PASS: GUESS: interrupt clear, written before the node ID is read (MEDIUM).";
 
         field {
             name = "unk";
@@ -81,11 +81,11 @@ addrmap aHISI_VPSS_V100 {
             hw = r;
         } unk[31:0];
 
-    } UNK_0x408 @ 0x408;
+    } VPSS_INT_CLEAR @ 0x408;
 
     reg {
-        name = "UNK_0x414";
-        desc = "UNK_0x414 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: hi3520D_vpss.ko VPSS_HAL_SetOutstanding (0x18634): writes one whole word (argument r1) to this location of the ioremapped window. The node image has a word at the same offset (VPSS_HAL_SetMiscellaneous 0x17664 sets bits [23:16] in it, 'miscellaneous', values 3 and 100 seen in VPSS_DRV_SetModelParam 0x1610c). The data sheet says only that the block supports 'outstanding configuration'. Vendor meaning: outstanding (AXI) configuration. Confidence MEDIUM, not verified on hardware.";
+        name = "VPSS_OUTSTANDING";
+        desc = "VPSS_OUTSTANDING (GUESS: the name is inferred from the vendor HAL function name; it is not a vendor register name). NOT IN THE DATA SHEET. Source: hi3520D_vpss.ko VPSS_HAL_SetOutstanding (0x18634): writes one whole word (argument r1) to this location of the ioremapped window. The node image has a word at the same offset (VPSS_HAL_SetMiscellaneous 0x17664 sets bits [23:16] in it, 'miscellaneous', values 3 and 100 seen in VPSS_DRV_SetModelParam 0x1610c). The data sheet says only that the block supports 'outstanding configuration'. Vendor meaning: outstanding (AXI) configuration. Confidence MEDIUM, not verified on hardware. SECOND PASS: the same offset in the node image is a word whose bits [23:16] hold a vendor 'miscellaneous' value (see eHISI_VPSS_V100_NODE N_MISC). GUESS (MEDIUM).";
 
         field {
             name = "unk";
@@ -94,11 +94,11 @@ addrmap aHISI_VPSS_V100 {
             hw = r;
         } unk[31:0];
 
-    } UNK_0x414 @ 0x414;
+    } VPSS_OUTSTANDING @ 0x414;
 
     reg {
-        name = "UNK_0x4000";
-        desc = "UNK_0x4000 (name is a placeholder, not a vendor name). NOT IN THE DATA SHEET. Source: hi3520D_vpss.ko VPSS_HAL_GetDbgInfo (0x18510): one word read (offset 0x4000 formed as a 16384 register-offset operand), exposed through the module's debug/proc output. The vendor ioremap is 0x4060 bytes, so 0x4000..0x405F exist. Vendor meaning: debug/status word. Confidence LOW, not verified on hardware.";
+        name = "VPSS_DEBUG";
+        desc = "VPSS_DEBUG (GUESS: the name is inferred from the vendor HAL function name; it is not a vendor register name). NOT IN THE DATA SHEET. Source: hi3520D_vpss.ko VPSS_HAL_GetDbgInfo (0x18510): one word read (offset 0x4000 formed as a 16384 register-offset operand), exposed through the module's debug/proc output. The vendor ioremap is 0x4060 bytes, so 0x4000..0x405F exist. Vendor meaning: debug/status word. Confidence LOW, not verified on hardware. SECOND PASS: still LOW.";
 
         field {
             name = "unk";
@@ -107,7 +107,7 @@ addrmap aHISI_VPSS_V100 {
             hw = w;
         } unk[31:0];
 
-    } UNK_0x4000 @ 0x4000;
+    } VPSS_DEBUG @ 0x4000;
 
     external mem {
         name = "Rest of the window (not described)";
@@ -116,6 +116,2010 @@ addrmap aHISI_VPSS_V100 {
         memwidth = 32;
         sw = rw;
     } REST @ 0x4004;
+};
+
+regfile eHISI_VPSS_V100_NODE {
+    name = "HiSilicon VPSS, Hi3520D job node image (in DDR, NOT MMIO registers)";
+    desc = "NOT A REGISTER FILE: layout of one hardware node (register image) in DDR as built by the vendor HAL (VPSS_HAL_Set* functions of hi3520D_vpss.ko, docs/rdl-campaign/vpss-vendor.md), described as a regfile only to document offsets and bit fields. NOT INSTANTIATED. NOT VERIFIED ON HARDWARE. Confidence: every offset and bit position is read from the instruction stream of the HAL setters (HIGH); every NAME and MEANING is inferred from the vendor function name, the data-sheet feature list or the HiSTB-style conventions, and marked GUESS or INFERRED (LOW unless stated). The image is 0x420 bytes or more (highest word 0x41C): the vendor allocates a model buffer per node (VPSS_DRV_MallocModelBuf); the VPSS_HAL_NodeQueue* functions keep free/wait/busy lists of them. VPSS_COMM_HalListInt links the nodes through NEXT (offset 0x3F0), stamps NODE_ID (0xE0), sets MASK (0xEC) to 0 for all nodes but the last (7) and writes the first node's physical address into the MMIO register VPSS_NEXT_NODE followed by 1 into VPSS_START. Which words are fetched by the hardware (all 0x420 bytes or only the words selected by MASK) is NOT known. Words the vendor HAL never writes are not described. The Hi3520D HAL setters VPSS_HAL_SetIeCfg, SetDieCfg and SetChnSpCfg are EMPTY functions (no node fields), so image enhancement, de-interlace and sharpening parameters are not set through this HAL on this chip (INFERRED: the vendor build either keeps them at their reset values or controls them through CTRL bits only; the 3D noise reduction fields are likewise not identified). Hardware-side coefficient tables are DDR buffers referenced by address (16-byte aligned).";
+    reg {
+        name = "Control flags (node word 0)";
+        desc = "Node image offset 0x000. 22 one-bit flags at bits 0..21 and three 2-bit fields at [25:24], [27:26], [29:28], written by VPSS_HAL_SetCtrl from a 25-word argument structure (argument index to bit: 0->5, 1->6, 2->7, 3->9, 4->10, 5->11, 6->12, 7->0, 8->1, 9->2, 10->3, 11->13, 12->14, 13->15, 14->16, 15->17, 16->18, 17->19, 18->20, 19->21, 20->4, 21->8, 22 -> [25:24] with 23 -> [27:26], 24 -> [29:28]). The vendor argument names are not in the module, so the bits are not named; by the data-sheet feature list they are probably enables of the processing stages (3D NR, de-interlace, image enhancement, sharpening, border, the channels) but no bit can be assigned to a stage (GUESS, LOW).  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "flag0";
+            desc = "Control flag, purpose unknown. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } flag0[0:0];
+        field {
+            name = "flag1";
+            desc = "Control flag, purpose unknown. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } flag1[1:1];
+        field {
+            name = "flag2";
+            desc = "Control flag, purpose unknown. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } flag2[2:2];
+        field {
+            name = "flag3";
+            desc = "Control flag, purpose unknown. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } flag3[3:3];
+        field {
+            name = "flag4";
+            desc = "Control flag, purpose unknown. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } flag4[4:4];
+        field {
+            name = "flag5";
+            desc = "Control flag, purpose unknown. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } flag5[5:5];
+        field {
+            name = "flag6";
+            desc = "Control flag, purpose unknown. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } flag6[6:6];
+        field {
+            name = "flag7";
+            desc = "Control flag, purpose unknown. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } flag7[7:7];
+        field {
+            name = "flag8";
+            desc = "Control flag, purpose unknown. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } flag8[8:8];
+        field {
+            name = "flag9";
+            desc = "Control flag, purpose unknown. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } flag9[9:9];
+        field {
+            name = "flag10";
+            desc = "Control flag, purpose unknown. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } flag10[10:10];
+        field {
+            name = "flag11";
+            desc = "Control flag, purpose unknown. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } flag11[11:11];
+        field {
+            name = "flag12";
+            desc = "Control flag, purpose unknown. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } flag12[12:12];
+        field {
+            name = "flag13";
+            desc = "Control flag, purpose unknown. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } flag13[13:13];
+        field {
+            name = "flag14";
+            desc = "Control flag, purpose unknown. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } flag14[14:14];
+        field {
+            name = "flag15";
+            desc = "Control flag, purpose unknown. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } flag15[15:15];
+        field {
+            name = "flag16";
+            desc = "Control flag, purpose unknown. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } flag16[16:16];
+        field {
+            name = "flag17";
+            desc = "Control flag, purpose unknown. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } flag17[17:17];
+        field {
+            name = "flag18";
+            desc = "Control flag, purpose unknown. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } flag18[18:18];
+        field {
+            name = "flag19";
+            desc = "Control flag, purpose unknown. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } flag19[19:19];
+        field {
+            name = "flag20";
+            desc = "Control flag, purpose unknown. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } flag20[20:20];
+        field {
+            name = "flag21";
+            desc = "Control flag, purpose unknown. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } flag21[21:21];
+        field {
+            name = "mode_a";
+            desc = "2-bit control field, purpose unknown. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } mode_a[25:24];
+        field {
+            name = "mode_b";
+            desc = "2-bit control field, purpose unknown. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } mode_b[27:26];
+        field {
+            name = "mode_c";
+            desc = "2-bit control field, purpose unknown. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } mode_c[29:28];
+    } N_CTRL @ 0x000;
+
+    reg {
+        name = "Source image size (VPSS_HAL_SetSrcImgSize)";
+        desc = "Node image offset 0x004.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "width";
+            desc = "Width. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } width[11:0];
+        field {
+            name = "height";
+            desc = "Height. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } height[27:16];
+    } N_SRC_IMG_SIZE @ 0x004;
+
+    reg {
+        name = "Channel image size, one of four (VPSS_HAL_SetChnImgSize)";
+        desc = "Node image offset 0x008. The four words are the four channel slots of the 4-case jump table; which slot is which channel number was not resolved (the compiler may have reordered the cases), so the index in the name is the word order, not a channel number. The data sheet lists 3 encoding channels plus 1 display/extra channel for the later generation and up to 3 scaled outputs for this one (GUESS, LOW).  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "width";
+            desc = "Width. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } width[11:0];
+        field {
+            name = "height";
+            desc = "Height. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } height[27:16];
+    } N_CH_IMG_SIZE_0 @ 0x008;
+
+    reg {
+        name = "Channel image size, one of four (VPSS_HAL_SetChnImgSize)";
+        desc = "Node image offset 0x00C. The four words are the four channel slots of the 4-case jump table; which slot is which channel number was not resolved (the compiler may have reordered the cases), so the index in the name is the word order, not a channel number. The data sheet lists 3 encoding channels plus 1 display/extra channel for the later generation and up to 3 scaled outputs for this one (GUESS, LOW).  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "width";
+            desc = "Width. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } width[11:0];
+        field {
+            name = "height";
+            desc = "Height. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } height[27:16];
+    } N_CH_IMG_SIZE_1 @ 0x00C;
+
+    reg {
+        name = "Channel image size, one of four (VPSS_HAL_SetChnImgSize)";
+        desc = "Node image offset 0x010. The four words are the four channel slots of the 4-case jump table; which slot is which channel number was not resolved (the compiler may have reordered the cases), so the index in the name is the word order, not a channel number. The data sheet lists 3 encoding channels plus 1 display/extra channel for the later generation and up to 3 scaled outputs for this one (GUESS, LOW).  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "width";
+            desc = "Width. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } width[11:0];
+        field {
+            name = "height";
+            desc = "Height. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } height[27:16];
+    } N_CH_IMG_SIZE_2 @ 0x010;
+
+    reg {
+        name = "Channel image size, one of four (VPSS_HAL_SetChnImgSize)";
+        desc = "Node image offset 0x014. The four words are the four channel slots of the 4-case jump table; which slot is which channel number was not resolved (the compiler may have reordered the cases), so the index in the name is the word order, not a channel number. The data sheet lists 3 encoding channels plus 1 display/extra channel for the later generation and up to 3 scaled outputs for this one (GUESS, LOW).  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "width";
+            desc = "Width. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } width[11:0];
+        field {
+            name = "height";
+            desc = "Height. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } height[27:16];
+    } N_CH_IMG_SIZE_3 @ 0x014;
+
+    reg {
+        name = "Source crop (VPSS_HAL_SetSrcImgCrop)";
+        desc = "Node image offset 0x018.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "x";
+            desc = "Crop start X. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } x[11:0];
+        field {
+            name = "y";
+            desc = "Crop start Y. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } y[27:16];
+    } N_SRC_IMG_CROP @ 0x018;
+
+    reg {
+        name = "Channel crop, one of four (VPSS_HAL_SetChnCrop)";
+        desc = "Node image offset 0x01C. Slot order as CH_IMG_SIZE.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "x";
+            desc = "Crop start X. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } x[11:0];
+        field {
+            name = "y";
+            desc = "Crop start Y. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } y[27:16];
+    } N_CH_CROP_0 @ 0x01C;
+
+    reg {
+        name = "Channel crop, one of four (VPSS_HAL_SetChnCrop)";
+        desc = "Node image offset 0x020. Slot order as CH_IMG_SIZE.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "x";
+            desc = "Crop start X. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } x[11:0];
+        field {
+            name = "y";
+            desc = "Crop start Y. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } y[27:16];
+    } N_CH_CROP_1 @ 0x020;
+
+    reg {
+        name = "Channel crop, one of four (VPSS_HAL_SetChnCrop)";
+        desc = "Node image offset 0x024. Slot order as CH_IMG_SIZE.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "x";
+            desc = "Crop start X. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } x[11:0];
+        field {
+            name = "y";
+            desc = "Crop start Y. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } y[27:16];
+    } N_CH_CROP_2 @ 0x024;
+
+    reg {
+        name = "Channel crop, one of four (VPSS_HAL_SetChnCrop)";
+        desc = "Node image offset 0x028. Slot order as CH_IMG_SIZE.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "x";
+            desc = "Crop start X. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } x[11:0];
+        field {
+            name = "y";
+            desc = "Crop start Y. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } y[27:16];
+    } N_CH_CROP_3 @ 0x028;
+
+    reg {
+        name = "Channel frame-work words (VPSS_HAL_SetChnFrameWork), part 1";
+        desc = "Node image offset 0x02C. VPSS_HAL_SetChnFrameWork writes six words in four jump-table cases: 0x2C and 0x38 each hold two 4x4-bit groups (a channel pair uses [31:16], the other [15:0]), 0x30/0x34/0x3C/0x40 hold three bytes at [7:0], [15:8], [23:16]. 'Frame work' is the vendor name of a per-channel structure (probably the output frame geometry/format handling: the byte triples look like per-plane or per-field values); the semantic is UNKNOWN.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "nib0";
+            desc = "4-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } nib0[3:0];
+        field {
+            name = "nib1";
+            desc = "4-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } nib1[7:4];
+        field {
+            name = "nib2";
+            desc = "4-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } nib2[11:8];
+        field {
+            name = "nib3";
+            desc = "4-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } nib3[15:12];
+        field {
+            name = "nib4";
+            desc = "4-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } nib4[19:16];
+        field {
+            name = "nib5";
+            desc = "4-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } nib5[23:20];
+        field {
+            name = "nib6";
+            desc = "4-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } nib6[27:24];
+        field {
+            name = "nib7";
+            desc = "4-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } nib7[31:28];
+    } N_CH_FRAMEWORK_A @ 0x02C;
+
+    reg {
+        name = "Channel frame-work words, part 2";
+        desc = "Node image offset 0x030. See CH_FRAMEWORK_A.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "b0";
+            desc = "Byte. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } b0[7:0];
+        field {
+            name = "b1";
+            desc = "Byte. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } b1[15:8];
+        field {
+            name = "b2";
+            desc = "Byte. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } b2[23:16];
+    } N_CH_FRAMEWORK_B @ 0x030;
+
+    reg {
+        name = "Channel frame-work words, part 3";
+        desc = "Node image offset 0x034. See CH_FRAMEWORK_A.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "b0";
+            desc = "Byte. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } b0[7:0];
+        field {
+            name = "b1";
+            desc = "Byte. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } b1[15:8];
+        field {
+            name = "b2";
+            desc = "Byte. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } b2[23:16];
+    } N_CH_FRAMEWORK_C @ 0x034;
+
+    reg {
+        name = "Channel frame-work words, part 4";
+        desc = "Node image offset 0x038. See CH_FRAMEWORK_A.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "nib0";
+            desc = "4-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } nib0[3:0];
+        field {
+            name = "nib1";
+            desc = "4-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } nib1[7:4];
+        field {
+            name = "nib2";
+            desc = "4-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } nib2[11:8];
+        field {
+            name = "nib3";
+            desc = "4-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } nib3[15:12];
+        field {
+            name = "nib4";
+            desc = "4-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } nib4[19:16];
+        field {
+            name = "nib5";
+            desc = "4-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } nib5[23:20];
+        field {
+            name = "nib6";
+            desc = "4-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } nib6[27:24];
+        field {
+            name = "nib7";
+            desc = "4-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } nib7[31:28];
+    } N_CH_FRAMEWORK_D @ 0x038;
+
+    reg {
+        name = "Channel frame-work words, part 5";
+        desc = "Node image offset 0x03C. See CH_FRAMEWORK_A.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "b0";
+            desc = "Byte. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } b0[7:0];
+        field {
+            name = "b1";
+            desc = "Byte. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } b1[15:8];
+        field {
+            name = "b2";
+            desc = "Byte. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } b2[23:16];
+    } N_CH_FRAMEWORK_E @ 0x03C;
+
+    reg {
+        name = "Channel frame-work words, part 6";
+        desc = "Node image offset 0x040. See CH_FRAMEWORK_A.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "b0";
+            desc = "Byte. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } b0[7:0];
+        field {
+            name = "b1";
+            desc = "Byte. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } b1[15:8];
+        field {
+            name = "b2";
+            desc = "Byte. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } b2[23:16];
+    } N_CH_FRAMEWORK_F @ 0x040;
+
+    reg {
+        name = "Current picture luma address";
+        desc = "Node image offset 0x060. VPSS_HAL_SetCurPicAddr: first word of the picture triple.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "val";
+            desc = "Physical address. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } val[31:0];
+    } N_CUR_PIC_Y @ 0x060;
+
+    reg {
+        name = "Current picture chroma address";
+        desc = "Node image offset 0x064. Second word of the triple.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "val";
+            desc = "Physical address. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } val[31:0];
+    } N_CUR_PIC_C @ 0x064;
+
+    reg {
+        name = "Current picture strides";
+        desc = "Node image offset 0x068. Third word of the triple.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "y_stride";
+            desc = "Luma stride. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } y_stride[15:0];
+        field {
+            name = "c_stride";
+            desc = "Chroma stride. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } c_stride[31:16];
+    } N_CUR_PIC_STRIDE @ 0x068;
+
+    reg {
+        name = "Reference picture luma address";
+        desc = "Node image offset 0x06C. VPSS_HAL_SetRefPicAddr: first word of the picture triple.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "val";
+            desc = "Physical address. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } val[31:0];
+    } N_REF_PIC_Y @ 0x06C;
+
+    reg {
+        name = "Reference picture chroma address";
+        desc = "Node image offset 0x070. Second word of the triple.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "val";
+            desc = "Physical address. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } val[31:0];
+    } N_REF_PIC_C @ 0x070;
+
+    reg {
+        name = "Reference picture strides";
+        desc = "Node image offset 0x074. Third word of the triple.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "y_stride";
+            desc = "Luma stride. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } y_stride[15:0];
+        field {
+            name = "c_stride";
+            desc = "Chroma stride. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } c_stride[31:16];
+    } N_REF_PIC_STRIDE @ 0x074;
+
+    reg {
+        name = "Motion-analysis (MAD) read address";
+        desc = "Node image offset 0x078. VPSS_HAL_SetMadAddr writes the same address to 0x78 and 0x7C (read/write MAD buffers) and the stride at 0x80 [15:0]. Probably the 3D-NR / de-interlace motion data buffer (GUESS, LOW).  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "val";
+            desc = "Physical address. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } val[31:0];
+    } N_MAD_ADDR_RD @ 0x078;
+
+    reg {
+        name = "Motion-analysis (MAD) write address";
+        desc = "Node image offset 0x07C. See MAD_ADDR_RD.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "val";
+            desc = "Physical address. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } val[31:0];
+    } N_MAD_ADDR_WR @ 0x07C;
+
+    reg {
+        name = "Motion-analysis stride";
+        desc = "Node image offset 0x080.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "stride";
+            desc = "Stride. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } stride[15:0];
+    } N_MAD_STRIDE @ 0x080;
+
+    reg {
+        name = "De-interlace / ST buffer read address (VPSS_HAL_SetDieAddr, SetStAddr)";
+        desc = "Node image offset 0x084. SetDieAddr writes 0x84 and 0x88 and the stride into 0x8C [15:0]; SetStAddr writes the same address to both (ST = state buffer, probably the DEI/NR history; GUESS, LOW).  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "val";
+            desc = "Physical address. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } val[31:0];
+    } N_DIE_ADDR_RD @ 0x084;
+
+    reg {
+        name = "De-interlace / ST buffer write address";
+        desc = "Node image offset 0x088. See DIE_ADDR_RD.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "val";
+            desc = "Physical address. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } val[31:0];
+    } N_DIE_ADDR_WR @ 0x088;
+
+    reg {
+        name = "De-interlace / ST stride";
+        desc = "Node image offset 0x08C.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "stride";
+            desc = "Stride. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } stride[15:0];
+    } N_DIE_STRIDE @ 0x08C;
+
+    reg {
+        name = "Histogram buffer address 0 (VPSS_HAL_SetHistAddr)";
+        desc = "Node image offset 0x090. Two histogram buffer addresses (the vendor driver swaps them each frame: VPSS_DRV_HistBuffSwapStrategy).  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "val";
+            desc = "Physical address. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } val[31:0];
+    } N_HIST_ADDR_0 @ 0x090;
+
+    reg {
+        name = "Histogram buffer address 1";
+        desc = "Node image offset 0x094.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "val";
+            desc = "Physical address. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } val[31:0];
+    } N_HIST_ADDR_1 @ 0x094;
+
+    reg {
+        name = "Channel output 0 luma address (VPSS_HAL_SetChnPicAddr)";
+        desc = "Node image offset 0x0A0. Slot order as CH_IMG_SIZE (word order, not a verified channel number). Per channel a triple (Y address, C address, strides); the stride word of the fourth triple is at 0xD0, not at 0xCC (as seen in the code).  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "val";
+            desc = "Physical address. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } val[31:0];
+    } N_CH0_Y @ 0x0A0;
+
+    reg {
+        name = "Channel output 0 chroma address";
+        desc = "Node image offset 0x0A4.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "val";
+            desc = "Physical address. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } val[31:0];
+    } N_CH0_C @ 0x0A4;
+
+    reg {
+        name = "Channel output 0 strides";
+        desc = "Node image offset 0x0A8.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "y_stride";
+            desc = "Luma stride. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } y_stride[15:0];
+        field {
+            name = "c_stride";
+            desc = "Chroma stride. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } c_stride[31:16];
+    } N_CH0_STRIDE @ 0x0A8;
+
+    reg {
+        name = "Channel output 1 luma address (VPSS_HAL_SetChnPicAddr)";
+        desc = "Node image offset 0x0AC. Slot order as CH_IMG_SIZE (word order, not a verified channel number). Per channel a triple (Y address, C address, strides); the stride word of the fourth triple is at 0xD0, not at 0xCC (as seen in the code).  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "val";
+            desc = "Physical address. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } val[31:0];
+    } N_CH1_Y @ 0x0AC;
+
+    reg {
+        name = "Channel output 1 chroma address";
+        desc = "Node image offset 0x0B0.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "val";
+            desc = "Physical address. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } val[31:0];
+    } N_CH1_C @ 0x0B0;
+
+    reg {
+        name = "Channel output 1 strides";
+        desc = "Node image offset 0x0B4.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "y_stride";
+            desc = "Luma stride. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } y_stride[15:0];
+        field {
+            name = "c_stride";
+            desc = "Chroma stride. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } c_stride[31:16];
+    } N_CH1_STRIDE @ 0x0B4;
+
+    reg {
+        name = "Channel output 2 luma address (VPSS_HAL_SetChnPicAddr)";
+        desc = "Node image offset 0x0B8. Slot order as CH_IMG_SIZE (word order, not a verified channel number). Per channel a triple (Y address, C address, strides); the stride word of the fourth triple is at 0xD0, not at 0xCC (as seen in the code).  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "val";
+            desc = "Physical address. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } val[31:0];
+    } N_CH2_Y @ 0x0B8;
+
+    reg {
+        name = "Channel output 2 chroma address";
+        desc = "Node image offset 0x0BC.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "val";
+            desc = "Physical address. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } val[31:0];
+    } N_CH2_C @ 0x0BC;
+
+    reg {
+        name = "Channel output 2 strides";
+        desc = "Node image offset 0x0C0.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "y_stride";
+            desc = "Luma stride. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } y_stride[15:0];
+        field {
+            name = "c_stride";
+            desc = "Chroma stride. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } c_stride[31:16];
+    } N_CH2_STRIDE @ 0x0C0;
+
+    reg {
+        name = "Channel output 3 luma address (VPSS_HAL_SetChnPicAddr)";
+        desc = "Node image offset 0x0C4. Slot order as CH_IMG_SIZE (word order, not a verified channel number). Per channel a triple (Y address, C address, strides); the stride word of the fourth triple is at 0xD0, not at 0xCC (as seen in the code).  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "val";
+            desc = "Physical address. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } val[31:0];
+    } N_CH3_Y @ 0x0C4;
+
+    reg {
+        name = "Channel output 3 chroma address";
+        desc = "Node image offset 0x0C8.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "val";
+            desc = "Physical address. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } val[31:0];
+    } N_CH3_C @ 0x0C8;
+
+    reg {
+        name = "Channel output 3 strides";
+        desc = "Node image offset 0x0D0.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "y_stride";
+            desc = "Luma stride. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } y_stride[15:0];
+        field {
+            name = "c_stride";
+            desc = "Chroma stride. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } c_stride[31:16];
+    } N_CH3_STRIDE @ 0x0D0;
+
+    reg {
+        name = "Reference-frame-read picture luma address";
+        desc = "Node image offset 0x0D4. VPSS_HAL_SetRfrPicAddr: first word of the picture triple.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "val";
+            desc = "Physical address. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } val[31:0];
+    } N_RFR_PIC_Y @ 0x0D4;
+
+    reg {
+        name = "Reference-frame-read picture chroma address";
+        desc = "Node image offset 0x0D8. Second word of the triple.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "val";
+            desc = "Physical address. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } val[31:0];
+    } N_RFR_PIC_C @ 0x0D8;
+
+    reg {
+        name = "Reference-frame-read picture strides";
+        desc = "Node image offset 0x0DC. Third word of the triple.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "y_stride";
+            desc = "Luma stride. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } y_stride[15:0];
+        field {
+            name = "c_stride";
+            desc = "Chroma stride. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } c_stride[31:16];
+    } N_RFR_PIC_STRIDE @ 0x0DC;
+
+    reg {
+        name = "Node ID";
+        desc = "Node image offset 0x0E0. VPSS_HAL_SetNodeID writes it into the node; the MMIO word at the same offset (VPSS_V100 VPSS_NODE_ID) reads back the ID of the node just completed (INFERRED, MEDIUM).  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "val";
+            desc = "Node ID chosen by software (a running counter in VPSS_COMM_HalListInt). POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } val[31:0];
+    } N_NODE_ID @ 0x0E0;
+
+    reg {
+        name = "Per-node mask";
+        desc = "Node image offset 0x0EC. VPSS_HAL_SetMask: VPSS_COMM_HalListInt writes 0 to every node of a list except the last, which gets 7. Most likely the interrupt/completion enable of the node (INFERRED, LOW-MEDIUM); the three set bits [2:0] could be the three outputs.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "mask";
+            desc = "Mask word; 0 for intermediate nodes, 7 for the last. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } mask[31:0];
+    } N_MASK @ 0x0EC;
+
+    reg {
+        name = "Channel scaler block 0, word 0 (VPSS_HAL_SetChnSclCfg)";
+        desc = "Node image offset 0x200. Four 8-word scaler blocks at 0x200, 0x220, 0x240, 0x260 (slot order as CH_IMG_SIZE). The vendor argument names are not in the module; the data sheet lists scaling and sharpening/peaking for the Hi3520D, so the blocks probably hold the horizontal/vertical scale factors, filter selects and enables of one channel (GUESS, LOW).  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "v0";
+            desc = "24-bit value (likely a scaler setting). POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } v0[23:0];
+        field {
+            name = "flag25";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } flag25[25:25];
+        field {
+            name = "flag26";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } flag26[26:26];
+        field {
+            name = "flag28";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } flag28[28:28];
+        field {
+            name = "flag29";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } flag29[29:29];
+        field {
+            name = "flag30";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } flag30[30:30];
+        field {
+            name = "flag31";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } flag31[31:31];
+    } N_SCL0_CFG0 @ 0x200;
+
+    reg {
+        name = "Channel scaler block 0, word 1";
+        desc = "Node image offset 0x204. Probably the horizontal scale factor (28-bit, GUESS, LOW).  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "v";
+            desc = "28-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } v[27:0];
+    } N_SCL0_CFG1 @ 0x204;
+
+    reg {
+        name = "Channel scaler block 0, word 2";
+        desc = "Node image offset 0x208. Probably the vertical scale factor (28-bit, GUESS, LOW).  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "v";
+            desc = "28-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } v[27:0];
+    } N_SCL0_CFG2 @ 0x208;
+
+    reg {
+        name = "Channel scaler block 0, word 3";
+        desc = "Node image offset 0x20C. Mixed fields.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "f19";
+            desc = "2-bit field. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } f19[20:19];
+        field {
+            name = "f21";
+            desc = "2-bit field. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } f21[22:21];
+        field {
+            name = "f23";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } f23[23:23];
+        field {
+            name = "f24";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } f24[24:24];
+        field {
+            name = "f26";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } f26[26:26];
+        field {
+            name = "f28";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } f28[28:28];
+        field {
+            name = "f29";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } f29[29:29];
+        field {
+            name = "f30";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } f30[30:30];
+        field {
+            name = "f31";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } f31[31:31];
+    } N_SCL0_CFG3 @ 0x20C;
+
+    reg {
+        name = "Channel scaler block 0, word 4";
+        desc = "Node image offset 0x210.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "v";
+            desc = "16-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } v[15:0];
+    } N_SCL0_CFG4 @ 0x210;
+
+    reg {
+        name = "Channel scaler block 0, word 5";
+        desc = "Node image offset 0x214.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "lo";
+            desc = "16-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } lo[15:0];
+        field {
+            name = "hi";
+            desc = "16-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } hi[31:16];
+    } N_SCL0_CFG5 @ 0x214;
+
+    reg {
+        name = "Channel scaler block 0, word 6";
+        desc = "Node image offset 0x218.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "a";
+            desc = "12-bit value (size/offset-like). POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } a[11:0];
+        field {
+            name = "b";
+            desc = "12-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } b[23:12];
+    } N_SCL0_CFG6 @ 0x218;
+
+    reg {
+        name = "Channel scaler block 0, word 7";
+        desc = "Node image offset 0x21C.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "a";
+            desc = "12-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } a[11:0];
+        field {
+            name = "b";
+            desc = "12-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } b[23:12];
+    } N_SCL0_CFG7 @ 0x21C;
+
+    reg {
+        name = "Channel scaler block 1, word 0 (VPSS_HAL_SetChnSclCfg)";
+        desc = "Node image offset 0x220. Four 8-word scaler blocks at 0x200, 0x220, 0x240, 0x260 (slot order as CH_IMG_SIZE). The vendor argument names are not in the module; the data sheet lists scaling and sharpening/peaking for the Hi3520D, so the blocks probably hold the horizontal/vertical scale factors, filter selects and enables of one channel (GUESS, LOW).  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "v0";
+            desc = "24-bit value (likely a scaler setting). POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } v0[23:0];
+        field {
+            name = "flag25";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } flag25[25:25];
+        field {
+            name = "flag26";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } flag26[26:26];
+        field {
+            name = "flag28";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } flag28[28:28];
+        field {
+            name = "flag29";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } flag29[29:29];
+        field {
+            name = "flag30";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } flag30[30:30];
+        field {
+            name = "flag31";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } flag31[31:31];
+    } N_SCL1_CFG0 @ 0x220;
+
+    reg {
+        name = "Channel scaler block 1, word 1";
+        desc = "Node image offset 0x224. Probably the horizontal scale factor (28-bit, GUESS, LOW).  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "v";
+            desc = "28-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } v[27:0];
+    } N_SCL1_CFG1 @ 0x224;
+
+    reg {
+        name = "Channel scaler block 1, word 2";
+        desc = "Node image offset 0x228. Probably the vertical scale factor (28-bit, GUESS, LOW).  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "v";
+            desc = "28-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } v[27:0];
+    } N_SCL1_CFG2 @ 0x228;
+
+    reg {
+        name = "Channel scaler block 1, word 3";
+        desc = "Node image offset 0x22C. Mixed fields.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "f19";
+            desc = "2-bit field. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } f19[20:19];
+        field {
+            name = "f21";
+            desc = "2-bit field. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } f21[22:21];
+        field {
+            name = "f23";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } f23[23:23];
+        field {
+            name = "f24";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } f24[24:24];
+        field {
+            name = "f26";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } f26[26:26];
+        field {
+            name = "f28";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } f28[28:28];
+        field {
+            name = "f29";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } f29[29:29];
+        field {
+            name = "f30";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } f30[30:30];
+        field {
+            name = "f31";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } f31[31:31];
+    } N_SCL1_CFG3 @ 0x22C;
+
+    reg {
+        name = "Channel scaler block 1, word 4";
+        desc = "Node image offset 0x230.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "v";
+            desc = "16-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } v[15:0];
+    } N_SCL1_CFG4 @ 0x230;
+
+    reg {
+        name = "Channel scaler block 1, word 5";
+        desc = "Node image offset 0x234.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "lo";
+            desc = "16-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } lo[15:0];
+        field {
+            name = "hi";
+            desc = "16-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } hi[31:16];
+    } N_SCL1_CFG5 @ 0x234;
+
+    reg {
+        name = "Channel scaler block 1, word 6";
+        desc = "Node image offset 0x238.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "a";
+            desc = "12-bit value (size/offset-like). POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } a[11:0];
+        field {
+            name = "b";
+            desc = "12-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } b[23:12];
+    } N_SCL1_CFG6 @ 0x238;
+
+    reg {
+        name = "Channel scaler block 1, word 7";
+        desc = "Node image offset 0x23C.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "a";
+            desc = "12-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } a[11:0];
+        field {
+            name = "b";
+            desc = "12-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } b[23:12];
+    } N_SCL1_CFG7 @ 0x23C;
+
+    reg {
+        name = "Channel scaler block 2, word 0 (VPSS_HAL_SetChnSclCfg)";
+        desc = "Node image offset 0x240. Four 8-word scaler blocks at 0x200, 0x220, 0x240, 0x260 (slot order as CH_IMG_SIZE). The vendor argument names are not in the module; the data sheet lists scaling and sharpening/peaking for the Hi3520D, so the blocks probably hold the horizontal/vertical scale factors, filter selects and enables of one channel (GUESS, LOW).  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "v0";
+            desc = "24-bit value (likely a scaler setting). POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } v0[23:0];
+        field {
+            name = "flag25";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } flag25[25:25];
+        field {
+            name = "flag26";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } flag26[26:26];
+        field {
+            name = "flag28";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } flag28[28:28];
+        field {
+            name = "flag29";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } flag29[29:29];
+        field {
+            name = "flag30";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } flag30[30:30];
+        field {
+            name = "flag31";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } flag31[31:31];
+    } N_SCL2_CFG0 @ 0x240;
+
+    reg {
+        name = "Channel scaler block 2, word 1";
+        desc = "Node image offset 0x244. Probably the horizontal scale factor (28-bit, GUESS, LOW).  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "v";
+            desc = "28-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } v[27:0];
+    } N_SCL2_CFG1 @ 0x244;
+
+    reg {
+        name = "Channel scaler block 2, word 2";
+        desc = "Node image offset 0x248. Probably the vertical scale factor (28-bit, GUESS, LOW).  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "v";
+            desc = "28-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } v[27:0];
+    } N_SCL2_CFG2 @ 0x248;
+
+    reg {
+        name = "Channel scaler block 2, word 3";
+        desc = "Node image offset 0x24C. Mixed fields.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "f19";
+            desc = "2-bit field. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } f19[20:19];
+        field {
+            name = "f21";
+            desc = "2-bit field. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } f21[22:21];
+        field {
+            name = "f23";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } f23[23:23];
+        field {
+            name = "f24";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } f24[24:24];
+        field {
+            name = "f26";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } f26[26:26];
+        field {
+            name = "f28";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } f28[28:28];
+        field {
+            name = "f29";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } f29[29:29];
+        field {
+            name = "f30";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } f30[30:30];
+        field {
+            name = "f31";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } f31[31:31];
+    } N_SCL2_CFG3 @ 0x24C;
+
+    reg {
+        name = "Channel scaler block 2, word 4";
+        desc = "Node image offset 0x250.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "v";
+            desc = "16-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } v[15:0];
+    } N_SCL2_CFG4 @ 0x250;
+
+    reg {
+        name = "Channel scaler block 2, word 5";
+        desc = "Node image offset 0x254.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "lo";
+            desc = "16-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } lo[15:0];
+        field {
+            name = "hi";
+            desc = "16-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } hi[31:16];
+    } N_SCL2_CFG5 @ 0x254;
+
+    reg {
+        name = "Channel scaler block 2, word 6";
+        desc = "Node image offset 0x258.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "a";
+            desc = "12-bit value (size/offset-like). POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } a[11:0];
+        field {
+            name = "b";
+            desc = "12-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } b[23:12];
+    } N_SCL2_CFG6 @ 0x258;
+
+    reg {
+        name = "Channel scaler block 2, word 7";
+        desc = "Node image offset 0x25C.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "a";
+            desc = "12-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } a[11:0];
+        field {
+            name = "b";
+            desc = "12-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } b[23:12];
+    } N_SCL2_CFG7 @ 0x25C;
+
+    reg {
+        name = "Channel scaler block 3, word 0 (VPSS_HAL_SetChnSclCfg)";
+        desc = "Node image offset 0x260. Four 8-word scaler blocks at 0x200, 0x220, 0x240, 0x260 (slot order as CH_IMG_SIZE). The vendor argument names are not in the module; the data sheet lists scaling and sharpening/peaking for the Hi3520D, so the blocks probably hold the horizontal/vertical scale factors, filter selects and enables of one channel (GUESS, LOW).  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "v0";
+            desc = "24-bit value (likely a scaler setting). POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } v0[23:0];
+        field {
+            name = "flag25";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } flag25[25:25];
+        field {
+            name = "flag26";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } flag26[26:26];
+        field {
+            name = "flag28";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } flag28[28:28];
+        field {
+            name = "flag29";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } flag29[29:29];
+        field {
+            name = "flag30";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } flag30[30:30];
+        field {
+            name = "flag31";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } flag31[31:31];
+    } N_SCL3_CFG0 @ 0x260;
+
+    reg {
+        name = "Channel scaler block 3, word 1";
+        desc = "Node image offset 0x264. Probably the horizontal scale factor (28-bit, GUESS, LOW).  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "v";
+            desc = "28-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } v[27:0];
+    } N_SCL3_CFG1 @ 0x264;
+
+    reg {
+        name = "Channel scaler block 3, word 2";
+        desc = "Node image offset 0x268. Probably the vertical scale factor (28-bit, GUESS, LOW).  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "v";
+            desc = "28-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } v[27:0];
+    } N_SCL3_CFG2 @ 0x268;
+
+    reg {
+        name = "Channel scaler block 3, word 3";
+        desc = "Node image offset 0x26C. Mixed fields.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "f19";
+            desc = "2-bit field. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } f19[20:19];
+        field {
+            name = "f21";
+            desc = "2-bit field. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } f21[22:21];
+        field {
+            name = "f23";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } f23[23:23];
+        field {
+            name = "f24";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } f24[24:24];
+        field {
+            name = "f26";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } f26[26:26];
+        field {
+            name = "f28";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } f28[28:28];
+        field {
+            name = "f29";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } f29[29:29];
+        field {
+            name = "f30";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } f30[30:30];
+        field {
+            name = "f31";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } f31[31:31];
+    } N_SCL3_CFG3 @ 0x26C;
+
+    reg {
+        name = "Channel scaler block 3, word 4";
+        desc = "Node image offset 0x270.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "v";
+            desc = "16-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } v[15:0];
+    } N_SCL3_CFG4 @ 0x270;
+
+    reg {
+        name = "Channel scaler block 3, word 5";
+        desc = "Node image offset 0x274.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "lo";
+            desc = "16-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } lo[15:0];
+        field {
+            name = "hi";
+            desc = "16-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } hi[31:16];
+    } N_SCL3_CFG5 @ 0x274;
+
+    reg {
+        name = "Channel scaler block 3, word 6";
+        desc = "Node image offset 0x278.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "a";
+            desc = "12-bit value (size/offset-like). POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } a[11:0];
+        field {
+            name = "b";
+            desc = "12-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } b[23:12];
+    } N_SCL3_CFG6 @ 0x278;
+
+    reg {
+        name = "Channel scaler block 3, word 7";
+        desc = "Node image offset 0x27C.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "a";
+            desc = "12-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } a[11:0];
+        field {
+            name = "b";
+            desc = "12-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } b[23:12];
+    } N_SCL3_CFG7 @ 0x27C;
+
+    reg {
+        name = "Pre-scaler configuration word 0 (VPSS_HAL_SetPreSclCfg)";
+        desc = "Node image offset 0x280. One pre-scaler block at 0x280 (the data sheet's block processing / half-size pre-scale of wide pictures; GUESS, LOW).  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "flag25";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } flag25[25:25];
+        field {
+            name = "flag26";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } flag26[26:26];
+        field {
+            name = "flag28";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } flag28[28:28];
+        field {
+            name = "flag29";
+            desc = "Flag. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } flag29[29:29];
+    } N_PRESCL_CFG0 @ 0x280;
+
+    reg {
+        name = "Pre-scaler word 1";
+        desc = "Node image offset 0x284.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "v";
+            desc = "28-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } v[27:0];
+    } N_PRESCL_CFG1 @ 0x284;
+
+    reg {
+        name = "Pre-scaler word 2";
+        desc = "Node image offset 0x288.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "v";
+            desc = "28-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } v[27:0];
+    } N_PRESCL_CFG2 @ 0x288;
+
+    reg {
+        name = "Pre-scaler word 3";
+        desc = "Node image offset 0x28C.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "v";
+            desc = "13-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } v[12:0];
+    } N_PRESCL_CFG3 @ 0x28C;
+
+    reg {
+        name = "Histogram configuration (VPSS_HAL_SetHistCfg)";
+        desc = "Node image offset 0x2F0.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "v0";
+            desc = "8-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } v0[7:0];
+        field {
+            name = "v1";
+            desc = "4-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } v1[11:8];
+        field {
+            name = "v2";
+            desc = "8-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } v2[23:16];
+        field {
+            name = "v3";
+            desc = "4-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } v3[27:24];
+    } N_HIST_CFG @ 0x2F0;
+
+    reg {
+        name = "Pre-scaler coefficient table address 0 (VPSS_HAL_SetPreSclCoeff)";
+        desc = "Node image offset 0x3A0. Physical address of a coefficient table in DDR; the HAL panics if (addr & 15) != 0, so 16-byte aligned.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "val";
+            desc = "Table address, 16-byte aligned. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } val[31:0];
+    } N_PRESCL_COEF_0 @ 0x3A0;
+
+    reg {
+        name = "Pre-scaler coefficient table address 1";
+        desc = "Node image offset 0x3A8. See PRESCL_COEF_0.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "val";
+            desc = "Table address, 16-byte aligned. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } val[31:0];
+    } N_PRESCL_COEF_1 @ 0x3A8;
+
+    reg {
+        name = "Channel scaler coefficient table address 0.0 (VPSS_HAL_SetChnSclCoeff)";
+        desc = "Node image offset 0x3B0. Four table addresses per channel slot (SetChnSclCoeff takes four pointers and requires each 16-byte aligned; probably horizontal/vertical, luma/chroma; GUESS, LOW). Slot order as CH_IMG_SIZE. The coefficient table format and contents are NOT known (the vendor converts them in VPSS_DRV_Conver_ScaleCoef from tables inside the module).  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "val";
+            desc = "Table address, 16-byte aligned. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } val[31:0];
+    } N_CH0_COEF_0 @ 0x3B0;
+
+    reg {
+        name = "Channel scaler coefficient table address 0.1 (VPSS_HAL_SetChnSclCoeff)";
+        desc = "Node image offset 0x3B4. Four table addresses per channel slot (SetChnSclCoeff takes four pointers and requires each 16-byte aligned; probably horizontal/vertical, luma/chroma; GUESS, LOW). Slot order as CH_IMG_SIZE. The coefficient table format and contents are NOT known (the vendor converts them in VPSS_DRV_Conver_ScaleCoef from tables inside the module).  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "val";
+            desc = "Table address, 16-byte aligned. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } val[31:0];
+    } N_CH0_COEF_1 @ 0x3B4;
+
+    reg {
+        name = "Channel scaler coefficient table address 0.2 (VPSS_HAL_SetChnSclCoeff)";
+        desc = "Node image offset 0x3B8. Four table addresses per channel slot (SetChnSclCoeff takes four pointers and requires each 16-byte aligned; probably horizontal/vertical, luma/chroma; GUESS, LOW). Slot order as CH_IMG_SIZE. The coefficient table format and contents are NOT known (the vendor converts them in VPSS_DRV_Conver_ScaleCoef from tables inside the module).  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "val";
+            desc = "Table address, 16-byte aligned. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } val[31:0];
+    } N_CH0_COEF_2 @ 0x3B8;
+
+    reg {
+        name = "Channel scaler coefficient table address 0.3 (VPSS_HAL_SetChnSclCoeff)";
+        desc = "Node image offset 0x3BC. Four table addresses per channel slot (SetChnSclCoeff takes four pointers and requires each 16-byte aligned; probably horizontal/vertical, luma/chroma; GUESS, LOW). Slot order as CH_IMG_SIZE. The coefficient table format and contents are NOT known (the vendor converts them in VPSS_DRV_Conver_ScaleCoef from tables inside the module).  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "val";
+            desc = "Table address, 16-byte aligned. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } val[31:0];
+    } N_CH0_COEF_3 @ 0x3BC;
+
+    reg {
+        name = "Channel scaler coefficient table address 1.0 (VPSS_HAL_SetChnSclCoeff)";
+        desc = "Node image offset 0x3C0. Four table addresses per channel slot (SetChnSclCoeff takes four pointers and requires each 16-byte aligned; probably horizontal/vertical, luma/chroma; GUESS, LOW). Slot order as CH_IMG_SIZE. The coefficient table format and contents are NOT known (the vendor converts them in VPSS_DRV_Conver_ScaleCoef from tables inside the module).  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "val";
+            desc = "Table address, 16-byte aligned. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } val[31:0];
+    } N_CH1_COEF_0 @ 0x3C0;
+
+    reg {
+        name = "Channel scaler coefficient table address 1.1 (VPSS_HAL_SetChnSclCoeff)";
+        desc = "Node image offset 0x3C4. Four table addresses per channel slot (SetChnSclCoeff takes four pointers and requires each 16-byte aligned; probably horizontal/vertical, luma/chroma; GUESS, LOW). Slot order as CH_IMG_SIZE. The coefficient table format and contents are NOT known (the vendor converts them in VPSS_DRV_Conver_ScaleCoef from tables inside the module).  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "val";
+            desc = "Table address, 16-byte aligned. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } val[31:0];
+    } N_CH1_COEF_1 @ 0x3C4;
+
+    reg {
+        name = "Channel scaler coefficient table address 1.2 (VPSS_HAL_SetChnSclCoeff)";
+        desc = "Node image offset 0x3C8. Four table addresses per channel slot (SetChnSclCoeff takes four pointers and requires each 16-byte aligned; probably horizontal/vertical, luma/chroma; GUESS, LOW). Slot order as CH_IMG_SIZE. The coefficient table format and contents are NOT known (the vendor converts them in VPSS_DRV_Conver_ScaleCoef from tables inside the module).  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "val";
+            desc = "Table address, 16-byte aligned. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } val[31:0];
+    } N_CH1_COEF_2 @ 0x3C8;
+
+    reg {
+        name = "Channel scaler coefficient table address 1.3 (VPSS_HAL_SetChnSclCoeff)";
+        desc = "Node image offset 0x3CC. Four table addresses per channel slot (SetChnSclCoeff takes four pointers and requires each 16-byte aligned; probably horizontal/vertical, luma/chroma; GUESS, LOW). Slot order as CH_IMG_SIZE. The coefficient table format and contents are NOT known (the vendor converts them in VPSS_DRV_Conver_ScaleCoef from tables inside the module).  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "val";
+            desc = "Table address, 16-byte aligned. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } val[31:0];
+    } N_CH1_COEF_3 @ 0x3CC;
+
+    reg {
+        name = "Channel scaler coefficient table address 2.0 (VPSS_HAL_SetChnSclCoeff)";
+        desc = "Node image offset 0x3D0. Four table addresses per channel slot (SetChnSclCoeff takes four pointers and requires each 16-byte aligned; probably horizontal/vertical, luma/chroma; GUESS, LOW). Slot order as CH_IMG_SIZE. The coefficient table format and contents are NOT known (the vendor converts them in VPSS_DRV_Conver_ScaleCoef from tables inside the module).  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "val";
+            desc = "Table address, 16-byte aligned. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } val[31:0];
+    } N_CH2_COEF_0 @ 0x3D0;
+
+    reg {
+        name = "Channel scaler coefficient table address 2.1 (VPSS_HAL_SetChnSclCoeff)";
+        desc = "Node image offset 0x3D4. Four table addresses per channel slot (SetChnSclCoeff takes four pointers and requires each 16-byte aligned; probably horizontal/vertical, luma/chroma; GUESS, LOW). Slot order as CH_IMG_SIZE. The coefficient table format and contents are NOT known (the vendor converts them in VPSS_DRV_Conver_ScaleCoef from tables inside the module).  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "val";
+            desc = "Table address, 16-byte aligned. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } val[31:0];
+    } N_CH2_COEF_1 @ 0x3D4;
+
+    reg {
+        name = "Channel scaler coefficient table address 2.2 (VPSS_HAL_SetChnSclCoeff)";
+        desc = "Node image offset 0x3D8. Four table addresses per channel slot (SetChnSclCoeff takes four pointers and requires each 16-byte aligned; probably horizontal/vertical, luma/chroma; GUESS, LOW). Slot order as CH_IMG_SIZE. The coefficient table format and contents are NOT known (the vendor converts them in VPSS_DRV_Conver_ScaleCoef from tables inside the module).  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "val";
+            desc = "Table address, 16-byte aligned. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } val[31:0];
+    } N_CH2_COEF_2 @ 0x3D8;
+
+    reg {
+        name = "Channel scaler coefficient table address 2.3 (VPSS_HAL_SetChnSclCoeff)";
+        desc = "Node image offset 0x3DC. Four table addresses per channel slot (SetChnSclCoeff takes four pointers and requires each 16-byte aligned; probably horizontal/vertical, luma/chroma; GUESS, LOW). Slot order as CH_IMG_SIZE. The coefficient table format and contents are NOT known (the vendor converts them in VPSS_DRV_Conver_ScaleCoef from tables inside the module).  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "val";
+            desc = "Table address, 16-byte aligned. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } val[31:0];
+    } N_CH2_COEF_3 @ 0x3DC;
+
+    reg {
+        name = "Channel scaler coefficient table address 3.0 (VPSS_HAL_SetChnSclCoeff)";
+        desc = "Node image offset 0x3E0. Four table addresses per channel slot (SetChnSclCoeff takes four pointers and requires each 16-byte aligned; probably horizontal/vertical, luma/chroma; GUESS, LOW). Slot order as CH_IMG_SIZE. The coefficient table format and contents are NOT known (the vendor converts them in VPSS_DRV_Conver_ScaleCoef from tables inside the module).  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "val";
+            desc = "Table address, 16-byte aligned. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } val[31:0];
+    } N_CH3_COEF_0 @ 0x3E0;
+
+    reg {
+        name = "Channel scaler coefficient table address 3.1 (VPSS_HAL_SetChnSclCoeff)";
+        desc = "Node image offset 0x3E4. Four table addresses per channel slot (SetChnSclCoeff takes four pointers and requires each 16-byte aligned; probably horizontal/vertical, luma/chroma; GUESS, LOW). Slot order as CH_IMG_SIZE. The coefficient table format and contents are NOT known (the vendor converts them in VPSS_DRV_Conver_ScaleCoef from tables inside the module).  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "val";
+            desc = "Table address, 16-byte aligned. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } val[31:0];
+    } N_CH3_COEF_1 @ 0x3E4;
+
+    reg {
+        name = "Channel scaler coefficient table address 3.2 (VPSS_HAL_SetChnSclCoeff)";
+        desc = "Node image offset 0x3E8. Four table addresses per channel slot (SetChnSclCoeff takes four pointers and requires each 16-byte aligned; probably horizontal/vertical, luma/chroma; GUESS, LOW). Slot order as CH_IMG_SIZE. The coefficient table format and contents are NOT known (the vendor converts them in VPSS_DRV_Conver_ScaleCoef from tables inside the module).  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "val";
+            desc = "Table address, 16-byte aligned. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } val[31:0];
+    } N_CH3_COEF_2 @ 0x3E8;
+
+    reg {
+        name = "Channel scaler coefficient table address 3.3 (VPSS_HAL_SetChnSclCoeff)";
+        desc = "Node image offset 0x3EC. Four table addresses per channel slot (SetChnSclCoeff takes four pointers and requires each 16-byte aligned; probably horizontal/vertical, luma/chroma; GUESS, LOW). Slot order as CH_IMG_SIZE. The coefficient table format and contents are NOT known (the vendor converts them in VPSS_DRV_Conver_ScaleCoef from tables inside the module).  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "val";
+            desc = "Table address, 16-byte aligned. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } val[31:0];
+    } N_CH3_COEF_3 @ 0x3EC;
+
+    reg {
+        name = "Next node address";
+        desc = "Node image offset 0x3F0. VPSS_HAL_SetNext writes the physical address of the next node here, 0 ends the list (the same offset is the MMIO next-node register that the start sequence loads with the first node address). INFERRED, MEDIUM.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "val";
+            desc = "Next node physical address, 0 = last node. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } val[31:0];
+    } N_NEXT @ 0x3F0;
+
+    reg {
+        name = "Gamma table address (VPSS_HAL_SetGammaAddr)";
+        desc = "Node image offset 0x3F4.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "val";
+            desc = "Physical address. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } val[31:0];
+    } N_GAMMA_ADDR @ 0x3F4;
+
+    reg {
+        name = "Miscellaneous word (VPSS_HAL_SetMiscellaneous)";
+        desc = "Node image offset 0x414. Bits [23:16] set by SetMiscellaneous from the model parameter (values 3 and 100 appear in VPSS_DRV_SetModelParam). The MMIO register at the same offset is written by VPSS_HAL_SetOutstanding (see VPSS_OUTSTANDING).  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "misc";
+            desc = "8-bit value. POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } misc[23:16];
+    } N_MISC @ 0x414;
+
+    reg {
+        name = "Node timeout (VPSS_HAL_SetTimeOut)";
+        desc = "Node image offset 0x41C.  Source: hi3520D_vpss.ko. Not verified on hardware.";
+        field {
+            name = "val";
+            desc = "Timeout value (unit unknown). POSITION seen in hi3520D_vpss.ko (HIGH); MEANING INFERRED from the HAL function name only (LOW) Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } val[31:0];
+    } N_TIMEOUT @ 0x41C;
+
 };
 
 `endif

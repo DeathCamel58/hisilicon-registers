@@ -1105,7 +1105,7 @@ regfile eHISI_TDE_G0 {
 
 regfile eHISI_TDE_G1 {
     name = "HiSilicon TDE, Hi3520D / Hi3515A / Hi3515C generation (vendor-derived)";
-    desc = "VENDOR-DERIVED, CONFIDENCE MEDIUM/LOW, NOT VERIFIED ON HARDWARE. No data sheet has a TDE register table. Static analysis (objdump, nothing executed) of hi3520D_tde.ko (HiSilicon MPP V2.0.5.1, Linux 3.0.8, unstripped, HAL TdeHal*; init: ioremap of 0x20610000, size 0x3000, request_irq 70 = GIC ID 70, matching the data sheet). The list-control block at 0x800 (version, reset, status, interrupt, list control, next node, bus limiter) has the same offsets and meaning as the later Hi3516A/Hi3518E/Hi3521 generation (eHISI_TDE_G2), whose names follow the HiSTB v1 driver; this module differs in three ways: (1) every write to that block is repeated at +0x1000 (second copy 0x1800-0x1844, only the first is read), (2) it does not use the 0x868/0x86C registers, (3) jobs are submitted through a second register bank at 0x2000-0x2054 (TdeHalSubJob, the interrupt path reads 0x2030-0x2040), not through the async list node-address register. The node itself is a DDR structure of 42 words followed by a 64 bit update mask at +0xA8/+0xAC (TdeHalNodeGetNdSize), the layout of the HiSTB v1 node (see eHISI_TDE_V1). Registers not listed were not seen accessed. Documented in docs/rdl-campaign/tde-vendor.md.";
+    desc = "VENDOR-DERIVED, CONFIDENCE MEDIUM/LOW, NOT VERIFIED ON HARDWARE. No data sheet has a TDE register table. Static analysis (objdump, nothing executed) of hi3520D_tde.ko (HiSilicon MPP V2.0.5.1, Linux 3.0.8, unstripped, HAL TdeHal*; init: ioremap of 0x20610000, size 0x3000, request_irq 70 = GIC ID 70, matching the data sheet). The list-control block at 0x800 (version, reset, status, interrupt, list control, next node, bus limiter) has the same offsets and meaning as the later Hi3516A/Hi3518E/Hi3521 generation (eHISI_TDE_G2), whose names follow the HiSTB v1 driver; this module differs in three ways: (1) every write to that block is repeated at +0x1000 (second copy 0x1800-0x1844, only the first is read), (2) it does not use the 0x868/0x86C registers, (3) jobs are submitted through a second register bank at 0x2000-0x2054 (TdeHalSubJob, the interrupt path reads 0x2030-0x2040), not through the async list node-address register. The node itself is a DDR structure of 42 words followed by a 64 bit update mask at +0xA8/+0xAC (TdeHalNodeGetNdSize), the layout of the HiSTB v1 node (see eHISI_TDE_V1). Registers not listed were not seen accessed. Documented in docs/rdl-campaign/tde-vendor.md. SECOND PASS (2026-11-11, docs/rdl-campaign/tde-vendor.md): (1) bring-up order in the vendor module (HIGH): SYS command 0x51 = SYS_HAL_TdeClkEn(1) sets PERI_CRG22 (0x20030058) bit 1, then command 0x50 = SYS_HAL_TdeResetSel(0) clears bit 0, then the bus limiter and the 0x2050 write; (2) the job node (DDR) is documented in eHISI_TDE_G1_NODE (42 words, bit fields; positions verified in this module, names from HiSTB v1); (3) the 0x2000 bank looks like a job FIFO (handle, node address, control, 64 bit update mask, completion count/handle); register names given in the UNK_ descriptions are GUESSES; (4) TdeHalNodeSetRop is an empty stub in this module (returns 0xA064800B): ROP is not usable with this vendor build; pattern fill (modes 9 and 10 of TdeHalNodeSetBaseOperate) and quick copy/fill exist; (5) at least five resize filter-coefficient tables are loaded into MMZ memory at init (TdeHalInit/TdeHalLoadFiltParam) and referenced by node words HF_COEF_ADDR/VF_COEF_ADDR.";
 
     reg {
         name = "TDE version / ID";
@@ -1152,7 +1152,7 @@ regfile eHISI_TDE_G1 {
 
     reg {
         name = "TDE interrupt status / mask";
-        desc = "TdeHalCtlIntStats reads it and writes the value back (acknowledge, write-1-clear); TdeHalCtlReset/TdeHalInit/TdeHalResumeInit write 0x800F001F. In the HiSTB v1 driver the register is split [15:0] status and [31:16] mask (inferred, LOW). The module writes every register of this bank twice, at this offset and at +0x1000 (a second copy of the bank at 0x1800-0x1844; the mirror is only ever written, except TDE_INT which is read and written back at both); reads use the first copy. Source: vendor module hi3520D_tde.ko (TdeHalCtlIntStats, TdeHalCtlReset), confidence MEDIUM, static analysis of the disassembly. Not verified on hardware.";
+        desc = "TdeHalCtlIntStats reads it and writes the value back (acknowledge, write-1-clear); TdeHalCtlReset/TdeHalInit/TdeHalResumeInit write 0x800F001F. In the HiSTB v1 driver the register is split [15:0] status and [31:16] mask (inferred, LOW). The module writes every register of this bank twice, at this offset and at +0x1000 (a second copy of the bank at 0x1800-0x1844; the mirror is only ever written, except TDE_INT which is read and written back at both); reads use the first copy. Source: vendor module hi3520D_tde.ko (TdeHalCtlIntStats, TdeHalCtlReset), confidence MEDIUM, static analysis of the disassembly. Not verified on hardware. SECOND PASS: the interrupt service routine tde_osr_isr does NOT read this register; the only function that reads it (TdeHalCtlIntStats, which reads and writes back 0x818 and 0x1818 and returns the 0x1818 value) has no caller inside hi3520D_tde.ko, and the completion path uses the 0x2000 bank. Meaning of the status bits is therefore still unknown (the node's INS.aq_irq_mask = 8 enables the node-complete interrupt, INFERRED). The module never calls TdeHalCtlReset either; the engine reset is the CRG reset bit (PERI_CRG22 bit 0).";
 
         field {
             name = "value";
@@ -1221,7 +1221,7 @@ regfile eHISI_TDE_G1 {
 
     reg {
         name = "UNK_2000";
-        desc = "Read by TdeHalSubJob: bit 0 set means busy, the job is refused (-1). This is probably the synchronous-queue status (the data sheet says the engine has a sync and an async list). Access observed: read, bit 0 tested. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+        desc = "Read by TdeHalSubJob: bit 0 set means busy, the job is refused (-1). This is probably the synchronous-queue status (the data sheet says the engine has a sync and an async list). Access observed: read, bit 0 tested. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware. SECOND PASS: refused when bit 0 is set, i.e. a submit FIFO full/busy flag (INFERRED, MEDIUM). GUESS name: SUBMIT_STATUS.";
 
         field {
             name = "busy_unk";
@@ -1240,7 +1240,7 @@ regfile eHISI_TDE_G1 {
 
     reg {
         name = "UNK_2008";
-        desc = "Written with 0 as the last register write of TdeHalSubJob (after the node address, i.e. probably the submit/start trigger of the 0x2000 bank). Access observed: written, value 0. Neighbors: UNK_2010..UNK_201C. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+        desc = "Written with 0 as the last register write of TdeHalSubJob (after the node address, i.e. probably the submit/start trigger of the 0x2000 bank). Access observed: written, value 0. Neighbors: UNK_2010..UNK_201C. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware. SECOND PASS: GUESS name: SUBMIT (write 0 = submit the staged job), confidence MEDIUM.";
 
         field {
             name = "value";
@@ -1252,7 +1252,7 @@ regfile eHISI_TDE_G1 {
 
     reg {
         name = "UNK_2010";
-        desc = "Written by TdeHalSubJob with its first argument (a job/handle word of the caller). Access observed: written. Neighbors: UNK_2014 (node address). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+        desc = "Written by TdeHalSubJob with its first argument (a job/handle word of the caller). Access observed: written. Neighbors: UNK_2014 (node address). Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware. SECOND PASS (2026-11-11, docs/rdl-campaign/tde-vendor.md): the value is the job handle (TdeOsiListSubJob passes the handle of the job, [job+8]); the interrupt path gets the same handle back from UNK_2038 bits [7:0] and uses it to find the finished job. GUESS name: JOB_HANDLE, confidence MEDIUM.";
 
         field {
             name = "value";
@@ -1264,7 +1264,7 @@ regfile eHISI_TDE_G1 {
 
     reg {
         name = "UNK_2014";
-        desc = "Written by TdeHalSubJob with the physical address of the node (wgetphy of the node buffer + 32, same address convention as the other generations' node address register). Access observed: written. Probably the node (list) address of the 0x2000 bank, inferred, LOW. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+        desc = "Written by TdeHalSubJob with the physical address of the node (wgetphy of the node buffer + 32, same address convention as the other generations' node address register). Access observed: written. Probably the node (list) address of the 0x2000 bank, inferred, LOW. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware. SECOND PASS: the address points at the compact node (eHISI_TDE_G1_NODE: only the words with an update-mask bit set, then next address and next mask). GUESS name: NODE_ADDR, confidence MEDIUM.";
 
         field {
             name = "value";
@@ -1276,7 +1276,7 @@ regfile eHISI_TDE_G1 {
 
     reg {
         name = "UNK_2018";
-        desc = "Written by TdeHalSubJob with 0x01000000 (bit 24 set, bits [23:20] = 0), the same bit layout as TDE_AQ_CTRL (bit 24 enable, [23:20] mode) with mode 0, so probably the control register of this bank (inferred, LOW). Access observed: written. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+        desc = "Written by TdeHalSubJob with 0x01000000 (bit 24 set, bits [23:20] = 0), the same bit layout as TDE_AQ_CTRL (bit 24 enable, [23:20] mode) with mode 0, so probably the control register of this bank (inferred, LOW). Access observed: written. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware. SECOND PASS: GUESS name: SUBMIT_CTRL, confidence MEDIUM.";
 
         field {
             name = "value";
@@ -1288,7 +1288,7 @@ regfile eHISI_TDE_G1 {
 
     reg {
         name = "UNK_201C";
-        desc = "Written by TdeHalSubJob with its third argument (a word supplied by the caller, probably the update mask of the node). Access observed: written. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+        desc = "Written by TdeHalSubJob with its third argument (a word supplied by the caller, probably the update mask of the node). Access observed: written. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware. SECOND PASS: the register pair UNK_201C (low) and UNK_2054 (high) takes the 64 bit update mask of the first node (TdeOsiListSubJob loads it as a 64 bit value from the node record and TdeHalSubJob passes the two halves to these registers). GUESS name: NODE_UPDATE_LO, confidence MEDIUM.";
 
         field {
             name = "value";
@@ -1300,7 +1300,7 @@ regfile eHISI_TDE_G1 {
 
     reg {
         name = "UNK_2030";
-        desc = "Read by TdeHalCtlFifoIntStats (interrupt service path): a value of 0xFFFFFFFF makes the module print a diagnostic and the value is passed on to TdeOsiListIntProc as the first word of the status record. Access observed: read. Neighbors: UNK_2038, UNK_2040. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+        desc = "Read by TdeHalCtlFifoIntStats (interrupt service path): a value of 0xFFFFFFFF makes the module print a diagnostic and the value is passed on to TdeOsiListIntProc as the first word of the status record. Access observed: read. Neighbors: UNK_2038, UNK_2040. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware. SECOND PASS: the interrupt service loop (TdeOsiListIntProc) reads the status record, completes the job whose handle is in UNK_2038, submits the next waiting job and repeats while this first word is greater than 1, so this word is probably a count of completion records (INFERRED, LOW-MEDIUM; value 0xFFFFFFFF is reported as an error). GUESS name: DONE_COUNT.";
 
         field {
             name = "value";
@@ -1312,7 +1312,7 @@ regfile eHISI_TDE_G1 {
 
     reg {
         name = "UNK_2038";
-        desc = "Read by TdeHalCtlFifoIntStats; the low 8 bits are stored as the second word of the status record, which TdeOsiListIntProc uses as the key to find the finished job (job handle) in its pending list. Access observed: read, bits [7:0] used. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+        desc = "Read by TdeHalCtlFifoIntStats; the low 8 bits are stored as the second word of the status record, which TdeOsiListIntProc uses as the key to find the finished job (job handle) in its pending list. Access observed: read, bits [7:0] used. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware. SECOND PASS: handle of the finished job. Reading it probably pops the completion FIFO (INFERRED: the ISR reads three words per record and loops). GUESS name: DONE_HANDLE, confidence MEDIUM.";
 
         field {
             name = "handle_unk";
@@ -1355,7 +1355,7 @@ regfile eHISI_TDE_G1 {
 
     reg {
         name = "UNK_2054";
-        desc = "Written by TdeHalSubJob with its fourth argument (caller-supplied word). Access observed: written. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware.";
+        desc = "Written by TdeHalSubJob with its fourth argument (caller-supplied word). Access observed: written. Unknown purpose, vendor-observed only, confidence LOW, not verified on hardware. SECOND PASS: upper 32 bits of the update mask (see UNK_201C). GUESS name: NODE_UPDATE_HI, confidence MEDIUM.";
 
         field {
             name = "value";
@@ -1424,6 +1424,1061 @@ regfile eHISI_TDE_G1 {
             hw = rw;
         } value[31:0];
     } UNK_1844 @ 0x1844;
+};
+
+regfile eHISI_TDE_G1_NODE {
+    name = "HiSilicon TDE, Hi3520D job node image (in DDR, NOT MMIO registers)";
+    desc = "NOT A REGISTER FILE: this is the layout of one hardware job node in DDR, described as a regfile only so that the words and bit fields can be documented here. NOT INSTANTIATED. Vendor-derived (static analysis of hi3520D_tde.ko, docs/rdl-campaign/tde-vendor.md), NOT VERIFIED ON HARDWARE. Confidence per field: a field note 'VERIFIED IN THE HI3520D MODULE' means the bit position was read from the Hi3520D module disassembly (HIGH; every bfi/orr into the node word was checked against the HiSTB v1 layout and matched; names and meanings come from the HiSTB v1 driver names, so the MEANING of a named bit is MEDIUM); a field note 'HiSTB v1 layout only' means only the HiSTB layout is known (INFERRED, MEDIUM-LOW). STRUCTURE (HIGH): the module builds a software node whose hardware part is 42 words at offsets 0x00-0xA4 plus a 64 bit update mask at +0xA8/+0xAC (bit n = word n was set; TdeHalNodeGetNdSize accepts bits 0..41). The node the engine reads (TdeHalNodeMakeNd) is COMPACT: only the words whose update-mask bit is set, in index order, followed by 12 bytes (next-node physical address, next update mask low, next update mask high; TdeHalFillLastNodeNextInfo writes them into the last three words, 0 = end of list). Allocated size = 44 + 4 * popcount(mask), with a 32 byte software header in front (the hardware address is node + 32, wgetphy(node + 32)). TdeHalNodeInitNd zeroes 0xD8 bytes, sets update mask = 1 (word 0 only), INS.aq_irq_mask = 8, clears TAR_TYPE bits 24 and 25 (scan direction). Words must be 32 bit aligned; the node address written to the engine is a physical address below 4 GiB. Coordinates are 12 bits (0..4095), pitch 16 bits.";
+    reg {
+        name = "Instruction word (node word 0)";
+        desc = "Node word 0 at node offset 0x00. Selects the operation. The module starts every node with only this word updated and AqIrqMask = 8 (TdeHalNodeInitNd). Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names).";
+        field {
+            name = "src1_mod";
+            desc = "Source 1 mode: 0 disabled, 1 bitmap, 2 pattern, 3 fill, 5 quick copy, 7 quick fill (TdeHalNodeSetBaseOperate switch: the 11 cases and the [2:0] field position are in the module, the values 0, 1 seen directly; 2, 3, 5, 7 by the HiSTB enum, MEDIUM). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } src1_mod[2:0];
+        field {
+            name = "src2_mod";
+            desc = "Source 2 mode: 0 disabled, 1 bitmap, 2 pattern, 3 fill (SetBaseOperate). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } src2_mod[4:3];
+        field {
+            name = "ics_conv";
+            desc = "Input color space conversion enable (HiSTB name IcsConv). HiSTB v1 layout only (MEDIUM, INFERRED: not seen in the Hi3520D module code). Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } ics_conv[5:5];
+        field {
+            name = "resize";
+            desc = "2D resize enable (HiSTB name Resize); set by TdeHalNodeSetResize, bit not isolated in the module. HiSTB v1 layout only (MEDIUM, INFERRED: not seen in the Hi3520D module code). Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } resize[6:6];
+        field {
+            name = "dfe_en";
+            desc = "De-flicker enable (set with 0x80 by TdeHalNodeSetFlicker). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } dfe_en[7:7];
+        field {
+            name = "y1_en";
+            desc = "Y1 channel enable: macroblock source 1 (set with 0x100 by TdeHalNodeSetSrc1 for MB formats). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } y1_en[8:8];
+        field {
+            name = "y2_en";
+            desc = "Y2 channel enable: macroblock source 2 (set with 0x200 by TdeHalNodeSetSrc2 for MB formats). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } y2_en[9:9];
+        field {
+            name = "clut";
+            desc = "CLUT enable (set with 0x800 by TdeHalNodeSetClutOpt). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } clut[11:11];
+        field {
+            name = "color_key";
+            desc = "Color key enable (set with 0x1000 by TdeHalNodeSetColorKey). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } color_key[12:12];
+        field {
+            name = "icsc_sel";
+            desc = "Input color space conversion select (HiSTB name IcscSel). HiSTB v1 layout only (MEDIUM, INFERRED: not seen in the Hi3520D module code). Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } icsc_sel[13:13];
+        field {
+            name = "clip";
+            desc = "Clip enable (set with 0x4000 by TdeHalNodeSetClipping and InitChildNd). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } clip[14:14];
+        field {
+            name = "mb_mode";
+            desc = "Macroblock operation mode (3 bits, TdeHalNodeSetMbMode). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } mb_mode[17:15];
+        field {
+            name = "mb_en";
+            desc = "Macroblock operation enable (HiSTB name MbEn); BaseOperate sets it for the MB modes (MbEn named in the HiSTB union). HiSTB v1 layout only (MEDIUM, INFERRED: not seen in the Hi3520D module code). Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } mb_en[18:18];
+        field {
+            name = "aq_irq_mask";
+            desc = "Asynchronous list interrupt mask: TdeHalNodeInitNd and InitChildNd write the value 8 (bit 22) into every node; the HiSTB name for the 8 is the node-complete interrupt enable (INFERRED, MEDIUM). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } aq_irq_mask[22:19];
+        field {
+            name = "sq_irq_mask";
+            desc = "Synchronous list interrupt mask (HiSTB name SqIrqMask). HiSTB v1 layout only (MEDIUM, INFERRED: not seen in the Hi3520D module code). Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } sq_irq_mask[27:23];
+        field {
+            name = "ocs_conv";
+            desc = "Output color space conversion enable (HiSTB name OcsConv). HiSTB v1 layout only (MEDIUM, INFERRED: not seen in the Hi3520D module code). Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } ocs_conv[28:28];
+        field {
+            name = "block_flag";
+            desc = "Block (slice) flag for wide pictures (HiSTB name BlockFlag). HiSTB v1 layout only (MEDIUM, INFERRED: not seen in the Hi3520D module code). Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } block_flag[29:29];
+        field {
+            name = "first_block";
+            desc = "First block flag. HiSTB v1 layout only (MEDIUM, INFERRED: not seen in the Hi3520D module code). Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } first_block[30:30];
+        field {
+            name = "last_block";
+            desc = "Last block flag. HiSTB v1 layout only (MEDIUM, INFERRED: not seen in the Hi3520D module code). Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } last_block[31:31];
+    } NODE_INS @ 0x00;
+
+    reg {
+        name = "Source 1 address";
+        desc = "Node word 1 at node offset 0x04. Physical address of source 1 (for macroblock formats the chroma address; the luma address goes to Y1_ADDR). Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names).";
+        field {
+            name = "addr";
+            desc = "Physical address (TdeHalNodeSetSrc1). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } addr[31:0];
+    } NODE_S1_ADDR @ 0x04;
+
+    reg {
+        name = "Source 1 type";
+        desc = "Node word 2 at node offset 0x08. Layout shared with S2_TYPE. Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names).";
+        field {
+            name = "pitch";
+            desc = "Line pitch in bytes (for MB formats the chroma pitch). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } pitch[15:0];
+        field {
+            name = "fmt";
+            desc = "Pixel format: 0 RGB444, 1 RGB555, 2 RGB565, 3 RGB888, 4 ARGB4444, 5 ARGB1555, 6 ARGB8565, 7 ARGB8888, 8..11 CLUT1/2/4/8, 12 ACLUT44, 13 ACLUT88, 16 A1, 17 A8, 18 YCbCr888, 19 AYCbCr8888, 20 YCbCr422, 22 byte, 23 halfword, 24..28 macroblock formats (values from the HiSTB enum; the module separates <=23 from >=24 and <=7 for the ARGB order, matching the enum). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } fmt[20:16];
+        field {
+            name = "alpha_range";
+            desc = "Alpha range (0..255 versus 0..128). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } alpha_range[21:21];
+        field {
+            name = "colorize";
+            desc = "Colorize enable (Src2 only; set by TdeHalNodeSetColorize). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } colorize[22:22];
+        field {
+            name = "hscan";
+            desc = "Horizontal scan direction (0 left to right, 1 reversed). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } hscan[24:24];
+        field {
+            name = "vscan";
+            desc = "Vertical scan direction. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } vscan[25:25];
+        field {
+            name = "rgb_exp";
+            desc = "RGB expand mode: cleared by SetSrc1/SetSrc2, set by TdeHalNodeSetExpAlpha (ARGB1555 alpha expansion). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } rgb_exp[29:29];
+    } NODE_S1_TYPE @ 0x08;
+
+    reg {
+        name = "Source 1 position";
+        desc = "Node word 3 at node offset 0x0C. Layout shared with S2_XY. Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names).";
+        field {
+            name = "x";
+            desc = "First X. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } x[11:0];
+        field {
+            name = "y";
+            desc = "First Y. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } y[27:16];
+    } NODE_S1_XY @ 0x0C;
+
+    reg {
+        name = "Source 1 fill value";
+        desc = "Node word 4 at node offset 0x10. Fill color for quick fill (TdeHalNodeSetBaseOperate, mode 0). Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names).";
+        field {
+            name = "data";
+            desc = "Fill data, packed in the target pixel format. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } data[31:0];
+    } NODE_S1_FILL @ 0x10;
+
+    reg {
+        name = "Source 2 address";
+        desc = "Node word 5 at node offset 0x14. As S1_ADDR. Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names).";
+        field {
+            name = "addr";
+            desc = "Physical address (TdeHalNodeSetSrc2). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } addr[31:0];
+    } NODE_S2_ADDR @ 0x14;
+
+    reg {
+        name = "Source 2 type";
+        desc = "Node word 6 at node offset 0x18. Same layout as S1_TYPE (TdeHalNodeSetSrc2 writes the identical bit positions). Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names).";
+        field {
+            name = "pitch";
+            desc = "Line pitch. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } pitch[15:0];
+        field {
+            name = "fmt";
+            desc = "Pixel format (as S1_TYPE). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } fmt[20:16];
+        field {
+            name = "alpha_range";
+            desc = "Alpha range. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } alpha_range[21:21];
+        field {
+            name = "colorize";
+            desc = "Colorize enable. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } colorize[22:22];
+        field {
+            name = "hscan";
+            desc = "Horizontal scan direction. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } hscan[24:24];
+        field {
+            name = "vscan";
+            desc = "Vertical scan direction. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } vscan[25:25];
+        field {
+            name = "rgb_exp";
+            desc = "RGB expand mode. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } rgb_exp[29:29];
+    } NODE_S2_TYPE @ 0x18;
+
+    reg {
+        name = "Source 2 position";
+        desc = "Node word 7 at node offset 0x1C. As S1_XY. Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names).";
+        field {
+            name = "x";
+            desc = "First X. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } x[11:0];
+        field {
+            name = "y";
+            desc = "First Y. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } y[27:16];
+    } NODE_S2_XY @ 0x1C;
+
+    reg {
+        name = "Source 2 size";
+        desc = "Node word 8 at node offset 0x20.  Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names).";
+        field {
+            name = "width";
+            desc = "Width in pixels. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } width[11:0];
+        field {
+            name = "height";
+            desc = "Height in lines. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } height[27:16];
+    } NODE_S2_SIZE @ 0x20;
+
+    reg {
+        name = "Source 2 fill value";
+        desc = "Node word 9 at node offset 0x24. Fill color of the normal fill modes. Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names).";
+        field {
+            name = "data";
+            desc = "Fill data. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } data[31:0];
+    } NODE_S2_FILL @ 0x24;
+
+    reg {
+        name = "Target address";
+        desc = "Node word 10 at node offset 0x28.  Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names).";
+        field {
+            name = "addr";
+            desc = "Physical address (TdeHalNodeSetTgt). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } addr[31:0];
+    } NODE_TAR_ADDR @ 0x28;
+
+    reg {
+        name = "Target type";
+        desc = "Node word 11 at node offset 0x2C.  Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names).";
+        field {
+            name = "pitch";
+            desc = "Line pitch. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } pitch[15:0];
+        field {
+            name = "fmt";
+            desc = "Pixel format (as S1_TYPE). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } fmt[20:16];
+        field {
+            name = "alpha_range";
+            desc = "Alpha range. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } alpha_range[21:21];
+        field {
+            name = "alpha_from";
+            desc = "Source of the output alpha (2 bits, TdeHalNodeSetTgt argument). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } alpha_from[23:22];
+        field {
+            name = "hscan";
+            desc = "Horizontal scan direction. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } hscan[24:24];
+        field {
+            name = "vscan";
+            desc = "Vertical scan direction. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } vscan[25:25];
+        field {
+            name = "rgb_round";
+            desc = "RGB truncation mode (cleared by SetTgt). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } rgb_round[26:26];
+        field {
+            name = "dfe_lastline_out";
+            desc = "Output the de-flicker result at the last line (TdeHalNodeSetResize). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } dfe_lastline_out[27:27];
+        field {
+            name = "dfe_firstline_out";
+            desc = "Output the de-flicker result at the first line. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } dfe_firstline_out[28:28];
+    } NODE_TAR_TYPE @ 0x2C;
+
+    reg {
+        name = "Target position";
+        desc = "Node word 12 at node offset 0x30.  Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names).";
+        field {
+            name = "x";
+            desc = "First X. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } x[11:0];
+        field {
+            name = "y";
+            desc = "First Y. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } y[27:16];
+    } NODE_TAR_XY @ 0x30;
+
+    reg {
+        name = "Target size";
+        desc = "Node word 13 at node offset 0x34. Size of the operation (also the source 1 size). Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names).";
+        field {
+            name = "width";
+            desc = "Width in pixels. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } width[11:0];
+        field {
+            name = "alpha_thr_lo";
+            desc = "Alpha threshold, low 4 bits. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } alpha_thr_lo[15:12];
+        field {
+            name = "height";
+            desc = "Height in lines. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } height[27:16];
+        field {
+            name = "alpha_thr_hi";
+            desc = "Alpha threshold, high 4 bits. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } alpha_thr_hi[31:28];
+    } NODE_TS_SIZE @ 0x34;
+
+    reg {
+        name = "Color conversion / alpha 1555 / CLUT mode";
+        desc = "Node word 14 at node offset 0x38.  Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names).";
+        field {
+            name = "in_colorimetry";
+            desc = "Input conversion standard (written from the conversion command bytes by TdeHalNodeSetColorConvert; exact semantics of bits 0, 1, 2, 4, 5 from the HiSTB names). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } in_colorimetry[0:0];
+        field {
+            name = "in_rgb2yc";
+            desc = "Input conversion direction. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } in_rgb2yc[1:1];
+        field {
+            name = "in_colorspace";
+            desc = "Input matrix select. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } in_colorspace[2:2];
+        field {
+            name = "in_chroma_fmt";
+            desc = "Input chroma format. HiSTB v1 layout only (MEDIUM, INFERRED: not seen in the Hi3520D module code). Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } in_chroma_fmt[3:3];
+        field {
+            name = "out_colorimetry";
+            desc = "Output conversion standard. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } out_colorimetry[4:4];
+        field {
+            name = "out_colorspace";
+            desc = "Output matrix select. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } out_colorspace[5:5];
+        field {
+            name = "out_chroma_fmt";
+            desc = "Output chroma format. HiSTB v1 layout only (MEDIUM, INFERRED: not seen in the Hi3520D module code). Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } out_chroma_fmt[6:6];
+        field {
+            name = "clut_mod";
+            desc = "CLUT mode (TdeHalNodeSetClutOpt). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } clut_mod[9:9];
+        field {
+            name = "clut_reload";
+            desc = "Reload the CLUT from CLUT_ADDR. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } clut_reload[10:10];
+        field {
+            name = "ocsc_reload";
+            desc = "Reload the custom output CSC coefficients (TDeHalNodeSetCsc/SetWbcCsc). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } ocsc_reload[12:12];
+        field {
+            name = "ocsc_custom";
+            desc = "Custom output CSC enable. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } ocsc_custom[13:13];
+        field {
+            name = "icsc_reload";
+            desc = "Reload the custom input CSC. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } icsc_reload[14:14];
+        field {
+            name = "icsc_custom";
+            desc = "Custom input CSC enable. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } icsc_custom[15:15];
+        field {
+            name = "alpha0";
+            desc = "ARGB1555 alpha for A=0 (TdeHalNodeSetExpAlpha). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } alpha0[23:16];
+        field {
+            name = "alpha1";
+            desc = "ARGB1555 alpha for A=1. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } alpha1[31:24];
+    } NODE_COLOR_CONV @ 0x38;
+
+    reg {
+        name = "CLUT address";
+        desc = "Node word 15 at node offset 0x3C.  Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names).";
+        field {
+            name = "addr";
+            desc = "Physical address of the color look-up table (SetClutOpt). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } addr[31:0];
+    } NODE_CLUT_ADDR @ 0x3C;
+
+    reg {
+        name = "2D resize control";
+        desc = "Node word 16 at node offset 0x40.  Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names).";
+        field {
+            name = "hf_mod";
+            desc = "Horizontal filter mode. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } hf_mod[1:0];
+        field {
+            name = "vf_mod";
+            desc = "Vertical filter mode. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } vf_mod[5:4];
+        field {
+            name = "dfe_mod";
+            desc = "De-flicker coefficient select (TdeHalNodeSetFlicker). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } dfe_mod[9:8];
+        field {
+            name = "alp_border";
+            desc = "Alpha border mode (TdeHalNodeSetAlphaBorder: bit 12 horizontal, bit 13 vertical). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } alp_border[13:12];
+        field {
+            name = "vf_ring_en";
+            desc = "Vertical median filter. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } vf_ring_en[16:16];
+        field {
+            name = "hf_ring_en";
+            desc = "Horizontal median filter. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } hf_ring_en[17:17];
+        field {
+            name = "coef_sym";
+            desc = "Symmetric filter coefficients. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } coef_sym[18:18];
+        field {
+            name = "vf_coef_reload";
+            desc = "Reload the vertical coefficient table from VF_COEF_ADDR (set with 0x1000000). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } vf_coef_reload[24:24];
+        field {
+            name = "hf_coef_reload";
+            desc = "Reload the horizontal coefficient table (set with 0x2000000). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } hf_coef_reload[25:25];
+        field {
+            name = "dfe_alpha_disable";
+            desc = "Disable alpha de-flicker. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } dfe_alpha_disable[26:26];
+    } NODE_RSZ_2D @ 0x40;
+
+    reg {
+        name = "Horizontal filter coefficient address";
+        desc = "Node word 17 at node offset 0x44. The module loads five filter-parameter tables (TdeHalInit / TdeHalLoadFiltParam, allocated in MMZ) and writes the address chosen by the scale step (TdeHalGetResizeParaHTable). Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names).";
+        field {
+            name = "addr";
+            desc = "Physical address. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } addr[31:0];
+    } NODE_HF_COEF_ADDR @ 0x44;
+
+    reg {
+        name = "Vertical filter coefficient address";
+        desc = "Node word 18 at node offset 0x48.  Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names).";
+        field {
+            name = "addr";
+            desc = "Physical address. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } addr[31:0];
+    } NODE_VF_COEF_ADDR @ 0x48;
+
+    reg {
+        name = "Horizontal resize step";
+        desc = "Node word 19 at node offset 0x4C. Fixed point, 0x1000 = 1.0 (NO_SCALE_STEP in the HiSTB source; the module compares steps with the same table limits). Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names).";
+        field {
+            name = "step";
+            desc = "Step value. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } step[31:0];
+    } NODE_RSZ_STEP @ 0x4C;
+
+    reg {
+        name = "Vertical resize start offset";
+        desc = "Node word 20 at node offset 0x50. Sign in bit 16, magnitude in [15:0] (TdeHalNodeSetResize). Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names).";
+        field {
+            name = "ofst";
+            desc = "Offset magnitude. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } ofst[15:0];
+        field {
+            name = "sign";
+            desc = "Sign. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } sign[16:16];
+    } NODE_RSZ_Y_OFST @ 0x50;
+
+    reg {
+        name = "Horizontal resize start offset";
+        desc = "Node word 21 at node offset 0x54. As RSZ_Y_OFST. Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names).";
+        field {
+            name = "ofst";
+            desc = "Offset magnitude. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } ofst[15:0];
+        field {
+            name = "sign";
+            desc = "Sign. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } sign[16:16];
+    } NODE_RSZ_X_OFST @ 0x54;
+
+    reg {
+        name = "De-flicker coefficient 0";
+        desc = "Node word 22 at node offset 0x58. Four packed coefficients (TdeHalNodeSetFlicker; byte shifts 8 and 24). Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names).";
+        field {
+            name = "coef";
+            desc = "Packed coefficients. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } coef[31:0];
+    } NODE_DFE_COEF0 @ 0x58;
+
+    reg {
+        name = "De-flicker coefficient 1";
+        desc = "Node word 23 at node offset 0x5C. Four packed coefficients (TdeHalNodeSetFlicker; byte shifts 8 and 24). Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names).";
+        field {
+            name = "coef";
+            desc = "Packed coefficients. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } coef[31:0];
+    } NODE_DFE_COEF1 @ 0x5C;
+
+    reg {
+        name = "De-flicker coefficient 2";
+        desc = "Node word 24 at node offset 0x60. Four packed coefficients (TdeHalNodeSetFlicker; byte shifts 8 and 24). Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names).";
+        field {
+            name = "coef";
+            desc = "Packed coefficients. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } coef[31:0];
+    } NODE_DFE_COEF2 @ 0x60;
+
+    reg {
+        name = "De-flicker coefficient 3";
+        desc = "Node word 25 at node offset 0x64. Four packed coefficients (TdeHalNodeSetFlicker; byte shifts 8 and 24). Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names).";
+        field {
+            name = "coef";
+            desc = "Packed coefficients. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } coef[31:0];
+    } NODE_DFE_COEF3 @ 0x64;
+
+    reg {
+        name = "ALU / ROP / color key / global alpha";
+        desc = "Node word 26 at node offset 0x68.  Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names).";
+        field {
+            name = "alu_mod";
+            desc = "ALU mode: 0 source 1 bypass, 1 ROP, 2 blend, 3 blend with source 2, 4 mask ROP 1, 5 mask blend, 6 concatenate, 7 source 2 bypass, 8 mask ROP 2 (HiSTB enum; the module writes the field through TdeHalNodeGetAluMod). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } alu_mod[3:0];
+        field {
+            name = "alpha_thr_en";
+            desc = "Alpha threshold enable (written by SetBaseOperate from a module variable). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } alpha_thr_en[4:4];
+        field {
+            name = "alpha_rop_mod";
+            desc = "ROP code for alpha. NOTE: TdeHalNodeSetRop in the Hi3520D module is an empty stub returning error 0xA064800B: the ROP path is unusable on this vendor build. HiSTB v1 layout only (MEDIUM, INFERRED: not seen in the Hi3520D module code). Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } alpha_rop_mod[8:5];
+        field {
+            name = "rgb_rop_mod";
+            desc = "ROP code for RGB (see above). HiSTB v1 layout only (MEDIUM, INFERRED: not seen in the Hi3520D module code). Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } rgb_rop_mod[12:9];
+        field {
+            name = "global_alpha";
+            desc = "Global alpha (TdeHalNodeSetGlobalAlpha). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } global_alpha[20:13];
+        field {
+            name = "ck_b_mod";
+            desc = "Color key mode, blue/V/index (0 inside, 1 outside, 2 ignore per the HiSTB constants). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } ck_b_mod[22:21];
+        field {
+            name = "ck_g_mod";
+            desc = "Color key mode, green/U. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } ck_g_mod[24:23];
+        field {
+            name = "ck_r_mod";
+            desc = "Color key mode, red/Y. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } ck_r_mod[26:25];
+        field {
+            name = "ck_a_mod";
+            desc = "Color key mode, alpha. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } ck_a_mod[28:27];
+        field {
+            name = "ck_sel";
+            desc = "Color key source select. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } ck_sel[30:29];
+        field {
+            name = "blend_reverse";
+            desc = "Swap foreground and background of the blend (TdeHalNodeSetBlendRvs). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } blend_reverse[31:31];
+    } NODE_ALU @ 0x68;
+
+    reg {
+        name = "Color key minimum";
+        desc = "Node word 27 at node offset 0x6C. Per-component minimum, bytes in the order B, G, R, A (little end first). Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names).";
+        field {
+            name = "val";
+            desc = "Packed minimum. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } val[31:0];
+    } NODE_CK_MIN @ 0x6C;
+
+    reg {
+        name = "Color key maximum";
+        desc = "Node word 28 at node offset 0x70.  Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names).";
+        field {
+            name = "val";
+            desc = "Packed maximum. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } val[31:0];
+    } NODE_CK_MAX @ 0x70;
+
+    reg {
+        name = "Clip start";
+        desc = "Node word 29 at node offset 0x74.  Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names).";
+        field {
+            name = "x";
+            desc = "Clip X start. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } x[11:0];
+        field {
+            name = "y";
+            desc = "Clip Y start. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } y[27:16];
+        field {
+            name = "clip_inside";
+            desc = "Bit 31 is set when the clip mode is inside (TdeHalNodeSetClipping conditional); exact meaning INFERRED, LOW. HiSTB v1 layout only (MEDIUM, INFERRED: not seen in the Hi3520D module code). Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } clip_inside[31:31];
+    } NODE_CLIP_START @ 0x74;
+
+    reg {
+        name = "Clip stop";
+        desc = "Node word 30 at node offset 0x78.  Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names).";
+        field {
+            name = "x";
+            desc = "Clip X end. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } x[11:0];
+        field {
+            name = "y";
+            desc = "Clip Y end. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } y[27:16];
+    } NODE_CLIP_STOP @ 0x78;
+
+    reg {
+        name = "Luma address, source 1 (macroblock)";
+        desc = "Node word 31 at node offset 0x7C.  Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names).";
+        field {
+            name = "addr";
+            desc = "Physical address (TdeHalNodeSetSrc1 MB path). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } addr[31:0];
+    } NODE_Y1_ADDR @ 0x7C;
+
+    reg {
+        name = "Luma pitch, source 1";
+        desc = "Node word 32 at node offset 0x80.  Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names).";
+        field {
+            name = "pitch";
+            desc = "Pitch. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } pitch[15:0];
+    } NODE_Y1_PITCH @ 0x80;
+
+    reg {
+        name = "Luma address, source 2 (macroblock)";
+        desc = "Node word 33 at node offset 0x84.  Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names).";
+        field {
+            name = "addr";
+            desc = "Physical address (TdeHalNodeSetSrc2 MB path). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } addr[31:0];
+    } NODE_Y2_ADDR @ 0x84;
+
+    reg {
+        name = "Luma pitch, source 2";
+        desc = "Node word 34 at node offset 0x88.  Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names).";
+        field {
+            name = "pitch";
+            desc = "Pitch. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } pitch[15:0];
+    } NODE_Y2_PITCH @ 0x88;
+
+    reg {
+        name = "Vertical resize step";
+        desc = "Node word 35 at node offset 0x8C.  Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names).";
+        field {
+            name = "step";
+            desc = "Step value. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } step[31:0];
+    } NODE_RSZ_VSTEP @ 0x8C;
+
+    reg {
+        name = "ARGB component order";
+        desc = "Node word 36 at node offset 0x90.  Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names).";
+        field {
+            name = "src1";
+            desc = "Source 1 order (written for formats up to ARGB8888). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } src1[4:0];
+        field {
+            name = "src2";
+            desc = "Source 2 order. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } src2[12:8];
+        field {
+            name = "tar";
+            desc = "Target order. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } tar[20:16];
+    } NODE_ARGB_ORDER @ 0x90;
+
+    reg {
+        name = "Color key mask";
+        desc = "Node word 37 at node offset 0x94.  Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names).";
+        field {
+            name = "blue";
+            desc = "Blue/V mask. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } blue[7:0];
+        field {
+            name = "green";
+            desc = "Green/U mask. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } green[15:8];
+        field {
+            name = "red";
+            desc = "Red/Y mask. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } red[23:16];
+        field {
+            name = "alpha";
+            desc = "Alpha mask. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } alpha[31:24];
+    } NODE_CK_MASK @ 0x94;
+
+    reg {
+        name = "Colorize value";
+        desc = "Node word 38 at node offset 0x98.  Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names).";
+        field {
+            name = "val";
+            desc = "Colorize color (TdeHalNodeSetColorize). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } val[31:0];
+    } NODE_COLORIZE @ 0x98;
+
+    reg {
+        name = "Alpha blend control";
+        desc = "Node word 39 at node offset 0x9C.  Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names).";
+        field {
+            name = "src1_blend_mode";
+            desc = "Source 1 blend mode (TdeHalNodeSetBlend). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } src1_blend_mode[3:0];
+        field {
+            name = "src1_premulti_en";
+            desc = "Source 1 pre-multiplied alpha. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } src1_premulti_en[4:4];
+        field {
+            name = "src1_multi_global_en";
+            desc = "Source 1 multiply global alpha (cleared by SetBlend). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } src1_multi_global_en[5:5];
+        field {
+            name = "src1_pixel_alpha_en";
+            desc = "Source 1 pixel alpha (set by SetBlend). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } src1_pixel_alpha_en[6:6];
+        field {
+            name = "src1_global_alpha_en";
+            desc = "Source 1 global alpha (cleared by SetBlend, set by the global alpha cases). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } src1_global_alpha_en[7:7];
+        field {
+            name = "src2_blend_mode";
+            desc = "Source 2 blend mode. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } src2_blend_mode[11:8];
+        field {
+            name = "src2_premulti_en";
+            desc = "Source 2 pre-multiplied alpha. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } src2_premulti_en[12:12];
+        field {
+            name = "src2_multi_global_en";
+            desc = "Source 2 multiply global alpha. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } src2_multi_global_en[13:13];
+        field {
+            name = "src2_pixel_alpha_en";
+            desc = "Source 2 pixel alpha. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } src2_pixel_alpha_en[14:14];
+        field {
+            name = "src2_global_alpha_en";
+            desc = "Source 2 global alpha. VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } src2_global_alpha_en[15:15];
+        field {
+            name = "alpha_rop_en";
+            desc = "Apply the alpha ROP during blending (TdeHalNodeEnableAlphaRop sets 0x10000). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } alpha_rop_en[16:16];
+    } NODE_ALPHA_BLEND @ 0x9C;
+
+    reg {
+        name = "Custom input CSC coefficient address";
+        desc = "Node word 40 at node offset 0xA0.  Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names).";
+        field {
+            name = "addr";
+            desc = "Physical address (TDeHalNodeSetCsc: store at node+0xA0). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } addr[31:0];
+    } NODE_ICSC_ADDR @ 0xA0;
+
+    reg {
+        name = "Custom output CSC coefficient address";
+        desc = "Node word 41 at node offset 0xA4.  Source: hi3520D_tde.ko TdeHalNodeSet* (offsets and bit positions) and HiSTB v1 tde_hal.h (names).";
+        field {
+            name = "addr";
+            desc = "Physical address (node+0xA4). VERIFIED IN THE HI3520D MODULE (HIGH): position seen in hi3520D_tde.ko. Not verified on hardware.";
+            sw = rw;
+            hw = r;
+        } addr[31:0];
+    } NODE_OCSC_ADDR @ 0xA4;
+
 };
 
 regfile eHISI_TDE_G2 {
@@ -1527,7 +2582,7 @@ regfile eHISI_TDE_G2 {
 
     reg {
         name = "TDE interrupt status / mask";
-        desc = "TdeHalCtlIntStats reads and writes back (acknowledge); TdeHalCtlIntClear keeps the low 16 bits and ORs its argument shifted into [31:16]; TdeHalCtlReset/ResumeInit/NodeExecute write 0x800F001F. Split [15:0] status, [31:16] interrupt mask/enable as in the HiSTB v1 driver (the polarity of the upper half is not stated by the code). Source: vendor module hi3516a_tde.ko, hi3518e_tde.ko (TdeHalCtlIntStats, TdeHalCtlIntClear), confidence MEDIUM, static analysis of the disassembly. Not verified on hardware. The two modules show identical offsets and values.";
+        desc = "TdeHalCtlIntStats reads and writes back (acknowledge); TdeHalCtlIntClear keeps the low 16 bits and ORs its argument shifted into [31:16]; TdeHalCtlReset/ResumeInit/NodeExecute write 0x800F001F. Split [15:0] status, [31:16] interrupt mask/enable as in the HiSTB v1 driver (the polarity of the upper half is not stated by the code). Source: vendor module hi3516a_tde.ko, hi3518e_tde.ko (TdeHalCtlIntStats, TdeHalCtlIntClear), confidence MEDIUM, static analysis of the disassembly. Not verified on hardware. The two modules show identical offsets and values. SECOND PASS: the interrupt service routine tde_osr_isr does NOT read this register; the only function that reads it (TdeHalCtlIntStats, which reads and writes back 0x818 and 0x1818 and returns the 0x1818 value) has no caller inside hi3520D_tde.ko, and the completion path uses the 0x2000 bank. Meaning of the status bits is therefore still unknown (the node's INS.aq_irq_mask = 8 enables the node-complete interrupt, INFERRED). The module never calls TdeHalCtlReset either; the engine reset is the CRG reset bit (PERI_CRG22 bit 0).";
 
         field {
             name = "status";
