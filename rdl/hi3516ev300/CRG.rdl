@@ -399,7 +399,7 @@ Registers with reset values 0 are listed as unknown: no reset values were read f
 
     reg {
         name = "USB 2.0 clock and reset";
-        desc = "Bits from the OpenIPC clock driver (gates 2, 4, 8, 9, 11, 12; mux 13) and the vendor DT (resets 0, 1, 3 of 0x140; crg_defal_mask 0xC07 / val 0x807 and crg_ctrl_def_mask 0x3308 / val 0x1308) and the vendor U-Boot (REG_USB2_CTRL = 0x140). Evidence: PROVEN (vendor DT/source), not verified on hardware. Bits 0/1/3 match the AV300 sheet (phy_req, phy_port_treq, vcc_srst_req).";
+        desc = "Bits from the OpenIPC clock driver (gates 2, 4, 8, 9, 11, 12; mux 13) and the vendor DT (resets 0, 1, 3 of 0x140; crg_defal_mask 0xC07 / val 0x807 and crg_ctrl_def_mask 0x3308 / val 0x1308) and the vendor U-Boot (REG_USB2_CTRL = 0x140). The vendor U-Boot writes the default 0x3B2F first (USB2_CRG_DEFAULT_VAL), then sets the clock gates one by one and releases PHY APB reset, POR, TPOR and the controller reset in that order. Evidence: PROVEN (vendor DT/source), not verified on hardware. Bits 0/1/3 match the AV300 sheet (phy_req, phy_port_treq, vcc_srst_req).";
         field {
             name = "usb2_por_srst_req";
             desc = "USB2 PHY POR reset (DT 'phy_por_reset'). PROVEN (DT).";
@@ -430,6 +430,12 @@ Registers with reset values 0 are listed as unknown: no reset values were read f
             sw = rw;
             hw = r;
         } usb2_phy_pll_cken[4:4];
+        field {
+            name = "usb2_phy_apb_srst_req";
+            desc = "PHY APB reset, released first by the vendor U-Boot (USB2_PHY_APB_RST). PROVEN (U-Boot phy-hi3516ev300-usb.c).";
+            sw = rw;
+            hw = r;
+        } usb2_phy_apb_srst_req[10:10];
         field {
             name = "usb2_bus_cken";
             desc = "USB bus clock gate. PROVEN (clk driver).";
@@ -573,6 +579,17 @@ Registers with reset values 0 are listed as unknown: no reset values were read f
     } PERI_CRG103 @ 0x19C;
 
     reg {
+        name = "GZIP clock";
+        desc = "Evidence: PROVEN (vendor U-Boot hw_decompress_hi3516ev200.c: GZIP_OFFSET = PERI_CRG100 = 0x190, GZIP_CLKEN bit 0; the reset bit is UNKNOWN).";
+        field {
+            name = "gzip_cken";
+            desc = "GZIP decompressor clock enable. PROVEN.";
+            sw = rw;
+            hw = r;
+        } gzip_cken[0:0];
+    } PERI_CRG100 @ 0x190;
+
+    reg {
         name = "TRNG / RSA / cipher / KLAD clock and reset";
         desc = "Evidence: PROVEN (vendor cipher driver tables HARD_INFO_TRNG reset_bit 2 clk_bit 3, HARD_INFO_IFEP_RSA 4/5, HARD_INFO_CIPHER 8/9, KLAD_CRG_RESET_BIT 0 / CLOCK_BIT 1; vendor U-Boot TRNG_CLK_ENABLE bit 3).";
         field {
@@ -627,7 +644,7 @@ Registers with reset values 0 are listed as unknown: no reset values were read f
 
     reg {
         name = "UART / I2C clock gates (per the OpenIPC clock driver)";
-        desc = "Evidence: INFERRED (clk-hi3516ev300.c: UART0..2 gates bits 0..2, I2C0..2 gates bits 11..13). CONFLICT: the vendor U-Boot platform.h puts a UART clock select (UART_CLK_SEL [19:18], values 0 = APB, 1 = 24 MHz, 2 = 2 MHz) in this register, while the clock driver has the UART selectors in PERI_CRG111 [20:18]; the vendor U-Boot has never been proven to run its select on this chip (the macro looks inherited). Resolve with a board read.";
+        desc = "Evidence: INFERRED (clk-hi3516ev300.c: UART0..2 gates bits 0..2, I2C0..2 gates bits 11..13). RESOLVED (2026-11-11, source analysis): the vendor U-Boot macro UART_CLK_SEL [19:18] (REG_UART_CRG = this register) is DEAD CODE (defined in platform.h, referenced by no .c/.S file of any Hi35xx target), while the clock driver that runs in production on EV200/EV300 cameras puts the UART selects at PERI_CRG111 [20:18], and the same driver's SPI0 gate (PERI_CRG111 bit 12) is independently confirmed by the Goke sys_config module. This register therefore holds only the gates. Board confirmation still welcome.";
         field {
             name = "uart0_cken";
             desc = "UART0 clock gate. INFERRED.";
@@ -668,7 +685,7 @@ Registers with reset values 0 are listed as unknown: no reset values were read f
 
     reg {
         name = "SPI / LSADC / UART clock selection";
-        desc = "Evidence: PROVEN for the OTP clock bit 1 (vendor cipher driver) and for SPI0 clock gate bit 12 (Goke sys_config.c spi0_pin_mux sets 'SPI0 clock for LCD' at crg + 0x1BC bit 12); INFERRED for SPI1 bit 13 and the UART selectors [20:18] (clock driver uart_mux: 0 = 24 MHz, 1 = 6 MHz); the LSADC reset is bit 2 per the vendor DT (resets <crg 0x1bc 2>).";
+        desc = "Evidence: the UART selects here (not in PERI_CRG110) are the RESOLVED location, see PERI_CRG110. PROVEN for the OTP clock bit 1 (vendor cipher driver) and for SPI0 clock gate bit 12 (Goke sys_config.c spi0_pin_mux sets 'SPI0 clock for LCD' at crg + 0x1BC bit 12); INFERRED for SPI1 bit 13 and the UART selectors [20:18] (clock driver uart_mux: 0 = 24 MHz, 1 = 6 MHz); the LSADC reset is bit 2 per the vendor DT (resets <crg 0x1bc 2>).";
         field {
             name = "otp_cken";
             desc = "OTP controller clock enable (cipher driver REG_SYS_OTP_CLK_ADDR_PHY 0x120101BC, OTP_CRG_CLOCK_BIT 1<<1; the Xiongmai boot table clears the register first). PROVEN.";
