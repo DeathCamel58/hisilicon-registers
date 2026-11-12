@@ -1,0 +1,915 @@
+`ifndef HI3516EV300_CRG_RDL
+`define HI3516EV300_CRG_RDL
+
+regfile eCRG {
+    name = "Clock and reset generator (CRG), Hi3516EV300";
+    desc = "Clock and reset generator (CRG) of the Hi3516EV300 at 0x12010000 (64 KB window ioremapped by sys.ko SYS_HAL_Init). Names follow the HiSilicon scheme PERI_CRGn at offset n x 4, which the Hi3516AV300 data sheet shares (same family: Cortex-A7, GIC at 0x10301000, MISC at 0x12028000).
+
+Scope of this file: ONLY registers with direct evidence from vendor code or binaries are described: the SYS module of the SDK (sys.ko, static disassembly of the OpenIPC hi3516ev200_sys.ko), the vendor U-Boot (cijliu-uboot hi3516ev300 branch), the vendor device tree, the OpenIPC clock driver, the vendor cipher driver and the Goke GPL sys_config module. Every field description ends with PROVEN (vendor binary, source or DT, not yet seen on EV300 silicon), INFERRED (derived from a sibling data sheet or the clock driver) or GUESS. Nothing here was verified on hardware.
+
+NOT covered: the PLL registers PERI_CRG_PLL0..7 (offsets 0x00..0x3C in the AV300 sheet; the EV300 PLL layout is unknown), CPU/DDR clock selection, SYS_CTRL-side timer selection. The clock driver uses 24 MHz, 3 MHz, 50 MHz and 100 MHz fixed rates for parents (no PLL model).
+
+Registers with reset values 0 are listed as unknown: no reset values were read from hardware.";
+
+    reg {
+        name = "Motion detection (MD) reset";
+        desc = "Only bit 0 is known. Evidence: PROVEN, sys.ko SYS_HAL_MdResetSel read-modify-writes bit 0 (1 = reset asserted).";
+        field {
+            name = "md_srst_req";
+            desc = "MD (motion detect) module soft reset. PROVEN (sys.ko SYS_HAL_MdResetSel).";
+            sw = rw;
+            hw = r;
+        } md_srst_req[0:0];
+    } PERI_CRG26 @ 0x68;
+
+    reg {
+        name = "Cipher clock and reset (as labeled by the SYS module)";
+        desc = "sys.ko SYS_HAL_CipherResetSel / CipherClkEn use bit 0 / bit 1 of this register. NOTE: the open-source cipher driver of the same SDK (cipher_v1.0, drv_osal_hi3516ev200.h) clocks and resets the cipher core through PERI_CRG104 bits 8/9 instead; the purpose of this second pair is UNRESOLVED. In the Hi3516AV300 data sheet 0x7C is the DDR clock/reset register, so the register assignment differs from the sibling. Evidence: PROVEN offset and bit positions, INFERRED meaning.";
+        field {
+            name = "cipher_srst_req";
+            desc = "Reset request of the module the SYS HAL calls 'cipher' (1 = reset). PROVEN bit, INFERRED meaning.";
+            sw = rw;
+            hw = r;
+        } cipher_srst_req[0:0];
+        field {
+            name = "cipher_cken";
+            desc = "Clock enable of the same module. PROVEN bit, INFERRED meaning.";
+            sw = rw;
+            hw = r;
+        } cipher_cken[1:1];
+    } PERI_CRG31 @ 0x7C;
+
+    reg {
+        name = "System clock selection";
+        desc = "Only the two bus muxes from the OpenIPC clock driver clk-hi3516ev300.c are described (vendor source, not verified on hardware). Evidence: INFERRED (vendor clock driver). The Hi3516AV300 data sheet has a wider sysaxi_cksel field at a different position, so do not copy its table.";
+        field {
+            name = "sysaxi_cksel";
+            desc = "System AXI clock: 0 = 24 MHz crystal, 1 = 200 MHz (clk driver sysaxi_mux; clk_sysaxi = mux / 4 is registered as a fixed factor 1/4, whose meaning is unclear). INFERRED.";
+            sw = rw;
+            hw = r;
+        } sysaxi_cksel[6:6];
+        field {
+            name = "sysapb_cksel";
+            desc = "System APB clock: 0 = 24 MHz, 1 = 50 MHz (clk driver sysapb_mux). INFERRED.";
+            sw = rw;
+            hw = r;
+        } sysapb_cksel[10:10];
+    } PERI_CRG32 @ 0x80;
+
+    reg {
+        name = "VEDU and VPSS clock selection";
+        desc = "Fields from sys.ko (SYS_HAL_VeduClkSel, GetVeduClkFrequency, VpssClkSel). The value-to-frequency tables are NOT known for the EV300 (the AV300 table 475/396/300/150 MHz is a different part). The vendor sys_config module (Goke GPL source) writes 0x00240400 on the Hi3516EV200 and Hi3518EV300 and 0x0 on the Hi3516EV300/DV200, i.e. the EV300 runs both clocks at selector value 0. Evidence: PROVEN bit positions (binary), INFERRED defaults.";
+        field {
+            name = "vedu_cksel";
+            desc = "VEDU clock select. PROVEN (SYS_HAL_VeduClkSel mask 0xC00, GetVeduClkFrequency ubfx #10,#2).";
+            sw = rw;
+            hw = r;
+        } vedu_cksel[11:10];
+        field {
+            name = "vpss_cksel";
+            desc = "VPSS offline clock select. PROVEN (SYS_HAL_VpssClkSel mask 0x700000).";
+            sw = rw;
+            hw = r;
+        } vpss_cksel[22:20];
+    } PERI_CRG40 @ 0xA0;
+
+    reg {
+        name = "VEDU clock and reset";
+        desc = "Evidence: PROVEN (sys.ko SYS_HAL_VeduResetSel bit 0, VeduClkEn bit 1); same bit positions as the Hi3516AV300 data sheet PERI_CRG41.";
+        field {
+            name = "vedu_srst_req";
+            desc = "VEDU soft reset request, 1 = reset. PROVEN.";
+            sw = rw;
+            hw = r;
+        } vedu_srst_req[0:0];
+        field {
+            name = "vedu_cken";
+            desc = "VEDU clock enable. PROVEN.";
+            sw = rw;
+            hw = r;
+        } vedu_cken[1:1];
+    } PERI_CRG41 @ 0xA4;
+
+    reg {
+        name = "VPSS clock and reset";
+        desc = "Evidence: PROVEN (sys.ko SYS_HAL_VpssResetSel, VpssClkEn bit 1, VpssOnlineSel bit 2); same positions as the Hi3516AV300 data sheet.";
+        field {
+            name = "vpss_srst_req";
+            desc = "VPSS soft reset request, 1 = reset. PROVEN (bit from the AV300 sibling, the HAL read-modify-write uses the same register).";
+            sw = rw;
+            hw = r;
+        } vpss_srst_req[0:0];
+        field {
+            name = "vpss_cken";
+            desc = "VPSS clock enable. PROVEN.";
+            sw = rw;
+            hw = r;
+        } vpss_cken[1:1];
+        field {
+            name = "vpss_online_cksel";
+            desc = "0 = offline clock (vpss_cksel), 1 = online clock (viproc_cksel). PROVEN (SYS_HAL_VpssOnlineSel also sets MISC_CTRL6[7]).";
+            sw = rw;
+            hw = r;
+        } vpss_online_cksel[2:2];
+    } PERI_CRG42 @ 0xA8;
+
+    reg {
+        name = "VGS clock and reset";
+        desc = "Evidence: PROVEN (sys.ko SYS_HAL_VgsClkEn bit 1, VgsResetSel).";
+        field {
+            name = "vgs_srst_req";
+            desc = "VGS soft reset request. PROVEN register, bit 0 INFERRED from the AV300 sibling.";
+            sw = rw;
+            hw = r;
+        } vgs_srst_req[0:0];
+        field {
+            name = "vgs_cken";
+            desc = "VGS clock enable. PROVEN.";
+            sw = rw;
+            hw = r;
+        } vgs_cken[1:1];
+    } PERI_CRG43 @ 0xAC;
+
+    reg {
+        name = "JPGE clock and reset";
+        desc = "Evidence: PROVEN (sys.ko SYS_HAL_JpgeClkEn bit 1, JpgeResetSel).";
+        field {
+            name = "jpge_srst_req";
+            desc = "JPGE soft reset request. PROVEN register, bit 0 INFERRED (AV300 sibling).";
+            sw = rw;
+            hw = r;
+        } jpge_srst_req[0:0];
+        field {
+            name = "jpge_cken";
+            desc = "JPGE clock enable. PROVEN.";
+            sw = rw;
+            hw = r;
+        } jpge_cken[1:1];
+    } PERI_CRG44 @ 0xB0;
+
+    reg {
+        name = "IVE clock and reset";
+        desc = "Evidence: PROVEN (sys.ko SYS_HAL_IveClkEn bit 1, IveResetSel). In the AV300 data sheet 0xBC is not an IVE register, so this is EV300-specific.";
+        field {
+            name = "ive_srst_req";
+            desc = "IVE soft reset request. PROVEN register, bit 0 INFERRED.";
+            sw = rw;
+            hw = r;
+        } ive_srst_req[0:0];
+        field {
+            name = "ive_cken";
+            desc = "IVE clock enable. PROVEN.";
+            sw = rw;
+            hw = r;
+        } ive_cken[1:1];
+    } PERI_CRG47 @ 0xBC;
+
+    reg {
+        name = "eFuse/OTP controller clock and reset";
+        desc = "Evidence: PROVEN (vendor cipher driver hal_efuse.c REG_SYS_EFUSE_CLK_ADDR_PHY 0x120100D8: sets bit 0 and bit 1, then clears bit 0).";
+        field {
+            name = "efuse_srst_req";
+            desc = "eFuse controller reset. PROVEN.";
+            sw = rw;
+            hw = r;
+        } efuse_srst_req[0:0];
+        field {
+            name = "efuse_cken";
+            desc = "eFuse controller clock enable. PROVEN.";
+            sw = rw;
+            hw = r;
+        } efuse_cken[1:1];
+    } PERI_CRG54 @ 0xD8;
+
+    reg {
+        name = "Sensor clock";
+        desc = "Evidence: PROVEN (Goke GPL sys_config.c sensor_clock_config: value << 2 under mask 0xF << 2); table from the same source (0x0 74.25 MHz, 0x1 72 MHz, 0x2 54 MHz, 0x3 24 MHz, 0x4 37.125 MHz, 0x5 36 MHz, 0x6 27 MHz, 0x7 12 MHz). Same field position as the AV300 data sheet sensor0_cksel; the sensor reset/enable bits 0/1 are INFERRED from it.";
+        field {
+            name = "sensor_cken";
+            desc = "Sensor clock enable. INFERRED (AV300 sibling).";
+            sw = rw;
+            hw = r;
+        } sensor_cken[0:0];
+        field {
+            name = "sensor_srst_req";
+            desc = "Sensor clock reset request. INFERRED (AV300 sibling).";
+            sw = rw;
+            hw = r;
+        } sensor_srst_req[1:1];
+        field {
+            name = "sensor_cksel";
+            desc = "Sensor master clock select, see table in the register description. PROVEN (sys_config.c).";
+            sw = rw;
+            hw = r;
+        } sensor_cksel[5:2];
+    } PERI_CRG60 @ 0xF0;
+
+    reg {
+        name = "VICAP clock and reset";
+        desc = "Bits from sys.ko SYS_HAL_ViPortClkEn/ViPPCClkEn/ViBusClkEn/ViPortReset/ViPPCReset (PROVEN), identical to the Hi3516AV300 data sheet PERI_CRG61. sys_config.c writes 0x00110000 (MIPI/default) or 0x00000000 (imx335, os05a, soi_f37 on the EV300) or 0x00038000 (BT.656/BT.1120/CMOS YUV, 'VICAP:cmos'): the selector fields are therefore at [20:15], consistent with vicap_p0_cksel [17:15] and vicap_cmos_pctrl [14]/vicap_p1_cksel in the AV300 sheet (INFERRED, the value tables are unknown).";
+        field {
+            name = "vicap_p0_cken";
+            desc = "VI port 0 clock enable. PROVEN.";
+            sw = rw;
+            hw = r;
+        } vicap_p0_cken[6:6];
+        field {
+            name = "vicap_ppc_cken";
+            desc = "VI PPC clock enable. PROVEN.";
+            sw = rw;
+            hw = r;
+        } vicap_ppc_cken[8:8];
+        field {
+            name = "vicap_bus_cken";
+            desc = "VI bus clock enable. PROVEN.";
+            sw = rw;
+            hw = r;
+        } vicap_bus_cken[9:9];
+        field {
+            name = "vicap_p0_srst_req";
+            desc = "VI port 0 reset. PROVEN.";
+            sw = rw;
+            hw = r;
+        } vicap_p0_srst_req[10:10];
+        field {
+            name = "vicap_ppc_srst_req";
+            desc = "VI PPC reset. PROVEN.";
+            sw = rw;
+            hw = r;
+        } vicap_ppc_srst_req[12:12];
+        field {
+            name = "vicap_sel";
+            desc = "Clock selectors written as a group by sys_config.c (0x110000 / 0x38000 / 0). INFERRED, value tables UNKNOWN.";
+            sw = rw;
+            hw = r;
+        } vicap_sel[20:15];
+    } PERI_CRG61 @ 0xF4;
+
+    reg {
+        name = "VIPROC (VI processing) clock and reset";
+        desc = "Evidence: PROVEN (sys.ko SYS_HAL_ViProcClkEn bit 4, ViProcReset bit 5, ViCapProcOnlineSel bit 3). sys_config.c writes 0x8 (online select) here.";
+        field {
+            name = "viproc_online_cksel";
+            desc = "Online-mode clock select (0 = viproc_cksel, 1 = ISP clock). PROVEN bit.";
+            sw = rw;
+            hw = r;
+        } viproc_online_cksel[3:3];
+        field {
+            name = "viproc_cken";
+            desc = "VIPROC clock enable. PROVEN.";
+            sw = rw;
+            hw = r;
+        } viproc_cken[4:4];
+        field {
+            name = "viproc_srst_req";
+            desc = "VIPROC reset. PROVEN.";
+            sw = rw;
+            hw = r;
+        } viproc_srst_req[5:5];
+    } PERI_CRG63 @ 0xFC;
+
+    reg {
+        name = "ISP clock and reset";
+        desc = "sys.ko SYS_HAL_ViIspCfgReset / ViIspCoreReset toggle bit (12 + n) and (16 + n) for ISP instance n (the instance number is the first argument). The EV300 has one ISP, so n = 0. The ISP clock enable is not touched by the sys module: bit 20 of the AV300 sheet (isp0_cken) is INFERRED. sys_config.c writes 0x0 here for every chip except the EV200 (0x240400 in PERI_CRG40, not here). Evidence: PROVEN (reset bits), INFERRED (clock enable).";
+        field {
+            name = "isp0_cfg_srst_req";
+            desc = "ISP configuration reset. PROVEN.";
+            sw = rw;
+            hw = r;
+        } isp0_cfg_srst_req[12:12];
+        field {
+            name = "isp0_core_srst_req";
+            desc = "ISP core reset. PROVEN.";
+            sw = rw;
+            hw = r;
+        } isp0_core_srst_req[16:16];
+        field {
+            name = "isp0_cken";
+            desc = "ISP clock enable. INFERRED (AV300 sibling).";
+            sw = rw;
+            hw = r;
+        } isp0_cken[20:20];
+    } PERI_CRG64 @ 0x100;
+
+    reg {
+        name = "LCD divider";
+        desc = "Evidence: PROVEN (sys.ko SYS_HAL_VouLcdClkEn bit 27; SYS_HAL_LcdMclkDiv writes bits [26:0] and preserves [31:27]); layout identical to the AV300 data sheet.";
+        field {
+            name = "lcd_div";
+            desc = "LCD master clock divider. PROVEN field extent, divider semantics UNKNOWN.";
+            sw = rw;
+            hw = r;
+        } lcd_div[26:0];
+        field {
+            name = "lcd_cken";
+            desc = "LCD clock enable. PROVEN.";
+            sw = rw;
+            hw = r;
+        } lcd_cken[27:27];
+    } PERI_CRG65 @ 0x104;
+
+    reg {
+        name = "VO (VDP) clock and reset";
+        desc = "Every bit named by a sys.ko SYS_HAL_Vou*ClkEn/ResetSel/Div/Sel function; the layout equals the Hi3516AV300 data sheet PERI_CRG66 (cross-checked bit by bit). Evidence: PROVEN.";
+        field {
+            name = "vdp_srst_req";
+            desc = "VO bus reset. PROVEN (VouBusResetSel register; bit 0 from the AV300 sheet).";
+            sw = rw;
+            hw = r;
+        } vdp_srst_req[0:0];
+        field {
+            name = "vdp_pcken";
+            desc = "VO APB clock enable (VouAPBClkEn). PROVEN.";
+            sw = rw;
+            hw = r;
+        } vdp_pcken[1:1];
+        field {
+            name = "vdp_acken";
+            desc = "VO bus clock enable (VouBusClkEn). PROVEN.";
+            sw = rw;
+            hw = r;
+        } vdp_acken[2:2];
+        field {
+            name = "vdp_cfg_cken";
+            desc = "VO CFG clock enable. PROVEN.";
+            sw = rw;
+            hw = r;
+        } vdp_cfg_cken[3:3];
+        field {
+            name = "vdp_hd_ppc_cken";
+            desc = "VO core (HD PPC) clock enable (VouCoreClkEn). PROVEN.";
+            sw = rw;
+            hw = r;
+        } vdp_hd_ppc_cken[5:5];
+        field {
+            name = "vdp_hd_cken";
+            desc = "VO device clock enable (VouDevClkEn). PROVEN.";
+            sw = rw;
+            hw = r;
+        } vdp_hd_cken[6:6];
+        field {
+            name = "vdp_bt_bp_cken";
+            desc = "VO output/BT bypass clock enable (VouOutClkEn, VouBtClkEn). PROVEN.";
+            sw = rw;
+            hw = r;
+        } vdp_bt_bp_cken[8:8];
+        field {
+            name = "vdp_bt_cken";
+            desc = "VO BT clock enable (VouBtClkEn). PROVEN.";
+            sw = rw;
+            hw = r;
+        } vdp_bt_cken[9:9];
+        field {
+            name = "vdp_hdmi_cken";
+            desc = "VO HDMI clock enable. PROVEN.";
+            sw = rw;
+            hw = r;
+        } vdp_hdmi_cken[10:10];
+        field {
+            name = "vdp_mipi_cken";
+            desc = "VO MIPI clock enable. PROVEN.";
+            sw = rw;
+            hw = r;
+        } vdp_mipi_cken[11:11];
+        field {
+            name = "hd_div_mode";
+            desc = "HD0 divider mode (VouHd0DivMode). PROVEN.";
+            sw = rw;
+            hw = r;
+        } hd_div_mode[13:12];
+        field {
+            name = "vdp_hd_ppc_cksel";
+            desc = "HD clock select (VouHdClkSel). PROVEN.";
+            sw = rw;
+            hw = r;
+        } vdp_hd_ppc_cksel[14:14];
+        field {
+            name = "vdp_out_pctrl";
+            desc = "HD output clock phase (VouHdOutPctrl). PROVEN.";
+            sw = rw;
+            hw = r;
+        } vdp_out_pctrl[20:20];
+        field {
+            name = "vdp_hd_cksel";
+            desc = "Output clock select (VouOutClkSel mask 0x1E00000). PROVEN.";
+            sw = rw;
+            hw = r;
+        } vdp_hd_cksel[24:21];
+    } PERI_CRG66 @ 0x108;
+
+    reg {
+        name = "USB 2.0 clock and reset";
+        desc = "Bits from the OpenIPC clock driver (gates 2, 4, 8, 9, 11, 12; mux 13) and the vendor DT (resets 0, 1, 3 of 0x140; crg_defal_mask 0xC07 / val 0x807 and crg_ctrl_def_mask 0x3308 / val 0x1308) and the vendor U-Boot (REG_USB2_CTRL = 0x140). Evidence: PROVEN (vendor DT/source), not verified on hardware. Bits 0/1/3 match the AV300 sheet (phy_req, phy_port_treq, vcc_srst_req).";
+        field {
+            name = "usb2_por_srst_req";
+            desc = "USB2 PHY POR reset (DT 'phy_por_reset'). PROVEN (DT).";
+            sw = rw;
+            hw = r;
+        } usb2_por_srst_req[0:0];
+        field {
+            name = "usb2_tpor_srst_req";
+            desc = "USB2 PHY TPOR reset (DT 'phy_tpor_reset'). PROVEN (DT).";
+            sw = rw;
+            hw = r;
+        } usb2_tpor_srst_req[1:1];
+        field {
+            name = "usb2_phy_xo_cken";
+            desc = "clk_u2phy_xo_ref gate. PROVEN (clk driver).";
+            sw = rw;
+            hw = r;
+        } usb2_phy_xo_cken[2:2];
+        field {
+            name = "usb2_vcc_srst_req";
+            desc = "USB controller reset (DT 'vcc_reset'). PROVEN (DT).";
+            sw = rw;
+            hw = r;
+        } usb2_vcc_srst_req[3:3];
+        field {
+            name = "usb2_phy_pll_cken";
+            desc = "clk_u2phy_pll_ref gate. PROVEN (clk driver).";
+            sw = rw;
+            hw = r;
+        } usb2_phy_pll_cken[4:4];
+        field {
+            name = "usb2_bus_cken";
+            desc = "USB bus clock gate. PROVEN (clk driver).";
+            sw = rw;
+            hw = r;
+        } usb2_bus_cken[8:8];
+        field {
+            name = "usb2_ref_cken";
+            desc = "USB reference clock gate. PROVEN (clk driver).";
+            sw = rw;
+            hw = r;
+        } usb2_ref_cken[9:9];
+        field {
+            name = "usb2_phy_apb_cken";
+            desc = "clk_u2phy_apb_ref gate. PROVEN (clk driver).";
+            sw = rw;
+            hw = r;
+        } usb2_phy_apb_cken[11:11];
+        field {
+            name = "usb2_utmi_cken";
+            desc = "UTMI clock gate. PROVEN (clk driver).";
+            sw = rw;
+            hw = r;
+        } usb2_utmi_cken[12:12];
+        field {
+            name = "usb2_utmi_cksel";
+            desc = "UTMI clock source: 0 = PHY, 1 = CRG (clk driver usb2_mux names 'phy', 'crg'). INFERRED.";
+            sw = rw;
+            hw = r;
+        } usb2_utmi_cksel[13:13];
+    } PERI_CRG80 @ 0x140;
+
+    reg {
+        name = "FMC clock and reset";
+        desc = "Evidence: PROVEN (vendor U-Boot platform.h REG_FMC_CRG: FMC_SRST bit 0, FMC_CLK_ENABLE bit 1, FMC_CLK_SEL [4:2]). Select values 0 = 24 MHz, 1 = 100 MHz, 2 = 150 MHz, 3 = 200 MHz, 4 = 300 MHz, 5 = 360 MHz (U-Boot macros; the Linux clock driver registers the same list). The AV300 sheet has a different table (163, 257 MHz...): do not copy it.";
+        field {
+            name = "fmc_srst_req";
+            desc = "FMC soft reset, 1 = reset. PROVEN.";
+            sw = rw;
+            hw = r;
+        } fmc_srst_req[0:0];
+        field {
+            name = "fmc_cken";
+            desc = "FMC clock enable. PROVEN.";
+            sw = rw;
+            hw = r;
+        } fmc_cken[1:1];
+        field {
+            name = "fmc_cksel";
+            desc = "FMC clock select, see register description. PROVEN.";
+            sw = rw;
+            hw = r;
+        } fmc_cksel[4:2];
+    } PERI_CRG81 @ 0x144;
+
+    reg {
+        name = "Ethernet (FEMAC + internal FE PHY) clock and reset";
+        desc = "Evidence: PROVEN (vendor DT: resets <crg 0x16c 0> 'mac' and <crg 0x16c 3> 'internal-phy'; clk driver: eth gate bit 1, eth_mux bit 7 = 100 MHz/54 MHz). The MAC interface select register is at MISC, not here (U-Boot REG_ETH_MAC_IF 0x8C is an offset in the GLB window).";
+        field {
+            name = "femac_srst_req";
+            desc = "FEMAC reset (DT 'mac'). PROVEN.";
+            sw = rw;
+            hw = r;
+        } femac_srst_req[0:0];
+        field {
+            name = "femac_cken";
+            desc = "FEMAC clock gate (clk driver clk_eth0). PROVEN.";
+            sw = rw;
+            hw = r;
+        } femac_cken[1:1];
+        field {
+            name = "fephy_srst_req";
+            desc = "Internal FE PHY reset (DT 'internal-phy'). PROVEN.";
+            sw = rw;
+            hw = r;
+        } fephy_srst_req[3:3];
+        field {
+            name = "ethcore_cksel";
+            desc = "0 = 100 MHz, 1 = 54 MHz (clk driver eth_mux). INFERRED.";
+            sw = rw;
+            hw = r;
+        } ethcore_cksel[7:7];
+    } PERI_CRG91 @ 0x16C;
+
+    reg {
+        name = "EDMAC clock";
+        desc = "Evidence: INFERRED (OpenIPC clock driver: axi_clk_edmac bit 2, clk_edmac bit 1). The reset bit is UNKNOWN (the AV300 sheet puts the reset at bit 0).";
+        field {
+            name = "edmac_cken";
+            desc = "EDMAC clock gate. INFERRED.";
+            sw = rw;
+            hw = r;
+        } edmac_cken[1:1];
+        field {
+            name = "edmac_axi_cken";
+            desc = "EDMAC AXI clock gate. INFERRED.";
+            sw = rw;
+            hw = r;
+        } edmac_axi_cken[2:2];
+    } PERI_CRG101 @ 0x194;
+
+    reg {
+        name = "AIAO / audio codec clock and reset";
+        desc = "Bits from sys.ko SYS_HAL_AioClkSel (bit 5), AioClkEn (bits 1 and 2), AioResetSel, AcodecResetSel (bits 3 and 4). The exact meaning of bits 3, 4 is UNKNOWN (the AV300 sheet has aiao_srst_req 0, aiao_cken 1, pop_srst_req 2, aiao_pll_cken 3). Evidence: PROVEN offset and bit positions, meanings INFERRED.";
+        field {
+            name = "aiao_srst_req";
+            desc = "AIAO reset (INFERRED from AV300 sibling; the HAL reads/writes the register in AioResetSel).";
+            sw = rw;
+            hw = r;
+        } aiao_srst_req[0:0];
+        field {
+            name = "aiao_cken";
+            desc = "AIAO clock enable. PROVEN.";
+            sw = rw;
+            hw = r;
+        } aiao_cken[1:1];
+        field {
+            name = "aiao_cken2";
+            desc = "Second AIAO clock enable written by AioClkEn. PROVEN bit, role UNKNOWN.";
+            sw = rw;
+            hw = r;
+        } aiao_cken2[2:2];
+        field {
+            name = "acodec_ctrl3";
+            desc = "Written by AcodecResetSel. PROVEN bit, role UNKNOWN.";
+            sw = rw;
+            hw = r;
+        } acodec_ctrl3[3:3];
+        field {
+            name = "acodec_ctrl4";
+            desc = "Written by AcodecResetSel. PROVEN bit, role UNKNOWN.";
+            sw = rw;
+            hw = r;
+        } acodec_ctrl4[4:4];
+        field {
+            name = "aiao_cksel";
+            desc = "AIAO clock select (AioClkSel). PROVEN bit, value table UNKNOWN.";
+            sw = rw;
+            hw = r;
+        } aiao_cksel[5:5];
+    } PERI_CRG103 @ 0x19C;
+
+    reg {
+        name = "TRNG / RSA / cipher / KLAD clock and reset";
+        desc = "Evidence: PROVEN (vendor cipher driver tables HARD_INFO_TRNG reset_bit 2 clk_bit 3, HARD_INFO_IFEP_RSA 4/5, HARD_INFO_CIPHER 8/9, KLAD_CRG_RESET_BIT 0 / CLOCK_BIT 1; vendor U-Boot TRNG_CLK_ENABLE bit 3).";
+        field {
+            name = "klad_srst_req";
+            desc = "KLAD reset. PROVEN.";
+            sw = rw;
+            hw = r;
+        } klad_srst_req[0:0];
+        field {
+            name = "klad_cken";
+            desc = "KLAD clock enable. PROVEN.";
+            sw = rw;
+            hw = r;
+        } klad_cken[1:1];
+        field {
+            name = "trng_srst_req";
+            desc = "TRNG reset. PROVEN.";
+            sw = rw;
+            hw = r;
+        } trng_srst_req[2:2];
+        field {
+            name = "trng_cken";
+            desc = "TRNG clock enable. PROVEN.";
+            sw = rw;
+            hw = r;
+        } trng_cken[3:3];
+        field {
+            name = "rsa_srst_req";
+            desc = "RSA reset. PROVEN.";
+            sw = rw;
+            hw = r;
+        } rsa_srst_req[4:4];
+        field {
+            name = "rsa_cken";
+            desc = "RSA clock enable. PROVEN.";
+            sw = rw;
+            hw = r;
+        } rsa_cken[5:5];
+        field {
+            name = "cipher_srst_req";
+            desc = "Cipher (SPACC-like v1.0) reset. PROVEN.";
+            sw = rw;
+            hw = r;
+        } cipher_srst_req[8:8];
+        field {
+            name = "cipher_cken";
+            desc = "Cipher clock enable. PROVEN.";
+            sw = rw;
+            hw = r;
+        } cipher_cken[9:9];
+    } PERI_CRG104 @ 0x1A0;
+
+    reg {
+        name = "UART / I2C clock gates (per the OpenIPC clock driver)";
+        desc = "Evidence: INFERRED (clk-hi3516ev300.c: UART0..2 gates bits 0..2, I2C0..2 gates bits 11..13). CONFLICT: the vendor U-Boot platform.h puts a UART clock select (UART_CLK_SEL [19:18], values 0 = APB, 1 = 24 MHz, 2 = 2 MHz) in this register, while the clock driver has the UART selectors in PERI_CRG111 [20:18]; the vendor U-Boot has never been proven to run its select on this chip (the macro looks inherited). Resolve with a board read.";
+        field {
+            name = "uart0_cken";
+            desc = "UART0 clock gate. INFERRED.";
+            sw = rw;
+            hw = r;
+        } uart0_cken[0:0];
+        field {
+            name = "uart1_cken";
+            desc = "UART1 clock gate. INFERRED.";
+            sw = rw;
+            hw = r;
+        } uart1_cken[1:1];
+        field {
+            name = "uart2_cken";
+            desc = "UART2 clock gate. INFERRED.";
+            sw = rw;
+            hw = r;
+        } uart2_cken[2:2];
+        field {
+            name = "i2c0_cken";
+            desc = "I2C0 clock gate. INFERRED.";
+            sw = rw;
+            hw = r;
+        } i2c0_cken[11:11];
+        field {
+            name = "i2c1_cken";
+            desc = "I2C1 clock gate. INFERRED.";
+            sw = rw;
+            hw = r;
+        } i2c1_cken[12:12];
+        field {
+            name = "i2c2_cken";
+            desc = "I2C2 clock gate. INFERRED.";
+            sw = rw;
+            hw = r;
+        } i2c2_cken[13:13];
+    } PERI_CRG110 @ 0x1B8;
+
+    reg {
+        name = "SPI / LSADC / UART clock selection";
+        desc = "Evidence: PROVEN for the OTP clock bit 1 (vendor cipher driver) and for SPI0 clock gate bit 12 (Goke sys_config.c spi0_pin_mux sets 'SPI0 clock for LCD' at crg + 0x1BC bit 12); INFERRED for SPI1 bit 13 and the UART selectors [20:18] (clock driver uart_mux: 0 = 24 MHz, 1 = 6 MHz); the LSADC reset is bit 2 per the vendor DT (resets <crg 0x1bc 2>).";
+        field {
+            name = "otp_cken";
+            desc = "OTP controller clock enable (cipher driver REG_SYS_OTP_CLK_ADDR_PHY 0x120101BC, OTP_CRG_CLOCK_BIT 1<<1; the Xiongmai boot table clears the register first). PROVEN.";
+            sw = rw;
+            hw = r;
+        } otp_cken[1:1];
+        field {
+            name = "lsadc_srst_req";
+            desc = "LSADC reset (DT 'lsadc-crg'). PROVEN (DT).";
+            sw = rw;
+            hw = r;
+        } lsadc_srst_req[2:2];
+        field {
+            name = "spi0_cken";
+            desc = "SPI0 clock gate. PROVEN.";
+            sw = rw;
+            hw = r;
+        } spi0_cken[12:12];
+        field {
+            name = "spi1_cken";
+            desc = "SPI1 clock gate. INFERRED.";
+            sw = rw;
+            hw = r;
+        } spi1_cken[13:13];
+        field {
+            name = "uart_cksel";
+            desc = "UART0..2 clock select, one bit each: 0 = 24 MHz, 1 = 6 MHz. INFERRED (clock driver).";
+            sw = rw;
+            hw = r;
+        } uart_cksel[20:18];
+    } PERI_CRG111 @ 0x1BC;
+
+    reg {
+        name = "MMC/SDIO controller clock and reset";
+        desc = "Layout from the vendor U-Boot (drivers/mmc/hisi_hi3516ev300.c: REG_EMMC_CRG 0x1F4; SDIO1 0x22C) and the vendor DT (resets crg 0x1f4 bits 27 and 29). The SDHCI card clock mux: 0 = 100 kHz, 1 = 400 kHz, 2 = 25 MHz, 3 = 50 MHz, 4 = 90 MHz, 5 = 112 MHz, 6 = 150 MHz, 7 = 198 MHz (U-Boot table; the Linux driver lists only 0..6). Evidence: PROVEN (vendor source).";
+        field {
+            name = "sample_dll_slave_en";
+            desc = "Sampling DLL slave enable (SDIO_SAMPL_DLL_SLAVE_EN). PROVEN.";
+            sw = rw;
+            hw = r;
+        } sample_dll_slave_en[16:16];
+        field {
+            name = "mmc_cksel";
+            desc = "Card clock select, see register description. PROVEN.";
+            sw = rw;
+            hw = r;
+        } mmc_cksel[26:24];
+        field {
+            name = "mmc_srst_req";
+            desc = "Controller reset (SDIO_SRST_REQ). PROVEN.";
+            sw = rw;
+            hw = r;
+        } mmc_srst_req[27:27];
+        field {
+            name = "mmc_cken";
+            desc = "Card clock enable (SDIO_CLK_EN). PROVEN.";
+            sw = rw;
+            hw = r;
+        } mmc_cken[28:28];
+        field {
+            name = "drv_dll_srst_req";
+            desc = "Drive DLL reset (SDIO_DRV_DLL_SRST_REQ). PROVEN.";
+            sw = rw;
+            hw = r;
+        } drv_dll_srst_req[29:29];
+    } PERI_CRG125 @ 0x1F4;
+
+    reg {
+        name = "eMMC sample-B DLL control";
+        desc = "Evidence: PROVEN (U-Boot SDIO_SAMPLB_DLL_CLK_MASK 0x1F).";
+        field {
+            name = "samplb_dll_clk";
+            desc = "Sample-B DLL phase select. PROVEN.";
+            sw = rw;
+            hw = r;
+        } samplb_dll_clk[4:0];
+    } PERI_CRG126 @ 0x1F8;
+
+    reg {
+        name = "eMMC drive DLL control";
+        desc = "Evidence: PROVEN (U-Boot SDIO_DRV_SEL / SDIO_DRV_PHASE_SEL_MASK 0x1F << 24).";
+        field {
+            name = "drv_phase_sel";
+            desc = "Drive phase select. PROVEN.";
+            sw = rw;
+            hw = r;
+        } drv_phase_sel[28:24];
+    } PERI_CRG127 @ 0x1FC;
+
+    reg {
+        name = "eMMC DS DLL control";
+        desc = "Evidence: PROVEN (U-Boot EMMC_DS_DLL_MODE_SSEL bit 13, EMMC_DS_DLL_SSEL_MASK 0x7F; the EV300 U-Boot leaves both functions empty).";
+        field {
+            name = "ds_dll_ssel";
+            desc = "DS DLL delay select. PROVEN position.";
+            sw = rw;
+            hw = r;
+        } ds_dll_ssel[6:0];
+        field {
+            name = "ds_dll_mode_ssel";
+            desc = "DS DLL mode select. PROVEN position.";
+            sw = rw;
+            hw = r;
+        } ds_dll_mode_ssel[13:13];
+    } PERI_CRG128 @ 0x200;
+
+    reg {
+        name = "eMMC DS180 DLL control";
+        desc = "Evidence: PROVEN (U-Boot EMMC_DS180_DLL_BYPASS bit 15).";
+        field {
+            name = "ds180_dll_bypass";
+            desc = "DS180 DLL bypass. PROVEN.";
+            sw = rw;
+            hw = r;
+        } ds180_dll_bypass[15:15];
+    } PERI_CRG129 @ 0x204;
+
+    reg {
+        name = "eMMC sample DLL status";
+        desc = "Evidence: PROVEN (U-Boot SDIO_SAMPL_DLL_SLAVE_READY bit 0).";
+        field {
+            name = "sampl_dll_slave_ready";
+            desc = "Sampling DLL slave ready. PROVEN.";
+            sw = r;
+            hw = w;
+        } sampl_dll_slave_ready[0:0];
+    } PERI_CRG130 @ 0x208;
+
+    reg {
+        name = "eMMC drive DLL status";
+        desc = "Evidence: PROVEN (U-Boot SDIO_DRV_DLL_LOCK bit 15, SDIO_DRV_DLL_READY bit 14).";
+        field {
+            name = "drv_dll_ready";
+            desc = "Drive DLL ready. PROVEN.";
+            sw = r;
+            hw = w;
+        } drv_dll_ready[14:14];
+        field {
+            name = "drv_dll_lock";
+            desc = "Drive DLL master locked. PROVEN.";
+            sw = r;
+            hw = w;
+        } drv_dll_lock[15:15];
+    } PERI_CRG132 @ 0x210;
+
+    reg {
+        name = "eMMC DS180 DLL status";
+        desc = "Evidence: PROVEN (U-Boot EMMC_DS180_DLL_READY bit 0).";
+        field {
+            name = "ds180_dll_ready";
+            desc = "DS180 DLL ready. PROVEN.";
+            sw = r;
+            hw = w;
+        } ds180_dll_ready[0:0];
+    } PERI_CRG134 @ 0x218;
+
+    reg {
+        name = "SDIO1 sample-B DLL control";
+        desc = "Evidence: PROVEN (U-Boot REG_SDIO1_SAMPLB_DLL_CTRL).";
+        field {
+            name = "samplb_dll_clk";
+            desc = "Sample-B DLL phase select. PROVEN.";
+            sw = rw;
+            hw = r;
+        } samplb_dll_clk[4:0];
+    } PERI_CRG135 @ 0x21C;
+
+    reg {
+        name = "SDIO1 drive DLL control";
+        desc = "Evidence: PROVEN (U-Boot REG_SDIO1_DRV_DLL_CTRL).";
+        field {
+            name = "drv_phase_sel";
+            desc = "Drive phase select. PROVEN.";
+            sw = rw;
+            hw = r;
+        } drv_phase_sel[28:24];
+    } PERI_CRG136 @ 0x220;
+
+    reg {
+        name = "SDIO1 sample DLL status";
+        desc = "Evidence: PROVEN (U-Boot REG_SDIO1_SAMPL_DLL_STATUS).";
+        field {
+            name = "sampl_dll_slave_ready";
+            desc = "Sampling DLL slave ready. PROVEN.";
+            sw = r;
+            hw = w;
+        } sampl_dll_slave_ready[0:0];
+    } PERI_CRG137 @ 0x224;
+
+    reg {
+        name = "SDIO1 drive DLL status";
+        desc = "Evidence: PROVEN (U-Boot REG_SDIO1_DRV_DLL_STATUS).";
+        field {
+            name = "drv_dll_ready";
+            desc = "Drive DLL ready. PROVEN.";
+            sw = r;
+            hw = w;
+        } drv_dll_ready[14:14];
+        field {
+            name = "drv_dll_lock";
+            desc = "Drive DLL master locked. PROVEN.";
+            sw = r;
+            hw = w;
+        } drv_dll_lock[15:15];
+    } PERI_CRG138 @ 0x228;
+
+    reg {
+        name = "MMC/SDIO controller clock and reset";
+        desc = "Layout from the vendor U-Boot (drivers/mmc/hisi_hi3516ev300.c: REG_EMMC_CRG 0x1F4; SDIO1 0x22C) and the vendor DT (resets crg 0x1f4 bits 27 and 29). The SDHCI card clock mux: 0 = 100 kHz, 1 = 400 kHz, 2 = 25 MHz, 3 = 50 MHz, 4 = 90 MHz, 5 = 112 MHz, 6 = 150 MHz, 7 = 198 MHz (U-Boot table; the Linux driver lists only 0..6). Evidence: PROVEN (vendor source).";
+        field {
+            name = "sample_dll_slave_en";
+            desc = "Sampling DLL slave enable (SDIO_SAMPL_DLL_SLAVE_EN). PROVEN.";
+            sw = rw;
+            hw = r;
+        } sample_dll_slave_en[16:16];
+        field {
+            name = "mmc_cksel";
+            desc = "Card clock select, see register description. PROVEN.";
+            sw = rw;
+            hw = r;
+        } mmc_cksel[26:24];
+        field {
+            name = "mmc_srst_req";
+            desc = "Controller reset (SDIO_SRST_REQ). PROVEN.";
+            sw = rw;
+            hw = r;
+        } mmc_srst_req[27:27];
+        field {
+            name = "mmc_cken";
+            desc = "Card clock enable (SDIO_CLK_EN). PROVEN.";
+            sw = rw;
+            hw = r;
+        } mmc_cken[28:28];
+        field {
+            name = "drv_dll_srst_req";
+            desc = "Drive DLL reset (SDIO_DRV_DLL_SRST_REQ). PROVEN.";
+            sw = rw;
+            hw = r;
+        } drv_dll_srst_req[29:29];
+    } PERI_CRG139 @ 0x22C;
+
+};
+
+`endif
