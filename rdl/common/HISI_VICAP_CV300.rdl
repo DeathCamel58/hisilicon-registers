@@ -6,7 +6,7 @@ regfile eHISI_VICAP_CV300 {
     name = "VICAP (video capture, Hi3516C V300 / Hi3516E V100)";
     desc = "
     Video capture (VICAP) of the Hi3516C V300 / Hi3516E V100, window 0x11380000..0x113EFFFF (448 KB, data sheet Table 1-1); this regfile covers the capture part (offsets 0x0..0x2010) and is instantiated at 0x11380000. The ISP lives in the same window (HISI_ISP_CV300, rebased, at 0x11390000). Parts: AXI/channel select (0x10..0x50), interrupt (0xF0/0xF8), the input port PT_* (0x100..0x1F8: port mode, BT.656, timing, data generator/color bar, flash and shutter triggers), DES_* (0x200..0x2F8), SRC_* (0x600..0x6F8), channel CH_* (0x1000..0x1134: write channels Y/C, crop) and the BAS registers (0x2000..0x2010).
-    Vendor cross-check (INFERRED from static analysis of hi3516cv300_viu.ko, Xiongmai V4.02.R12, MPP V1.0.0.0): its VIU_HAL_* functions access 35 of the 75 documented offsets (every PT_* port register it uses sits at the data sheet offset, e.g. VIU_HAL_SetPortEn -> 0x0/0xF0/0x100, SetDevTimingHfb/Hact/Hbb/Vfb/Vact/Vbb -> 0x180..0x194, SetDevGenTimingEn -> 0x134, SetFlashConfig -> 0x1C0/0x1C4, SetBasCtrl -> 0x2000/0x2004/0x2008/0x2010). The module also touches offsets that the data sheet does not list: 0x40, 0x60, 0x70, a line-buffer block at 0x500/0x504/0x510/0x550/0x554/0x5F0/0x5F8 (VIU_HAL_SetLineBufCtrl/EN/Id/IntMask, GetBufLineIntStatus) and 0x2020/0x2030/0x2034/0x20F8 (VIU_HAL_SetDevCrop, SetBasIntMask); their bit meanings are unknown (GUESS from function names only) and they are NOT modelled here. Channel (CH_*) registers are reached through a computed base in the module, so they could not be matched by the simple tracker (not cross-checked).
+    Vendor cross-check (INFERRED from static analysis of hi3516cv300_viu.ko, Xiongmai V4.02.R12, MPP V1.0.0.0): its VIU_HAL_* functions access 35 of the 75 documented offsets (every PT_* port register it uses sits at the data sheet offset, e.g. VIU_HAL_SetPortEn -> 0x0/0xF0/0x100, SetDevTimingHfb/Hact/Hbb/Vfb/Vact/Vbb -> 0x180..0x194, SetDevGenTimingEn -> 0x134, SetFlashConfig -> 0x1C0/0x1C4, SetBasCtrl -> 0x2000/0x2004/0x2008/0x2010). The module also touches offsets that the data sheet does not list: 0x40, 0x60, 0x70, a line-buffer block at 0x500/0x504/0x550/0x554/0x5F0/0x5F8 (VIU_HAL_SetLineBufCtrl/EN/IntMask, GetBufLineIntStatus; 0x510 LINE_BUF_ID_CFG is in the data sheet) and 0x2020/0x2030/0x2034/0x20F8 (VIU_HAL_SetDevCrop, SetBasIntMask); they are modelled at the end of this file as registers whose description starts with [VENDOR-ONLY REGISTER] (offset and bit extents PROVEN from the instruction stream, names INFERRED from the function names, bit meanings GUESS or UNKNOWN). Channel (CH_*) registers are reached through a computed base in the module, so they could not be matched by the simple tracker (not cross-checked).
     
     PROVENANCE: PROVEN = register offsets, names, bit fields, access and reset values transcribed from the Hi3516C V300/Hi3516E V100 data sheet issue 05 (9.1.6); the description of every register and field is the data sheet text. Provenance of the vendor cross-check text above: INFERRED. Nothing here is hardware verified (no CV300 board in the lab).
 
@@ -3171,6 +3171,198 @@ Data sheet 9.1.6 BAS_ID_CFG (offset 0x2010, printed page 9-63, `hi3516cv300--Hi3
             reset = 0xF;
         } id_sel[3:0];
     } BAS_ID_CFG @ 0x2010;
+
+    reg {
+        name = "DES_SEL_VENDOR";
+        desc = "[VENDOR-ONLY REGISTER] DES_SEL (vendor function VIU_HAL_SetDesSel). Not in the data sheet. PROVENANCE: PROVEN offset and field extent (VIU_HAL_SetDesSel in hi3516cv300_viu.ko reads, clears [2:0] and writes back the offset 0x40 word; the value is masked with 7); INFERRED name and meaning (a descriptor/channel select next to CH_SEL 0x30 and ISP_SEL 0x50); GUESS access rw. Source: hi3516cv300_viu.ko (Xiongmai V4.02.R12, MPP V1.0.0.0), static disassembly. Reset value unknown. Not hardware verified.";
+
+        field {
+            name = "des_sel";
+            desc = "Select value written by VIU_HAL_SetDesSel (3 bits).";
+            sw = rw;
+            hw = r;
+        } des_sel[2:0];
+
+    } DES_SEL_VENDOR @ 0x40;
+
+    reg {
+        name = "CHN_MODE_VENDOR";
+        desc = "[VENDOR-ONLY REGISTER] Channel mode (VIU_HAL_SetChnMode). Not in the data sheet. PROVENANCE: PROVEN offset and extent [1:0] (VIU_HAL_SetChnMode: value and 3, bic 3); INFERRED name from the function; GUESS meaning. Source: hi3516cv300_viu.ko (Xiongmai V4.02.R12, MPP V1.0.0.0), static disassembly. Reset value unknown. Not hardware verified.";
+
+        field {
+            name = "chn_mode";
+            desc = "Channel mode value (2 bits).";
+            sw = rw;
+            hw = r;
+        } chn_mode[1:0];
+
+    } CHN_MODE_VENDOR @ 0x60;
+
+    reg {
+        name = "LINEBUF_MODE";
+        desc = "[VENDOR-ONLY REGISTER] Line buffer mode (VIU_HAL_SetLineBufMode). Not in the data sheet. PROVENANCE: PROVEN offset and bit 0 (VIU_HAL_SetLineBufMode: and 1, bic 1 at base + 0x70); INFERRED name from the function. Source: hi3516cv300_viu.ko (Xiongmai V4.02.R12, MPP V1.0.0.0), static disassembly. Reset value unknown. Not hardware verified.";
+
+        field {
+            name = "mode";
+            desc = "Line buffer mode, 1 bit.";
+            sw = rw;
+            hw = r;
+        } mode[0:0];
+
+    } LINEBUF_MODE @ 0x70;
+
+    reg {
+        name = "LINEBUF_EN";
+        desc = "[VENDOR-ONLY REGISTER] Line buffer enable (VIU_HAL_SetLineBufEn). Not in the data sheet. PROVENANCE: PROVEN offset and bit 31 (VIU_HAL_SetLineBufEn: bic 0x80000000, orr value << 31 at base + 0x100 + 0x400); INFERRED name from the function. Source: hi3516cv300_viu.ko (Xiongmai V4.02.R12, MPP V1.0.0.0), static disassembly. Reset value unknown. Not hardware verified.";
+
+        field {
+            name = "en";
+            desc = "Line buffer enable.";
+            sw = rw;
+            hw = r;
+        } en[31:31];
+
+    } LINEBUF_EN @ 0x500;
+
+    reg {
+        name = "LINEBUF_REG_NEWER";
+        desc = "[VENDOR-ONLY REGISTER] Line buffer register-update strobe (VIU_HAL_SetLineBufRegNewer). Not in the data sheet. PROVENANCE: PROVEN offset and bit 0 (the function ORs 1 and writes the word twice); INFERRED role: latches the line buffer registers like CH_REG_NEWER; name from the function. Source: hi3516cv300_viu.ko (Xiongmai V4.02.R12, MPP V1.0.0.0), static disassembly. Reset value unknown. Not hardware verified.";
+
+        field {
+            name = "regnewer";
+            desc = "Register update request.";
+            sw = rw;
+            hw = r;
+        } regnewer[0:0];
+
+    } LINEBUF_REG_NEWER @ 0x504;
+
+
+    reg {
+        name = "LINEBUF_SIZE0";
+        desc = "[VENDOR-ONLY REGISTER] Line buffer size word 0 (VIU_HAL_SetLineBufCtrl). Not in the data sheet. PROVENANCE: PROVEN offset and the two cleared extents [28:22] and [21:16] (bic 0x1FC00000 and 0x3F0000 in SetLineBufCtrl); GUESS that these are width/height-like sizes (the value comes from a struct passed by the caller). Source: hi3516cv300_viu.ko (Xiongmai V4.02.R12, MPP V1.0.0.0), static disassembly. Reset value unknown. Not hardware verified.";
+
+        field {
+            name = "field_28_22";
+            desc = "Value inserted by VIU_HAL_SetLineBufCtrl (7 bits).";
+            sw = rw;
+            hw = r;
+        } field_28_22[28:22];
+
+        field {
+            name = "field_21_16";
+            desc = "Value inserted by VIU_HAL_SetLineBufCtrl (6 bits).";
+            sw = rw;
+            hw = r;
+        } field_21_16[21:16];
+
+    } LINEBUF_SIZE0 @ 0x550;
+
+    reg {
+        name = "LINEBUF_SIZE1";
+        desc = "[VENDOR-ONLY REGISTER] Line buffer size word 1 (VIU_HAL_SetLineBufCtrl). Not in the data sheet. PROVENANCE: PROVEN offset (SetLineBufCtrl ORs a caller value shifted left by 19 into this word); extent beyond that GUESS. Source: hi3516cv300_viu.ko (Xiongmai V4.02.R12, MPP V1.0.0.0), static disassembly. Reset value unknown. Not hardware verified.";
+
+        field {
+            name = "field_31_19";
+            desc = "Value ORed in at shift 19 by VIU_HAL_SetLineBufCtrl (upper extent not proven).";
+            sw = rw;
+            hw = r;
+        } field_31_19[31:19];
+
+    } LINEBUF_SIZE1 @ 0x554;
+
+    reg {
+        name = "LINEBUF_INT";
+        desc = "[VENDOR-ONLY REGISTER] Line buffer interrupt status (VIU_HAL_GetBufLineIntStatus, ClearLineBufIntStatus). Not in the data sheet. PROVENANCE: PROVEN offset and access (read by GetBufLineIntStatus, written back by ClearLineBufIntStatus: write-to-clear is INFERRED); bit meanings UNKNOWN. Source: hi3516cv300_viu.ko (Xiongmai V4.02.R12, MPP V1.0.0.0), static disassembly. Reset value unknown. Not hardware verified.";
+
+        field {
+            name = "status";
+            desc = "Interrupt status / clear word.";
+            sw = rw;
+            hw = r;
+        } status[31:0];
+
+    } LINEBUF_INT @ 0x5F0;
+
+    reg {
+        name = "LINEBUF_INT_MASK";
+        desc = "[VENDOR-ONLY REGISTER] Line buffer interrupt mask (VIU_HAL_SetLineBufIntMask). Not in the data sheet. PROVENANCE: PROVEN offset (VIU_HAL_SetLineBufIntMask writes the caller value); bit meanings UNKNOWN. Source: hi3516cv300_viu.ko (Xiongmai V4.02.R12, MPP V1.0.0.0), static disassembly. Reset value unknown. Not hardware verified.";
+
+        field {
+            name = "mask";
+            desc = "Interrupt mask word.";
+            sw = rw;
+            hw = r;
+        } mask[31:0];
+
+    } LINEBUF_INT_MASK @ 0x5F8;
+
+    reg {
+        name = "BAS_DEV_CROP_CTRL";
+        desc = "[VENDOR-ONLY REGISTER] Device crop enable (VIU_HAL_SetDevCrop). Not in the data sheet (the data sheet BAS block ends at 0x2010). PROVENANCE: PROVEN offset and bit 0 (VIU_HAL_SetDevCrop ORs 1 into this word before writing the crop words); INFERRED name. Source: hi3516cv300_viu.ko (Xiongmai V4.02.R12, MPP V1.0.0.0), static disassembly. Reset value unknown. Not hardware verified.";
+
+        field {
+            name = "crop_en";
+            desc = "Device crop enable (INFERRED).";
+            sw = rw;
+            hw = r;
+        } crop_en[0:0];
+
+    } BAS_DEV_CROP_CTRL @ 0x2020;
+
+    reg {
+        name = "BAS_DEV_CROP_0";
+        desc = "[VENDOR-ONLY REGISTER] Device crop word 0 (VIU_HAL_SetDevCrop). Not in the data sheet. PROVENANCE: PROVEN offset and the cleared extents [28:22] and [21:16] (bic 0x1FC00000 / 0x3F0000) written from the first two members of the crop struct; GUESS that they are start x / start y or width / height. Source: hi3516cv300_viu.ko (Xiongmai V4.02.R12, MPP V1.0.0.0), static disassembly. Reset value unknown. Not hardware verified.";
+
+        field {
+            name = "field_28_22";
+            desc = "Crop value (7 bits, GUESS).";
+            sw = rw;
+            hw = r;
+        } field_28_22[28:22];
+
+        field {
+            name = "field_21_16";
+            desc = "Crop value (6 bits, GUESS).";
+            sw = rw;
+            hw = r;
+        } field_21_16[21:16];
+
+    } BAS_DEV_CROP_0 @ 0x2030;
+
+    reg {
+        name = "BAS_DEV_CROP_1";
+        desc = "[VENDOR-ONLY REGISTER] Device crop word 1 (VIU_HAL_SetDevCrop). Not in the data sheet. PROVENANCE: PROVEN offset and extents as for BAS_DEV_CROP_0 (from the third and fourth struct members). Source: hi3516cv300_viu.ko (Xiongmai V4.02.R12, MPP V1.0.0.0), static disassembly. Reset value unknown. Not hardware verified.";
+
+        field {
+            name = "field_28_22";
+            desc = "Crop value (7 bits, GUESS).";
+            sw = rw;
+            hw = r;
+        } field_28_22[28:22];
+
+        field {
+            name = "field_21_16";
+            desc = "Crop value (6 bits, GUESS).";
+            sw = rw;
+            hw = r;
+        } field_21_16[21:16];
+
+    } BAS_DEV_CROP_1 @ 0x2034;
+
+    reg {
+        name = "BAS_INT_MASK";
+        desc = "[VENDOR-ONLY REGISTER] BAS interrupt mask (VIU_HAL_SetBasIntMask). Not in the data sheet. PROVENANCE: PROVEN offset (the function writes the caller value to base + 0x2000 + 0xF8); bit meanings UNKNOWN. Source: hi3516cv300_viu.ko (Xiongmai V4.02.R12, MPP V1.0.0.0), static disassembly. Reset value unknown. Not hardware verified.";
+
+        field {
+            name = "mask";
+            desc = "Interrupt mask word.";
+            sw = rw;
+            hw = r;
+        } mask[31:0];
+
+    } BAS_INT_MASK @ 0x20F8;
+
 };
 
 `endif
