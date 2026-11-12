@@ -1,0 +1,79 @@
+`ifndef HISI_VPSS_V2_RDL
+`define HISI_VPSS_V2_RDL
+
+regfile eHISI_VPSS_V2 {
+    name = "VPSS / VGS job control registers (Hi3516C V300 / Hi3516E V100)";
+    desc = "
+    Job-control MMIO registers of the VPSS (0x11250000) and of the VGS (0x11240000): the two blocks use the same register map for their control words (the HAL functions of hi3516cv300_vpss.ko and hi3516cv300_vgs.ko store the same offsets). The data sheets give NO register table for either block (docs/rdl-campaign/vgs.md); everything here comes from static disassembly of the Xiongmai Hi3516CV300 modules (MPP V1.0.0.0, 2018-06). Provenance is stated per register: PROVEN means the offset and the access are read from the instruction stream of the HAL, INFERRED means the role follows from the function name or a sibling chip, GUESS means no evidence beyond a name.
+    Model: like the Hi3520D VPSS (HISI_VPSS.rdl, aHISI_VPSS_V100) the engine executes jobs described in a register image (node) in DDR, linked through a next pointer; the MMIO block only holds the list pointer, start, interrupt status/clear and outstanding setting. The node image itself (not MMIO, offsets relative to the node start; PROVEN offsets from VPSS_HAL_SetNodeID / SetMask / SetNext / SetTimeOut, VGS_HAL_SetNodeID / SetMask / SetNext): NODE_ID at 0x1F4 (VPSS_HAL_SetNodeID), MASK at 0x1FC (VPSS_HAL_SetMask), the next-node link at 0x2FC (VPSS_HAL_SetNext) and a timeout word at 0x31C (VPSS_HAL_SetTimeOut); their roles are INFERRED from the function names. Ranges 0x000..0x1F0 of the image carry the per-block parameters (CTRL at 0x0 with bit 31 selecting online mode in VPSS_HAL_OnLineVideoEn; channel enable bits in word 0x8, bits 0..3 in VPSS_HAL_SetChnEn): not described, not decoded.
+    Not hardware verified. The vendor interrupt number of both blocks is 29 (data sheet, docs/rdl-campaign/vgs.md).
+    ";
+
+    reg {
+        name = "NEXT_NODE";
+        desc = "Physical address of the first node (job) in DDR to be fetched by the engine.
+
+PROVENANCE: PROVEN offset and access (HAL_Start stores the node address, then reads it back and retries up to 16 times until it matches: VPSS_HAL_Start 0x2AABC and VGS_HAL_Start 0xE754 of hi3516cv300_vpss.ko / hi3516cv300_vgs.ko); INFERRED meaning (the list pointer; same role as VPSS_NEXT_NODE 0x3F0 on the Hi3520D, docs/rdl-campaign/vpss-vendor.md).";
+        field {
+            name = "next_node";
+            desc = "32-bit register value";
+            sw = rw;
+            hw = r;
+        } next_node[31:0];
+    } NEXT_NODE @ 0x2FC;
+
+    reg {
+        name = "START";
+        desc = "Start the engine on the list at NEXT_NODE. Software writes 1 for a normal job and 3 when its last argument is non-zero (bit 1 meaning unknown).
+
+PROVENANCE: PROVEN offset and written values (VPSS_HAL_Start / VGS_HAL_Start); INFERRED that bit 0 starts the engine; GUESS bit 1 (probably low-delay or online mode: the vendor passes a flag, the name is not in the binary).";
+        field {
+            name = "start";
+            desc = "32-bit register value";
+            sw = rw;
+            hw = r;
+        } start[31:0];
+    } START @ 0x300;
+
+    reg {
+        name = "INT_STATUS";
+        desc = "Interrupt status word, read by the interrupt handler (VPSS_HAL_GetIntStatus, VGS_HAL_GetIntStatus).
+
+PROVENANCE: PROVEN offset and read access; GUESS bit meanings (none decoded). The vendor also has VPSS_HAL_ClrSofEoftInt, ClrLowdelayInt and ClrErrInt, so VPSS has at least start-of-frame/end-of-frame, low-delay and error bits.";
+        field {
+            name = "int_status";
+            desc = "32-bit register value";
+            sw = r;
+            hw = w;
+        } int_status[31:0];
+    } INT_STATUS @ 0x304;
+
+    reg {
+        name = "INT_CLEAR";
+        desc = "Interrupt clear: software writes 0xFFFFFFFF to clear every pending interrupt (VPSS_HAL_ClrInt, VGS_HAL_ClrInt).
+
+PROVENANCE: PROVEN offset and written value; INFERRED write-one-to-clear semantics.";
+        field {
+            name = "int_clear";
+            desc = "32-bit register value";
+            sw = w;
+            hw = r;
+        } int_clear[31:0];
+    } INT_CLEAR @ 0x308;
+
+    reg {
+        name = "OUTSTANDING";
+        desc = "AXI outstanding-request setting (VPSS_HAL_SetOutstanding, VGS_HAL_SetOutstanding store the caller value).
+
+PROVENANCE: PROVEN offset; INFERRED meaning from the function name; value range unknown.";
+        field {
+            name = "outstanding";
+            desc = "32-bit register value";
+            sw = rw;
+            hw = r;
+        } outstanding[31:0];
+    } OUTSTANDING @ 0x314;
+
+};
+
+`endif
