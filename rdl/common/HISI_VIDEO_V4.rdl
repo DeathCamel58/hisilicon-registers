@@ -25,8 +25,8 @@ regfile eVEDU_V4 {
     } INTMASK @ 0x0;
 
     reg {
-        name = "Interrupt clear / raw status";
-        desc = "INTCLR [PROVEN] hi3516ev200_vedu.ko VEDU_HAL_ClearInt (str [ptr+4], driver writes 0xFFFFFFFF) and VEDU_HAL_Read*RawInt (ldr [ptr+4], same bit layout as INTMASK). The masked status read is at +0 of the status pointer; ev300 research maps the status pointer to window offset 0x3000 (INFERRED). Hardware not read.";
+        name = "Interrupt clear";
+        desc = "INTCLR [PROVEN] hi3516ev200_vedu.ko VEDU_HAL_ClearInt: str [base+4] with no +0x3000 adjustment (driver writes 0xFFFFFFFF); the raw status read is at 0x3004. Hardware not read.";
         field { name = "value"; desc = "Whole register."; } value[31:0];
     } INTCLR @ 0x4;
 
@@ -74,20 +74,20 @@ regfile eVEDU_V4 {
     } REG_IMAGE @ 0x58;
 
     reg {
-        name = "Masked interrupt status (status block base)";
-        desc = "INTSTAT [INFERRED] hi3516ev200_vedu.ko VEDU_HAL_ReadInt (ldr [ptr+0], bit layout as INTMASK); ptr = window + 0x3000 per the ev300 research (qemu-bench), not visible in the HAL. Hardware not read.";
+        name = "Masked interrupt status";
+        desc = "INTSTAT [PROVEN] hi3516ev200_vedu.ko VEDU_HAL_ReadInt and the 11 VEDU_HAL_Read*Int helpers: add r0, r0, #0x3000 then ldr [r0] (confirmed in the disassembly, round 3); bit layout as INTMASK. Hardware not read.";
         field { name = "value"; desc = "Whole register."; } value[31:0];
     } INTSTAT @ 0x3000;
 
     reg {
-        name = "Raw interrupt status / clear (status block)";
-        desc = "RAWINT [INFERRED] hi3516ev200_vedu.ko VEDU_HAL_Read*RawInt (ldr [ptr+4]) and ClearInt (str [ptr+4]); +0x3000 base from ev300 research. Hardware not read.";
+        name = "Raw interrupt status";
+        desc = "RAWINT [PROVEN] hi3516ev200_vedu.ko VEDU_HAL_ReadRawInt and the Read*RawInt helpers: add 0x3000 then ldr [+4] (round 3 disassembly check). Clearing is at 0x0004, not here. Hardware not read.";
         field { name = "value"; desc = "Whole register."; } value[31:0];
     } RAWINT @ 0x3004;
 
     reg {
-        name = "Bus idle flag (status block)";
-        desc = "BUS_IDLE [INFERRED] hi3516ev200_vedu.ko VEDU_HAL_ReadBusIdleFlag (ldr [ptr+0x10], bit 0 polled with udelay); +0x3000 base from ev300 research. Hardware not read.";
+        name = "Bus idle flag";
+        desc = "BUS_IDLE [PROVEN] hi3516ev200_vedu.ko VEDU_HAL_ReadBusIdleFlag (add 0x3000, ldr [+0x10], bit 0 polled with udelay; round 3 disassembly check). Hardware not read.";
         field { name = "bus_idle"; desc = "1 = bus idle. [PROVEN]"; } bus_idle[0:0];
     } BUS_IDLE @ 0x3010;
 
@@ -178,10 +178,16 @@ regfile eVGS_V4 {
     } NODE_ID @ 0xF4;
 
     reg {
-        name = "Node list start address (write starts the engine)";
-        desc = "NODE_ADDR [PROVEN] VGS_HAL_SetNext and VGS_HAL_Start: str [base+0xf8], then isb/dsb/dmb and a read-back compare (VGS_HAL_Start prints a mismatch). Hardware not read.";
+        name = "Node list start address";
+        desc = "NODE_ADDR [PROVEN] hi3516ev200_vgs.ko VGS_HAL_SetNext and VGS_HAL_Start: str [base+0xf8], then isb/dsb/dmb and a read-back compare (VGS_HAL_Start prints a mismatch). Hardware not read.";
         field { name = "value"; desc = "Whole register."; } value[31:0];
     } NODE_ADDR @ 0xF8;
+
+    reg {
+        name = "Start";
+        desc = "START [PROVEN] hi3516ev200_vgs.ko VGS_HAL_Start: after the 0xF8 write and the read-back check, the last store is str r3 -> [base+0x300] (r3 = a word read-modify-written through the caller pointer); this write starts the node list. Hardware not read.";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } START @ 0x300;
 
     reg {
         name = "Raw interrupt status / clear";
