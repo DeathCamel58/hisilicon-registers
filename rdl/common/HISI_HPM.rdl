@@ -1,0 +1,63 @@
+`ifndef HISI_HPM_RDL
+`define HISI_HPM_RDL
+
+regfile eHISI_HPM {
+    name = "HPM (hardware performance monitor, speed binning), Hi3516C V300 / Hi3516E V100";
+    desc = "
+    HPM unit at 0x12078000 (the data sheet memory map calls 0x1207_8000..0x1207_FFFF Reserved, 32 KB; the vendor U-Boot uses it, HPM_REG_BASE in arch/arm/cpu/hi3516cv300/lowlevel_init_v300.c). Used by the SVB (speed-voltage binning) code get_hpm_value(): software writes 14 to +0xC, 1 to +0x8, polls +0x10 bit 1 until set, reads +0x14; hpm_core = value[9:0] and iddq_core = value[15:10] choose the core voltage word written to MISC_CTRL30 (0x12030078) by set_hpm_core_volt(). docs/research/ddr-init-notes.md section 4 has the per-chip voltage tables.
+    PROVENANCE: every offset, the write values and the status bit are PROVEN from the instruction stream of the vendor C function (source in sources/openipc-u-boot-hi3516cv300); the register names are GUESS (the source has no names); the meaning of the address value 14 (which on-chip monitor is read) is UNKNOWN. Registers at 0x0, 0x4 and above 0x14 are not used by any source. Not hardware verified.
+    ";
+
+    reg {
+        name = "HPM_START";
+        desc = "Start a measurement: software writes 1. PROVENANCE: PROVEN offset and written value (get_hpm_value); name GUESS; auto-clear behavior unknown.";
+        field {
+            name = "start";
+            desc = "Write 1 to start the read.";
+            sw = rw;
+            hw = r;
+        } start[0:0];
+    } HPM_START @ 0x8;
+
+    reg {
+        name = "HPM_ADDR";
+        desc = "Select the monitor/register to read: software writes 14. PROVENANCE: PROVEN offset and value 14 (get_hpm_value); name GUESS; meaning of 14 UNKNOWN.";
+        field {
+            name = "addr";
+            desc = "Read address; vendor uses 14.";
+            sw = rw;
+            hw = r;
+        } addr[31:0];
+    } HPM_ADDR @ 0xC;
+
+    reg {
+        name = "HPM_STATUS";
+        desc = "Completion status: software polls bit 1. PROVENANCE: PROVEN offset and bit (cpl_flag & 0x2 in get_hpm_value); name GUESS.";
+        field {
+            name = "done";
+            desc = "Set when the read data is valid.";
+            sw = r;
+            hw = w;
+        } done[1:1];
+    } HPM_STATUS @ 0x10;
+
+    reg {
+        name = "HPM_DATA";
+        desc = "Result: hpm_core in [9:0], iddq_core in [15:10]. PROVENANCE: PROVEN offset and field split (start_svb: hpm_core = val & 0x3ff, iddq_core = (val >> 10) & 0x3f); names are the vendor variable names, so INFERRED meaning (core HPM count and IDDQ code).";
+        field {
+            name = "hpm_core";
+            desc = "Core HPM value.";
+            sw = r;
+            hw = w;
+        } hpm_core[9:0];
+        field {
+            name = "iddq_core";
+            desc = "Core IDDQ code.";
+            sw = r;
+            hw = w;
+        } iddq_core[15:10];
+    } HPM_DATA @ 0x14;
+
+};
+
+`endif
