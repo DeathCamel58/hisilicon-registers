@@ -1,0 +1,240 @@
+`ifndef HI3516EV200_CRG_RDL
+`define HI3516EV200_CRG_RDL
+
+regfile eCRG {
+    name = "Clock and reset generator (CRG), Hi3516E V200 (vendor-code reconstruction, partial)";
+    desc = "Base 0x12010000 (0x1000 used by the vendor DT; the vendor boot ROM treats the CRG as PERI_CRGn at offset n x 4). Only registers that some vendor source or binary touches are listed; there is no data sheet register chapter for this chip. Names PERI_CRG<n> follow offset / 4 and are INFERRED from the sibling chips. Confidence legend (no hardware was read for this block): PROVEN = offset and bits are used by vendor source code or by the vendor boot binary (Xiongmai stock U-Boot of a Hi3516E V200 camera) exactly as described; INFERRED = deduced from naming, from sibling chips or from a value without a bit map; GUESS = plausible only.";
+
+    reg {
+        name = "CPU/bus clock source select (role unclear)";
+        desc = "PERI_CRG31 - CPU/bus clock source select (role unclear). Confidence **INFERRED**. Evidence: XM stock U-Boot init table (identical in cijliu U-Boot reg_info.bin): 0x70 then 0x74 written around the PLL/clock switch, then CRG 0x1E0 polled for 0x54D. Bit 2 is the visible difference. No driver reads it. Hardware not read; reset values unknown.";
+        field { name = "clk_sel_raw"; desc = "Raw value written by the vendor boot code during the clock switch (0x70 -> 0x74); semantics unknown. [GUESS]"; sw = rw; hw = r; } clk_sel_raw[7:0];
+    } PERI_CRG31 @ 0x7C;
+
+    reg {
+        name = "System bus clock select";
+        desc = "PERI_CRG32 - System bus clock select. Confidence **PROVEN**. Evidence: linux-openipc-upstream clk-hi3516ev200.c: sysaxi_mux 0x80 bit 6 (0 = 24 MHz, 1 = 200 MHz, then /4 fixed factor), sysapb_mux 0x80 bit 10 (0 = 24 MHz, 1 = 50 MHz). The vendor boot table writes 0 first (everything on the crystal) then 0x559 (axi 200 MHz, apb 50 MHz; bits 0,3,4,8 unexplained). Hardware not read; reset values unknown.";
+        field { name = "sysaxi_sel"; desc = "0 = 24 MHz, 1 = 200 MHz (the AXI clock is this divided by 4 in the vendor clock tree). [PROVEN]"; sw = rw; hw = r; } sysaxi_sel[6:6];
+        field { name = "sysapb_sel"; desc = "0 = 24 MHz, 1 = 50 MHz (APB clock, feeds SP804/SP805/GPIO/I2C/WDT). [PROVEN]"; sw = rw; hw = r; } sysapb_sel[10:10];
+        field { name = "unknown_lo"; desc = "Bits 0, 3 and 4 are set by the boot value 0x559; meaning unknown (probably CPU / DDR clock source selects). [GUESS]"; sw = rw; hw = r; } unknown_lo[4:0];
+        field { name = "unknown_bit8"; desc = "Bit 8 is set by the boot value 0x559; meaning unknown. [GUESS]"; sw = rw; hw = r; } unknown_bit8[8:8];
+    } PERI_CRG32 @ 0x80;
+
+    reg {
+        name = "Media clock configuration (VI/ISP/VPSS, role INFERRED)";
+        desc = "PERI_CRG40 - Media clock configuration (VI/ISP/VPSS, role INFERRED). Confidence **INFERRED**. Evidence: openhisilicon sys_config clkcfg(): Hi3516E V200 and Hi3518E V300 write 0x00240400, V300/DV200 write 0; the register is cleared in 0xA4 first. Likely video clock selects (ISP/VPSS/VGS). Hardware not read; reset values unknown.";
+        field { name = "media_clk_cfg"; desc = "0x00240400 on Hi3516E V200 (set by sys_config.ko at module load). [GUESS]"; sw = rw; hw = r; } media_clk_cfg[31:0];
+    } PERI_CRG40 @ 0xA0;
+
+    reg {
+        name = "Media clock configuration 2 (role INFERRED)";
+        desc = "PERI_CRG41 - Media clock configuration 2 (role INFERRED). Confidence **INFERRED**. Evidence: openhisilicon sys_config clkcfg(): written 0 before 0xA0. Hardware not read; reset values unknown.";
+        field { name = "media_clk_cfg2"; desc = "Cleared by sys_config.ko. [GUESS]"; sw = rw; hw = r; } media_clk_cfg2[31:0];
+    } PERI_CRG41 @ 0xA4;
+
+    reg {
+        name = "Sensor clock/reset";
+        desc = "PERI_CRG60 - Sensor clock/reset. Confidence **PROVEN**. Evidence: openhisilicon mipi_rx_hal.c: SNS_CRG_ADDR 0x120100F0. sensor_clock_config(): clock select field [5:2] (0x0 74.25 MHz, 0x1 72, 0x2 54, 0x3 24, 0x4 37.125, 0x5 36, 0x6 27, 0x7 12 MHz); sensor_enable_disable_clock(): bit 0 = source 0 clock enable, bit 6 = source 1 clock enable; sensor_reset_unreset(): bit 1 = sensor reset request (1 = reset). Hardware not read; reset values unknown.";
+        field { name = "sns0_clk_en"; desc = "Sensor clock output 0 enable. [PROVEN]"; sw = rw; hw = r; } sns0_clk_en[0:0];
+        field { name = "sns0_srst"; desc = "Sensor 0 reset request (1 = reset). [PROVEN]"; sw = rw; hw = r; } sns0_srst[1:1];
+        field { name = "sns_clk_sel"; desc = "Sensor clock frequency select, values see the register description. [PROVEN]"; sw = rw; hw = r; } sns_clk_sel[5:2];
+        field { name = "sns1_clk_en"; desc = "Sensor clock output 1 enable. [PROVEN]"; sw = rw; hw = r; } sns1_clk_en[6:6];
+    } PERI_CRG60 @ 0xF0;
+
+    reg {
+        name = "VI/ISP clock and reset";
+        desc = "PERI_CRG61 - VI/ISP clock and reset. Confidence **INFERRED**. Evidence: openhisilicon sys_config clkcfg(): 0x00110000 for MIPI sensors (imx335/os05a/soi_f37 on V300: 0), 0x00038000 when the sensor is parallel (CMOS/BT1120/BT656, g_cmos_yuv_flag > 0). Bit meanings not shown anywhere. Hardware not read; reset values unknown.";
+        field { name = "vi_isp_clk_cfg"; desc = "Whole-register value written by sys_config.ko; the bits select VI/ISP clocks and resets. [GUESS]"; sw = rw; hw = r; } vi_isp_clk_cfg[31:0];
+    } PERI_CRG61 @ 0xF4;
+
+    reg {
+        name = "MIPI_RX clock and reset";
+        desc = "PERI_CRG62 - MIPI_RX clock and reset. Confidence **PROVEN**. Evidence: openhisilicon mipi_rx_hal.c: MIPI_RX_CRG_ADDR 0x120100F8. Bit 2 = MIPI_RX clock gate (mipi_rx_enable_disable_clock), bit 4 = core reset (mipi_rx_core_reset_unreset), bit 6 = mipi_bus_srst_req, bits 0 and 3 are set when the block is brought up and cleared when it is shut down. Hardware not read; reset values unknown.";
+        field { name = "mipi_ck_en0"; desc = "Set on bring-up (clock enable, name INFERRED). [INFERRED]"; sw = rw; hw = r; } mipi_ck_en0[0:0];
+        field { name = "mipi_clk_en"; desc = "MIPI_RX clock gate (1 = on). [PROVEN]"; sw = rw; hw = r; } mipi_clk_en[2:2];
+        field { name = "mipi_ck_en3"; desc = "Set on bring-up (clock enable, name INFERRED). [INFERRED]"; sw = rw; hw = r; } mipi_ck_en3[3:3];
+        field { name = "mipi_core_srst"; desc = "MIPI_RX core reset request (1 = reset). [PROVEN]"; sw = rw; hw = r; } mipi_core_srst[4:4];
+        field { name = "mipi_bus_srst"; desc = "MIPI bus reset request (mipi_bus_srst_req in the vendor comment). [PROVEN]"; sw = rw; hw = r; } mipi_bus_srst[6:6];
+    } PERI_CRG62 @ 0xF8;
+
+    reg {
+        name = "Media clock configuration 3 (role INFERRED)";
+        desc = "PERI_CRG63 - Media clock configuration 3 (role INFERRED). Confidence **INFERRED**. Evidence: openhisilicon sys_config clkcfg(): 0x00000008 on every chip of this family. Hardware not read; reset values unknown.";
+        field { name = "media_clk_cfg3"; desc = "0x8 written by sys_config.ko. [GUESS]"; sw = rw; hw = r; } media_clk_cfg3[31:0];
+    } PERI_CRG63 @ 0xFC;
+
+    reg {
+        name = "USB2 controller and PHY clock/reset";
+        desc = "PERI_CRG80 - USB2 controller and PHY clock/reset. Confidence **PROVEN**. Evidence: cijliu-uboot phy-hi3516ev200-usb.c (USB2_CTRL) and linux-openipc-upstream hi3516ev200.dtsi/clk-hi3516ev200.c. Vendor default value 0x3b2f. Hardware not read; reset values unknown.";
+        field { name = "usb2_phy_por_req"; desc = "USB2 PHY POR reset request (usb2_phy_req). [PROVEN]"; sw = rw; hw = r; } usb2_phy_por_req[0:0];
+        field { name = "usb2_phy_tpor_req"; desc = "USB2 PHY port TPOR reset request. [PROVEN]"; sw = rw; hw = r; } usb2_phy_tpor_req[1:1];
+        field { name = "usb2_phy_xo_cken"; desc = "PHY crystal clock gate. [PROVEN]"; sw = rw; hw = r; } usb2_phy_xo_cken[2:2];
+        field { name = "usb2_vcc_srst_req"; desc = "USB controller (VCC) reset request. [PROVEN]"; sw = rw; hw = r; } usb2_vcc_srst_req[3:3];
+        field { name = "usb2_phy_pll_cken"; desc = "PHY PLL reference clock gate. [PROVEN]"; sw = rw; hw = r; } usb2_phy_pll_cken[4:4];
+        field { name = "usb2_bus_cken"; desc = "USB controller bus clock gate. [PROVEN]"; sw = rw; hw = r; } usb2_bus_cken[8:8];
+        field { name = "usb2_ref_cken"; desc = "USB controller reference clock gate. [PROVEN]"; sw = rw; hw = r; } usb2_ref_cken[9:9];
+        field { name = "usb2_phy_apb_rst"; desc = "PHY APB bus reset request. [PROVEN]"; sw = rw; hw = r; } usb2_phy_apb_rst[10:10];
+        field { name = "usb2_phy_apb_cken"; desc = "PHY APB clock gate. [PROVEN]"; sw = rw; hw = r; } usb2_phy_apb_cken[11:11];
+        field { name = "usb2_utmi_cken"; desc = "UTMI clock gate. [PROVEN]"; sw = rw; hw = r; } usb2_utmi_cken[12:12];
+        field { name = "usb2_freeclk_sel"; desc = "Free-running clock select (0 = PHY, 1 = CRG per the vendor mux). [PROVEN]"; sw = rw; hw = r; } usb2_freeclk_sel[13:13];
+    } PERI_CRG80 @ 0x140;
+
+    reg {
+        name = "FMC (SPI NOR/NAND controller) clock/reset";
+        desc = "PERI_CRG81 - FMC (SPI NOR/NAND controller) clock/reset. Confidence **PROVEN**. Evidence: cijliu-uboot arch-hi3516ev200/platform.h (REG_FMC_CRG = REG_CRG81) and clk-hi3516ev200.c (fmc_mux 0x144 [4:2], gate bit 1). Hardware not read; reset values unknown.";
+        field { name = "fmc_srst"; desc = "FMC soft reset request. [PROVEN]"; sw = rw; hw = r; } fmc_srst[0:0];
+        field { name = "fmc_clk_en"; desc = "FMC clock gate. [PROVEN]"; sw = rw; hw = r; } fmc_clk_en[1:1];
+        field { name = "fmc_clk_sel"; desc = "0 = 24 MHz, 1 = 100 MHz, 2 = 150 MHz, 3 = 200 MHz, 4 = 300 MHz, 5 = 360 MHz (SDR uses the /2, DDR (DTR) mode the /4 of the selected clock, per the vendor U-Boot hifmc driver). [PROVEN]"; sw = rw; hw = r; } fmc_clk_sel[4:2];
+    } PERI_CRG81 @ 0x144;
+
+    reg {
+        name = "Ethernet MAC (FEMAC) clock/reset";
+        desc = "PERI_CRG91 - Ethernet MAC (FEMAC) clock/reset. Confidence **PROVEN**. Evidence: cijliu-uboot drivers/net/hisfv300/sys.c (HIETH_CRG_REG), hi3516ev200.dtsi (resets 0x16c bit 0 mac, bit 3 internal PHY), clk-hi3516ev200.c (eth gate bit 1, eth_mux bit 7). Hardware not read; reset values unknown.";
+        field { name = "eth_srst"; desc = "MAC soft reset request. [PROVEN]"; sw = rw; hw = r; } eth_srst[0:0];
+        field { name = "eth_clk_en"; desc = "MAC clock gate. [PROVEN]"; sw = rw; hw = r; } eth_clk_en[1:1];
+        field { name = "eth_phy_rst"; desc = "Internal PHY / external PHY reset request (dtsi reset-names internal-phy; U-Boot ETH_EXTERNAL_PHY_RESET = BIT(3)). [PROVEN]"; sw = rw; hw = r; } eth_phy_rst[3:3];
+        field { name = "eth_clk_sel"; desc = "Core clock select: 0 = 100 MHz, 1 = 54 MHz (ETH_CORE_CLK_SELECT_54M). [PROVEN]"; sw = rw; hw = r; } eth_clk_sel[7:7];
+    } PERI_CRG91 @ 0x16C;
+
+    reg {
+        name = "EDMAC clock/reset";
+        desc = "PERI_CRG101 - EDMAC clock/reset. Confidence **PROVEN**. Evidence: hi3516ev200.dtsi (resets 0x194 bit 0 dma-reset) and clk-hi3516ev200.c (gate bits 1 and 2); cijliu-uboot cipher_config.h also names 0x12010194 as the RSA/RNG/KLAD CRG on other chips but this chip uses 0x1A0 for crypto. Hardware not read; reset values unknown.";
+        field { name = "edmac_srst"; desc = "EDMAC reset request. [PROVEN]"; sw = rw; hw = r; } edmac_srst[0:0];
+        field { name = "edmac_clk_en"; desc = "EDMAC (APB) clock gate. [PROVEN]"; sw = rw; hw = r; } edmac_clk_en[1:1];
+        field { name = "edmac_axi_clk_en"; desc = "EDMAC AXI clock gate. [PROVEN]"; sw = rw; hw = r; } edmac_axi_clk_en[2:2];
+    } PERI_CRG101 @ 0x194;
+
+    reg {
+        name = "Crypto engines clock/reset (SPACC/KLAD/RSA/TRNG)";
+        desc = "PERI_CRG104 - Crypto engines clock/reset (SPACC/KLAD/RSA/TRNG). Confidence **PROVEN**. Evidence: cijliu-uboot cipher_config.h: CIPHER_SPACC/RSA/RNG/KLAD CRG address 0x120101A0 for Hi3516E V200; lowlevel_init_v300.c trng_init(): bit 3 = TRNG clock enable. Hardware not read; reset values unknown.";
+        field { name = "crypto_lo"; desc = "SPACC/KLAD/RSA reset and clock bits, positions not shown by the vendor sources read here. [INFERRED]"; sw = rw; hw = r; } crypto_lo[2:0];
+        field { name = "crypto_hi"; desc = "Further reset/clock bits, positions not shown by the vendor sources read here. [INFERRED]"; sw = rw; hw = r; } crypto_hi[31:4];
+        field { name = "trng_clk_en"; desc = "TRNG clock enable (trng_init/deinit). [PROVEN]"; sw = rw; hw = r; } trng_clk_en[3:3];
+    } PERI_CRG104 @ 0x1A0;
+
+    reg {
+        name = "UART/I2C clock gates and resets";
+        desc = "PERI_CRG110 - UART/I2C clock gates and resets. Confidence **PROVEN**. Evidence: clk-hi3516ev200.c: UART0..2 gate bits 0..2, I2C0..2 gate bits 11..13. cijliu-uboot platform.h additionally names 0x1B8 as REG_UART_CRG with a 2-bit UART_CLK_SEL at [19:18] (0 APB, 1 24 MHz, 2 2 MHz), which conflicts with the Linux driver (selects in 0x1BC); the U-Boot macro looks inherited from the Hi3518EV300 header. Hardware must settle it. Hardware not read; reset values unknown.";
+        field { name = "uart0_clk_en"; desc = "UART0 clock gate. [PROVEN]"; sw = rw; hw = r; } uart0_clk_en[0:0];
+        field { name = "uart1_clk_en"; desc = "UART1 clock gate. [PROVEN]"; sw = rw; hw = r; } uart1_clk_en[1:1];
+        field { name = "uart2_clk_en"; desc = "UART2 clock gate. [PROVEN]"; sw = rw; hw = r; } uart2_clk_en[2:2];
+        field { name = "i2c0_clk_en"; desc = "I2C0 clock gate. [PROVEN]"; sw = rw; hw = r; } i2c0_clk_en[11:11];
+        field { name = "i2c1_clk_en"; desc = "I2C1 clock gate. [PROVEN]"; sw = rw; hw = r; } i2c1_clk_en[12:12];
+        field { name = "i2c2_clk_en"; desc = "I2C2 clock gate. [PROVEN]"; sw = rw; hw = r; } i2c2_clk_en[13:13];
+    } PERI_CRG110 @ 0x1B8;
+
+    reg {
+        name = "SPI/LSADC clocks, UART clock selects";
+        desc = "PERI_CRG111 - SPI/LSADC clocks, UART clock selects. Confidence **PROVEN**. Evidence: clk-hi3516ev200.c: SPI0 gate bit 12, SPI1 gate bit 13, uart_mux0..2 at bits 18..20 (0 = 24 MHz, 1 = 6 MHz); hi3516ev200.dtsi: LSADC reset 0x1BC bit 2; openhisilicon adc.c LSADC_CRG_ADDR 0x120101BC; spi0_pin_mux sets bit 12. The vendor boot table also programs 0x1BC bits [9:7] = 5, bit 6 = 0 and bit 0 = 0. Hardware not read; reset values unknown.";
+        field { name = "lsadc_clk_en"; desc = "Cleared by the vendor boot code; LSADC clock gate polarity not proven. [INFERRED]"; sw = rw; hw = r; } lsadc_clk_en[0:0];
+        field { name = "lsadc_srst"; desc = "LSADC reset request (dtsi resets = <&clock 0x1bc 2>). [PROVEN]"; sw = rw; hw = r; } lsadc_srst[2:2];
+        field { name = "spi0_clk_en"; desc = "SPI0 clock gate. [PROVEN]"; sw = rw; hw = r; } spi0_clk_en[12:12];
+        field { name = "spi1_clk_en"; desc = "SPI1 clock gate. [PROVEN]"; sw = rw; hw = r; } spi1_clk_en[13:13];
+        field { name = "uart0_clk_sel"; desc = "0 = 24 MHz, 1 = 6 MHz. [PROVEN]"; sw = rw; hw = r; } uart0_clk_sel[18:18];
+        field { name = "uart1_clk_sel"; desc = "0 = 24 MHz, 1 = 6 MHz. [PROVEN]"; sw = rw; hw = r; } uart1_clk_sel[19:19];
+        field { name = "uart2_clk_sel"; desc = "0 = 24 MHz, 1 = 6 MHz. [PROVEN]"; sw = rw; hw = r; } uart2_clk_sel[20:20];
+    } PERI_CRG111 @ 0x1BC;
+
+    reg {
+        name = "Clock switch status (INFERRED)";
+        desc = "PERI_CRG120 - Clock switch status (INFERRED). Confidence **INFERRED**. Evidence: Vendor boot table polls the low 11 bits of this register for the value just programmed into 0x80 / 0x7C (0x549 after 0x80 = 0x559, 0x54D after 0x7C = 0x74): a mirror of the selects that tells software the switch completed. Hardware not read; reset values unknown.";
+        field { name = "clk_switch_status"; desc = "Status mirror of the mux settings in PERI_CRG31/32. [INFERRED]"; sw = rw; hw = r; } clk_switch_status[10:0];
+    } PERI_CRG120 @ 0x1E0;
+
+    reg {
+        name = "Clock/PLL status 2 (INFERRED)";
+        desc = "PERI_CRG122 - Clock/PLL status 2 (INFERRED). Confidence **INFERRED**. Evidence: Vendor boot table polls [3:0] == 5 at 0x1E8 right after the first clock switch. Hardware not read; reset values unknown.";
+        field { name = "status_lo"; desc = "Value 5 is waited for by the vendor boot code. [GUESS]"; sw = rw; hw = r; } status_lo[3:0];
+    } PERI_CRG122 @ 0x1E8;
+
+    reg {
+        name = "eMMC/SDIO0 controller clock, reset and sample DLL control";
+        desc = "PERI_CRG125 - eMMC/SDIO0 controller clock, reset and sample DLL control. Confidence **PROVEN**. Evidence: cijliu-uboot hisi_hi3516ev200.c (REG_EMMC_SAMPL_DLL_CTRL 0x1F4) and hi3516ev200.dtsi (mmc0 resets 0x1F4 bit 27 and 29). Hardware not read; reset values unknown.";
+        field { name = "mmc0_clk_sel"; desc = "Clock select: 0 = 100 kHz, 1 = 400 kHz, 2 = 25 MHz, 3 = 50 MHz, 4 = 90 MHz, 5 = 112 MHz, 6 = 150 MHz (clk-hi3516ev200.c mmc_mux table; 0x1 selected for card identification in U-Boot). [PROVEN]"; sw = rw; hw = r; } mmc0_clk_sel[26:24];
+        field { name = "mmc0_srst"; desc = "Controller reset request. [PROVEN]"; sw = rw; hw = r; } mmc0_srst[27:27];
+        field { name = "mmc0_clk_en"; desc = "Controller clock gate. [PROVEN]"; sw = rw; hw = r; } mmc0_clk_en[28:28];
+        field { name = "mmc0_drv_dll_srst"; desc = "Drive DLL reset request. [PROVEN]"; sw = rw; hw = r; } mmc0_drv_dll_srst[29:29];
+        field { name = "mmc0_sampl_dll_slave_en"; desc = "Sample DLL slave enable. [PROVEN]"; sw = rw; hw = r; } mmc0_sampl_dll_slave_en[16:16];
+    } PERI_CRG125 @ 0x1F4;
+
+    reg {
+        name = "eMMC sample-B DLL control";
+        desc = "PERI_CRG126 - eMMC sample-B DLL control. Confidence **PROVEN**. Evidence: cijliu-uboot hisi_hi3516ev200.c REG_EMMC_SAMPLB_DLL_CTRL. Hardware not read; reset values unknown.";
+        field { name = "sampb_phase"; desc = "Sample-B clock phase select (SDIO_SAMPLB_SEL). [PROVEN]"; sw = rw; hw = r; } sampb_phase[4:0];
+    } PERI_CRG126 @ 0x1F8;
+
+    reg {
+        name = "eMMC drive DLL control";
+        desc = "PERI_CRG127 - eMMC drive DLL control. Confidence **PROVEN**. Evidence: cijliu-uboot hisi_hi3516ev200.c REG_EMMC_DRV_DLL_CTRL. Hardware not read; reset values unknown.";
+        field { name = "drv_phase_sel"; desc = "Drive phase select. [PROVEN]"; sw = rw; hw = r; } drv_phase_sel[28:24];
+    } PERI_CRG127 @ 0x1FC;
+
+    reg {
+        name = "eMMC DS DLL control";
+        desc = "PERI_CRG128 - eMMC DS DLL control. Confidence **PROVEN**. Evidence: cijliu-uboot hisi_hi3516ev200.c REG_EMMC_DS_DLL_CTRL. Hardware not read; reset values unknown.";
+        field { name = "ds_dll_ssel"; desc = "DS DLL select. [PROVEN]"; sw = rw; hw = r; } ds_dll_ssel[6:0];
+        field { name = "ds_dll_mode_ssel"; desc = "DS DLL mode select. [PROVEN]"; sw = rw; hw = r; } ds_dll_mode_ssel[13:13];
+    } PERI_CRG128 @ 0x200;
+
+    reg {
+        name = "eMMC DS180 DLL control";
+        desc = "PERI_CRG129 - eMMC DS180 DLL control. Confidence **PROVEN**. Evidence: cijliu-uboot hisi_hi3516ev200.c REG_EMMC_DS180_DLL_CTRL. Hardware not read; reset values unknown.";
+        field { name = "ds180_dll_bypass"; desc = "DS180 DLL bypass. [PROVEN]"; sw = rw; hw = r; } ds180_dll_bypass[15:15];
+    } PERI_CRG129 @ 0x204;
+
+    reg {
+        name = "eMMC sample DLL status";
+        desc = "PERI_CRG130 - eMMC sample DLL status. Confidence **PROVEN**. Evidence: cijliu-uboot hisi_hi3516ev200.c REG_EMMC_SAMPL_DLL_STATUS. Hardware not read; reset values unknown.";
+        field { name = "sampl_dll_slave_ready"; desc = "Sample DLL slave ready. [PROVEN]"; sw = rw; hw = r; } sampl_dll_slave_ready[0:0];
+    } PERI_CRG130 @ 0x208;
+
+    reg {
+        name = "eMMC drive DLL status";
+        desc = "PERI_CRG132 - eMMC drive DLL status. Confidence **PROVEN**. Evidence: cijliu-uboot hisi_hi3516ev200.c REG_EMMC_DRV_DLL_STATUS. Hardware not read; reset values unknown.";
+        field { name = "drv_dll_ready"; desc = "Drive DLL ready. [PROVEN]"; sw = rw; hw = r; } drv_dll_ready[14:14];
+        field { name = "drv_dll_lock"; desc = "Drive DLL lock. [PROVEN]"; sw = rw; hw = r; } drv_dll_lock[15:15];
+    } PERI_CRG132 @ 0x210;
+
+    reg {
+        name = "eMMC DS180 DLL status";
+        desc = "PERI_CRG134 - eMMC DS180 DLL status. Confidence **PROVEN**. Evidence: cijliu-uboot hisi_hi3516ev200.c REG_EMMC_DS180_DLL_STATUS. Hardware not read; reset values unknown.";
+        field { name = "ds180_dll_ready"; desc = "DS180 DLL ready. [PROVEN]"; sw = rw; hw = r; } ds180_dll_ready[0:0];
+    } PERI_CRG134 @ 0x218;
+
+    reg {
+        name = "SDIO1 sample-B DLL control";
+        desc = "PERI_CRG135 - SDIO1 sample-B DLL control. Confidence **PROVEN**. Evidence: cijliu-uboot hisi_hi3516ev200.c REG_SDIO1_SAMPLB_DLL_CTRL. Hardware not read; reset values unknown.";
+        field { name = "sampb_phase"; desc = "Sample-B clock phase select. [PROVEN]"; sw = rw; hw = r; } sampb_phase[4:0];
+    } PERI_CRG135 @ 0x21C;
+
+    reg {
+        name = "SDIO1 drive DLL control";
+        desc = "PERI_CRG136 - SDIO1 drive DLL control. Confidence **PROVEN**. Evidence: cijliu-uboot hisi_hi3516ev200.c REG_SDIO1_DRV_DLL_CTRL. Hardware not read; reset values unknown.";
+        field { name = "drv_phase_sel"; desc = "Drive phase select. [PROVEN]"; sw = rw; hw = r; } drv_phase_sel[28:24];
+    } PERI_CRG136 @ 0x220;
+
+    reg {
+        name = "SDIO1 sample DLL status";
+        desc = "PERI_CRG137 - SDIO1 sample DLL status. Confidence **PROVEN**. Evidence: cijliu-uboot hisi_hi3516ev200.c REG_SDIO1_SAMPL_DLL_STATUS. Hardware not read; reset values unknown.";
+        field { name = "sampl_dll_slave_ready"; desc = "Sample DLL slave ready. [PROVEN]"; sw = rw; hw = r; } sampl_dll_slave_ready[0:0];
+    } PERI_CRG137 @ 0x224;
+
+    reg {
+        name = "SDIO1 drive DLL status";
+        desc = "PERI_CRG138 - SDIO1 drive DLL status. Confidence **PROVEN**. Evidence: cijliu-uboot hisi_hi3516ev200.c REG_SDIO1_DRV_DLL_STATUS. Hardware not read; reset values unknown.";
+        field { name = "drv_dll_ready"; desc = "Drive DLL ready. [PROVEN]"; sw = rw; hw = r; } drv_dll_ready[14:14];
+        field { name = "drv_dll_lock"; desc = "Drive DLL lock. [PROVEN]"; sw = rw; hw = r; } drv_dll_lock[15:15];
+    } PERI_CRG138 @ 0x228;
+
+    reg {
+        name = "SDIO1 controller clock, reset and sample DLL control";
+        desc = "PERI_CRG139 - SDIO1 controller clock, reset and sample DLL control. Confidence **PROVEN**. Evidence: cijliu-uboot hisi_hi3516ev200.c (REG_SDIO1_SAMPL_DLL_CTRL 0x22C) and hi3516ev200.dtsi (mmc1 resets 0x22C bit 27 and 29). Hardware not read; reset values unknown.";
+        field { name = "mmc1_clk_sel"; desc = "Clock select, same table as PERI_CRG125. [PROVEN]"; sw = rw; hw = r; } mmc1_clk_sel[26:24];
+        field { name = "mmc1_srst"; desc = "Controller reset request. [PROVEN]"; sw = rw; hw = r; } mmc1_srst[27:27];
+        field { name = "mmc1_clk_en"; desc = "Controller clock gate. [PROVEN]"; sw = rw; hw = r; } mmc1_clk_en[28:28];
+        field { name = "mmc1_drv_dll_srst"; desc = "Drive DLL reset request. [PROVEN]"; sw = rw; hw = r; } mmc1_drv_dll_srst[29:29];
+        field { name = "mmc1_sampl_dll_slave_en"; desc = "Sample DLL slave enable. [PROVEN]"; sw = rw; hw = r; } mmc1_sampl_dll_slave_en[16:16];
+    } PERI_CRG139 @ 0x22C;
+
+};
+`endif
