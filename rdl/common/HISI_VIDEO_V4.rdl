@@ -1,0 +1,434 @@
+`ifndef HISI_VIDEO_V4_RDL
+`define HISI_VIDEO_V4_RDL
+
+`ifndef HISI_VEDU_V4_RDL
+`define HISI_VEDU_V4_RDL
+
+regfile eVEDU_V4 {
+    name = "VEDU (H.264/H.265 encoder) control registers, V4";
+    desc = "VEDU window 0x11410000 (0x10000), SPI 47. Hi3516E V200 / V300 (V4 generation, same SDK object set for EV200/EV300/Hi3518E V300/Hi3516D V200). Provenance: PROVEN = a load/store offset or bit operation in a named function of the disassembled vendor module (build/tmp/ev200/dis, toolchain objdump) with the module and function given per register; INFERRED = deduced from naming, the ev300 qemu-bench research or call structure; GUESS = plausible only. Subset: only registers visible in the HAL/driver control path; configuration images in DDR are not MMIO. Hardware not read. ";
+
+    reg {
+        name = "Interrupt mask";
+        desc = "INTMASK [PROVEN] hi3516ev200_vedu.ko VEDU_HAL_WriteIntMask (str [base+0]); VEDU_DRV_InitIntMask. Hardware not read.";
+        field { name = "end_of_pic"; desc = "End of picture (VEDU_HAL_ReadEndOfPicInt tests bit 0 of the status word). [PROVEN]"; } end_of_pic[0:0];
+        field { name = "buf_full"; desc = "Stream buffer full (VEDU_HAL_ReadBufFullInt ubfx 2). [PROVEN]"; } buf_full[2:2];
+        field { name = "bits_over"; desc = "Bits over (ReadBitsOverInt ubfx 3). [PROVEN]"; } bits_over[3:3];
+        field { name = "axi_rd_err"; desc = "AXI read bus error (ReadAxiRdBusErrInt ubfx 4). [PROVEN]"; } axi_rd_err[4:4];
+        field { name = "axi_wr_err"; desc = "AXI write bus error (ReadAxiWrBusErrInt ubfx 5). [PROVEN]"; } axi_wr_err[5:5];
+        field { name = "timeout"; desc = "Timeout (ReadTimeoutInt ubfx 6). [PROVEN]"; } timeout[6:6];
+        field { name = "line_num"; desc = "Line-number interrupt (ReadLineNumInt ubfx 7). [PROVEN]"; } line_num[7:7];
+        field { name = "sed_err_core"; desc = "SED core error (ReadSedErrCoreInt ubfx 8). [PROVEN]"; } sed_err_core[8:8];
+        field { name = "sed_err_ext"; desc = "SED extension error (ReadSedErrExtInt ubfx 9). [PROVEN]"; } sed_err_ext[9:9];
+        field { name = "ring_buf_full"; desc = "Ring buffer full (ReadRingBufFulRawInt ubfx 11, raw word). [PROVEN]"; } ring_buf_full[11:11];
+        field { name = "ring_back"; desc = "Ring buffer wrap-back (ReadRingBackRawInt ubfx 12, raw word). [PROVEN]"; } ring_back[12:12];
+    } INTMASK @ 0x0;
+
+    reg {
+        name = "Interrupt clear / raw status";
+        desc = "INTCLR [PROVEN] hi3516ev200_vedu.ko VEDU_HAL_ClearInt (str [ptr+4], driver writes 0xFFFFFFFF) and VEDU_HAL_Read*RawInt (ldr [ptr+4], same bit layout as INTMASK). The masked status read is at +0 of the status pointer; ev300 research maps the status pointer to window offset 0x3000 (INFERRED). Hardware not read.";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } INTCLR @ 0x4;
+
+    reg {
+        name = "Start encoding";
+        desc = "START [PROVEN] hi3516ev200_vedu.ko VEDU_HAL_StartVedu: str 1 -> [base+8]. Hardware not read.";
+        field { name = "start"; desc = "Write 1 to start one picture. [PROVEN]"; } start[0:0];
+    } START @ 0x8;
+
+    reg {
+        name = "Mode / timer mode";
+        desc = "MODE [PROVEN] hi3516ev200_vedu.ko VEDU_HAL_WriteMode (str [base+0x10]); VEDU_HAL_WriteTimerMode (bit 28); VEDU_HAL_ReadBusIdleFlag reads bit 0 of the status-side word at +0x10 (busy/idle). Hardware not read.";
+        field { name = "timer_mode"; desc = "Timer mode (VEDU_HAL_WriteTimerMode bfi bit 28). [PROVEN]"; } timer_mode[28:28];
+    } MODE @ 0x10;
+
+    reg {
+        name = "AXI outstanding configuration";
+        desc = "OUTSTANDING [PROVEN] hi3516ev200_vedu.ko VEDU_HAL_WriteOutStanding: [4:0] = 15, [11:8] = 7 (driver values). Hardware not read.";
+        field { name = "wr_outstanding"; desc = "Write outstanding (driver writes 15). [PROVEN]"; } wr_outstanding[4:0];
+        field { name = "rd_outstanding"; desc = "Read outstanding (driver writes 7). [PROVEN]"; } rd_outstanding[11:8];
+    } OUTSTANDING @ 0x1C;
+
+    reg {
+        name = "Reset request";
+        desc = "RESET [PROVEN] hi3516ev200_vedu.ko VEDU_HAL_ResetRequest: str 1 -> [base+0x4c]. Hardware not read.";
+        field { name = "reset_req"; desc = "Write 1 to request a soft reset. [PROVEN]"; } reset_req[0:0];
+    } RESET @ 0x4C;
+
+    reg {
+        name = "Power-down and clock-gate control";
+        desc = "POWER_CLKGATE [PROVEN] hi3516ev200_vedu.ko VEDU_HAL_SetPowerMode (bits 0,1,2,16,17 from one value), VEDU_HAL_WriteClkGateMode ([20:19]), VEDU_HAL_WriteMemClkGateMode (bit 21). Hardware not read.";
+        field { name = "pwr0"; desc = "Power mode bit 0. [PROVEN]"; } pwr0[0:0];
+        field { name = "pwr1"; desc = "Power mode bit 1. [PROVEN]"; } pwr1[1:1];
+        field { name = "pwr2"; desc = "Power mode bit 2. [PROVEN]"; } pwr2[2:2];
+        field { name = "pwr16"; desc = "Power mode bit 16. [PROVEN]"; } pwr16[16:16];
+        field { name = "pwr17"; desc = "Power mode bit 17. [PROVEN]"; } pwr17[17:17];
+        field { name = "clk_gate_mode"; desc = "Clock-gate mode. [PROVEN]"; } clk_gate_mode[20:19];
+        field { name = "mem_clk_gate"; desc = "Memory clock-gate mode. [PROVEN]"; } mem_clk_gate[21:21];
+    } POWER_CLKGATE @ 0x500;
+
+    reg {
+        name = "Register image address";
+        desc = "REG_IMAGE [INFERRED] ev300 research (qemu-bench docs/hisilicon-venc.md): the encoder takes a register image from DDR; not in the disassembly functions read here (the configuration is written into a DDR image by VEDU_DRV_Update* functions such as UpdateROI/UpdateOSD/UpdateSkip, offsets 0x240..0x990 are offsets inside that image, not MMIO). Hardware not read.";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } REG_IMAGE @ 0x58;
+
+    reg {
+        name = "Masked interrupt status (status block base)";
+        desc = "INTSTAT [INFERRED] hi3516ev200_vedu.ko VEDU_HAL_ReadInt (ldr [ptr+0], bit layout as INTMASK); ptr = window + 0x3000 per the ev300 research (qemu-bench), not visible in the HAL. Hardware not read.";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } INTSTAT @ 0x3000;
+
+    reg {
+        name = "Raw interrupt status / clear (status block)";
+        desc = "RAWINT [INFERRED] hi3516ev200_vedu.ko VEDU_HAL_Read*RawInt (ldr [ptr+4]) and ClearInt (str [ptr+4]); +0x3000 base from ev300 research. Hardware not read.";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } RAWINT @ 0x3004;
+
+    reg {
+        name = "Bus idle flag (status block)";
+        desc = "BUS_IDLE [INFERRED] hi3516ev200_vedu.ko VEDU_HAL_ReadBusIdleFlag (ldr [ptr+0x10], bit 0 polled with udelay); +0x3000 base from ev300 research. Hardware not read.";
+        field { name = "bus_idle"; desc = "1 = bus idle. [PROVEN]"; } bus_idle[0:0];
+    } BUS_IDLE @ 0x3010;
+
+};
+`endif
+`ifndef HISI_JPGE_V4_RDL
+`define HISI_JPGE_V4_RDL
+
+regfile eJPGE_V4 {
+    name = "JPGE (JPEG encoder) control registers, V4";
+    desc = "JPGE window 0x11420000 (0x10000), SPI 48. Hi3516E V200 / V300 (V4 generation, same SDK object set for EV200/EV300/Hi3518E V300/Hi3516D V200). Provenance: PROVEN = a load/store offset or bit operation in a named function of the disassembled vendor module (build/tmp/ev200/dis, toolchain objdump) with the module and function given per register; INFERRED = deduced from naming, the ev300 qemu-bench research or call structure; GUESS = plausible only. Subset: only registers visible in the HAL/driver control path; configuration images in DDR are not MMIO. Hardware not read. ";
+
+    reg {
+        name = "Interrupt status";
+        desc = "STATUS [PROVEN] hi3516ev200_vedu.ko JPGE_DRV_ReadInt / JPGE_DRV_GetIsIntOk (ldr [base+0]; bit 0 end of picture, bit 1 and bit 7 also tested). Hardware not read.";
+        field { name = "end_of_pic"; desc = "End of picture. [PROVEN]"; } end_of_pic[0:0];
+        field { name = "int_bit1"; desc = "Tested by JPGE_DRV_GetIsIntOk. [PROVEN]"; } int_bit1[1:1];
+        field { name = "int_bit7"; desc = "Tested by JPGE_DRV_GetIsIntOk. [PROVEN]"; } int_bit7[7:7];
+    } STATUS @ 0x0;
+
+    reg {
+        name = "Interrupt enable";
+        desc = "INT_EN [PROVEN] hi3516ev200_vedu.ko JPGE_DRV_IntEn: writes 0x3 with bit 6 cleared. Hardware not read.";
+        field { name = "en"; desc = "Driver value 0x03. [PROVEN]"; } en[6:0];
+    } INT_EN @ 0x4;
+
+    reg {
+        name = "Interrupt clear";
+        desc = "CLEAR [PROVEN] JPGE_DRV_ClearInt / ClearErrInt: str 0xFFFFFFFF -> [base+0xc]. Hardware not read.";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } CLEAR @ 0xC;
+
+    reg {
+        name = "Start";
+        desc = "START [PROVEN] JPGE_DRV_StartVpu: str -> [base+0x2c]. Hardware not read.";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } START @ 0x2C;
+
+    reg {
+        name = "Timer mode";
+        desc = "TIMER_MODE [PROVEN] JPGE_DRV_SetTimerMode: read-modify-write [base+0x30]. Hardware not read.";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } TIMER_MODE @ 0x30;
+
+    reg {
+        name = "Power mode";
+        desc = "POWER_MODE [PROVEN] JPGE_DRV_SetPowerMode: str [base+0x3c]. Hardware not read.";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } POWER_MODE @ 0x3C;
+
+    reg {
+        name = "AXI outstanding";
+        desc = "OUTSTANDING [PROVEN] JPGE_DRV_SetOutstanding: read-modify-write [base+0x50]. Hardware not read.";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } OUTSTANDING @ 0x50;
+
+    reg {
+        name = "Reset request";
+        desc = "RESET [PROVEN] JPGE_DRV_ResetRequest: read-modify-write [base+0x68]. Hardware not read.";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } RESET @ 0x68;
+
+    reg {
+        name = "Bus idle";
+        desc = "BUS_IDLE [PROVEN] JPGE_DRV_ReadBusIdleFlag: ldr [base+0xc0c] polled with osal_udelay. Hardware not read.";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } BUS_IDLE @ 0xC0C;
+
+};
+`endif
+`ifndef HISI_VGS_V4_RDL
+`define HISI_VGS_V4_RDL
+
+regfile eVGS_V4 {
+    name = "VGS (graphics/scaler, also serves TDE calls) control registers, V4";
+    desc = "VGS window 0x11300000 (hard-coded osal_ioremap(0x11300000, 0x10000) in VGS_HAL_Open). The node descriptors that VGS_DRV_SetReg_* functions build are memory structures, not MMIO. Hi3516E V200 / V300 (V4 generation, same SDK object set for EV200/EV300/Hi3518E V300/Hi3516D V200). Provenance: PROVEN = a load/store offset or bit operation in a named function of the disassembled vendor module (build/tmp/ev200/dis, toolchain objdump) with the module and function given per register; INFERRED = deduced from naming, the ev300 qemu-bench research or call structure; GUESS = plausible only. Subset: only registers visible in the HAL/driver control path; configuration images in DDR are not MMIO. Hardware not read. ";
+
+    reg {
+        name = "Node-list interrupt/node mask";
+        desc = "MASK [PROVEN] hi3516ev200_vgs.ko VGS_HAL_SetMask: str [base+0xf0]. Hardware not read.";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } MASK @ 0xF0;
+
+    reg {
+        name = "Node ID";
+        desc = "NODE_ID [PROVEN] VGS_HAL_SetNodeID / VGS_HAL_GetNodeID: [base+0xf4]. Hardware not read.";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } NODE_ID @ 0xF4;
+
+    reg {
+        name = "Node list start address (write starts the engine)";
+        desc = "NODE_ADDR [PROVEN] VGS_HAL_SetNext and VGS_HAL_Start: str [base+0xf8], then isb/dsb/dmb and a read-back compare (VGS_HAL_Start prints a mismatch). Hardware not read.";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } NODE_ADDR @ 0xF8;
+
+    reg {
+        name = "Raw interrupt status / clear";
+        desc = "INT_RAW_CLR [PROVEN] VGS_HAL_ClrInt: str 0xFFFFFFFF -> [base+0x310]. Hardware not read.";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } INT_RAW_CLR @ 0x310;
+
+    reg {
+        name = "Interrupt status";
+        desc = "INT_STATUS [PROVEN] VGS_HAL_GetIntStatus: ldr [base+0x314]. Hardware not read.";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } INT_STATUS @ 0x314;
+
+    reg {
+        name = "AXI outstanding";
+        desc = "OUTSTANDING [PROVEN] VGS_HAL_SetOutstanding: str [base+0x330]. Hardware not read.";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } OUTSTANDING @ 0x330;
+
+};
+`endif
+`ifndef HISI_VPSS_V4_RDL
+`define HISI_VPSS_V4_RDL
+
+regfile eVPSS_V4 {
+    name = "VPSS control and channel registers, V4";
+    desc = "VPSS window 0x11400000 (0x10000), SPI 46. Channel register groups: ch0 0x44C.., ch1 0x4A0.., ch2 0x4E8.. (VPSS_HAL_SetChnImgSize/SetChnEn); the ev300 research assumed +0x54 per channel, the code shows 0x44C, 0x4A0, 0x4E8. Hi3516E V200 / V300 (V4 generation, same SDK object set for EV200/EV300/Hi3518E V300/Hi3516D V200). Provenance: PROVEN = a load/store offset or bit operation in a named function of the disassembled vendor module (build/tmp/ev200/dis, toolchain objdump) with the module and function given per register; INFERRED = deduced from naming, the ev300 qemu-bench research or call structure; GUESS = plausible only. Subset: only registers visible in the HAL/driver control path; configuration images in DDR are not MMIO. Hardware not read. ";
+
+    reg {
+        name = "Group control";
+        desc = "CTRL [PROVEN] hi3516ev200_vpss.ko VPSS_HAL_OnLineVideoEn (bit 31), Set3dnrEnable (bit 13), SetGrpCropAttr (bit 14), SetImgWorkType ([17:16]), SetChnScaleEn (bits 4,5,6), SetChnBufWrap (bit 20), SetMosaicCtrl (bit 10), SetCoverCtrl (bit 8), SetChnCrop (bits 0,1,2). Hardware not read.";
+        field { name = "chn0_en_crop"; desc = "Channel 0 crop enable (SetChnCrop). [INFERRED]"; } chn0_en_crop[0:0];
+        field { name = "chn1_en_crop"; desc = "Channel 1 crop enable. [INFERRED]"; } chn1_en_crop[1:1];
+        field { name = "chn2_en_crop"; desc = "Channel 2 crop enable. [INFERRED]"; } chn2_en_crop[2:2];
+        field { name = "chn0_scale_en"; desc = "Channel scale enable (SetChnScaleEn). [PROVEN]"; } chn0_scale_en[4:4];
+        field { name = "chn1_scale_en"; desc = "Channel scale enable. [PROVEN]"; } chn1_scale_en[5:5];
+        field { name = "chn2_scale_en"; desc = "Channel scale enable. [PROVEN]"; } chn2_scale_en[6:6];
+        field { name = "cover_en"; desc = "SetCoverCtrl sets bit 8. [INFERRED]"; } cover_en[8:8];
+        field { name = "mosaic_en"; desc = "SetMosaicCtrl sets bit 10. [INFERRED]"; } mosaic_en[10:10];
+        field { name = "nr3d_en"; desc = "3DNR enable (Set3dnrEnable). [PROVEN]"; } nr3d_en[13:13];
+        field { name = "grp_crop_en"; desc = "Group crop enable (SetGrpCropAttr). [PROVEN]"; } grp_crop_en[14:14];
+        field { name = "work_type"; desc = "Image work type (SetImgWorkType). [PROVEN]"; } work_type[17:16];
+        field { name = "buf_wrap_en"; desc = "Channel buffer wrap (SetChnBufWrap). [INFERRED]"; } buf_wrap_en[20:20];
+        field { name = "online_video_en"; desc = "Online video enable (OnLineVideoEn). [PROVEN]"; } online_video_en[31:31];
+    } CTRL @ 0x0;
+
+    reg {
+        name = "Register update";
+        desc = "REGUP [PROVEN] VPSS_HAL_SetRegup (bit 0), SetManualRegup (bit 8), ScaleRegup (bits 1,2,3 of the same register). Hardware not read.";
+        field { name = "regup"; desc = "Register update strobe. [PROVEN]"; } regup[0:0];
+        field { name = "scale_regup1"; desc = "ScaleRegup bit. [INFERRED]"; } scale_regup1[1:1];
+        field { name = "scale_regup2"; desc = "ScaleRegup bit. [INFERRED]"; } scale_regup2[2:2];
+        field { name = "scale_regup3"; desc = "ScaleRegup bit. [INFERRED]"; } scale_regup3[3:3];
+        field { name = "manual_regup"; desc = "Manual register update. [PROVEN]"; } manual_regup[8:8];
+    } REGUP @ 0x10;
+
+    reg {
+        name = "Interrupt mask";
+        desc = "INT_MASK [PROVEN] VPSS_HAL_SetMask: str [base+0xf0] (ev300: 0x7401). Hardware not read.";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } INT_MASK @ 0xF0;
+
+    reg {
+        name = "Node ID";
+        desc = "NODE_ID [PROVEN] VPSS_HAL_SetNodeID/GetNodeID: [base+0xfc]. Hardware not read.";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } NODE_ID @ 0xFC;
+
+    reg {
+        name = "Group crop (offset/size words)";
+        desc = "GRP_CROP_100 [PROVEN] VPSS_HAL_SetGrpCropAttr: [base+0x100], [base+0x104] (16-bit halves from the crop rectangle). Hardware not read.";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } GRP_CROP_100 @ 0x100;
+
+    reg {
+        name = "Channel crop 0 words";
+        desc = "CHN_CROP_108 [PROVEN] VPSS_HAL_SetChnCrop: words at 0x108, 0x10c, 0x114 (inferred), 0x118, 0x11c for the channels. Hardware not read.";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } CHN_CROP_108 @ 0x108;
+
+    reg {
+        name = "Offline scale coefficients, set 0 (0x180..0x1B8)";
+        desc = "SCALE_COEF_0 [PROVEN] VPSS_HAL_SetOfflineChnScaleCoeff: stores at 0x180,0x188,0x190,0x198 / 0x1A0,0x1A8,0x1B0,0x1B8 / 0x1C0,0x1C8,0x1D0,0x1D8 (stride 8). Hardware not read.";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } SCALE_COEF_0 @ 0x180;
+
+    reg {
+        name = "Cover table load address";
+        desc = "LOAD_COVER_ADDR [PROVEN] VPSS_HAL_SetCoverLoadAddr: [base+0x200]. Hardware not read.";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } LOAD_COVER_ADDR @ 0x200;
+
+    reg {
+        name = "Mosaic table load address";
+        desc = "LOAD_MOSAIC_ADDR [PROVEN] VPSS_HAL_SetMosaicLoadAddr: [base+0x208]. Hardware not read.";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } LOAD_MOSAIC_ADDR @ 0x208;
+
+    reg {
+        name = "Zoom (ZME) coefficient load address";
+        desc = "LOAD_ZME_ADDR [PROVEN] VPSS_HAL_SetZmeLoadAddr: [base+0x218]. Hardware not read.";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } LOAD_ZME_ADDR @ 0x218;
+
+    reg {
+        name = "NR configuration load address";
+        desc = "LOAD_NRCFG_ADDR [PROVEN] VPSS_HAL_SetNrCfgLoadAddr: [base+0x220]. Hardware not read.";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } LOAD_NRCFG_ADDR @ 0x220;
+
+    reg {
+        name = "MAC load address";
+        desc = "LOAD_MAC_ADDR [PROVEN] VPSS_HAL_SetMacLoadAddr: [base+0x2f0]. Hardware not read.";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } LOAD_MAC_ADDR @ 0x2F0;
+
+    reg {
+        name = "Node list address (write starts a list)";
+        desc = "NODE_ADDR [PROVEN] VPSS_HAL_SetNext / VPSS_HAL_Start: str [base+0x2f8], read back twice. Hardware not read.";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } NODE_ADDR @ 0x2F8;
+
+    reg {
+        name = "Start";
+        desc = "START [PROVEN] VPSS_HAL_Start: final store [base+0x300]. Hardware not read.";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } START @ 0x300;
+
+    reg {
+        name = "AXI outstanding";
+        desc = "OUTSTANDING [PROVEN] VPSS_HAL_SetOutstanding: [base+0x304] (the ev300 research lists NODE_START at 0x304). Hardware not read.";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } OUTSTANDING @ 0x304;
+
+    reg {
+        name = "Mode";
+        desc = "MODE [PROVEN] VPSS_HAL_SetMode: read-modify-write bit 1 of [base+0x308]. Hardware not read.";
+        field { name = "mode1"; desc = "VPSS_HAL_SetMode bit 1. [PROVEN]"; } mode1[1:1];
+    } MODE @ 0x308;
+
+    reg {
+        name = "Raw interrupt status / clear";
+        desc = "RAW_STATUS [PROVEN] VPSS_HAL_GetRawIntStatus (ldr), VPSS_HAL_ClrInt/ClrStartInt/ClrEofInt/ClrErrInt/ClrLutInt/ClrLowdelayInt/ClrSofEoftInt (str). Hardware not read.";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } RAW_STATUS @ 0x310;
+
+    reg {
+        name = "Masked interrupt status";
+        desc = "STATUS [PROVEN] VPSS_HAL_GetIntStatus: ldr [base+0x314]. Hardware not read.";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } STATUS @ 0x314;
+
+    reg {
+        name = "Source image type / low-delay control";
+        desc = "SRC_TYPE [PROVEN] VPSS_HAL_SetSrcImgType (bit 20), EnableGrpLowDelay (bit 7), EnableChnLowDelay (bits 5,6). Hardware not read.";
+        field { name = "lowdelay_chn0"; desc = "EnableChnLowDelay. [INFERRED]"; } lowdelay_chn0[5:5];
+        field { name = "lowdelay_chn1"; desc = "EnableChnLowDelay. [INFERRED]"; } lowdelay_chn1[6:6];
+        field { name = "lowdelay_grp"; desc = "EnableGrpLowDelay. [INFERRED]"; } lowdelay_grp[7:7];
+        field { name = "src_type"; desc = "SetSrcImgType. [PROVEN]"; } src_type[20:20];
+    } SRC_TYPE @ 0x400;
+
+    reg {
+        name = "Source image size";
+        desc = "SRC_SIZE [PROVEN] VPSS_HAL_SetSrcImgSize: [15:0] and [31:16] = width/height fields. Hardware not read.";
+        field { name = "size_lo"; desc = "Low half of the size word. [PROVEN]"; } size_lo[15:0];
+        field { name = "size_hi"; desc = "High half of the size word. [PROVEN]"; } size_hi[31:16];
+    } SRC_SIZE @ 0x404;
+
+    reg {
+        name = "Source bit width / current-frame control";
+        desc = "SRC_BITWIDTH [PROVEN] VPSS_HAL_SetSrcImgBitwidth (bit 1); SetCurCtrl also rewrites this register. Hardware not read.";
+        field { name = "bitwidth"; desc = "SetSrcImgBitwidth. [PROVEN]"; } bitwidth[1:1];
+    } SRC_BITWIDTH @ 0x408;
+
+    reg {
+        name = "Current frame size";
+        desc = "CUR_SIZE [INFERRED] VPSS_HAL_SetCurCtrl read-modify-write. Hardware not read.";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } CUR_SIZE @ 0x40C;
+
+    reg {
+        name = "Current frame address words 0x410..0x42C";
+        desc = "CUR_ADDR_Y [INFERRED] VPSS_HAL_SetCurCtrl: stores 0x410, 0x418, 0x424, 0x42c (plus 0x420 stride field [9:0], 0x434). Hardware not read.";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } CUR_ADDR_Y @ 0x410;
+
+    reg {
+        name = "Channel 0 image size";
+        desc = "CH0_SIZE [PROVEN] VPSS_HAL_SetChnImgSize: [15:0]/[31:16] at 0x44c (ch0), 0x4a0 (ch1), 0x4e8 (ch2). Hardware not read.";
+        field { name = "size_lo"; desc = "Width field. [PROVEN]"; } size_lo[15:0];
+        field { name = "size_hi"; desc = "Height field. [PROVEN]"; } size_hi[31:16];
+    } CH0_SIZE @ 0x44C;
+
+    reg {
+        name = "Channel 0 control";
+        desc = "CH0_CTRL [PROVEN] VPSS_HAL_SetChnEn: bit 31 of 0x450 (ch0), 0x4a4 (ch1), 0x4ec (ch2); SetChnCtrl rewrites the same registers. Hardware not read.";
+        field { name = "chn_en"; desc = "Channel enable. [PROVEN]"; } chn_en[31:31];
+    } CH0_CTRL @ 0x450;
+
+    reg {
+        name = "Channel 0 offset";
+        desc = "CH0_OFFSET [PROVEN] VPSS_HAL_SetChnOffset: [15:0] of 0x454 (ch0), 0x4ac (ch1), 0x4f0 (ch2). Hardware not read.";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } CH0_OFFSET @ 0x454;
+
+    reg {
+        name = "Channel 0 output addresses (4 words 0x468..0x480)";
+        desc = "CH0_ADDR [PROVEN] VPSS_HAL_SetChnPicAddr: 0x468/0x470/0x478/0x480 then 0x488 stride (ch0); 0x4b0.. (ch1); 0x4f4.. (ch2). Hardware not read.";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } CH0_ADDR @ 0x468;
+
+    reg {
+        name = "Channel 0 stride";
+        desc = "CH0_STRIDE [PROVEN] VPSS_HAL_SetChnPicAddr: read-modify-write 0x488 with 16-bit halves. Hardware not read.";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } CH0_STRIDE @ 0x488;
+
+    reg {
+        name = "Group low-delay address";
+        desc = "GRP_LOWDELAY_ADDR [PROVEN] VPSS_HAL_SetGrpLowDelayAddr: [base+0x578]; SetChnLowDelayAddr: 0x584, 0x58c, 0x594. Hardware not read.";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } GRP_LOWDELAY_ADDR @ 0x578;
+
+    reg {
+        name = "Channel low-delay attributes";
+        desc = "LOWDELAY_ATTR [PROVEN] VPSS_HAL_SetChnLowDelayAttr: 0x59c, 0x5a0. Hardware not read.";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } LOWDELAY_ATTR @ 0x59C;
+
+    reg {
+        name = "Cover control";
+        desc = "COVER_CTRL [PROVEN] VPSS_HAL_SetCoverCtrl: [base+0x600] bits 0..7; SetCover: rectangle words 0x604.. and 0x658... Hardware not read.";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } COVER_CTRL @ 0x600;
+
+    reg {
+        name = "Online scale coefficients 0x6C8..0x6F4";
+        desc = "ONLINE_SCALE_COEF [PROVEN] VPSS_HAL_SetOnlineChnScaleCoeff: stores at 0x6c8,0x6cc,0x6d0,0x6d4 / 0x6d8..0x6e4 / 0x6e8..0x6f4. Hardware not read.";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } ONLINE_SCALE_COEF @ 0x6E8;
+
+    reg {
+        name = "Compression attributes";
+        desc = "COMPRESS [PROVEN] VPSS_HAL_SetChnCmpAttr: [base+0x700], 0x704, 0x708. Hardware not read.";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } COMPRESS @ 0x700;
+
+};
+`endif
+`endif
