@@ -1,0 +1,569 @@
+`ifndef HI3520DV300_IR_RDL
+`define HI3520DV300_IR_RDL
+regfile eHI3520DV300_IR {
+    name = "IR receiver";
+    desc = "IR receiver of the Hi3521A/Hi3520D V300 at base 0x1214_0000. 14 registers extracted programmatically from the Hi3521A/Hi3520D V300 data sheet (Issue 00B07, 2015-12-10) (Table 13-8 Summary of IR registers (base address: 0x1214_0000)): register headings, offsets, total reset values, field bit ranges, access types, names, reset values and descriptions, with PDF page numbers in each register description. Field names, bit ranges, access types and offsets are exact; the free-text descriptions are taken from the cell text of the field table and were checked by sampling only. Hardware not verified.";
+    reg {
+        name = "IR_EN";
+        desc = "IR_EN is an IR receive enable control register. Before configuring other registers, you must set IR_EN[ir_en] to 1 by using software. When IR_EN[ir_en] is 0, other registers are read-only and the read values are their reset values. (offset 0x0; total reset 0x00000000; PROVEN: Hi3521A/Hi3520D V300 data sheet (Issue 00B07, 2015-12-10), section 13.4.6, PDF page 1558).";
+        field {
+            name = "reserved";
+            desc = "Reserved";
+            sw = r; hw = w;
+            reset = 0x0;
+        } reserved_31_1[31:1];
+        field {
+            name = "ir_en";
+            desc = "IR receive module enable
+- 0: disabled
+- 1: enabled";
+            sw = rw; hw = r;
+            reset = 0x0;
+        } ir_en[0:0];
+    } IR_EN @ 0x0;
+    reg {
+        name = "IR_CFG";
+        desc = "IR_CFG is an IR configuration register. Before configuring this register, you must set IR_BUSY[ir_busy] to 0 and set IR_EN[ir_en] to 1. Otherwise, the original value is retained after configuration. The reference clock frequency supported by the IR module ranges from 1 MHz to 128 MHz. The relationship between the frequency and the clock frequency divider ir_freq is as follows: When the reference clock frequency is 1 MHz, ir_freq must be set to 0x00. If the reference clock frequency is 128 MHz, ir_freq must be set to 0x7F. When the frequency of the IR reference clock is not an integer ranging from 1 MHz to 128 MHz, the clock frequency divider is rounded off. For example, if the reference clock frequency is 12.1 MHz, the clock frequency divider is 0x0B; if the reference clock frequency is 12.8 MHz, the clock frequency divider is 0x0C. The relationship between the frequency offset and the count deviation is as follows: If the base frequency is f and the frequency variation is Df, the frequency offset ratio is Df/f. If the count deviation of the counter is Dcnt, and the judge level width is s (in μs), the count deviation Dcnt is calculated as follows: Dcnt = |0.1 x s x ratio|Therefore, when the clock has frequency offset, the valid range of the parameter value needs to be changed. If the frequency increases, the corresponding margin range is changed to [min + Dcnt, max + Dcnt]. Where, min and max indicate the margins without frequency offset. If the frequency decreases, the offset range is changed to [min - Dcnt, max - Dcnt]. Take the margin of the start bit in the lead code as an example. If the base frequency is 100 MHz, and the frequency increases by 0.1 MHz, then the ratio is 0.001 (0.1/100). Assume that s is 9000 μs. Dcnt is calculated as follows: Dcnt = |0.1 x 9,000 x 0.001| = 1. In this case, the margin range of ir_leads must be changed to [0x033D, 0x3CD]. (offset 0x4; total reset 0x3E801F0B; PROVEN: Hi3521A/Hi3520D V300 data sheet (Issue 00B07, 2015-12-10), section 0.1, PDF page 1559).";
+        field {
+            name = "ir_max_level_width";
+            desc = "Invalid when IR_CFG[ir_mode] is 0 Indicates the maximum level width (in 10 µs) of a symbol whenIR_CFG[ir_mode] is 1. This width indicates the end of a symbol stream.";
+            sw = rw; hw = r;
+            reset = 0x3e80;
+        } ir_max_level_width[31:16];
+        field {
+            name = "ir_format";
+            desc = "Data code format when IR_CFG[ir_mode] is 0
+- 00: NEC with simple repeat code
+- 01: TC9012 code
+- 10: NEC with full repeat code
+- 11: SONY code
+
+For details about the relationship between code types and code formats, see Table 13-5 to Table 13-7. Symbol format when IR_CFG[ir_mode] is 1 bit[15]: reserved The definitions of bit[14] are as follows:
+- 0: The symbol is from low to high, and the symbol stream ends at the high level.
+- 1: The symbol is from high to low, and the symbol stream ends at the low level.";
+            sw = rw; hw = r;
+            reset = 0x0;
+        } ir_format[15:14];
+        field {
+            name = "ir_bits";
+            desc = "Number of data bits in a frame when IR_CFG[ir_mode] is 0 0x00-0x2F: 1-48 data bits in a frame 0x30-0x3F: reserved If ir_bits is set to a value ranging from 0x30 to 0x3F by using";
+            sw = rw; hw = r;
+            reset = 0x1f;
+        } ir_bits[13:8];
+        field {
+            name = "ir_mode";
+            desc = "IR operating mode
+- 0: The decoded complete data frames are output.
+- 1: Only the symbol width is output.";
+            sw = rw; hw = r;
+            reset = 0x0;
+        } ir_mode[7:7];
+        field {
+            name = "ir_freq";
+            desc = "Frequency divider of the working clock 0x00-0x7F: correspond to the working clock divider 1-128 respectively.";
+            sw = rw; hw = r;
+            reset = 0xb;
+        } ir_freq[6:0];
+    } IR_CFG @ 0x4;
+    reg {
+        name = "IR_LEADS";
+        desc = "IR_LEADS is a lead code start bit margin configuration register (valid only when IR_CFG[ir_mode] = 0). Before setting this register, you must set IR_BUSY[ir_busy] to 0 and set Register Description[ir_en] to 1. Otherwise, the original value of the register and the reserved value are retained after setting. The margin must be considered based on the typical value of the specific code type for accurately judging the start bit of the lead code. For details about the typical values of specified code types, see the values of LEAD_S in Table 13-5 to Table 13-7. For a pulse width whose typical value is greater than or equal to 400 (10 μs precision), the recommended margin is 8% of the typical value. Take the D6121 code as an example. If the typical value of LEAD_S is 900, the values of cnt_leads_min and cnt_leads_max are calculated as follows: cnt_leads_min = 900 x 92% = 828 = 0x33C cnt_leads_max = 900 x 108% = 972 = 0x3CC For a pulse width whose typical value is less than 400 (10 μs precision), the recommended margin is 20% of the typical value. Take the SONY-D7C5 as an example. If the typical value of LEAD_S is 240, the values of cnt_leads_min and cnt_leads_max are calculated as follows: cnt_leads_min = 240 x 80% = 192 = 0xC0 cnt_leads_max = 240 x 120% = 288 = 0x120 The basic configuration principle is as follows: cnt_leads_max is greater than or equal to cnt_leads_min, and cnt_leads_min is greater than cnt0_b_max and cnt1_b_max. (offset 0x8; total reset 0x033C03CC; PROVEN: Hi3521A/Hi3520D V300 data sheet (Issue 00B07, 2015-12-10), section 0.1, PDF page 1561).";
+        field {
+            name = "reserved";
+            desc = "Reserved";
+            sw = r; hw = w;
+            reset = 0x0;
+        } reserved_31_26[31:26];
+        field {
+            name = "cnt_leads_min";
+            desc = "Minimum pulse width of the start bit of the lead code 0x000-0x007: reserved";
+            sw = rw; hw = r;
+            reset = 0x33c;
+        } cnt_leads_min[25:16];
+        field {
+            name = "reserved";
+            desc = "Reserved";
+            sw = r; hw = w;
+            reset = 0x0;
+        } reserved_15_10[15:10];
+        field {
+            name = "cnt_leads_max";
+            desc = "Maximum pulse width of the start bit of the lead code 0x000-0x007: reserved";
+            sw = rw; hw = r;
+            reset = 0x3cc;
+        } cnt_leads_max[9:0];
+    } IR_LEADS @ 0x8;
+    reg {
+        name = "IR_LEADE";
+        desc = "IR_LEADE is a lead code end bit margin configuration register (valid only when IR_CFG[ir_mode] = 0). Before setting this register, you must set IR_BUSY[ir_busy] to 0 and set IR_EN[ir_en] to 1. Otherwise, the original value of the register and the reserved value are retained after setting. For the NEC with simple repeat code, the margins of cnt_sleade and cnt_leade cannot be overlapped. Otherwise, when the actual count value is within the overlapped range, the simple lead code cannot be identified. As a result, a frame format error occurs. The margin must be considered based on the typical value of the specific code type for accurately judging the end bit of the lead code. The margin is about 8% of the type value. For details about the typical values of specific code types, see the values of LEAD_E in Table 13-5 to Table 13-7. For the pulse width whose typical values is greater than or equal to 400 (10 μs precision), the recommended margin is 8% of the typical value. Take the D6121 code as an example. If the typical value of LEAD_E is 450, the values of cnt_leade_min and cnt_leade_max are calculated as follows: cnt_leade_min = 450 x 92% = 414 = 0x19E cnt_leade_max = 450 x 108% = 486 = 0x1E6 For a pulse width whose typical value is less than 400 (10 μs precision), the recommended margin is 20% of the typical value. Take the SONY-D7C5 code as an example. If the typical value of LEAD_E is 60, the values of cnt_leade_min and cnt_leade_max are calculated as follows: cnt_leade_min = 60 x 80% = 48 = 0x030 cnt_leade_max = 60 x 120% = 72 = 0x048 The basic configuration principle is as follows: cnt_leade_max is greater than or equal to cnt_leade_min. (offset 0xC; total reset 0x019E01E6; PROVEN: Hi3521A/Hi3520D V300 data sheet (Issue 00B07, 2015-12-10), section 0.1, PDF page 1562).";
+        field {
+            name = "reserved";
+            desc = "Reserved";
+            sw = r; hw = w;
+            reset = 0x0;
+        } reserved_31_25[31:25];
+        field {
+            name = "cnt_leade_min";
+            desc = "Minimum pulse width of the end bit of the lead code 0x000-0x007: reserved";
+            sw = rw; hw = r;
+            reset = 0x19e;
+        } cnt_leade_min[24:16];
+        field {
+            name = "reserved";
+            desc = "Reserved";
+            sw = r; hw = w;
+            reset = 0x0;
+        } reserved_15_9[15:9];
+        field {
+            name = "cnt_leade_max";
+            desc = "Maximum pulse width of the end bit of the lead code 0x000-0x007: reserved";
+            sw = rw; hw = r;
+            reset = 0x1e6;
+        } cnt_leade_max[8:0];
+    } IR_LEADE @ 0xC;
+    reg {
+        name = "IR_SLEADE";
+        desc = "IR_SLEADE is a simple lead code end bit margin configuration register (IR_CFG[ir_mode] = 0). Before setting this register, you must set IR_BUSY[ir_busy] to 0 and set IR_EN[ir_en] to 1. Otherwise, the original value of the register and the reserved value are retained after setting. For the NEC with simple repeat code, the margins of cnt_sleade and cnt_leade cannot be overlapped. Otherwise, when the actual count value is within the overlapped range, the simple lead code cannot be identified. As a result, a frame format error occurs. This register must be configured only for the NEC with simple repeat code. The margin must be considered based on the typical value of the specific code type for accurately judging the end bit of the simple lead code. For details about the typical values of specific code types, see the values of SLEAD_E in Table 13-5 to Table 13-7. For a pulse width whose typical value is greater than or equal to 225 (10 μs precision), the recommended margin is 8% of the typical value. Take the D6121 code as an example. If the typical value of SLEAD_E is 225, the values of cnt_sleade_min and cnt_sleade_max are calculated as follows: cnt_sleade_min = 225 x 92% = 207 = 0xCF cnt_sleade_max = 225 x 108% = 243 = 0xF3 For a pulse width whose typical value is less than 225 (10 μs precision), the recommended margin is 20% of the typical value. For example, if the typical value of SLEAD_E of a code type is 60, the values of cnt_sleade_min and cnt_sleade_max are calculated as follows: cnt_sleade_min = 60 x 80% = 48 = 0x30 cnt_sleade_max = 60 x 120% = 72 = 0x48 The basic configuration principle is as follows: cnt_sleade_max is greater than or equal to cnt_sleade_min. (offset 0x10; total reset 0x00CF00F3; PROVEN: Hi3521A/Hi3520D V300 data sheet (Issue 00B07, 2015-12-10), section 0.1, PDF page 1563).";
+        field {
+            name = "reserved";
+            desc = "Reserved";
+            sw = r; hw = w;
+            reset = 0x0;
+        } reserved_31_25[31:25];
+        field {
+            name = "cnt_sleade_min";
+            desc = "Minimum pulse width of the end bit of the simple lead code 0x000-0x007: reserved";
+            sw = rw; hw = r;
+            reset = 0xcf;
+        } cnt_sleade_min[24:16];
+        field {
+            name = "reserved";
+            desc = "Reserved";
+            sw = r; hw = w;
+            reset = 0x0;
+        } reserved_15_9[15:9];
+        field {
+            name = "cnt_sleade_max";
+            desc = "Maximum pulse width of the start bit of the simple lead code 0x000-0x007: reserved";
+            sw = rw; hw = r;
+            reset = 0xf3;
+        } cnt_sleade_max[8:0];
+    } IR_SLEADE @ 0x10;
+    reg {
+        name = "IR_B0";
+        desc = "IR_B0 is data 0 level judge margin configuration register (valid only when IR_CFG[ir_mode] = 0). Before setting this register, you must set IR_BUSY[ir_busy] to 0 and set IR_EN[ir_en] to 1. Otherwise, the original value of the register and the reserved value are retained after setting. For the preceding four code types, the margins for judging the levels of bit0 and bit1 cannot be overlapped. Otherwise, when the actual count value is within the overlapped range, bit1 cannot be identified and is regarded as bit0 by mistake. A margin must be considered based on the typical value of the specific code type to accurately judging bit0. The margin is about 20% of the typical value. For details about the typical values of the NEC with full repeat code, NEC with simple repeat code, and TC9012 code, see the values of B0_H in Table 13-5 to Table 13-7. Take the D6121 code as an example. If the typical value of B0_H is 56 (10 μs precision), the values of cnt0_b_min and cnt0_b_max are calculated as follows: cnt0_b_min = 56 x 80% = 45 = 0x2D cnt0_b_max = 56 x 120% = 67 = 0x43 For details about the typical value of the SONY code, see the values of B0_L in Table 13-5 to Table 13-7. Take the SONY-D7C5 code as an example. If the typical value of B0_L is 60 (10 μs precision), the values of cnt0_b_min and cnt0_b_max are calculated as follows: cnt0_b_min = 60 x 80% = 48 = 0x30 cnt0_b_max = 60 x 120% = 72 = 0x48 The basic configuration principle is as follows: cnt0_b_max is greater than or equal to cnt0_b_min. (offset 0x14; total reset 0x002D0043; PROVEN: Hi3521A/Hi3520D V300 data sheet (Issue 00B07, 2015-12-10), section 0.1, PDF page 1564).";
+        field {
+            name = "reserved";
+            desc = "Reserved";
+            sw = r; hw = w;
+            reset = 0x0;
+        } reserved_31_25[31:25];
+        field {
+            name = "cnt0_b_min";
+            desc = "Minimum pulse width of the level for judging bit0 0x000-0x007: reserved";
+            sw = rw; hw = r;
+            reset = 0x2d;
+        } cnt0_b_min[24:16];
+        field {
+            name = "reserved";
+            desc = "Reserved";
+            sw = r; hw = w;
+            reset = 0x0;
+        } reserved_15_9[15:9];
+        field {
+            name = "cnt0_b_max";
+            desc = "Maximum pulse width of the level for judging bit0 0x000-0x007: reserved";
+            sw = rw; hw = r;
+            reset = 0x43;
+        } cnt0_b_max[8:0];
+    } IR_B0 @ 0x14;
+    reg {
+        name = "IR_B1";
+        desc = "IR_B1 is data 1 judge level margin configuration register (valid only when IR_CFG[ir_mode] = 0). Before setting this register, you must set IR_BUSY[0] to 0 and set IR_EN[0] to 1. Otherwise, the original value of the register and the reserved value are retained after setting. For the preceding four code types, the margins for judging the levels of bit0 and bit1 cannot be overlapped. Otherwise, when the actual count value is within the overlapped range, bit1 cannot be identified and is regarded as bit0 by mistake. A margin must be considered based on the typical value of the specific code type for accurately judging bit1. The margin is about 20% of the typical value. For details about the typical values of the NEC with simple repeat code, NEC with simple repeat code, and TC9012 code, see the values of B1_H in Table 13-5 to Table 13-7. Take the D6121 code as an example. If the typical value of B1_H is 169 (10 μs precision), the values of cnt1_b_min and cnt1_b_max are calculated as follows: cnt1_b_min = 169 x 80% = 135 = 0x87 cnt1_b_max = 169 x 120% = 203 = 0xCB For details about the typical value of the SONY code, see the values of B1_L in Table 13-5 to Table 13-7. Take the SONY-D7C5 code as an example. If the typical value of B1_L is 120 (10 μs precision), the values of cnt1_b_min and cnt1_b_max are calculated as follows: cnt1_b_min = 120 x 80% = 96 = 0x60 cnt1_b_max = 120 x 120% = 144 = 0x90 The basic configuration principle is as follows: cnt1_b_max is greater than or equal to cnt1_b_min. (offset 0x18; total reset 0x008700CB; PROVEN: Hi3521A/Hi3520D V300 data sheet (Issue 00B07, 2015-12-10), section 0.1, PDF page 1565).";
+        field {
+            name = "reserved";
+            desc = "Reserved";
+            sw = r; hw = w;
+            reset = 0x0;
+        } reserved_31_25[31:25];
+        field {
+            name = "cnt1_b_min";
+            desc = "Minimum pulse width of the level for judging bit1 0x000-0x007: reserved";
+            sw = rw; hw = r;
+            reset = 0x87;
+        } cnt1_b_min[24:16];
+        field {
+            name = "reserved";
+            desc = "Reserved";
+            sw = r; hw = w;
+            reset = 0x0;
+        } reserved_15_9[15:9];
+        field {
+            name = "cnt1_b_max";
+            desc = "Maximum pulse width of the level for judging bit1 0x000-0x007: reserved";
+            sw = rw; hw = r;
+            reset = 0xcb;
+        } cnt1_b_max[8:0];
+    } IR_B1 @ 0x18;
+    reg {
+        name = "IR_BUSY";
+        desc = "IR_BUSY is a configuration busy flag register. (offset 0x1C; total reset 0x00000000; PROVEN: Hi3521A/Hi3520D V300 data sheet (Issue 00B07, 2015-12-10), section 0.1, PDF page 1565).";
+        field {
+            name = "reserved";
+            desc = "Reserved";
+            sw = r; hw = w;
+            reset = 0x0;
+        } reserved_31_1[31:1];
+        field {
+            name = "ir_busy";
+            desc = "Busy status flag
+- 0: idle. In this case, software can configure data.
+- 1: Indicates the busy state. In this state, software cannot configure data.";
+            sw = r; hw = w;
+            reset = 0x0;
+        } ir_busy[0:0];
+    } IR_BUSY @ 0x1C;
+    reg {
+        name = "IR_DATAH";
+        desc = "IR_DATAH is an upper 16-bit IR receive decoded data register (IR_CFG[ir_mode] = 0) or symbol count register in the symbol FIFO (IR_CFG[ir_mode] = 1) The IR_DATAH register stores the upper 16 bits of the decoded data received by the IR, whereas IR_DATAL stores the lower 32 bits of the decoded data received by the IR. The data bits depend on the valid data bits in a frame and the specific code. For details, see the valid data bits in Table 13-5 to Table 13-7. Data is stored as follows: The data is stored in IR_DATAH and IR_DATAL in sequence from MSB to LSB. That is, after IR_DATAL is full, the remaining data is stored in IR_DATAH. The unused upper bits are reserved. Data is read as follows: IR_DATAH and IR_DATAL are read in sequence. The hardware receives all data bits without checking the definition of each data bit. The software is responsible for processing data bits. (offset 0x20; total reset 0x00000000; PROVEN: Hi3521A/Hi3520D V300 data sheet (Issue 00B07, 2015-12-10), section 0.1, PDF page 1566).";
+        field {
+            name = "reserved";
+            desc = "Reserved";
+            sw = r; hw = w;
+            reset = 0x0;
+        } reserved_31_16[31:16];
+        field {
+            name = "ir_datah";
+            desc = "Upper 16 bits of the decoded data received by the IR module when IR_CFG[ir_mode] is 0 Symbol count in the symbol FIFO when IR_CFG[ir_mode] is 1 bit[15:6]: reserved bit[5:0]: number of symbols in the symbol FIFO";
+            sw = r; hw = w;
+            reset = 0x0;
+        } ir_datah[15:0];
+    } IR_DATAH @ 0x20;
+    reg {
+        name = "IR_DATAL";
+        desc = "IR_DATAL is a lower 32-bit IR receive decoded data register (IR_CFG[ir_mode] = 0) or IR receive symbol width register (IR_CFG[ir_mode] = 1). (offset 0x24; total reset 0x00000000; PROVEN: Hi3521A/Hi3520D V300 data sheet (Issue 00B07, 2015-12-10), section 0.1, PDF page 1567).";
+        field {
+            name = "ir_datal";
+            desc = "Lower 32 bits of the decoded data received by the IR module when IR_CFG[ir_mode] is 0 Width of the symbol received by the IR module when IR_CFG[ir_mode] is 1 The definitions of bit[31:16] are as follows: Indicates the high-level width (a multiple of 10 μs) of the symbol received by the IR when the symbol level is from low to high. Indicates the low-level width (a multiple of 10 μs) of the symbol received by the IR module when the symbol level is from high to low. The definitions of bit[15:0] are as follows: Indicates the low-level width (a multiple of 10 μs) of the symbol received by the IR module when the symbol level is from low to high. Indicates the high-level width (a multiple of 10 μs) of the symbol received by the IR module when the symbol level is from high to low.";
+            sw = r; hw = w;
+            reset = 0x0;
+        } ir_datal[31:0];
+    } IR_DATAL @ 0x24;
+    reg {
+        name = "IR_INT_MASK";
+        desc = "IR_INT_MASK is an IR interrupt mask register. Before setting this register, you must set IR_EN[ir_en] to 1. Otherwise, the original value of the register is retained after setting. If all interrupts are masked, the IR wake-up function is unavailable. When IR_CFG[ir_mode] is 0, IR_INT_MASK[3:0] are valid; when IR_CFG[ir_mode] is 1, IR_INT_MASK[18:16] are valid. The definitions of the interrupts related to the register are as follows: RX data overflow interrupt If the CPU does not fetch the current frame and the next frame is already received, the next frame overwrites the current frame and a raw RX data overflow error interrupt is reported. RX data frame format error interrupt If the received data frame is not complete or the data pulse width does not meet the margin requirements, a raw RX frame format error interrupt is reported. RX data frame interrupt After a complete frame data is received, a raw RX data frame interrupt is reported. Key release detection interrupt For the NEC with simple repeat code and TC9012 code, if the start synchronous code is not detected again within 160 ms after the previously detected start synchronous code, or a valid data frame rather than a simple lead code is detected, a raw key release detection interrupt is reported. Both the NEC with full repeat code and the SONY code do not support the key release detection interrupt. RX symbol overflow interrupt If the symbol FIFO is full because the CPU does not fetch the data in time and the subsequent symbol is already received, a raw RX symbol overflow error interrupt is reported. RX symbol interrupt If a complete symbol is received and the symbol count of the symbol FIFO is above the threshold configured by IR_CFG[ir_bits], a raw RX symbol interrupt is reported. Symbol timeout interrupt If no new symbol interrupt is received during the period configured by IR_CFG[ir_max_level_width] after a valid symbol is received, a raw symbol timeout interrupt is reported. The hardware does not identify the interrupt priority. An interrupt is generated if one or more masked interrupt sources are valid. (offset 0x28; total reset 0x00000000; PROVEN: Hi3521A/Hi3520D V300 data sheet (Issue 00B07, 2015-12-10), section 0.1, PDF page 1568).";
+        field {
+            name = "reserved";
+            desc = "Reserved";
+            sw = r; hw = w;
+            reset = 0x0;
+        } reserved_31_19[31:19];
+        field {
+            name = "intm_overrun";
+            desc = "Symbol overflow interrupt mask when IR_CFG[ir_mode] is 1
+- 0: not masked
+- 1: masked";
+            sw = rw; hw = r;
+            reset = 0x0;
+        } intm_overrun[18:18];
+        field {
+            name = "intm_time_out";
+            desc = "Symbol timeout interrupt mask when IR_CFG[ir_mode] is 1
+- 0: not masked
+- 1: masked";
+            sw = rw; hw = r;
+            reset = 0x0;
+        } intm_time_out[17:17];
+        field {
+            name = "intm_symb_rcv";
+            desc = "RX N symbol interrupt mask when IR_CFG[ir_mode] is 1
+- 0: not masked
+- 1: masked";
+            sw = rw; hw = r;
+            reset = 0x0;
+        } intm_symb_rcv[16:16];
+        field {
+            name = "reserved";
+            desc = "Reserved";
+            sw = r; hw = w;
+            reset = 0x0;
+        } reserved_15_4[15:4];
+        field {
+            name = "intm_release";
+            desc = "Key release interrupt mask when IR_CFG[ir_mode] is 0
+- 0: not masked
+- 1: masked";
+            sw = rw; hw = r;
+            reset = 0x0;
+        } intm_release[3:3];
+        field {
+            name = "intm_overflow";
+            desc = "RX data overflow interrupt mask when IR_CFG[ir_mode] is 0
+- 0: not masked
+- 1: masked";
+            sw = rw; hw = r;
+            reset = 0x0;
+        } intm_overflow[2:2];
+        field {
+            name = "intm_frame_error";
+            desc = "RX data frame format error interrupt mask when IR_CFG[ir_mode] is 0
+- 0: not masked
+- 1: masked";
+            sw = rw; hw = r;
+            reset = 0x0;
+        } intm_frame_error[1:1];
+        field {
+            name = "intm_rcv";
+            desc = "RX data frame interrupt mask when IR_CFG[ir_mode] is 0
+- 0: not masked
+- 1: masked";
+            sw = rw; hw = r;
+            reset = 0x0;
+        } intm_rcv[0:0];
+    } IR_INT_MASK @ 0x28;
+    reg {
+        name = "IR_INT_STATUS";
+        desc = "IR_INT_STATUS is an IR interrupt status register. When IR_CFG[ir_mode] is 0, IR_INT_STATUS[3:0] and IR_INT_STATUS[19:16] are valid. When IR_CFG[ir_mode] is 1, IR_INT_STATUS[10:8] and IR_INT_STATUS[26:24] are valid. (offset 0x2C; total reset 0x00000000; PROVEN: Hi3521A/Hi3520D V300 data sheet (Issue 00B07, 2015-12-10), section 0.1, PDF page 1570).";
+        field {
+            name = "reserved";
+            desc = "Reserved";
+            sw = r; hw = w;
+            reset = 0x0;
+        } reserved_31_27[31:27];
+        field {
+            name = "intms_overrun";
+            desc = "Masked symbol overflow interrupt status when IR_CFG[ir_mode] is 1
+- 0: No interrupt is generated.
+- 1: An interrupt is generated.";
+            sw = r; hw = w;
+            reset = 0x0;
+        } intms_overrun[26:26];
+        field {
+            name = "intms_time_out";
+            desc = "Masked symbol timeout interrupt status when IR_CFG[ir_mode] is 1
+- 0: No interrupt is generated.
+- 1: An interrupt is generated.";
+            sw = r; hw = w;
+            reset = 0x0;
+        } intms_time_out[25:25];
+        field {
+            name = "intms_symb_rcv";
+            desc = "Masked RX symbol interrupt status when IR_CFG[ir_mode] is 1
+- 0: No interrupt is generated.
+- 1: An interrupt is generated.";
+            sw = r; hw = w;
+            reset = 0x0;
+        } intms_symb_rcv[24:24];
+        field {
+            name = "reserved";
+            desc = "Reserved";
+            sw = r; hw = w;
+            reset = 0x0;
+        } reserved_23_20[23:20];
+        field {
+            name = "intms_release";
+            desc = "Masked key release interrupt status when IR_CFG[ir_mode] is 0
+- 0: No interrupt is generated.
+- 1: An interrupt is generated.";
+            sw = r; hw = w;
+            reset = 0x0;
+        } intms_release[19:19];
+        field {
+            name = "intms_overflow";
+            desc = "Masked RX data overflow error interrupt status when IR_CFG[ir_mode] is 0
+- 0: No interrupt is generated.
+- 1: An interrupt is generated.";
+            sw = r; hw = w;
+            reset = 0x0;
+        } intms_overflow[18:18];
+        field {
+            name = "intms_frame_error";
+            desc = "Masked RX data frame format error interrupt status when IR_CFG[ir_mode] is 0
+- 0: No interrupt is generated.
+- 1: An interrupt is generated.";
+            sw = r; hw = w;
+            reset = 0x0;
+        } intms_frame_error[17:17];
+        field {
+            name = "intms_rcv";
+            desc = "Masked RX data frame interrupt status when IR_CFG[ir_mode] is 0
+- 0: No interrupt is generated.
+- 1: An interrupt is generated.";
+            sw = r; hw = w;
+            reset = 0x0;
+        } intms_rcv[16:16];
+        field {
+            name = "reserved";
+            desc = "Reserved";
+            sw = r; hw = w;
+            reset = 0x0;
+        } reserved_15_11[15:11];
+        field {
+            name = "intrs_overrun";
+            desc = "Raw symbol overflow interrupt status when IR_CFG[ir_mode] is 1
+- 0: No interrupt is generated.
+- 1: An interrupt is generated.";
+            sw = r; hw = w;
+            reset = 0x0;
+        } intrs_overrun[10:10];
+        field {
+            name = "intrs_time_out";
+            desc = "Raw symbol timeout interrupt status when IR_CFG[ir_mode] is 1
+- 0: No interrupt is generated.
+- 1: An interrupt is generated.";
+            sw = r; hw = w;
+            reset = 0x0;
+        } intrs_time_out[9:9];
+        field {
+            name = "intrs_symb_rcv";
+            desc = "Raw RX symbol interrupt status when IR_CFG[ir_mode] is 1
+- 0: No interrupt is generated.
+- 1: An interrupt is generated.";
+            sw = r; hw = w;
+            reset = 0x0;
+        } intrs_symb_rcv[8:8];
+        field {
+            name = "reserved";
+            desc = "Reserved";
+            sw = r; hw = w;
+            reset = 0x0;
+        } reserved_7_4[7:4];
+        field {
+            name = "intrs_release";
+            desc = "Raw key release interrupt status when IR_CFG[ir_mode] is 0
+- 0: No interrupt is generated.
+- 1: An interrupt is generated.";
+            sw = r; hw = w;
+            reset = 0x0;
+        } intrs_release[3:3];
+        field {
+            name = "intrs_overflow";
+            desc = "Raw RX data overflow error interrupt status when IR_CFG[ir_mode] is 0
+- 0: No interrupt is generated.
+- 1: An interrupt is generated.";
+            sw = r; hw = w;
+            reset = 0x0;
+        } intrs_overflow[2:2];
+        field {
+            name = "intrs_frame_error";
+            desc = "Raw RX data frame format error interrupt status when IR_CFG[ir_mode] is 0
+- 0: No interrupt is generated.
+- 1: An interrupt is generated.";
+            sw = r; hw = w;
+            reset = 0x0;
+        } intrs_frame_error[1:1];
+        field {
+            name = "intrs_rcv";
+            desc = "Raw RX data frame interrupt status when IR_CFG[ir_mode] is 0
+- 0: No interrupt is generated.
+- 1: An interrupt is generated.";
+            sw = r; hw = w;
+            reset = 0x0;
+        } intrs_rcv[0:0];
+    } IR_INT_STATUS @ 0x2C;
+    reg {
+        name = "IR_INT_CLR";
+        desc = "IR_INT_CLR is an IR interrupt clear register. When IR_CFG[ir_mode] is 0, IR_INT_CLR[3:0] are valid. When IR_CFG[ir_mode] is 1, IR_INT_CLR[18:16] are valid. (offset 0x30; total reset 0x00000000; PROVEN: Hi3521A/Hi3520D V300 data sheet (Issue 00B07, 2015-12-10), section 0.1, PDF page 1572).";
+        field {
+            name = "reserved";
+            desc = "Reserved";
+            sw = r; hw = w;
+            reset = 0x0;
+        } reserved_31_19[31:19];
+        field {
+            name = "intc_overrun";
+            desc = "When IR_CFG[ir_mode] is 1, this bit indicates whether the symbol overflow interrupt request is cleared.
+- 0: no effect
+- 1: cleared
+
+Access type WC in the data sheet: written 1 clears the bit.";
+            sw = rw; hw = w; onwrite = woclr;
+            reset = 0x0;
+        } intc_overrun[18:18];
+        field {
+            name = "intc_time_out";
+            desc = "When IR_CFG[ir_mode] is 1, this bit indicates whether the symbol timeout interrupt request is cleared.
+- 0: no effect
+- 1: cleared
+
+Access type WC in the data sheet: written 1 clears the bit.";
+            sw = rw; hw = w; onwrite = woclr;
+            reset = 0x0;
+        } intc_time_out[17:17];
+        field {
+            name = "intc_symb_rcv";
+            desc = "When IR_CFG[ir_mode] is 1, this bit indicates whether the RX symbol interrupt request is cleared.
+- 0: no effect
+- 1: cleared
+
+Access type WC in the data sheet: written 1 clears the bit.";
+            sw = rw; hw = w; onwrite = woclr;
+            reset = 0x0;
+        } intc_symb_rcv[16:16];
+        field {
+            name = "reserved";
+            desc = "Reserved";
+            sw = r; hw = w;
+            reset = 0x0;
+        } reserved_15_4[15:4];
+        field {
+            name = "intc_release";
+            desc = "When IR_CFG[ir_mode] is 0, this bit indicates whether the key release interrupt request is cleared.
+- 0: no effect
+- 1: cleared
+
+Access type WC in the data sheet: written 1 clears the bit.";
+            sw = rw; hw = w; onwrite = woclr;
+            reset = 0x0;
+        } intc_release[3:3];
+        field {
+            name = "intc_overflow";
+            desc = "When IR_CFG[ir_mode] is 0, this bit indicates whether the RX data overflow error interrupt request is cleared.
+- 0: no effect
+- 1: cleared
+
+Access type WC in the data sheet: written 1 clears the bit.";
+            sw = rw; hw = w; onwrite = woclr;
+            reset = 0x0;
+        } intc_overflow[2:2];
+        field {
+            name = "intc_frame_error";
+            desc = "When IR_CFG[ir_mode] is 0, this bit indicates whether the RX data frame format error interrupt request is cleared.
+- 0: no effect
+- 1: cleared
+
+Access type WC in the data sheet: written 1 clears the bit.";
+            sw = rw; hw = w; onwrite = woclr;
+            reset = 0x0;
+        } intc_frame_error[1:1];
+        field {
+            name = "intc_rcv";
+            desc = "When IR_CFG[ir_mode] is 0, this bit indicates whether the RX data frame interrupt request is cleared.
+- 0: no effect
+- 1: cleared
+
+If an RX data frame interrupt is generated and the software writes 1 to the bit without reading the data in IR_DATAL, the interrupt cannot be cleared.
+
+Access type WC in the data sheet: written 1 clears the bit.";
+            sw = rw; hw = w; onwrite = woclr;
+            reset = 0x0;
+        } intc_rcv[0:0];
+    } IR_INT_CLR @ 0x30;
+    reg {
+        name = "IR_START";
+        desc = "IR_START is an IR start configuration register. After other registers are configured, IR_START can be started when any value is written to the corresponding address during the startup of the IR module. (offset 0x34; total reset 0x00000000; PROVEN: Hi3521A/Hi3520D V300 data sheet (Issue 00B07, 2015-12-10), section 0.1, PDF page 1573).";
+        field {
+            name = "reserved";
+            desc = "Reserved";
+            sw = r; hw = w;
+            reset = 0x0;
+        } reserved_31_1[31:1];
+        field {
+            name = "ir_start";
+            desc = "IR start configuration register";
+            sw = w; hw = r;
+            reset = 0x0;
+        } ir_start[0:0];
+    } IR_START @ 0x34;
+};
+`endif
