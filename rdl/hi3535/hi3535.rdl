@@ -1,0 +1,255 @@
+
+
+`include "../common/HISI_USB_HOST.rdl"
+`include "iomux.rdl"
+`include "iopad.rdl"
+`include "crg.rdl"
+`include "sys_ctrl.rdl"
+`include "misc_ctrl.rdl"
+`include "../common/HISI_CIPHER_MC.rdl"
+`include "../common/HISI_TIMER_SP804.rdl"
+`include "../common/HISI_WDG_SP805.rdl"
+`include "../common/HISI_RTC_SPI.rdl"
+`include "ddrc_axi.rdl"
+`include "ddrc_dmc.rdl"
+`include "ddrc_mux.rdl"
+`include "ddrc_phy.rdl"
+`include "../common/HISI_SFC_350.rdl"
+`include "../common/HISI_NANDC.rdl"
+`include "toe.rdl"
+`include "../common/HISI_MOTION_DETECT.rdl"
+`include "../common/HISI_IVE.rdl"
+`include "vdp.rdl"
+`include "aio.rdl"
+`include "../common/HISI_I2C.rdl"
+`include "../common/ARM_PL011.rdl"
+`include "../common/HISI_IR.rdl"
+`include "../common/ARM_PL061.rdl"
+`include "usb3.rdl"
+`include "pcie.rdl"
+`include "sata.rdl"
+`include "sata_port.rdl"
+`include "pwm.rdl"
+
+addrmap hi3535 {
+    name = "hi3535 registers";
+    desc = "
+## Status
+
+Register map of the Hi3535 (H.264 NVR codec processor: dual Cortex-A9, 2x GbE with TOE, PCIe, SATA 3.0, USB 3.0 and USB 2.0, VDP/HDMI, IVE, MDU). Everything below is taken from the HiSilicon Hi3535 H.264 codec processor user guide / data sheet (Issue 00B08, 2014-02-25, Chinese): the address map (table 1-2), the interrupt table (table 3-25) and the register tables of chapters 2 to 13.
+The register blocks were extracted programmatically from the data sheet text (names, offsets, bit ranges, access, reset values; descriptions translated to English) and are labelled PROVEN (data sheet table). Blocks with the same layout as on the Hi3520D reuse the shared blocks in rdl/common (compared register by register, see docs/rdl-campaign/hi3535-datasheet.md of the workspace); where the data sheet differs from the Hi3520D (CRG, MISC, DDRC, IO, AIO, SATA ...) chip-local blocks were generated.
+Not modelled because the data sheet has no register tables: HDMI, L2 cache controller, ARM debug, VDH/JPGE/JPGD/TDE/VPSS/VGS/VENC/DDRT/SCD registers, the Audio codec.
+Nothing was verified on hardware.
+
+## Addresses
+
+| Start Address | End Address | Description | Documented Here |
+|---------------|-------------|-------------|-----------------|
+| 0x00000000 | 0x03FFFFFF | Address remapping window: points to the BOOTROM until remapping is cleared, then to the on-chip RAM; 64 MB | &#10060; |
+| 0x04000000 | 0x0400FFFF | BOOTROM address space (4 KB actual); 64 KB | &#10060; |
+| 0x04010000 | 0x0401FFFF | On-chip RAM address space (10 KB actual); 64 KB | &#10060; |
+| 0x10000000 | 0x1000FFFF | NANDC registers; 64 KB | &#9989; NANDC (reused common block) |
+| 0x10010000 | 0x1001FFFF | SFC registers; 64 KB | &#9989; SFC (reused common block) |
+| 0x10030000 | 0x1003FFFF | USB OHCI registers; 64 KB | &#9989; OHCI (generated from the data sheet) |
+| 0x10040000 | 0x1004FFFF | USB EHCI registers; 64 KB | &#9989; EHCI (reused common block) |
+| 0x10050000 | 0x1005FFFF | CIPHER registers; 64 KB | &#9989; CIPHER (reused common block) |
+| 0x10060000 | 0x1006FFFF | DMAC registers; 64 KB | &#10060; |
+| 0x12000000 | 0x1200FFFF | USB 3.0 registers; 64 KB | &#9989; USB3 (generated from the data sheet) |
+| 0x12010000 | 0x1201FFFF | SATA 3.0 registers; 64 KB | &#9989; SATA, SATA_PORT (generated from the data sheet) |
+| 0x12020000 | 0x1203FFFF | TOE registers (GMAC and TOE); 128 KB | &#9989; TOE (generated from the data sheet) |
+| 0x20000000 | 0x2000FFFF | Timer0 registers; 64 KB | &#9989; TIMER0, TIMER1 (reused common block) |
+| 0x20010000 | 0x2001FFFF | Timer1 registers; 64 KB | &#9989; TIMER2, TIMER3 (reused common block) |
+| 0x20030000 | 0x2003FFFF | CRG registers; 64 KB | &#9989; CRG (generated from the data sheet) |
+| 0x20040000 | 0x2004FFFF | WDG registers; 64 KB | &#9989; WDG (reused common block) |
+| 0x20050000 | 0x2005FFFF | SYS_CTRL registers; 64 KB | &#9989; SYS_CTRL (generated from the data sheet) |
+| 0x20060000 | 0x2006FFFF | RTC registers; 64 KB | &#9989; RTC (reused common block) |
+| 0x20070000 | 0x2007FFFF | IR registers; 64 KB | &#9989; IR (reused common block) |
+| 0x20080000 | 0x2008FFFF | UART0 registers; 64 KB | &#9989; UART0 (reused common block) |
+| 0x20090000 | 0x2009FFFF | UART1 registers; 64 KB | &#9989; UART1 (reused common block) |
+| 0x200A0000 | 0x200AFFFF | UART2 registers; 64 KB | &#9989; UART2 (reused common block) |
+| 0x200B0000 | 0x200BFFFF | UART3 registers; 64 KB | &#9989; UART3 (reused common block) |
+| 0x200D0000 | 0x200DFFFF | I2C registers; 64 KB | &#9989; I2C (reused common block) |
+| 0x200E0000 | 0x200EFFFF | PWM registers; 64 KB | &#9989; PWM (generated from the data sheet) |
+| 0x200F0000 | 0x200F7FFF | Pin multiplexing registers; 32 KB | &#9989; IOMUX, IOPAD (generated from the data sheet) |
+| 0x200F0800 | 0x200FFFFF | Pin control (drive strength) registers; 32 KB | &#9989; IOPAD (generated from the data sheet) |
+| 0x20100000 | 0x2010FFFF | HDMI registers; 64 KB | &#10060; |
+| 0x20110000 | 0x2011FFFF | DDRC registers; 64 KB | &#9989; DDRC_AXI, DDRC_DMC, DDRC_MUX, DDRC_PHY (generated from the data sheet) |
+| 0x20120000 | 0x2012FFFF | MISC registers; 64 KB | &#9989; MISC_CTRL (generated from the data sheet) |
+| 0x20130000 | 0x2013FFFF | Timer2 registers; 64 KB | &#9989; TIMER4, TIMER5 (reused common block) |
+| 0x20140000 | 0x2014FFFF | Timer3 registers; 64 KB | &#9989; TIMER6, TIMER7 (reused common block) |
+| 0x20150000 | 0x2022FFFF | GPIO0 to GPIO13 registers; 14 x 64 KB | &#9989; GPIO0, GPIO1, GPIO2, GPIO3, GPIO4, GPIO5 ... (reused common block) |
+| 0x20230000 | 0x2023FFFF | GPIO14 registers; 64 KB | &#9989; GPIO14 (reused common block) |
+| 0x20300000 | 0x2030FFFF | ARM WDG/timer/GIC and other internal registers; 64 KB | &#10060; |
+| 0x20400000 | 0x2051FFFF | ARM DEBUG; 1152 KB | &#10060; |
+| 0x205C0000 | 0x205CFFFF | VDP registers; 64 KB | &#9989; VDP (generated from the data sheet) |
+| 0x205E0000 | 0x205EFFFF | IVE registers; 64 KB | &#9989; IVE (reused common block) |
+| 0x20600000 | 0x2060FFFF | VPSS registers; 64 KB | &#10060; |
+| 0x20610000 | 0x2061FFFF | TDE registers; 64 KB | &#10060; |
+| 0x20620000 | 0x2062FFFF | VENC registers; 64 KB | &#10060; |
+| 0x20630000 | 0x2063FFFF | VDH0 registers; 64 KB | &#10060; |
+| 0x20650000 | 0x2065FFFF | VDH1 registers; 64 KB | &#10060; |
+| 0x20660000 | 0x2066FFFF | JPGE registers; 64 KB | &#10060; |
+| 0x20670000 | 0x2067FFFF | JPGD registers; 64 KB | &#10060; |
+| 0x20680000 | 0x2068FFFF | AIO registers; 64 KB | &#9989; AIO (generated from the data sheet) |
+| 0x206B0000 | 0x206BFFFF | VGS registers; 64 KB | &#10060; |
+| 0x206C0000 | 0x206CFFFF | MD (motion detection) registers; 64 KB | &#9989; MDU (reused common block) |
+| 0x206D0000 | 0x206DFFFF | DDRT registers; 64 KB | &#10060; |
+| 0x20700000 | 0x207FFFFF | L2 cache space; 1 MB | &#10060; |
+| 0x20800000 | 0x2080FFFF | PCIe registers; 64 KB | &#9989; PCIE (generated from the data sheet) |
+| 0x30000000 | 0x3FFFFFFF | PCIe memory address space; 256 MB | &#10060; |
+| 0x40000000 | 0x4FFFFFFF | PCIe configuration address space; 256 MB | &#10060; |
+| 0x50000000 | 0x53FFFFFF | NANDC memory space; 64 MB | &#10060; |
+| 0x58000000 | 0x5BFFFFFF | SPI flash memory space; 64 MB | &#10060; |
+| 0x80000000 | 0xFFFFFFFF | DDR memory space (external DDR devices); 2 GB | &#10060; |
+
+## Interrupts
+
+Interrupt numbers of the interrupt controller (data sheet interrupt table); `Reserved` entries omitted.
+
+| Interrupt | Source |
+|-----------|--------|
+| 0 | A9 internal use |
+| 1 | A9 internal use |
+| 2 | A9 internal use |
+| 3 | A9 internal use |
+| 4 | A9 internal use |
+| 5 | A9 internal use |
+| 6 | A9 internal use |
+| 7 | A9 internal use |
+| 8 | A9 internal use |
+| 9 | A9 internal use |
+| 10 | A9 internal use |
+| 11 | A9 internal use |
+| 12 | A9 internal use |
+| 13 | A9 internal use |
+| 14 | A9 internal use |
+| 15 | A9 internal use |
+| 16 | A9 internal use |
+| 17 | A9 internal use |
+| 18 | A9 internal use |
+| 19 | A9 internal use |
+| 20 | A9 internal use |
+| 21 | A9 internal use |
+| 22 | A9 internal use |
+| 23 | A9 internal use |
+| 24 | A9 internal use |
+| 25 | A9 internal use |
+| 26 | A9 internal use |
+| 27 | A9 internal use |
+| 28 | A9 internal use |
+| 29 | A9 internal use |
+| 30 | A9 internal use |
+| 31 | A9 internal use |
+| 32 | COMMTX[0] |
+| 33 | COMMRX[0] |
+| 34 | WatchDog |
+| 35 | Timer0 |
+| 36 | Timer1 |
+| 37 | Timer2 |
+| 38 | Timer3 |
+| 39 | RTC |
+| 40 | UART0 |
+| 41 | UART1 |
+| 42 | UART2 |
+| 43 | UART3 |
+| 44 | L2 Controller |
+| 45 | A9 PMU[0] |
+| 46 | DMAC |
+| 47 | I2C |
+| 48 | NFC |
+| 49 | SFC |
+| 50 | IR |
+| 51 | Cipher |
+| 53 | USB2.0 OHCI |
+| 54 | USB2.0 EHCI |
+| 55 | Temp Capture |
+| 59 | TOE_INTR |
+| 60 | TOE_LPI_INTR |
+| 61 | Software Int |
+| 63 | SATA |
+| 64 | USB 3.0 |
+| 65 | VDP |
+| 66 | IVE |
+| 67 | VDH0 |
+| 68 | VENC |
+| 69 | VPSS |
+| 70 | JPGD |
+| 71 | MD/DDRT |
+| 72 | VDH1 |
+| 73 | TDE |
+| 74 | JPGE |
+| 75 | VGS |
+| 76 | AIO |
+| 77 | HDMI |
+| 78 | SCD0 |
+| 79 | SCD1 |
+| 80 | PCIE_INTA |
+| 81 | PCIE_INTB |
+| 82 | PCIE_INTC |
+| 83 | PCIE_INTD |
+| 84 | PCIE_DMA |
+| 85 | PCIE_MSI |
+| 86 | PCIE_LINK_DOWN |
+| 90 | A9 PMU[1] |
+| 91 | GPIO0~GPIO3 |
+| 92 | GPIO4~GPIO8 |
+| 93 | GPIO9~GPIO14 |
+| 94 | COMMTX[1] |
+| 95 | COMMRX[1] |
+    ";
+    eHI3535_IOMUX              IOMUX          @ 0x200F0000;
+    eHI3535_IOPAD              IOPAD          @ 0x200F0800;
+    eHI3535_CRG                CRG            @ 0x20030000;
+    eHI3535_SYS_CTRL           SYS_CTRL       @ 0x20050000;
+    eHI3535_MISC_CTRL          MISC_CTRL      @ 0x20120000;
+    eHISI_CIPHER_MC            CIPHER         @ 0x10050000;
+    eHISI_TIMER_SP804          TIMER0         @ 0x20000000;
+    eHISI_TIMER_SP804          TIMER1         @ 0x20000020;
+    eHISI_TIMER_SP804          TIMER2         @ 0x20010000;
+    eHISI_TIMER_SP804          TIMER3         @ 0x20010020;
+    eHISI_TIMER_SP804          TIMER4         @ 0x20130000;
+    eHISI_TIMER_SP804          TIMER5         @ 0x20130020;
+    eHISI_TIMER_SP804          TIMER6         @ 0x20140000;
+    eHISI_TIMER_SP804          TIMER7         @ 0x20140020;
+    eHISI_WDG_SP805            WDG            @ 0x20040000;
+    eHISI_RTC_SPI              RTC            @ 0x20060000;
+    eHI3535_DDRC_AXI           DDRC_AXI       @ 0x20110000;
+    eHI3535_DDRC_DMC           DDRC_DMC       @ 0x20111000;
+    eHI3535_DDRC_MUX           DDRC_MUX       @ 0x20115000;
+    eHI3535_DDRC_PHY           DDRC_PHY       @ 0x20118000;
+    eHISI_SFC_350              SFC            @ 0x10010000;
+    eHISI_NANDC                NANDC          @ 0x10000000;
+    eHI3535_TOE                TOE            @ 0x12020000;
+    eMOTION_DETECT             MDU            @ 0x206C0000;
+    eHISI_IVE                  IVE            @ 0x205E0000;
+    eHI3535_VDP                VDP            @ 0x205C0000;
+    eHI3535_AIO                AIO            @ 0x20680000;
+    eHISI_I2C                  I2C            @ 0x200D0000;
+    eARM_PL011                 UART0          @ 0x20080000;
+    eARM_PL011                 UART1          @ 0x20090000;
+    eARM_PL011                 UART2          @ 0x200A0000;
+    eARM_PL011                 UART3          @ 0x200B0000;
+    eHISI_IR                   IR             @ 0x20070000;
+    eARM_PL061                 GPIO0          @ 0x20150000;
+    eARM_PL061                 GPIO1          @ 0x20160000;
+    eARM_PL061                 GPIO2          @ 0x20170000;
+    eARM_PL061                 GPIO3          @ 0x20180000;
+    eARM_PL061                 GPIO4          @ 0x20190000;
+    eARM_PL061                 GPIO5          @ 0x201A0000;
+    eARM_PL061                 GPIO6          @ 0x201B0000;
+    eARM_PL061                 GPIO7          @ 0x201C0000;
+    eARM_PL061                 GPIO8          @ 0x201D0000;
+    eARM_PL061                 GPIO9          @ 0x201E0000;
+    eARM_PL061                 GPIO10         @ 0x201F0000;
+    eARM_PL061                 GPIO11         @ 0x20200000;
+    eARM_PL061                 GPIO12         @ 0x20210000;
+    eARM_PL061                 GPIO13         @ 0x20220000;
+    eARM_PL061                 GPIO14         @ 0x20230000;
+    eHISI_USB_EHCI             EHCI           @ 0x10040000;
+    eHI3535_USB3               USB3           @ 0x12000000;
+    eHI3535_PCIE               PCIE           @ 0x20800000;
+    eHI3535_SATA               SATA           @ 0x12010000;
+    eHI3535_SATA_PORT          SATA_PORT      @ 0x12010100;
+    eHI3535_PWM                PWM            @ 0x200E0000;
+    eHISI_USB_OHCI             OHCI           @ 0x10030000;
+};
