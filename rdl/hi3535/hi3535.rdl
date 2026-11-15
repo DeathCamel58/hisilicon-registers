@@ -197,6 +197,172 @@ Interrupt numbers of the interrupt controller (data sheet interrupt table); `Res
 | 93 | GPIO9~GPIO14 |
 | 94 | COMMTX[1] |
 | 95 | COMMRX[1] |
+
+        <!-- overview:begin -->
+
+        ### Diagrams
+
+        ![Logic block diagram](assets/diagrams/hi3535-logic.svg)
+
+        ![Register blocks by function](assets/diagrams/hi3535-blocks.svg)
+
+        ![Boot flow](assets/diagrams/hi3535-boot.svg)
+
+        ### Key specifications (data sheet chapter 1; the data sheet is Chinese, translated)
+
+        | | Hi3535 V100 |
+        |---|---|
+        | CPU | dual Cortex-A9, up to 1 GHz; 32 KB L1 I + 32 KB L1 D per core, 256 KB L2 |
+        | DDR | one 32-bit DDR3 controller, up to 800 MHz, up to 2 GB |
+        | Decode | H.264 BP/MP/HP L5.0, MPEG4 SP/ASP, MJPEG/JPEG baseline |
+        | Encode | H.264 BP/MP/HP L4.2, MJPEG/JPEG baseline |
+        | Performance examples | 5x1080p@30 decode + 1x1080p@30 encode; 9x720p@30 decode + 1x1080p@30 encode; 24xD1@30 decode + 1x1080p@30 encode |
+        | Video output | 1 HDMI 1.4, 1 VGA (up to 1920x1200@60), 1 BT.1120, 1 CVBS; three full-screen GUI layers (two HD, one SD) and a 128x128 cursor |
+        | Audio | integrated audio codec, 2 I2S (1 in, 1 out), software codecs |
+        | Network | 2 gigabit Ethernet (RGMII/RMII/MII, TOE) |
+        | Peripherals | 2 SATA 3.0, 1 PCIe 2.0 / SATA 3.0 shared port (RC and endpoint), 4 UART (2 with four wires), IR, I2C, GPIO, 2 USB 2.0 host, 1 USB 3.0 host |
+        | Flash | SPI NOR (1/2/4 bit, 2 CS, 32 MB each), 8-bit NAND (SLC/MLC, 1/4/8/24 bit ECC) with NAND boot |
+        | On-chip memory | 4 KB BOOTROM, 10 KB SRAM |
+        | Package | EDHS-PBGA, 23 x 23 mm, 0.8 mm pitch; 3.5 W typical; core 1.1 V, CPU 1.2 V (down to 1.1 V), I/O 3.3 V, DDR3 1.5 V |
+
+        ### Boot (data sheet 1.3, Table 1-1)
+
+        | BOOTROM_SEL | BOOT_SEL1 | BOOT_SEL0 | Boot mode |
+        |---|---|---|---|
+        | 1 | X | X | BOOTROM (serial download) |
+        | 0 | 0 | 0 | external SPI flash |
+        | 0 | 1 | 0 | external NAND flash |
+        | 0 | 0 | 1 | slave mode: the CPU does not start; a master chip loads the boot program into this chip's DDR over PCIe and releases its reset |
+
+        BOOTROM_SEL is multiplexed with pin MDCK, BOOT_SEL1 with VOU1120_DATA10 and BOOT_SEL0 with VOU1120_DATA7. With BOOTROM_SEL = 1 the BOOTROM starts the serial download; if the serial link times out it evaluates BOOT_SEL1/BOOT_SEL0 (00 = SPI flash, 10 = NAND flash).
+
+        ### Interrupts (Cortex-A9 GIC interrupt IDs, data sheet Table 3-25); the data sheet is Chinese, names translated
+
+        | # | Source | # | Source | # | Source |
+        |---|---|---|---|---|---|
+        | 0-31 | For A9 internal use | 53 | USB2.0 OHCI | 75 | VGS |
+        | 32 | COMMTX[0] | 54 | USB2.0 EHCI | 76 | AIO |
+        | 33 | COMMRX[0] | 55 | Temp Capture | 77 | HDMI |
+        | 34 | WatchDog | 56 | Reserved | 78 | SCD0 |
+        | 35 | Timer0 | 57 | Reserved | 79 | SCD1 |
+        | 36 | Timer1 | 58 | Reserved | 80 | PCIE_INTA |
+        | 37 | Timer2 | 59 | TOE_INTR | 81 | PCIE_INTB |
+        | 38 | Timer3 | 60 | TOE_LPI_INTR | 82 | PCIE_INTC |
+        | 39 | RTC | 61 | Software Int | 83 | PCIE_INTD |
+        | 40 | UART0 | 62 | Reserved | 84 | PCIE_DMA |
+        | 41 | UART1 | 63 | SATA | 85 | PCIE_MSI |
+        | 42 | UART2 | 64 | USB 3.0 | 86 | PCIE_LINK_DOWN |
+        | 43 | UART3 | 65 | VDP | 87 | Reserved |
+        | 44 | L2 Controller | 66 | IVE | 88 | Reserved |
+        | 45 | A9 PMU[0] | 67 | VDH0 | 89 | Reserved |
+        | 46 | DMAC | 68 | VENC | 90 | A9 PMU[1] |
+        | 47 | I2C | 69 | VPSS | 91 | GPIO0~GPIO3 |
+        | 48 | NFC | 70 | JPGD | 92 | GPIO4~GPIO8 |
+        | 49 | SFC | 71 | MD/DDRT | 93 | GPIO9~GPIO14 |
+        | 50 | IR | 72 | VDH1 | 94 | COMMTX[1] |
+        | 51 | Cipher | 73 | TDE | 95 | COMMRX[1] |
+        | 52 | Reserved | 74 | JPGE |  |  |
+
+        ### Clock-gate and reset map (generated from the CRG registers)
+
+        | Offset | Register | Description | Gate / reset fields |
+        |---|---|---|---|
+        | 0x028 | PERI_CRG10 | PERI_CRG10 | arm_srst_req_0, cluster_dbg_srst_req_0, sc_wd_srst_req_0, arm_srst_req_1, cluster_dbg_srst_req_1, sc_wd_srst_req_1, cluster_peri_srst_req, cluster_scu_srst_req, cs_srst_req, a9_peri_cken, ... |
+        | 0x034 | PERI_CRG13 | PERI_CRG13 | vo_srst_req, hddac_cken, sddac_cken, vou_hcken, vou_hd0_cken, vou_hd1_cken, vou_sd_cken, vou_cken, bt1120_cken |
+        | 0x038 | PERI_CRG14 | PERI_CRG14 | pwm_srst_req, pwm_cken |
+        | 0x03C | PERI_CRG15 | PERI_CRG15 | hdmi_srst_req, hdmi_hrst_req, hdmi_bus_cken, hdmi_id_cken, hdmi_as_cken, hdmi_os_cken, hdmi_cec_cken, hdmi_mhl_cken |
+        | 0x040 | PERI_CRG16 | PERI_CRG16 | vedu_srst_req, vedu_cken, sed_cken |
+        | 0x048 | PERI_CRG18 | PERI_CRG18 | vps_srst_req, vps_cken |
+        | 0x050 | PERI_CRG20 | PERI_CRG20 | vdh0_all_srst_req, vdh0_mfd_srst_req, vdh0_scd_srst_req, vdh0_cken |
+        | 0x054 | PERI_CRG21 | PERI_CRG21 | vdh1_all_srst_req, vdh1_mfd_srst_req, vdh1_scd_srst_req, vdh1_cken |
+        | 0x058 | PERI_CRG22 | PERI_CRG22 | tde_srst_req, tde_cken |
+        | 0x05C | PERI_CRG23 | PERI_CRG23 | vgs_srst_req, vgs_cken |
+        | 0x060 | PERI_CRG24 | PERI_CRG24 | jpge_srst_req, jpge_cken |
+        | 0x064 | PERI_CRG25 | PERI_CRG25 | jpgd_srst_req, jpgd_cken |
+        | 0x068 | PERI_CRG26 | PERI_CRG26 | mdu_srst_req, mdu_cken |
+        | 0x06C | PERI_CRG27 | PERI_CRG27 | vapu_srst_req, vapu_cken |
+        | 0x07C | PERI_CRG31 | PERI_CRG31 | cipher_srst_req, cipher_cken |
+        | 0x08C | PERI_CRG35 | PERI_CRG35 | aio_hrst_req, aio_hcken |
+        | 0x0AC | PERI_CRG43 | PERI_CRG43 | sata_phy0_ref_cken, sata_phy1_ref_cken, cmb_phy_ref_cken |
+        | 0x0B0 | PERI_CRG44 | PERI_CRG44 | pcie_bus_cken, pcie_rx0_cken, pcie_aux_cken, pcie_cko_alive_cken, pcie_mpll_dword_cken, pcie_refclk_cken, pcie_bus_srst_req, pcie_cko_alive_srst_req |
+        | 0x0B4 | PERI_CRG45 | PERI_CRG45 | sata_bus_cken, sata_rx0_cken, sata_rx1_cken, sata_rx2_cken, sata_cko_alive_cken, sata_mpll_dword0_cken, sata_refclk0_cken, sata_bus_srst_req, sata_cko_alive_srst_req, sata_mpll_dword1_cken, ... |
+        | 0x0B8 | PERI_CRG46 | PERI_CRG46 | usb2_ahb_srst_req, usb2_cken, usb3_vcc_srst_req, usb3_phy_srst_req, usb3_phy_srst_treq, usb3_phy_ref_cken, usb3_ref_ssp_en, usb3_bus_cken, usb3_ref_cken, usb3_suspend_cken, ... |
+        | 0x0C0 | PERI_CRG48 | PERI_CRG48 | sfc_srst_req, sfc_cken |
+        | 0x0C8 | PERI_CRG50 | PERI_CRG50 | toe_srst_req, toe_cken, toe_hrst_req, toe_hcken, gmac0_if_srst_req, gmac0_if_cken, gmac1_if_srst_req, gmac1_if_cken |
+        | 0x0D0 | PERI_CRG52 | PERI_CRG52 | nfc_srst_req, nfc_cken |
+        | 0x0D8 | PERI_CRG54 | PERI_CRG54 | ddrtest_srst_req, ddrtest_cken |
+        | 0x0E0 | PERI_CRG56 | PERI_CRG56 | dma_srst_req, dma_cken |
+        | 0x0E4 | PERI_CRG57 | PERI_CRG57 | test_clk_en, i2c_srst_req, tcap_srst_req, ir_srst_req, ssp0_srst_req, ssp1_srst_req, uart0_srst_req, uart1_srst_req, uart2_srst_req, uart3_srst_req, ... |
+        | 0x0F4 | PERI_CRG61 | PERI_CRG61 | vdh1_all_srst_ok, vdh1_mfd_srst_ok, vdh1_scd_srst_ok, vdh0_all_srst_ok, vdh0_mfd_srst_ok, vdh0_scd_srst_ok |
+        | 0x12C | PERI_CRG75 | PERI_CRG75 | core_hpm_en, core_hpm_monitor_en, core_hpm_srst_req |
+        | 0x13C | PERI_CRG79 | PERI_CRG79 | cpu_hpm_en, cpu_hpm_monitor_en, cpu_hpm_srst_req |
+
+        Only fields whose names contain a clock-enable or reset keyword are listed; the field descriptions in the register pages give the polarity and the clocks they gate.
+
+        ### Register blocks (generated from this description)
+
+        | Base | Instance | Block | Register space |
+        |---|---|---|---|
+        | 0x10000000 | NANDC | HiSilicon parallel NAND flash controller (hinfc300/301/504 family) | 156 B |
+        | 0x10010000 | SFC | System Flash Controller Registers | 1088 B |
+        | 0x10030000 | OHCI | HiSilicon USB 2.0 host controller - OHCI | 92 B |
+        | 0x10040000 | EHCI | HiSilicon USB 2.0 host controller - EHCI | 176 B |
+        | 0x10050000 | CIPHER | CIPHER (8 channels) | 5184 B |
+        | 0x12000000 | USB3 | USB 3.0 host | 50740 B |
+        | 0x12010000 | SATA | SATA 3.0 AHCI generic host control | 252 B |
+        | 0x12010100 | SATA_PORT[3] | SATA port configuration | 384 B |
+        | 0x12020000 | TOE | GMAC and TOE (TCP offload engine) registers | 36880 B |
+        | 0x20000000 | TIMER0 | Timer Registers | 28 B |
+        | 0x20000020 | TIMER1 | Timer Registers | 28 B |
+        | 0x20010000 | TIMER2 | Timer Registers | 28 B |
+        | 0x20010020 | TIMER3 | Timer Registers | 28 B |
+        | 0x20030000 | CRG | Clock and reset generator (CRG) | 332 B |
+        | 0x20040000 | WDG | Watchdog Registers | 3076 B |
+        | 0x20050000 | SYS_CTRL | System controller (SC) | 3824 B |
+        | 0x20060000 | RTC | HiSilicon SPI-bridged RTC (APB registers) | 164 B |
+        | 0x20060100 | RTC_INT | Internal RTC register file (device addresses reached through the RTC SPI interface, NOT memory mapped; the instance base 0x20060100 in the SoC map is a placeholder) | 91 B |
+        | 0x20070000 | IR | HiSilicon IR receiver | 56 B |
+        | 0x20080000 | UART0 | UART (ARM PrimeCell PL011) | 4 KB |
+        | 0x20090000 | UART1 | UART (ARM PrimeCell PL011) | 4 KB |
+        | 0x200A0000 | UART2 | UART (ARM PrimeCell PL011) | 4 KB |
+        | 0x200B0000 | UART3 | UART (ARM PrimeCell PL011) | 4 KB |
+        | 0x200D0000 | I2C | HiSilicon I2C Master Controller | 32 B |
+        | 0x200E0000 | PWM | PWM | 60 B |
+        | 0x200F0000 | IOMUX | Pin multiplexing registers (muxctrl_reg) | 408 B |
+        | 0x200F0800 | IOPAD | Pin drive-strength / pad control registers (padctrl_reg) | 532 B |
+        | 0x20110000 | DDRC_AXI | DDRC AXI module | 668 B |
+        | 0x20111000 | DDRC_DMC | DDRC DMC module | 1208 B |
+        | 0x20115000 | DDRC_MUX | DDRC MUX module | 516 B |
+        | 0x20118000 | DDRC_PHY | DDRC DDRPHY module | 984 B |
+        | 0x20120000 | MISC_CTRL | Peripheral (MISC) control registers | 304 B |
+        | 0x20130000 | TIMER4 | Timer Registers | 28 B |
+        | 0x20130020 | TIMER5 | Timer Registers | 28 B |
+        | 0x20140000 | TIMER6 | Timer Registers | 28 B |
+        | 0x20140020 | TIMER7 | Timer Registers | 28 B |
+        | 0x20150000 | GPIO0 | ARM PL061 | 1053 B |
+        | 0x20160000 | GPIO1 | ARM PL061 | 1053 B |
+        | 0x20170000 | GPIO2 | ARM PL061 | 1053 B |
+        | 0x20180000 | GPIO3 | ARM PL061 | 1053 B |
+        | 0x20190000 | GPIO4 | ARM PL061 | 1053 B |
+        | 0x201A0000 | GPIO5 | ARM PL061 | 1053 B |
+        | 0x201B0000 | GPIO6 | ARM PL061 | 1053 B |
+        | 0x201C0000 | GPIO7 | ARM PL061 | 1053 B |
+        | 0x201D0000 | GPIO8 | ARM PL061 | 1053 B |
+        | 0x201E0000 | GPIO9 | ARM PL061 | 1053 B |
+        | 0x201F0000 | GPIO10 | ARM PL061 | 1053 B |
+        | 0x20200000 | GPIO11 | ARM PL061 | 1053 B |
+        | 0x20210000 | GPIO12 | ARM PL061 | 1053 B |
+        | 0x20220000 | GPIO13 | ARM PL061 | 1053 B |
+        | 0x20230000 | GPIO14 | ARM PL061 | 1053 B |
+        | 0x205C0000 | VDP | Video display processor (VDP) | 62176 B |
+        | 0x205E0000 | IVE | HiSilicon intelligent video engine | 28 B |
+        | 0x20680000 | AIO | Audio interface (AIO) | 8624 B |
+        | 0x206C0000 | MDU | Motion Detect Unit Registers | 188 B |
+        | 0x20800000 | PCIE | PCIe controller registers: iATU and DMA (offsets from 0x20800000) | 2700 B |
+
+        The table is generated from the elaborated root (instances at their absolute addresses; register space is the span of the block's registers, not the data sheet window).
+
+        <!-- overview:end -->
     ";
     eHI3535_IOMUX              IOMUX          @ 0x200F0000;
     eHI3535_IOPAD              IOPAD          @ 0x200F0800;
