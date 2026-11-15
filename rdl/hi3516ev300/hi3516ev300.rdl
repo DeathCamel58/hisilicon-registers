@@ -8,6 +8,7 @@
 `include "ds_ddrc_dmc.rdl"
 `include "ds_ddrc_phy.rdl"
 `include "ds_ddrc_qosb.rdl"
+`include "ds_fephy.rdl"
 `include "ds_fmc.rdl"
 `include "ds_klad.rdl"
 `include "ds_lsadc.rdl"
@@ -58,29 +59,30 @@ addrmap hi3516ev300 {
     desc = "
         ## Status
 
-        Register map of the Hi3516E V300 (Cortex-A7 IP camera SoC, DDR at 0x40000000). Audited block by block on 2026-11-14 against the Hi3516E V300 data sheet, Issue 00B06 (2019-05-15, dl/Hi3516EV300-Datasheet.pdf): the blocks named ds_*.rdl were regenerated from the data sheet tables (PROVEN: offsets, names, bit ranges, access types, reset values exact; descriptions sampled only) and replaced the earlier vendor-code derived blocks; registers the old map knew from vendor code but the data sheet does not tabulate were kept in CRG and SYS_CTRL, marked INFERRED. Blocks the data sheet has no register chapter for (ISP, VIPROC, VGS, GZIP, IVE, VPSS, VEDU, JPGE, IO config banks, USB PHY) and the shared common blocks that match the data sheet (FEMAC, I2C, UART, SPI, PL061 GPIO, SP804 timers, SP805 watchdog, PWM, RSA, SPI RTC) keep their earlier vendor-derived or cross-checked layout; the audit results per block are in docs/rdl-campaign/audit-status.csv and docs/rdl-campaign/hi3516ev300-audit.md of the hi3520d-nvr workspace. Nothing was read from an EV300.
+        Register map of the Hi3516E V300 (Cortex-A7 IP camera SoC, DDR at 0x40000000). Audited block by block on 2026-11-14 against the Hi3516E V300 data sheet, Issue 00B06 (2019-05-15, dl/Hi3516EV300-Datasheet.pdf): the blocks named ds_*.rdl were regenerated from the data sheet tables (PROVEN: offsets, names, bit ranges, access types, reset values exact; descriptions sampled only) and replaced the earlier vendor-code derived blocks (second pass 2026-11-15: array registers of the DDRC AXI, VICAP, MIPI RX and SPACC blocks now have their instance counts from the data sheet variable tables, the FE PHY MII registers (Table 5-8) are modelled in ds_fephy.rdl, USB PHY ANA_CFG0/ANA_CFG4 carry the data sheet fields, RSA MEM_EMA_CFG added, split field names and page-break losses in CRG/LSADC/FMC/MIPI RX/SPACC repaired); registers the old map knew from vendor code but the data sheet does not tabulate were kept in CRG and SYS_CTRL, marked INFERRED. Blocks the data sheet has no register chapter for (ISP, VIPROC, VGS, GZIP, IVE, VPSS, VEDU, JPGE, TDE, IO config banks, SYSCNT, DDRT; the USB PHY has only ANA_CFG0 and ANA_CFG4; the data sheet interrupt table (Table 3-6) lists no register) and the shared common blocks that match the data sheet (FEMAC, I2C, UART, SPI, PL061 GPIO, SP804 timers, SP805 watchdog, PWM, RSA, SPI RTC) keep their earlier vendor-derived or cross-checked layout; the audit results per block are in docs/rdl-campaign/audit-status.csv and docs/rdl-campaign/hi3516ev300-audit.md of the hi3520d-nvr workspace. Nothing was read from an EV300.
 
-        ## Addresses (vendor device tree, vendor U-Boot and sys.ko; IRQ = GIC SPI number)
+        ## Addresses (vendor device tree, vendor U-Boot and sys.ko; IRQ = GIC SPI number, equal to the interrupt bit of data sheet Table 3-6 minus 32: every number in this table was checked against that table on 2026-11-15)
 
         | Start Address | Block | IRQ | Documented Here |
         |---------------|-------|-----|-----------------|
         | 0x04010000    | on-chip SRAM 64 KB (U-Boot RAM_START_ADRS 0x04010500) | - | &#10060; |
-        | 0x10000000    | FMC control (memory window 0x14000000, 16 MB) | - | &#9989; |
+        | 0x10000000    | FMC control (memory window 0x14000000, 16 MB) | 32 (data sheet Table 3-6, bit 64) | &#9989; |
         | 0x10010000    | eMMC / SDIO0 (SDHCI + vendor regs) | 30 | &#9989; |
         | 0x10020000    | SDIO1 (SDHCI + vendor regs) | 31 | &#9989; |
         | 0x10030000    | USB2 DWC3 (high-speed, host) | 39 | &#9989; (vendor glue registers only) |
-        | 0x10040000    | FEMAC (internal FE PHY, MDIO 0x10041100, GLB 0x10041300) | 33 | &#9989; |
+        | 0x10040000    | FEMAC (internal FE PHY, MDIO 0x10041100, GLB 0x10041300) | 33 (FE PHY interrupt: 59) | &#9989; |
+        | 0x10048000    | FE PHY MII registers (placeholder instance: reached through MDIO, not memory mapped; data sheet Table 5-8) | - | &#9989; |
         | 0x10050000    | CIPHER (SPACC layout, version register 0x308 = 0x02018121) | 34 | &#9989; |
         | 0x10060000    | KLAD | - | &#9989; |
         | 0x10070000    | RSA | - | &#9989; |
         | 0x10080000    | TRNG (registers at +0x200) | - | &#9989; |
         | 0x10090000    | OTP controller (user interface) | - | &#9989; |
-        | 0x100A0000    | OTP shadow (user) | - | &#10060; |
+        | 0x100A0000    | reserved in the data sheet (the vendor tree names it the OTP user shadow) | - | &#10060; |
         | 0x100B0000    | EDMAC hiedmacv310 (4 channels) | 38 | &#9989; |
         | 0x100C0000    | IO config bank ahb | - | &#9989; |
         | 0x100D0000    | USB2 PHY (hixvp) | - | &#9989; |
         | 0x100E0000    | AIAO | 42 | &#9989; |
-        | 0x100F0000    | ACODEC | - | &#10060; |
+        | 0x100F0000    | ACODEC | - | &#9989; |
         | 0x10301000    | GIC distributor (cpu interface 0x10302000) | - | &#10060; |
         | 0x11000000    | VI capture (2 MB) | 43 | &#9989; (subset) |
         | 0x11200000    | VI process (VIPROC) | 44 | &#9989; (subset) |
@@ -91,18 +93,19 @@ addrmap hi3516ev300 {
         | 0x11300000    | VGS | 49 | &#10060; |
         | 0x11310000    | GZIP | 50 | &#9989; |
         | 0x11320000    | IVE | 51 | &#9989; |
+        | 0x11330000    | DDRT (no register table in the data sheet; IRQ bit 85 = SPI 53, DDR_ERR SPI 54) | 53 | &#10060; |
         | 0x11400000    | VPSS | 46 | &#9989; (subset) |
         | 0x11410000    | VEDU | 47 | &#9989; (subset) |
         | 0x11420000    | JPGE | 48 | &#9989; (subset) |
         | 0x12000000    | Timers 0/1 (SP804) | 5 | &#9989; |
         | 0x12001000    | Timers 2/3 (SP804) | 6 | &#9989; |
-        | 0x12010000    | CRG | - | &#9989; (partial) |
-        | 0x12020000    | SYS_CTRL | - | &#9989; (partial) |
-        | 0x12028000    | MISC_CTRL | - | &#9989; (partial) |
+        | 0x12010000    | CRG | - | &#9989; |
+        | 0x12020000    | SYS_CTRL | - | &#9989; |
+        | 0x12028000    | MISC_CTRL | - | &#9989; |
         | 0x12030000    | WDG | 2 | &#9989; |
         | 0x12040000    | UART0 / 1 / 2 (PL011, stride 0x1000) | 7 / 8 / 9 | &#9989; |
         | 0x12050000    | SYSCNT (50 MHz generic counter) | - | &#10060; |
-        | 0x12060000    | I2C0 / 1 / 2 (hibvt, stride 0x1000) | - | &#9989; |
+        | 0x12060000    | I2C0 / 1 / 2 (hibvt, stride 0x1000) | 11 / 12 / 13 (data sheet bits 43-45) | &#9989; |
         | 0x12070000    | SPI0 / SPI1 (PL022) | 14 / 15 | &#9989; |
         | 0x12080000    | PWM (4 channels, stride 0x20) | - | &#9989; |
         | 0x120A0000    | LSADC (2 channels) | 4 | &#9989; |
@@ -110,6 +113,7 @@ addrmap hi3516ev300 {
         | 0x120C0000    | IO config bank core | - | &#9989; |
         | 0x120D0000    | DDR AXI (DMC at 0x120D8000, PHY at 0x120DC000) | - | &#9989; (EV200 blocks, see note) |
         | 0x120E0000    | RTC (SPI bridge) | 0 | &#9989; |
+        | 0x120F0000    | PMC | - | &#9989; |
     ";
 
     eIOCFG_AHB          IOCFG_AHB  @ 0x100C0000;
@@ -160,6 +164,7 @@ addrmap hi3516ev300 {
     eHI3516EV300_DDRC_QOSB  DDRC_QOSB  @ 0x120D4000;
     eHI3516EV300_DDRC_DMC   DDRC_DMC   @ 0x120D8000;
     eHI3516EV300_DDRC_PHY   DDRC_PHY   @ 0x120DC000;
+    eHI3516EV300_FEPHY      FEPHY      @ 0x10048000;   // placeholder: MII registers reached through MDIO, not memory mapped
     eHI3516EV300_FMC        FMC        @ 0x10000000;
     eHI3516EV300_VICAP      VICAP      @ 0x11000000;
     eHI3516EV300_VDP        VDP        @ 0x11280000;
