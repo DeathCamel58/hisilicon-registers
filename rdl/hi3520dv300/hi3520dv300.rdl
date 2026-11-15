@@ -108,6 +108,136 @@ addrmap hi3520dv300 {
         | 91 | GPIO10-GPIO13 (shared) |
         | 92 | DDRC_ERR_INT |
         | other | not connected (16-31, 52-59, 76-82, 88, 93-95) |
+
+        <!-- overview:begin -->
+
+        ### Diagrams
+
+        ![Logic block diagram](assets/diagrams/hi3520dv300-logic.svg)
+
+        ![Register blocks by function](assets/diagrams/hi3520dv300-blocks.svg)
+
+        ![Boot flow](assets/diagrams/hi3520dv300-boot.svg)
+
+        ### Variants (data sheet chapter 1)
+
+        One data sheet covers the Hi3521A and the Hi3520D V300: one address map, one set of register blocks. The chips differ as follows.
+
+        | | Hi3521A | Hi3520D V300 |
+        |---|---|---|
+        | CPU | Cortex-A7, up to 1.1 GHz, NEON and FPU | Cortex-A7, up to 800 MHz, NEON and FPU |
+        | Caches | 32 KB L1 I + 32 KB L1 D, 128 KB L2 | same |
+        | DDR | one 32-bit DDR3/DDR3L controller, up to 800 MHz, up to 512 MB | one 16-bit DDR3/DDR3L controller, up to 800 MHz, up to 512 MB (brief data sheet) |
+        | SATA | 2 x SATA 3.0 | 2 x SATA 2.0 |
+        | H.264 | enc 4x1080p@30 + 4xCIF@30 + dec 1x1080p@30; dec 5x1080p@30 or 10x720p@30 | enc 4x720p@30 + 4xCIF@30 + dec 4x720p@30; dec 2x1080p@30 or 4x720p@30 |
+        | Video input (VI) | four 8-bit or two 16-bit ports (up to 16xD1/960H, 16x720p, 8x1080p TDM) | two 8-bit or one 16-bit port (up to 8xD1/960H, 8x720p, 4x1080p TDM) |
+        | Package | TFBGA, 19 x 19 mm, 0.8 mm pitch | Epad-LQFP256, 28 x 28 mm, 0.4 mm pitch |
+        | Supplies | core 1.1 V, CPU 1.25 V, I/O 3.3 V, DDR 1.5 V; 3 W typical | core and CPU 1.15 V, I/O 3.3 V, DDR 1.5 V; 2.5 W typical |
+        | Common | H.264 baseline/main/high decode L4.2 and encode L5.1, MJPEG/JPEG, IVE, HDMI 1.4 + VGA + CVBS (1080p@60), one HD and one SD graphics layer plus a 128x128 cursor, 3 unidirectional I2S/PCM, integrated audio codec, 1 gigabit Ethernet (RGMII/RMII/MII, TSO), 2 USB 2.0 host, 3 UART, 1 SPI (2 CS), IR, I2C, GPIO, SPI NOR/NAND (1/2/4 bit, 2 CS), 4 KB BOOTROM + 16 KB SRAM, AES/DES/3DES, RTC | |
+
+        ### Boot (data sheet 1.3)
+
+        * BOOTROM_SEL (pin MDCK) = 1: boot from the BOOTROM, which starts the serial download mechanism (HiTool); if the serial link times out the chip boots from the external SPI NAND/NOR flash.
+        * BOOTROM_SEL = 0: boot from the external SPI NOR/NAND flash (SFC).
+
+        ### Clock-gate and reset map (generated from the CRG registers)
+
+        | Offset | Register | Description | Gate / reset fields |
+        |---|---|---|---|
+        | 0x028 | PERI_CRG10 | PERI_CRG10 | pclkdbg_cken, arm_core_srst_req, arm_dbg_srst_req, etm_srst_req, l2_srst_req, socdbg_srst_req, cs_srst_req |
+        | 0x02C | PERI_CRG11 | PERI_CRG11 | vi0_cken, vi0_srst_req, vi1_cken, vi1_srst_req, vi2_cken, vi2_srst_req, vi3_cken, vi3_srst_req, vi_ppc_srst_req, vi_bus_srst_req, ... |
+        | 0x030 | PERI_CRG12 | PERI_CRG12 | vo_srst_req, vo_cken, vo_hd_cken, vo_sd_cken, vo_pcken, vo_acken, vo_dac_cken, vo_sd_dac_cken, vo_hd_dac_cken |
+        | 0x034 | PERI_CRG13 | PERI_CRG13 | ddr_apb_cken, ddr_hipack_cken, ddr_cfg_cken, ddr_apb_srst_req, ddr_hipack_srst_req |
+        | 0x038 | PERI_CRG14 | PERI_CRG14 | hdmitx_ctrl_bus_cken, hdmitx_ctrl_cec_cken, hdmitx_ctrl_id_cken, hdmitx_ctrl_mhl_cken, hdmitx_ctrl_os_cken, hdmitx_ctrl_as_cken, hdmitx_ctrl_bus_srst_req, hdmitx_ctrl_srst_req |
+        | 0x03C | PERI_CRG15 | PERI_CRG15 | vedu0_srst_req, vedu0_cken, sed0_srst_req, sed0_cken |
+        | 0x040 | PERI_CRG16 | PERI_CRG16 | vedu1_srst_req, vedu1_cken, sed1_srst_req, sed1_cken |
+        | 0x044 | PERI_CRG17 | PERI_CRG17 | vps_srst_req, vps_cken |
+        | 0x048 | PERI_CRG18 | PERI_CRG18 | tde_srst_req, tde_cken |
+        | 0x04C | PERI_CRG19 | PERI_CRG19 | vgs_srst_req, vgs_cken |
+        | 0x050 | PERI_CRG20 | PERI_CRG20 | jpge_srst_req, jpge_cken, voie_srst_req, voie_cken |
+        | 0x054 | PERI_CRG21 | PERI_CRG21 | jpgd_srst_req, jpgd_cken |
+        | 0x058 | PERI_CRG22 | PERI_CRG22 | mdu_srst_req, mdu_cken |
+        | 0x05C | PERI_CRG23 | PERI_CRG23 | ive_srst_req, ive_cken |
+        | 0x060 | PERI_CRG24 | PERI_CRG24 | cipher_srst_req, cipher_cken |
+        | 0x064 | PERI_CRG25 | PERI_CRG25 | aio_srst_req, aiao_cken |
+        | 0x068 | PERI_CRG26 | PERI_CRG26 | sata_phy0_ref_cken, sata_phy1_ref_cken |
+        | 0x06C | PERI_CRG27 | PERI_CRG27 | sata_bus_cken, sata_rx0_cken, sata_rx1_cken, sata_cko_alive_cken, sata_mpll_dword0_cken, sata_refclk0_cken, sata_bus_srst_req, sata_cko_alive_srst_req, sata_mpll_dword1_cken, sata_refclk1_cken |
+        | 0x070 | PERI_CRG28 | PERI_CRG28 | usb2_ahb_srst_req, usb2_cken |
+        | 0x074 | PERI_CRG29 | PERI_CRG29 | fmc_srst_req, fmc_cken |
+        | 0x078 | PERI_CRG30 | PERI_CRG30 | gsf_srst_req, gsf_cken, gmac_if_srst_req, gmac_if_cken, ext_fephy_srst_req |
+        | 0x07C | PERI_CRG31 | PERI_CRG31 | scd_srst_req, scd_cken |
+        | 0x080 | PERI_CRG32 | PERI_CRG32 | ddrtest_srst_req, ddrtest_cken, dma_srst_req, dma_cken |
+        | 0x084 | PERI_CRG33 | PERI_CRG33 | test_clk_en, i2c_srst_req, rtc_srst_req, ir_srst_req, ssp_srst_req, uart0_srst_req, uart1_srst_req, uart2_srst_req, ir_cken, ssp_cken, ... |
+        | 0x0A4 | PERI_CRG41 | PERI_CRG41 | dll0_slave_en |
+        | 0x0A8 | PERI_CRG42 | PERI_CRG42 | dll1_slave_en |
+        | 0x0AC | PERI_CRG43 | PERI_CRG43 | dll2_slave_en |
+        | 0x0B0 | PERI_CRG44 | PERI_CRG44 | dll3_slave_en |
+        | 0x0B4 | PERI_CRG45 | PERI_CRG45 | adc_ref0_cken, adc_ref1_cken |
+
+        Only fields whose names contain a clock-enable or reset keyword are listed; the field descriptions in the register pages give the polarity and the clocks they gate.
+
+        ### Register blocks (generated from this description)
+
+        | Base | Instance | Block | Register space |
+        |---|---|---|---|
+        | 0x10000000 | FMC | Flash memory controller (FMC) | 224 B |
+        | 0x10040000 | USB_EHCI | USB 2.0 host control registers | 176 B |
+        | 0x10060000 | DMAC | DMAC | 372 B |
+        | 0x10070000 | CIPHER | CIPHER | 5140 B |
+        | 0x100A0000 | GSF | Gigabit Ethernet MAC (GSF) | 2596 B |
+        | 0x11010000 | SATA_AHCI | SATA AHCI global and vendor registers | 236 B |
+        | 0x11010100 | SATA_PORT | SATA port configuration registers | 256 B |
+        | 0x12000000 | TIMER0 | Timer Registers | 28 B |
+        | 0x12000020 | TIMER1 | Timer Registers | 28 B |
+        | 0x12010000 | TIMER2 | Timer Registers | 28 B |
+        | 0x12010020 | TIMER3 | Timer Registers | 28 B |
+        | 0x12020000 | TIMER4 | Timer Registers | 28 B |
+        | 0x12020020 | TIMER5 | Timer Registers | 28 B |
+        | 0x12030000 | TIMER6 | Timer Registers | 28 B |
+        | 0x12030020 | TIMER7 | Timer Registers | 28 B |
+        | 0x12040000 | CRG | Clock and reset generator (CRG) | 188 B |
+        | 0x12050000 | SYS_CTRL | System controller (SC) | 3824 B |
+        | 0x12070000 | WDG | Watchdog (SP805) | 3076 B |
+        | 0x12080000 | UART0 | UART (PL011) | 76 B |
+        | 0x12090000 | UART1 | UART (PL011) | 76 B |
+        | 0x120A0000 | UART2 | UART (PL011) | 76 B |
+        | 0x120B0000 | RTC | RTC SPI interface | 8 B |
+        | 0x120B0100 | RTC_INT | Internal RTC register file (device addresses reached through the RTC SPI interface, NOT memory mapped; the instance base 0x120B0100 in the SoC map is a placeholder) | 91 B |
+        | 0x120C0000 | I2C | I2C | 196 B |
+        | 0x120D0000 | SPI | SPI (SSP, PL022) | 48 B |
+        | 0x120E0000 | PMC | Power management controller (PMC) | 288 B |
+        | 0x120F0000 | PINMUX | Pin multiplexing control registers | 396 B |
+        | 0x120F0800 | PADCTRL | Pad (pin drive capability) control registers | 488 B |
+        | 0x12110000 | DDRC_AXI | DDRC AXI interface | 1556 B |
+        | 0x12114000 | DDRC_QOSB | DDRC QoS buffer | 508 B |
+        | 0x12115000 | DDRC_AWADDR | DDRC AWADDR surveillance | 516 B |
+        | 0x12118000 | DDRC_DMC | DDRC DMC | 1208 B |
+        | 0x1211C000 | DDRC_PHY | DDR PHY | 1984 B |
+        | 0x12120000 | MISC_CTRL | Peripheral control registers (MISC_CTRL) | 152 B |
+        | 0x12140000 | IR | IR receiver | 56 B |
+        | 0x12150000 | GPIO0 | ARM PL061 | 1053 B |
+        | 0x12160000 | GPIO1 | ARM PL061 | 1053 B |
+        | 0x12170000 | GPIO2 | ARM PL061 | 1053 B |
+        | 0x12180000 | GPIO3 | ARM PL061 | 1053 B |
+        | 0x12190000 | GPIO4 | ARM PL061 | 1053 B |
+        | 0x121A0000 | GPIO5 | ARM PL061 | 1053 B |
+        | 0x121B0000 | GPIO6 | ARM PL061 | 1053 B |
+        | 0x121C0000 | GPIO7 | ARM PL061 | 1053 B |
+        | 0x121D0000 | GPIO8 | ARM PL061 | 1053 B |
+        | 0x121E0000 | GPIO9 | ARM PL061 | 1053 B |
+        | 0x121F0000 | GPIO10 | ARM PL061 | 1053 B |
+        | 0x12200000 | GPIO11 | ARM PL061 | 1053 B |
+        | 0x12210000 | GPIO12 | ARM PL061 | 1053 B |
+        | 0x12220000 | GPIO13 | ARM PL061 | 1053 B |
+        | 0x13020000 | VDP | Video display processor (VDP) | 62192 B |
+        | 0x130C0000 | VICAP | Video capture (VICAP) | 68616 B |
+        | 0x13120000 | VOIE | Video output image enhancement (VOIE) | 136 B |
+        | 0x13140000 | AIAO | Audio input/output (AIAO) | 8624 B |
+        | 0x13150000 | MDU | Motion detection unit (MDU) | 188 B |
+
+        The table is generated from the elaborated root (instances at their absolute addresses; register space is the span of the block's registers, not the data sheet window).
+
+        <!-- overview:end -->
     ";
 
     eHI3520DV300_FMC          FMC          @ 0x10000000;
