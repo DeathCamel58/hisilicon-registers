@@ -157,7 +157,183 @@ addrmap hi3516av100 {
 
         ### Diagrams
 
+        ![Logic block diagram](assets/diagrams/hi3516av100-logic.svg)
+
         ![Register blocks by function](assets/diagrams/hi3516av100-blocks.svg)
+
+        ![Clock tree](assets/diagrams/hi3516av100-clocks.svg)
+
+        ![Boot flow](assets/diagrams/hi3516av100-boot.svg)
+
+        ![Video pipeline](assets/diagrams/hi3516av100-video.svg)
+
+        ![Interrupt topology](assets/diagrams/hi3516av100-irq.svg)
+
+        ![Reset tree](assets/diagrams/hi3516av100-resets.svg)
+
+        ![Storage, USB and Ethernet paths](assets/diagrams/hi3516av100-io.svg)
+
+        ![DMA request lines](assets/diagrams/hi3516av100-dma.svg)
+
+        ![Power domains](assets/diagrams/hi3516av100-power.svg)
+
+        ![CRG register map](assets/diagrams/hi3516av100-crgmap.svg)
+
+        ![IP editions across the camera family](assets/diagrams/hi3516av100-editions.svg)
+
+        ### Variants and key specifications (data sheet Issue 08, 2016-10-28, chapter 1; one data sheet covers both parts)
+
+        |  | Hi3516A V100 | Hi3516D V100 |
+        |---|---|---|
+        | Chip ID (SC_SYSID, 0xEE0) | 0x3516A100 | not published separately (the data sheet gives the value for the Hi3516A only) |
+        | CPU | Cortex-A7 single core, up to 600 MHz, 32 KB I + 32 KB D L1, 128 KB 8-way L2, NEON + FPU, GIC with 96 sources (64 external) | same |
+        | DDR | one 32-bit DDR3/3L port, up to 600 MHz (1.2 Gbit/s), up to 8 Gbit (two 16-bit parts); address window 1 GB | 16-bit DDR3/3L, up to 4 Gbit; only 512 MB of the 1 GB window is supported |
+        | Video encode | H.264 BP/MP/HP, H.265 MP, MJPEG/JPEG baseline; 5 MP max; 5M@30 + VGA@30, 1080p@60 + VGA@30, 1080p@30 + 720p@30 + VGA@30; JPEG 5M@8 | 1080p@30 + 720p@30 + VGA@30, 3M@30 + VGA@30, 5M@15; JPEG 5M@8 |
+        | ISP | 3A (AE/AWB/AF), FPN, WDR (frame/line, tone mapping), lens distortion correction, 90/270 degree rotation, mirror/flip, anti-fog, 5 MP input | same |
+        | Video input | DC 8/10/12/14-bit Bayer (150 MHz max), BT.601/656/1120, MIPI / LVDS / sub-LVDS / HiSPi | same |
+        | Video output | 1 PAL/NTSC CVBS (load detect), 1 BT.1120/BT.656 up to 1080p@60 | same |
+        | Audio | integrated 16-bit codec, I2S to an external codec | same |
+        | Peripherals | 4 UART, IR, 3 I2C, 4 SPI masters, GPIO (14 x 8 + 3), 8 PWM, 2-channel SAR ADC, RTC, POR, 2 SDIO 3.0 (SDXC), 1 USB 2.0 host/device, GMAC RGMII/RMII/MII 10/100/1000 with TSO | same |
+        | Flash | SPI NOR (1/2/4 wire, 32 MB), SPI NAND (4 Gbit), NAND (8-bit, SLC/MLC, 4/8/24-bit ECC); boots from any of them | same |
+        | Security | AES / DES / 3DES (CIPHER), digital watermark | same |
+        | Package | LD TFBGA 15 x 15 mm, 0.65 mm pitch, 395 pins | same body, 373 pins |
+        | Supply | core 1.1 V, I/O 3.3 V, DDR 1.35 / 1.5 V; 1.1 W typical at 1080p@60 | same |
+        | SDK | Linux 3.4 | same |
+        ### Boot modes (data sheet 1.3, Tables 1-1 and 1-2)
+
+        | BOOTROM_SEL (VO_DAT1) | BOOT_SEL (VO_DAT0) | Boot mode |
+        |---|---|---|
+        | 1 | X | BOOTROM: serial download over the UART; on timeout BOOT_SEL decides (0 SPI flash, 1 NAND) |
+        | 0 | 0 | external SPI flash on the SFC (NOR or NAND, see below) |
+        | 0 | 1 | external NAND flash on the NANDC |
+
+        | SFC_DEVICE_MODE (VO_DAT3) | SFC_BOOT_MODE (SFC_CLK) | SPI flash boot mode |
+        |---|---|---|
+        | 0 | 0 | SPI NOR, 3-byte address |
+        | 0 | 1 | SPI NOR, 4-byte address |
+        | 1 | 0 | SPI NAND, 1-wire |
+        | 1 | 1 | SPI NAND, 4-wire |
+
+        The address 0x00000000 window (64 MB) shows the boot memory selected by {BOOT_SEL, BOOTROM_SEL} (00 SPI flash, 01 BOOTROM, 10 NAND, 11 BOOTROM) until the remap is cleared, then the 64 KB on-chip RAM (the data sheet table spells the second strap BOOTROOM_SEL).
+
+        ### Memory map notes (data sheet 1.4, Table 1-3; the register-block table below gives the register windows)
+
+        | Window | Size | Function |
+        |---|---|---|
+        | 0x00000000-0x03FFFFFF | 64 MB | boot memory (SPI flash / NAND / BOOTROM, see boot table) until the remap is cleared, then on-chip RAM |
+        | 0x04000000 | 64 KB | BOOTROM |
+        | 0x04010000 | 64 KB | on-chip RAM |
+        | 0x50000000 | 64 MB | NAND flash memory space |
+        | 0x54000000 | 64 MB | SPI NAND flash memory space |
+        | 0x58000000 | 64 MB | SPI NOR flash memory space |
+        | 0x80000000-0xBFFFFFFF | 1 GB | external DDR (Hi3516D: 512 MB supported) |
+        | 0x20300000 | 64 KB | GIC internal registers (the block table lists the RDL placement) |
+
+        ### Clocks (data sheet 3.2)
+
+        XIN is a fixed 24 MHz crystal (PLL input), RTC_XIN a 32.768 kHz crystal. Four PLLs, two CRG registers each; PLL formula FOUTVCO = 24 MHz x (fbdiv + frac/2^24) / refdiv with 600 MHz < FOUTVCO <= 2.4 GHz, FOUTPOSTDIV = FOUTVCO / (pstdiv1 x pstdiv2), FOUT1PH0 / FOUT2 / FOUT3 / FOUT4 = FOUTVCO / (pstdiv1 x pstdiv2 x 2 / 4 / 6 / 8). The APLL (A7) is programmable and the BPLL powers down by default; the other PLLs are fixed. PLL lock: PERI_CRG58[3:0]. Change PLL settings only in slow mode; the PLL is stable 0.1 ms later.
+
+        | PLL | Config registers | Notes |
+        |---|---|---|
+        | APLL | PERI_CRG0 / PERI_CRG1 | A7 clock; up to 900 MHz FOUTPOSTDIV; disable with PERI_CRG1[23] |
+        | BPLL | PERI_CRG2 / PERI_CRG3 | powered down by default; disable with PERI_CRG3[23] |
+        | VPLL | PERI_CRG4 / PERI_CRG5 | fixed; disable with PERI_CRG5[23] |
+        | EPLL | PERI_CRG8 / PERI_CRG9 | fixed; disable with PERI_CRG9[23] |
+
+        Fixed PLL outputs shown in Figure 3-3: a 1188 MHz VCO gives 594 / 297 / 148.5 / 99 / 74.25 MHz and (via dividers) 396 MHz (A7, DDR, AIO), 198 MHz (bus), 237 MHz (CBB), 54 MHz (VDP DAC and HD); a 1000 MHz VCO gives 500 / 250 / 125 MHz and dividers 333 MHz (AIO, A7), 250 MHz (CBB, bus), 125 MHz (SFC, RGMII) and 50 MHz (RMII). Which of VPLL/EPLL/BPLL carries which VCO is not legible in the figure text (INFERRED: not assigned here).
+
+        | Signal | Register bits | Function |
+        |---|---|---|
+        | cpu_sc_sel | PERI_CRG12[8:7] | A7 clock source |
+        | a7clk_loaden / a7clk_skipcfg | PERI_CRG10[17] / [16:12] | A7 clock skip divider |
+        | ddr_sc_sel | PERI_CRG12[5:4] | DDR clock source |
+        | bus_sc_sel | PERI_CRG12[3:0] | sysaxi / mda0axi / mda1axi sources |
+        | mda_sc_sel | PERI_CRG12[19:18], [13:12]; [15:14]; [17:16] | VEDU/AVC; VPSS; VGS clock sources |
+        | vi_sc_sel, sensor_cksel | PERI_CRG11[3:2]; [18:16] | VICAP/MIPI and sensor clock selects (VPSS must match VICAP in online mode) |
+        | vdp_cksel, vo_out_cksel, hd_cksel | PERI_CRG13[16]; [15:14]; [13:12] | VDP clock selects |
+        | vedu / avc / vpss / tde / vgs / jpge / mdu skip dividers | PERI_CRG16[8:4] / [20:16]; 18[8:4]; 22[8:4]; 23[8:4]; 24[8:4]; 26[8:4] | per-block clock skip (loaden + skipcfg) |
+        | ive_cksel | PERI_CRG27[2] | IVE clock |
+        | sfc_cksel, sfc_nand_cksel | PERI_CRG48[3:2]; [7:6] | SFC clocks |
+        | sdxc0_cksel, sdxc1_cksel | PERI_CRG49[3:2]; [11:10] | SDIO clocks |
+        | nfc_cksel | PERI_CRG52[2] | NANDC clock |
+        | pwm_cksel, uart_cksel | PERI_CRG14[2]; PERI_CRG57[19] | PWM / UART clock |
+        | mac_speed, port_select | PERI_CRG59[1]; [0] | GSF/GMAC speed and port |
+        | ext_fephy_cksel, rmii_cksel | PERI_CRG51[6]; [4] | PHY clock |
+        | ai0_cksel | PERI_CRG35[3:2] | AIO clock |
+
+        System modes (SC_CTRL modectrl: 100 normal, 010 slow, 001 doze): normal = all clocks from the PLLs; slow = 24 MHz crystal (APLL off; the CPU runs from XIN after reset); doze = 46.875 kHz (XIN / 512). The DDRC and other fast modules cannot run in slow mode.
+
+        ### Resets and power (data sheet 3.1, 3.5, 3.11)
+
+        Reset types: global hard reset npor (RSTN pin or internal POR; low pulse longer than 12 XIN cycles), global soft reset sys_rst_n (SC_SYSRST in the system controller; deasserts after at least 360 system clock cycles, excludes clock/reset circuits and test logic), per-module reset xx_rst_n (CRG PERI_CRGn soft-reset bits; level controlled, not self-clearing). There is no watchdog reset path in this data sheet figure (the A V200 and later add wdg_rst_req).
+
+        Power: normal / slow / doze system modes (SC_CTRL modectrl); module clock gating in the CRG; USB host clock gate PERI_CRG46[7]; PLL power-down bits PERI_CRG1/3/5/9[23]; DDR self-refresh; CPU DVFS (four profiles) and AVS of the CPU, core, MDDRC and MDA0 supplies (PMC); VEDU and AVC can be powered off (sequence: reset PERI_CRG16[0]/[12], clock off PERI_CRG16[1]/[13], isolate MISC_CTRL5[4]/[0], power request MISC_CTRL5[5]/[1], status MISC_CTRL5[6]/[12]).
+
+        ### DMAC request lines (data sheet 3.6, Table 3-11; 4 channels, channel 0 highest priority)
+
+        | Request lines | Peripheral | Select |
+        |---|---|---|
+        | 0 / 1 | I2C1 or I2C0 RX / TX | MISC_CTRL1[i2c1_dma_ch_sel] = 100 |
+        | 2 / 3 | I2C1 or I2C2 RX / TX | = 101 |
+        | 4 / 5 | UART0 RX / TX |  |
+        | 6 / 7 | UART1 RX / TX |  |
+        | 8 / 9 | UART2 RX / TX |  |
+        | 10 / 11 | UART3 RX / TX |  |
+        | 12 / 13 | I2C1 or SSP1 RX / TX | = 110 |
+        | 14 / 15 | I2C1 or SSP0 RX / TX | = 111 |
+
+        The 3-bit field MISC_CTRL1[i2c1_dma_ch_sel] (bits 25:23) connects the I2C1 requests to one of the four line pairs (0xx: I2C1 has no DMA; 100/101/110/111 as above); the displaced peripheral (I2C0, I2C2, SSP1, SSP0) then has no DMA. Memory has no request line (always ready); channels 2 and 3 insert an idle bus cycle, so use them for memory-to-memory copies.
+
+        ### Pin multiplexing summary (generated from the RDL IO_CONFIG block)
+
+        123 pad registers (IO_CONFIG at 0x200F0000, one 32-bit register per pad: the field value selects the pad function, 0 is the GPIO function on almost every pad); up to 8 functions per pad. Drive strength and slew are in the separate pad-control registers. Pad counts per function family (a pad that offers several families is counted in each):
+
+        | Function family | Pads | Pads (first six) |
+        |---|---|---|
+        | GPIO | 123 | SENSOR_CLK, FLASH_TRIG, SHUTTER_TRIG, VO_CLK, VO_DAT15, VO_DAT14, ... |
+        | UART | 6 | UART1_RTSN, UART1_RXD, UART1_CTSN, UART1_TXD, UART2_RXD, UART2_TXD |
+        | SPI / SSP | 10 | FLASH_TRIG, SHUTTER_TRIG, SPI0_SCLK, SPI0_SDO, SPI0_SDI, SPI0_CSN, ... |
+        | I2C | 6 | SPI0_SCLK, SPI0_SDO, SPI1_SCLK, SPI1_SDO, I2C2_SDA, I2C2_SCL |
+        | PWM | 9 | IR_IN, GPIO0_2, GPIO0_3, GPIO0_4, PWM0, PWM1, ... |
+        | Video input (VI, sensor, MIPI, ISP) | 23 | SENSOR_CLK, FLASH_TRIG, SHUTTER_TRIG, GPIO0_0, VI_CLK, VI_HS, ... |
+        | Video output (VO, LCD, BT) | 17 | VO_CLK, VO_DAT15, VO_DAT14, VO_DAT13, VO_DAT12, VO_DAT11, ... |
+        | Storage (SFC, NAND, eMMC, SDIO) | 38 | VO_DAT11, VO_DAT10, muxctrl_reg10, VO_DAT3, SDIO0_CCLK_OUT, SDIO0_CARD_POWER_EN, ... |
+        | Ethernet (RGMII, RMII, MII) | 13 | EPHY_CLK, RGMII_TX_EN, RGMII_TX_CLK, RGMII_TXD0, RGMII_TXD1, RGMII_TXD2, ... |
+        | Audio (I2S, AIAO, codec) | 21 | UART2_RXD, UART2_TXD, JTAG_TRSTN, JTAG_TCK, JTAG_TMS, JTAG_TDO, ... |
+        | Debug, JTAG, clocks | 6 | JTAG_TRSTN, JTAG_TCK, JTAG_TMS, JTAG_TDO, JTAG_TDI, SDIO1_CDATA0 |
+        | Interrupt, IR, ADC, misc | 5 | IR_IN, USB_OVRCUR, USB_PWREN, SAR_ADC_CH0, muxctrl_reg88 |
+        | Other | 13 | VO_DAT1, VO_DAT0, GPIO0_0, GPIO0_1, GPIO0_2, GPIO0_3, ... |
+
+        ### IP editions in the RDL (generated; same name = same IP edition, a different name = a different IP doing the same job)
+
+        | Function | A V100 | D V100 | A V200 | 3519 V101 | A V300 | D V300 |
+        |---|---|---|---|---|---|---|
+        | CPU / interrupt | ARM_GIC400 | ARM_GIC400 | ARM_GIC400 | ARM_GIC400 | - | - |
+        | DMA controller | DMAC | DMAC | DMAC | DMAC | DMAC_V2 | DMAC_V2 |
+        | Timers / watchdog | TIMER_SP804, WDG_SP805 | TIMER_SP804, WDG_SP805 | TIMER_SP804, WDG_SP805 | TIMER_SP804, WDG_SP805 | TIMER_SP804, WDG_SP805 | TIMER_SP804, WDG_SP805 |
+        | UART | ARM_PL011 | ARM_PL011 | ARM_PL011 | ARM_PL011 | ARM_PL011 | ARM_PL011 |
+        | I2C | I2C_DW | I2C_DW | I2C_DW | I2C_DW | I2C_V2 | I2C_V2 |
+        | SPI | SPI | SPI | SPI, SPI_3WIRE | SPI, SPI_3WIRE | SPI, SPI_3WIRE | SPI, SPI_3WIRE |
+        | GPIO | ARM_PL061 | ARM_PL061 | ARM_PL061 | ARM_PL061 | ARM_PL061 | ARM_PL061 |
+        | PWM | PWM_GRP | PWM_GRP | PWM_GRP | PWM_GRP | PWM_GRP | PWM_GRP |
+        | LSADC / SAR ADC | LSADC | LSADC | LSADC_V2 | LSADC_V2 | LSADC_V2 | LSADC_V2 |
+        | IR / RTC | IR, RTC_SPI | IR, RTC_SPI | IR, RTC_SPI | IR, RTC_SPI | IR, RTC_SPI | IR, RTC_SPI |
+        | Ethernet | GMAC | GMAC | GMAC | GMAC | FEMAC | FEMAC |
+        | USB | USB_DEVICE, USB_EHCI, USB_OHCI | USB_DEVICE, USB_EHCI, USB_OHCI | USB_DEVICE, USB_EHCI, USB_OHCI | USB_DEVICE, USB_EHCI, USB_OHCI | - | chip-local USB, chip-local USB2_PHY |
+        | SD / eMMC | DWMMC | DWMMC | DWMMC | DWMMC | DWMMC | DWMMC |
+        | Flash controller | NANDC, SFC_350, SNFC | NANDC, SFC_350, SNFC | FMC | FMC | FMC | FMC |
+        | DDR controller | DDRC_V2 | DDRC_V2 | MDDRC | MDDRC | - | chip-local DDRC_AXI, chip-local DDRC_DMC, chip-local DDRC_PHY, chip-local DDRC_QOSB, chip-local DDRC_TZASC |
+        | System / clock | CRG, MISC_CTRL, SYS_CTRL | CRG, MISC_CTRL, SYS_CTRL | MISC_CTRL, PERI_CRG, SYS_CTRL | MISC_CTRL, PERI_CRG, SYS_CTRL | CRG, MISC_CTRL, SYS_CTRL | CRG, chip-local MISC_CTRL, chip-local SYS_CTRL |
+        | Pin control | IO_CONFIG | IO_CONFIG | MUX, PAD | MUX, PAD | - | - |
+        | Security | CIPHER_MC | CIPHER_MC | CIPHER_MC, HASH, OTP_KEY_CTRL, RSA, TRNG | CIPHER_MC, HASH, OTP_KEY_CTRL, RSA, TRNG | OTP_USER, RSA, SPACC, TRNG | OTP_USER, RSA, SPACC, TRNG |
+        | Audio | AIAO | AIAO | AIAO | AIAO | AIAO | AIAO, chip-local ACODEC |
+        | VICAP / MIPI / ISP | MIPI_RX_AV100, VICAP_AV100 | MIPI_RX_AV100, VICAP_AV100 | ISP_AV200, MIPI_RX_AV200, VICAP_AV200 | ISP_AV200, MIPI_RX_AV200, VICAP_AV200 | MIPI_RX_AV300, VICAP_AV300 | chip-local MIPI_RX, chip-local MIPI_TX, chip-local VICAP |
+        | VDP | VDP_AV100 | VDP_AV100 | VDP_AV200 | VDP_AV200 | VDP_AV300 | chip-local VDP |
+        | VPSS / VGS / GDC | VGS, VPSS | VGS, VPSS | VGS, VPSS | VGS, VPSS | VGS, VPSS | - |
+        | TDE / IVE / NNIE | IVE, TDE_G2 | IVE, TDE_G2 | IVE, TDE | IVE, TDE | IVE, TDE_G3 | - |
+        | Video codec | JPGE, VEDU_V100, VEDU_V2 | JPGE, VEDU_V100, VEDU_V2 | JPGE, VEDU_V2 | JPGE, VEDU_V2 | JPGD_AV300, JPGE_AV300, VEDU_V3 | - |
+
+        A V100 and D V100 share one register description (one data sheet). The A V200 and 3519 V101 use the same block types (the _AV200 ISP/VICAP/MIPI/VDP editions, MDDRC, FMC, PERI_CRG, MUX/PAD). The A V300 and D V300 are the next generation: DMAC_V2, I2C_V2, FEMAC, LSADC_V2, SPACC/RSA/OTP_USER, VEDU_V3 and the _AV300 editions; the D V300 root uses chip-local blocks extracted from its own data sheet where the A V300 root has shared editions or none (VICAP, VDP and CRG/MISC_CTRL registers are identical to the A V300 ones: docs/rdl-campaign/hi3516dv300-compare.md). Blocks that are absent in a column are absent from that root (not necessarily from the chip; see block-presence.csv).
 
         ### Interrupts (Cortex-A7 GIC interrupt IDs, data sheet Table 3-8)
 
