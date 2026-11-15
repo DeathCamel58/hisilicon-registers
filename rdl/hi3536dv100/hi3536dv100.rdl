@@ -92,7 +92,173 @@ addrmap hi3536dv100 {
 
         ### Diagrams
 
+        ![Logic block diagram](assets/diagrams/hi3536dv100-logic.svg)
+
         ![Register blocks by function](assets/diagrams/hi3536dv100-blocks.svg)
+
+        ![Clock tree](assets/diagrams/hi3536dv100-clocks.svg)
+
+        ![Boot flow](assets/diagrams/hi3536dv100-boot.svg)
+
+        ![Video pipeline](assets/diagrams/hi3536dv100-video.svg)
+
+        ![Interrupt topology](assets/diagrams/hi3536dv100-irq.svg)
+
+        ![Reset tree](assets/diagrams/hi3536dv100-resets.svg)
+
+        ![CRG register map](assets/diagrams/hi3536dv100-crgmap.svg)
+
+        ![bus clock domains](assets/diagrams/hi3536dv100-bus.svg)
+
+        ![IP edition per chip](assets/diagrams/hi3536dv100-family.svg)
+
+        ### Chip ID
+
+        | Chip | System controller ID registers (0xEE0 .. 0xEEC) | Value read as SC_SYSID |
+        |---|---|---|
+        | hi3536dv100 | SYSID0..3 reset values from the RDL | 0x3536D100 (data sheet 3.5.3; the RDL has no reset value for the lowest ID byte, SCSYSID0) |
+
+        The four 8-bit registers form the 32-bit chip ID (SYSID3 is the most significant byte). The values are the reset values of the register descriptions: one data sheet documents one ID for all chips it covers, so the chips of a shared data sheet are not distinguished here (the real value of each variant is not stated).
+
+        ### Key specifications (data sheet chapter 1, Issue 00B04, 2017-12-13)
+
+        The data sheet covers the Hi3536D V100 H.265/H.264 decoder processor (a decode-only NVR chip; the Hi3536C V100 has no separate data sheet in the workspace). SC_SYSID reads 0x3536D100.
+
+        | | Hi3536D V100 |
+        |---|---|
+        | CPU | one Cortex-A7, 850 MHz, NEON and FPU; 32 KB L1 I + 32 KB L1 D, 128 KB L2 (8-way, 64-byte lines), 128-bit ACE bus interface, GIC with 96 sources (64 external) |
+        | DDR | one 16-bit DDR3/DDR3L controller, up to 800 MHz, ODT, up to 512 MB |
+        | Decode | H.265 Main Profile L4.1, H.264 BP/MP/HP L4.2, MJPEG/JPEG baseline decode; JPEG baseline encode |
+        | Performance | 4x1080p@20 H.265/H.264 decode; 4x960p (1280x960)@30 H.265/H.264 decode; 4x720p@30 JPEG decode |
+        | Video output | one HDMI 1.4b, one VGA (same source, up to 1080p@60); one HD video layer with 16-picture output, one HD PIP layer, one ARGB1555/ARGB8888 graphics layer, one 256x256 hardware cursor |
+        | Image processing | sharpen/contrast, 1/15x to 16x video scaling, 1/2x to 2x graphics scaling, cover regions, OSD overlay (VGS, TDE) |
+        | Audio | two unidirectional I2S/PCM (1 in, 1 out), integrated audio DAC (48/44.1/32 kHz, stereo line out); audio codecs in software |
+        | Network | one fast Ethernet MAC with integrated FE PHY (PHY/RMII/MII, 10/100, TSO) |
+        | Peripherals | one SATA 2.0 (port multiplier, eSATA), 2 USB 2.0 host, 3 UART (one 4-wire), IR, I2C, GPIO0-5, DMAC (4 channels), CIPHER (AES/DES/3DES), RTC with separate battery supply |
+        | Flash | SPI NOR/NAND on the FMC: 1/2/4 wire, 2 chip selects (64 MB each NOR, 512 MB each SPI NAND, 2/4 KB pages, 8/16/24/28 bit per KB ECC), 4 KB BOOTROM, 32 KB on-chip RAM (implemented, memory map) |
+        | SDK | Linux 4.9 based |
+        | Package | TFBGA, 13 x 13 mm, 0.65 mm pitch, 143 I/O pins; 1.6 W typical; core 1.1 V, CPU 1.26 V, I/O 3.3 V, DDR3 1.5 V / DDR3L 1.35 V; 0 to 70 C |
+
+        ### Boot (data sheet 1.3, Table 1-1)
+
+        | BOOTROM_SEL | Boot mode |
+        |---|---|
+        | 1 | BOOTROM: serial download over the UART (HiBurn tool); if the serial link times out the chip boots from the external SPI NOR/NAND flash |
+        | 0 | external SPI NOR or SPI NAND flash on the FMC |
+
+        BOOTROM_SEL is multiplexed with pin MDCK. There is no second strap (the Hi3535 has BOOT_SEL1/BOOT_SEL0 for NAND and PCIe slave mode). Diagram: boot flow.
+
+        ### Memory map notes (data sheet 1.3, Table 1-2)
+
+        * 0x00000000-0x03FFFFFF (64 MB): boot address space while the remap is active, on-chip RAM after the remap is cleared. BOOTROM window 0x04000000 (4 KB implemented), RAM window 0x04010000 (32 KB implemented).
+        * SFC (FMC) NAND/NOR memory window 0x14000000-0x14FFFFFF (16 MB); FMC registers 0x10000000.
+        * DDR: 0x80000000-0xFFFFFFFF (2 GB window, 512 MB maximum device).
+        * AHB peripherals: ETH 0x10010000, SATA 0x10030000, USB OHCI 0x11000000, EHCI 0x11010000, DMAC 0x11020000, CIPHER 0x11030000; APB blocks 0x12000000-0x121A0000 (timers 0x12000000-0x1203FFFF, CRG 0x12040000, system controller 0x12050000, WDG, UART0-2, RTC, I2C, PMC, pin mux 0x120F0000 / pin control 0x120F0800, DDRT, DDRC, peripheral control 0x12120000, IR 0x12140000, GPIO0-5 0x12150000-0x121A0000); video/audio blocks 0x13000000-0x13200000 (HDMI, VDP, HDMI PHY, AIAO, AUDIO codec, VGS, JPGD, JPGE, TDE, VDH 0x13200000).
+        * The interrupt controller is a GIC (the RDL instance GIC models the ARM GIC-400 style block).
+
+        ### DMA request lines (data sheet 3.6, Table 3-11)
+
+        One DMAC (PL080-style, block DMAC at 0x11020000, interrupt 46): 4 channels with fixed priority (channel 0 highest), 2 AHB masters, 16 hardware request lines, burst and single requests per peripheral, LLI support. The request-line numbers are written into src_periph / dest_periph of DMAC_Cn_CONFIG.
+
+        | Line | Peripheral | Line | Peripheral |
+        |---|---|---|---|
+        | 0 | UART0 RX | 6 | I2C RX |
+        | 1 | UART0 TX | 7 | I2C TX |
+        | 2 | UART1 RX | 8-15 | Reserved |
+        | 3 | UART1 TX | | |
+        | 4 | UART2 RX | | |
+        | 5 | UART2 TX | | |
+
+        Memory has no request line. Idle cycles are inserted after each bus operation on channels 2 and 3, so memory-to-memory transfers should use those channels.
+
+        ### Pin multiplexing summary (IO_CONFIG at 0x120F0000)
+
+        Generated from the pin mux registers of this description (register offsets are relative to the block base; the function lists are the value-ordered choices of each register). Pads that repeat a pattern in consecutive registers are merged into one row.
+
+        | Pads | Mux register (offset from 0x120F0000) | Function choices (value 0, 1, ...) |
+        |---|---|---|
+        | VGA_HS | muxctrl_reg0 @0x000 | 0=GPIO2_4 / 1=VGA_HS |
+        | VGA_VS | muxctrl_reg1 @0x004 | 0=GPIO2_5 / 1=VGA_VS |
+        | PWM_SVB_CORE | muxctrl_reg2 @0x008 | 0=PWM_SVB_CORE / 1=GPIO2_6 |
+        | PWM_SVB_CPU | muxctrl_reg3 @0x00C | 0=PWM_SVB_CPU / 1=GPIO2_7 |
+        | PWM_FREE | muxctrl_reg4 @0x010 | 0=GPIO5_7 / 1=PWM_FREE |
+        | I2C_SDA | muxctrl_reg5 @0x014 | 0=GPIO3_0 / 1=I2C_SDA |
+        | I2C_SCL | muxctrl_reg6 @0x018 | 0=GPIO3_1 / 1=I2C_SCL |
+        | UART1_RXD | muxctrl_reg7 @0x01C | 0=GPIO4_0 / 1=UART1_RXD |
+        | UART1_TXD | muxctrl_reg8 @0x020 | 0=GPIO4_1 / 1=UART1_TXD |
+        | UART1_RTSN | muxctrl_reg9 @0x024 | 0=GPIO4_2 / 1=UART1_RTSN |
+        | UART1_CTSN | muxctrl_reg10 @0x028 | 0=GPIO4_3 / 1=UART1_CTSN |
+        | UART2_RXD | muxctrl_reg11 @0x02C | 0=GPIO4_4 / 1=UART2_RXD |
+        | UART2_TXD | muxctrl_reg12 @0x030 | 0=GPIO4_5 / 1=UART2_TXD |
+        | ETH_LINK_LED | muxctrl_reg13 @0x034 | 0=GPIO4_6 / 1=ETH_LINK_LED |
+        | ETH_SPD_LED | muxctrl_reg14 @0x038 | 0=GPIO4_7 / 1=ETH_SPD_LED |
+        | IR_IN | muxctrl_reg15 @0x03C | 0=GPIO3_2 / 1=IR_IN |
+        | JTAG_TRSTN | muxctrl_reg16 @0x040 | 0=GPIO5_0 / 1=I2S_SD_RX |
+        | JTAG_TCK | muxctrl_reg17 @0x044 | 0=GPIO5_1 / 1=I2S_MCLK |
+        | JTAG_TMS | muxctrl_reg18 @0x048 | 0=GPIO5_2 / 1=I2S_WS |
+        | JTAG_TDO | muxctrl_reg19 @0x04C | 0=GPIO5_3 / 1=I2S_BCLK |
+        | JTAG_TDI | muxctrl_reg20 @0x050 | 0=GPIO5_4 / 1=I2S_SD_TX |
+        | USB2_PWREN0 ... USB2_PWREN1 (2) | muxctrl_reg21 ... muxctrl_reg22 @0x054 ... 0x058 | 0=GPIO5_5 / 1=USB2_PWREN0 (first pad; others the same pattern with the pad's own number) |
+        | HDMI_HOTPLUG | muxctrl_reg23 @0x05C | 0=GPIO3_3 / 1=HDMI_HOTPLUG |
+        | HDMI_SDA | muxctrl_reg24 @0x060 | 0=GPIO3_4 / 1=HDMI_SDA |
+        | HDMI_SCL | muxctrl_reg25 @0x064 | 0=GPIO3_5 / 1=HDMI_SCL |
+        | SATA_LED_N | muxctrl_reg26 @0x068 | 0=GPIO3_6 / 1=SATA_LED_N |
+        | GPIO0_0 | muxctrl_reg27 @0x06C | 0=GPIO0_0 / 1=MII_RXDV |
+        | GPIO0_1 | muxctrl_reg28 @0x070 | 0=GPIO0_1 / 1=MII_RXD3 / 2=I2S_WS |
+        | GPIO0_2 | muxctrl_reg29 @0x074 | 0=GPIO0_2 / 1=MII_RXD2 |
+        | GPIO0_3 | muxctrl_reg30 @0x078 | 0=GPIO0_3 / 1=MII_RXD1 / 2=I2S_BCLK |
+        | GPIO0_4 | muxctrl_reg31 @0x07C | 0=GPIO0_4 / 1=MII_RXD0 / 2=I2S_MCLK |
+        | GPIO0_5 | muxctrl_reg32 @0x080 | 0=GPIO0_5 / 1=MII_RXCK |
+        | GPIO0_6 | muxctrl_reg33 @0x084 | 0=GPIO0_6 / 1=MII_TXEN |
+        | GPIO0_7 ... GPIO1_0 (2) | muxctrl_reg34 ... muxctrl_reg35 @0x088 ... 0x08C | 0=GPIO0_7 / 1=MII_TXD3 (first pad; others the same pattern with the pad's own number) |
+        | GPIO1_1 | muxctrl_reg36 @0x090 | 0=GPIO1_1 / 1=MII_TXD1 / 2=I2S_SD_RX |
+        | GPIO1_2 | muxctrl_reg37 @0x094 | 0=GPIO1_2 / 1=MII_TXD0 / 2=I2S_SD_TX |
+        | GPIO1_3 | muxctrl_reg38 @0x098 | 0=GPIO1_3 / 1=MII_TXCK / 2=RMII_CLK |
+        | GPIO1_4 | muxctrl_reg39 @0x09C | 0=GPIO1_4 / 1=MII_CRS |
+        | GPIO1_5 | muxctrl_reg40 @0x0A0 | 0=GPIO1_5 / 1=MII_COL |
+        | GPIO1_6 | muxctrl_reg41 @0x0A4 | 0=GPIO1_6 / 1=MII_RXER |
+        | GPIO1_7 | muxctrl_reg42 @0x0A8 | 0=GPIO1_7 / 1=MII_TXER |
+        | GPIO2_0 | muxctrl_reg43 @0x0AC | 0=TEST_CLK / 1=EPHY_CLK / 2=GPIO2_0 |
+        | GPIO2_1 | muxctrl_reg44 @0x0B0 | 0=GPIO2_1 / 1=EPHY_RSTN |
+        | MDCK | muxctrl_reg45 @0x0B4 | 0=GPIO2_2 / 1=MDCK |
+        | MDIO | muxctrl_reg46 @0x0B8 | 0=GPIO2_3 / 1=MDIO |
+
+        The Hi3536D data sheet has no pin multiplexing register tables (they are in a separate pin-out workbook, per the data sheet); the function lists above come from that workbook as recorded in the RDL (PROVEN: pin-out workbook sheet 3, field width INFERRED).
+
+        Pad drive-strength and pull controls are in the separate pad control registers of the same description (not repeated here).
+
+        ### Power, reset and clock modes (data sheet 3.1, 3.2, 3.12)
+
+        * Resets: npor from the RSTN pin or the internal POR module (low pulse above 12 XIN cycles, XIN stable); global soft reset sys_rst_n from the system controller (the reset is released at least 131 ms after the request, and a second request within 131 ms leaves the system in an undefined state); per-module soft resets xx_rst_n from the CRG, hold-until-cleared. Diagram: reset tree.
+        * Clock selects after power-on: A7/DDR/bus run from the 24 MHz crystal; PLLs may be reprogrammed only in that state (stable after 0.1 ms; lock bits PERI_CRG52[5:0]).
+        * A7/DDR/bus selects: PERI_CRG20 a7_sc_sel [7:6], ddr_sc_sel [5:4], sysbus_sc_sel [3:2], mdaapb_sc_sel [1], sysapb_sc_sel [0].
+        * Module power control (3.12.3): USB 2.0 host clock PERI_CRG47 bit 0 = 0, SATA PHY clock PERI_CRG44 bit 0 = 0, unused VDAC channels (VDP registers), PLL power-down bits in PERI_CRG_PLLn. DDR: self-refresh through DDRC_CTRL_SREF.sr_seq, frequency changes under self-refresh. PMC (0x120E0000) is the power-management block.
+        * The data sheet has no separate power-domain table.
+
+        ### Interrupts (Cortex-A7 GIC interrupt IDs, data sheet Table 3-8, Issue 00B04); Reserved rows kept, IDs 0-31 are private to the A7
+
+        The ID is the GIC interrupt number (SPI number + 32).
+
+        | # | Source | # | Source | # | Source |
+        |---|---|---|---|---|---|
+        | 0-31 | For internal use of the A7 | 49 | SATA | 70 | DDRT |
+        | 32 | Watchdog | 50 | USB2_OHCI | 71 | DDRC_ERR_INT |
+        | 33 | Timer0/Timer1 | 51 | USB2_EHCI | 72 | SOFTWARE_INT |
+        | 34 | Timer2/Timer3 | 52 | Reserved | 73 | Reserved |
+        | 35 | Timer4/Timer5 | 53 | VDH_NORM_INT | 74 | FEPHY_INT |
+        | 36 | Timer6/Timer7 | 54 | Reserved | 75-83 | Reserved |
+        | 37 | RTC | 55 | VDH_SCD_NORM_INT | 84 | A7_COMMTX |
+        | 38 | UART0 | 56-59 | Reserved | 85 | A7_COMMRX |
+        | 39 | UART1 | 60 | VGS | 86 | A7_PMUIRQ |
+        | 40 | UART2 | 61 | TDE | 87 | GPIO0 |
+        | 41 | IR | 62 | JPGE | 88 | GPIO1 |
+        | 42 | I2C | 63 | JPGD | 89 | GPIO2 |
+        | 43 | ETH | 64 | AIAO | 90 | GPIO3 |
+        | 44 | Reserved | 65 | Reserved | 91 | GPIO4 |
+        | 45 | CIPHER | 66 | VDP0 | 92 | GPIO5 |
+        | 46 | DMAC | 67 | VDP1 | 93-95 | Reserved |
+        | 47 | FMC | 68 | HDMI_TX_AON |  |  |
+        | 48 | Reserved | 69 | HDMI_TX_PWD |  |  |
 
         ### Clock-gate and reset map (generated from the CRG registers)
 
