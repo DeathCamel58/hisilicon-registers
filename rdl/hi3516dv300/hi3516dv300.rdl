@@ -260,7 +260,159 @@ Interrupt numbers of the interrupt controller (data sheet interrupt table); `Res
 
         ### Diagrams
 
+        ![Logic block diagram](assets/diagrams/hi3516dv300-logic.svg)
+
         ![Register blocks by function](assets/diagrams/hi3516dv300-blocks.svg)
+
+        ![Clock tree](assets/diagrams/hi3516dv300-clocks.svg)
+
+        ![Boot flow](assets/diagrams/hi3516dv300-boot.svg)
+
+        ![Video pipeline](assets/diagrams/hi3516dv300-video.svg)
+
+        ![Interrupt topology](assets/diagrams/hi3516dv300-irq.svg)
+
+        ![Reset tree](assets/diagrams/hi3516dv300-resets.svg)
+
+        ![Storage, USB and Ethernet paths](assets/diagrams/hi3516dv300-io.svg)
+
+        ![DMA request lines](assets/diagrams/hi3516dv300-dma.svg)
+
+        ![Power domains](assets/diagrams/hi3516dv300-power.svg)
+
+        ![CRG register map](assets/diagrams/hi3516dv300-crgmap.svg)
+
+        ![IP editions across the camera family](assets/diagrams/hi3516dv300-editions.svg)
+
+        ### Variants and key specifications (Hi3516A V300 data sheet Issue 01 2019-09-15, Chinese; Hi3516D V300 data sheet Issue 01 2019-09-12, English; chapter 1)
+
+        |  | Hi3516A V300 | Hi3516D V300 | Hi3516C V500 (brief data sheet Issue 01 2018-06-28) |
+        |---|---|---|---|
+        | Chip ID (SYSCTRL 0xEE0) | 0x3516A300 | 0x3516D300 | not published |
+        | CPU | dual Cortex-A7 up to 900 MHz, 32 KB I + 32 KB D, 256 KB L2, NEON + FPU | same | same |
+        | DDR | 32-bit DDR3 / DDR4, up to 16 Gbit, up to 2133 Mbit/s | 32-bit DDR3(L) / DDR4, up to 16 Gbit, up to 1800 Mbit/s | 16-bit DDR3(L) / DDR4, 8 Gbit max |
+        | Video encode | H.264 BP/MP/HP, H.265 MP, SmartP; up to 3840 x 2160 (decode only of own streams); 2688 x 1944@30, 3840 x 2160@20; JPEG 16 MP@10; 50 Mbit/s | up to 3072 x 1728; 2688 x 1536@30, 2688 x 1944@20, 1080p@30 enc + 1080p@30 dec; JPEG 16 MP@10; 50 Mbit/s | VEDU up to 2304 wide |
+        | AI | NNIE up to 1.0 TOPS, smart computing engine (tracking, face correction) | NNIE 1.0 TOPS | NNIE 0.5 TOPS |
+        | Video input | 2 channels: first 3840 x 2160, second 2048 x 1536; DC 8/10/12/14-bit, BT.601/656/1120, MIPI / LVDS / sub-LVDS / HiSPi | first 2688 x 1944, second 2048 x 1536; same interfaces | 1 channel |
+        | Video output | BT.656/BT.1120, 6/8-bit serial and 16/18/24-bit parallel LCD, 4-lane MIPI-DSI, HDMI 1.4 (1080p@60) | same | no HDMI, no MIPI-DSI |
+        | Audio | 16-bit codec, mono differential MIC, single-ended dual input, I2S | same | same |
+        | Peripherals | 5 UART, 8 I2C, 3 SPI + 3-wire SPI, 2-channel LSADC, 3 PWM, 2 SDIO 3.0 (3.3/1.8 V, one SD 3.0), 1 USB 2.0 host/device, RMII FE with TSO | same | same |
+        | Flash | SPI NOR (1/2/4 wire, 256 MB), SPI NAND (24 bit/1 KB ECC, 1 GB), eMMC 4.5 (4-bit) | same | same |
+        | Security | secure boot (PERISTAT[0] from OTP), memory isolation, AES / DES / 3DES / RSA, SHA1/256 + HMAC, TRNG, 8 kbit OTP | same | - |
+        | Package | TFBGA 14 x 14 mm, 0.65 mm pitch, 367 pins | same | 12 x 12 mm, 280 balls |
+        | Supply | core 0.9 V, I/O 3.3 V +-10%, DDR 1.5 / 1.2 V | core 0.9 V, I/O 3.3 V +-10%, DDR 1.5 (1.35) / 1.2 V | - |
+        | SDK | Linux 4.9 | same | same |
+
+        The C V500 column is from the brief data sheets only (docs/rdl-campaign/hi3516dv300-compare.md section 4); the sheets do not say whether the dies are identical. The Hi3516A V300 and Hi3516D V300 share the CRG, MISC_CTRL and address-map layout (docs/rdl-campaign/hi3516dv300-compare.md), so both folders use the same block types.
+
+        ### Boot and upgrade modes (data sheet 1.4, Table 1-1)
+
+        BOOT_SEL1 is the power-on latch of pin SENSOR0_RSTN, BOOT_SEL0 of pin MDCK (readable in SYSSTAT[5:4]); UPDATE_MODE is the level of GPIO0_0 at startup (0 = key pressed = upgrade).
+
+        | UPDATE_MODE | BOOT_SEL1 | BOOT_SEL0 | Mode |
+        |---|---|---|---|
+        | 1 | 0 | 0 | boot from SPI NOR / SPI NAND |
+        | 1 | 0 | 1 | boot from eMMC (4-bit only) |
+        | 1 | 1 | 0 | burn SPI NOR / NAND image over the serial port |
+        | 1 | 1 | 1 | burn eMMC image over the serial port |
+        | 0 | X | 0 | upgrade SPI NOR / NAND from SDIO0 (SD card) or USB |
+        | 0 | X | 1 | upgrade eMMC from SDIO0 (SD card) or USB |
+
+        Secure boot: PERISTAT[0] (copied from the OTP secure-boot flag) selects secure mode, in which the BOOTROM verifies the U-Boot signature before running it. After reset the 0x00000000 window shows the BOOTROM until the remap is cleared, then the on-chip RAM.
+
+        ### Memory map notes (data sheet 1.5, Table 1-2; identical in the Hi3516A V300 and Hi3516D V300 data sheets)
+
+        | Window | Size | Function |
+        |---|---|---|
+        | 0x00000000-0x03FFFFFF | 64 MB | BOOTROM while the remap is active, then on-chip RAM |
+        | 0x04000000 | 64 KB | BOOTROM |
+        | 0x04010000 | 40 KB | on-chip RAM |
+        | 0x14000000-0x14FFFFFF | 16 MB | FMC memory space |
+        | 0x80000000-0xFFFFFFFF | 2 GB | DDR |
+
+        Three I/O control windows appear in the map (0x10FF0000, 0x111F0000, 0x112F0000, 0x114F0000: 64 KB each); the data sheet has no register tables for them (the pad list is in a separate pinout document).
+
+        ### Clocks (data sheet 3.2; identical in the Hi3516A V300 and Hi3516D V300 data sheets)
+
+        XIN is a fixed 24 MHz crystal, RTC_XIN a 32.768 kHz crystal. Four PLLs with two PERI_CRG_PLLn registers each; FOUTVCO = 24 MHz x (fbdiv + frac/2^24) / refdiv with 800 MHz <= FOUTVCO <= 3.2 GHz, FOUTPOSTDIV = FOUTVCO / (pstdiv1 x pstdiv2) with pstdiv1 >= pstdiv2, FOUT1PH0 / 2 / 3 / 4 = FOUTVCO / (pstdiv1 x pstdiv2 x 2 / 4 / 6 / 8). Only the gray (programmable) PLL of the figure is user-configurable (the APLL, INFERRED from the CPU being its only consumer). Reprogram: switch to a non-PLL source, change the PLL, wait 0.1 ms, poll PERI_CRG_PLL122[10:0] for lock.
+
+        | PLL | Config registers | Figure 3-3 values |
+        |---|---|---|
+        | APLL | PERI_CRG_PLL0 / PERI_CRG_PLL1 | VCO 1800 MHz, POSTDIV 900 MHz |
+        | DPLL | PERI_CRG_PLL2 / PERI_CRG_PLL3 | VCO 2376 MHz, POSTDIV 594 MHz |
+        | EPLL | PERI_CRG_PLL4 / PERI_CRG_PLL5 | VCO 1056 MHz, POSTDIV 528 MHz |
+        | VPLL | PERI_CRG_PLL6 / PERI_CRG_PLL7 | VCO 1104 MHz, POSTDIV 552 MHz |
+
+        Further clock choices in the figure (the text layer does not tie each to a PLL): 600 / 360 / 300 / 257 / 200 / 100 / 72 MHz, 450 / 150 / 50 MHz, 792 / 594 / 475 / 396 / 339 / 297 MHz, 54 / 27 MHz, 148.5 / 19.8 / 74.25 MHz, 1 / 2 / 3 / 6 MHz and 200 kHz dividers.
+
+        | Module | Default | Selectable frequencies (MHz) |
+        |---|---|---|
+        | A7 | 24 | 24, 600, 792, 900 |
+        | DDR | 24 | 24, 360, 396, 450 |
+        | SYSAXI | 24 | 24, 198, 300 |
+        | SYSCFG | 24 | 24, 148.5 |
+        | SYSAPB | 24 | 24, 50 |
+        | VPSS | 150 | 150, 300, 396, 475 |
+        | VIPROC / VICAP | 300 | 150, 300, 396 (Hi3516A V300 also lists 475) |
+        | VGS | 300 | 300, 396, 450, 475 |
+        | IVE | 475 | 300, 396, 475 |
+        | GDC | 300 | 300, 396, 450, 475 |
+        | FMC | 24 | 24, 100, 150, 163, 200, 257, 300, 396 |
+        | SDIO0 | 25 | 25, 50, 100 |
+        | SDIO1 / eMMC | 50 | 25, 50, 100 |
+
+        The newer sheets give no per-signal select-register table like the A V100 / A V200 sheets (Table 3-6); the select bits are in the PERI_CRG register descriptions of the RDL.
+
+        ### Resets and power (data sheet 3.1, 3.10)
+
+        Reset types: power-on reset (internal POR, low pulse longer than 12 XIN cycles), watchdog reset, global soft reset (system controller), per-module soft reset (PERI_CRG registers, not self-clearing); soft reset needs at least 360 system clocks to deassert and must not be repeated inside that window.
+
+        Power: the PMC (0x12090000) controls the non-always-on supplies through PWR_SEQ0 / PWR_SEQ1 (PWR_EN, PWR_WAKEUP, PWR_STARTUP, PWR_BUTTON, PWR_RSTN pins): configurable wakeup polarity and sequence timing, RTC scheduled power-on, power-off by holding PWR_BUTTON 10 s; it runs from the RTC 32.768 kHz clock (RTC crystal and AVDD_BAT required). Also clock gating / frequency selects, module low power, DDR self-refresh, AVS.
+
+        ### DMAC request lines (data sheet 3.6, Table 3-5 / 3-9; 8 channels, programmable priority, per-channel security attribute; identical in both data sheets)
+
+        | Request lines | Peripheral | Select |
+        |---|---|---|
+        | 0-15 | I2C0..I2C7 RX / TX (line 2n = RX, 2n+1 = TX) |  |
+        | 16-25 | UART0..UART4 RX / TX (16 + 2n = RX) |  |
+        | 26-31 | SPI0..SPI2 RX / TX (26 + 2n = RX) |  |
+
+        Fixed assignment (no select fields); transfer widths 8/16/32/64 bit, little endian only, linked-list transfers, software requests.
+
+        ### Pin multiplexing
+
+        The data sheet has no pin multiplexing register tables (the per-pad function list is in a separate pinout document, Hi35xx Vxxx_PINOUT_EN, not in the workspace), so no I/O control block is modeled and no pad table is given here.
+
+        ### IP editions in the RDL (generated; same name = same IP edition, a different name = a different IP doing the same job)
+
+        | Function | A V100 | D V100 | A V200 | 3519 V101 | A V300 | D V300 |
+        |---|---|---|---|---|---|---|
+        | CPU / interrupt | ARM_GIC400 | ARM_GIC400 | ARM_GIC400 | ARM_GIC400 | - | - |
+        | DMA controller | DMAC | DMAC | DMAC | DMAC | DMAC_V2 | DMAC_V2 |
+        | Timers / watchdog | TIMER_SP804, WDG_SP805 | TIMER_SP804, WDG_SP805 | TIMER_SP804, WDG_SP805 | TIMER_SP804, WDG_SP805 | TIMER_SP804, WDG_SP805 | TIMER_SP804, WDG_SP805 |
+        | UART | ARM_PL011 | ARM_PL011 | ARM_PL011 | ARM_PL011 | ARM_PL011 | ARM_PL011 |
+        | I2C | I2C_DW | I2C_DW | I2C_DW | I2C_DW | I2C_V2 | I2C_V2 |
+        | SPI | SPI | SPI | SPI, SPI_3WIRE | SPI, SPI_3WIRE | SPI, SPI_3WIRE | SPI, SPI_3WIRE |
+        | GPIO | ARM_PL061 | ARM_PL061 | ARM_PL061 | ARM_PL061 | ARM_PL061 | ARM_PL061 |
+        | PWM | PWM_GRP | PWM_GRP | PWM_GRP | PWM_GRP | PWM_GRP | PWM_GRP |
+        | LSADC / SAR ADC | LSADC | LSADC | LSADC_V2 | LSADC_V2 | LSADC_V2 | LSADC_V2 |
+        | IR / RTC | IR, RTC_SPI | IR, RTC_SPI | IR, RTC_SPI | IR, RTC_SPI | IR, RTC_SPI | IR, RTC_SPI |
+        | Ethernet | GMAC | GMAC | GMAC | GMAC | FEMAC | FEMAC |
+        | USB | USB_DEVICE, USB_EHCI, USB_OHCI | USB_DEVICE, USB_EHCI, USB_OHCI | USB_DEVICE, USB_EHCI, USB_OHCI | USB_DEVICE, USB_EHCI, USB_OHCI | - | chip-local USB, chip-local USB2_PHY |
+        | SD / eMMC | DWMMC | DWMMC | DWMMC | DWMMC | DWMMC | DWMMC |
+        | Flash controller | NANDC, SFC_350, SNFC | NANDC, SFC_350, SNFC | FMC | FMC | FMC | FMC |
+        | DDR controller | DDRC_V2 | DDRC_V2 | MDDRC | MDDRC | - | chip-local DDRC_AXI, chip-local DDRC_DMC, chip-local DDRC_PHY, chip-local DDRC_QOSB, chip-local DDRC_TZASC |
+        | System / clock | CRG, MISC_CTRL, SYS_CTRL | CRG, MISC_CTRL, SYS_CTRL | MISC_CTRL, PERI_CRG, SYS_CTRL | MISC_CTRL, PERI_CRG, SYS_CTRL | CRG, MISC_CTRL, SYS_CTRL | CRG, chip-local MISC_CTRL, chip-local SYS_CTRL |
+        | Pin control | IO_CONFIG | IO_CONFIG | MUX, PAD | MUX, PAD | - | - |
+        | Security | CIPHER_MC | CIPHER_MC | CIPHER_MC, HASH, OTP_KEY_CTRL, RSA, TRNG | CIPHER_MC, HASH, OTP_KEY_CTRL, RSA, TRNG | OTP_USER, RSA, SPACC, TRNG | OTP_USER, RSA, SPACC, TRNG |
+        | Audio | AIAO | AIAO | AIAO | AIAO | AIAO | AIAO, chip-local ACODEC |
+        | VICAP / MIPI / ISP | MIPI_RX_AV100, VICAP_AV100 | MIPI_RX_AV100, VICAP_AV100 | ISP_AV200, MIPI_RX_AV200, VICAP_AV200 | ISP_AV200, MIPI_RX_AV200, VICAP_AV200 | MIPI_RX_AV300, VICAP_AV300 | chip-local MIPI_RX, chip-local MIPI_TX, chip-local VICAP |
+        | VDP | VDP_AV100 | VDP_AV100 | VDP_AV200 | VDP_AV200 | VDP_AV300 | chip-local VDP |
+        | VPSS / VGS / GDC | VGS, VPSS | VGS, VPSS | VGS, VPSS | VGS, VPSS | VGS, VPSS | - |
+        | TDE / IVE / NNIE | IVE, TDE_G2 | IVE, TDE_G2 | IVE, TDE | IVE, TDE | IVE, TDE_G3 | - |
+        | Video codec | JPGE, VEDU_V100, VEDU_V2 | JPGE, VEDU_V100, VEDU_V2 | JPGE, VEDU_V2 | JPGE, VEDU_V2 | JPGD_AV300, JPGE_AV300, VEDU_V3 | - |
+
+        A V100 and D V100 share one register description (one data sheet). The A V200 and 3519 V101 use the same block types (the _AV200 ISP/VICAP/MIPI/VDP editions, MDDRC, FMC, PERI_CRG, MUX/PAD). The A V300 and D V300 are the next generation: DMAC_V2, I2C_V2, FEMAC, LSADC_V2, SPACC/RSA/OTP_USER, VEDU_V3 and the _AV300 editions; the D V300 root uses chip-local blocks extracted from its own data sheet where the A V300 root has shared editions or none (VICAP, VDP and CRG/MISC_CTRL registers are identical to the A V300 ones: docs/rdl-campaign/hi3516dv300-compare.md). Blocks that are absent in a column are absent from that root (not necessarily from the chip; see block-presence.csv).
 
         ### Interrupts (GIC interrupt IDs, data sheet Table 3-6)
 
