@@ -1,0 +1,194 @@
+`ifndef ARM_V7_DEBUG_RDL
+`define ARM_V7_DEBUG_RDL
+
+`include "ARM_CORESIGHT_COMPONENT.rdl"
+
+regfile eARM_V7_DEBUG {
+    name = "ARMv7-A (v7.0 edition, Cortex-A9) per-core debug unit, external APB view";
+    desc = "
+    Named after the architecture, not the core: every ARMv7-A core with the v7.0 debug edition (Cortex-A9) uses this map. Cortex-A7 and A17 implement the v7.1 edition (DBGDIDR Version 5, wider fields, extra registers such as the double lock), which is a different IP and is NOT modelled here (it would be a separate ARM_V71_DEBUG block). ARM9 / ARM11 cores (Hi3511, Hi3515, Hi3516C V100, Hi3518, Hi3520 V100 and the camera chips with ARM926) have no memory-mapped debug window and use none of this.
+    The memory-mapped (external debug interface) view of the ARMv7-A debug registers of ONE Cortex-A9 core, as a debugger or a cross-core driver such as Linux
+    `drivers/hwtracing/coresight/coresight-cpu-debug.c` sees them on the CoreSight debug APB. Offsets are relative to the base of that core's debug page (the
+    registers in the core's coprocessor 14 have the same register numbers: CP14 number x 4 = external offset, e.g. DBGDSCR is CP14 register 34 = 0x088).
+    Registers below are the ones fixed by the ARMv7 debug architecture; the Cortex-A9 implementation specific ones (DBGDSCCR, DBGDSMCR, ...) are NOT modelled.
+    Source: ARM ARMv7-AR Architecture Reference Manual debug chapter (DDI 0406) and Cortex-A9 TRM debug chapter (DDI 0388); offsets cross-checked against Linux
+    `arch/arm/include/asm/hw_breakpoint.h` (CP14 numbers BVR 64, BCR 80, WVR 96, WCR 112 = +0x100, +0x140, +0x180, +0x1C0; DSCR MDBGEN bit 15, HDBGEN bit 14, MOE [5:2])
+    and `coresight-cpu-debug.c` (PCSR 0x0A0, CIDSR 0x0A4, VIDSR 0x0A8, OSLAR 0x300, PRCR 0x310, PRSR 0x314, DEVID 0xFC8).
+    ARM-spec (generic, not confirmed by the HiSilicon data sheet). Hi3520D V100 reports MIDR 0x414FC091 (Cortex-A9 r4p1, from the board's Linux boot log); the base
+    address of the core's debug page inside the 1152 KB 'ARM DEBUG' window (0x20400000..0x2051FFFF) is UNVERIFIED (no data sheet, vendor source or measurement states it),
+    so this block is NOT instantiated in any chip root. Counts of breakpoint/watchpoint registers follow the Cortex-A9 TRM (6 BRPs, 4 WRPs); DBGDIDR reads the real counts.
+    ";
+
+    reg {
+        name = "Debug ID register";
+        desc = "DBGDIDR: WRPs [31:28] (number of watchpoints minus 1), BRPs [27:24] (breakpoints minus 1), CTX_CMPs [23:20] (context-ID comparators minus 1), Version [19:16] (debug architecture: 3 ARMv7 with the extended CP14 interface, 4 ARMv7 memory-mapped interface only, 5 ARMv7.1; Linux ARM_DEBUG_ARCH_V7_ECP14 / V7_MM / V7_1), flags DEVID_imp, nSUHD_imp, PCSR_imp, SE_imp, then Variant and Revision. ARM-spec (generic).";
+        field { name = "Revision";  desc = "Implementation revision."; sw = r; hw = na; } Revision[3:0];
+        field { name = "Variant";   desc = "Implementation variant."; sw = r; hw = na; } Variant[7:4];
+        field { name = "SE_imp";    desc = "1: Security Extensions implemented."; sw = r; hw = na; } SE_imp[12:12];
+        field { name = "PCSR_imp";  desc = "1: PC sample register (DBGPCSR) implemented."; sw = r; hw = na; } PCSR_imp[13:13];
+        field { name = "nSUHD_imp"; desc = "0: secure user halting debug supported."; sw = r; hw = na; } nSUHD_imp[14:14];
+        field { name = "DEVID_imp"; desc = "1: DBGDEVID registers implemented."; sw = r; hw = na; } DEVID_imp[15:15];
+        field { name = "Version";   desc = "Debug architecture version."; sw = r; hw = na; } Version[19:16];
+        field { name = "CTX_CMPs";  desc = "Number of context-ID comparators minus 1."; sw = r; hw = na; } CTX_CMPs[23:20];
+        field { name = "BRPs";      desc = "Number of breakpoint register pairs minus 1."; sw = r; hw = na; } BRPs[27:24];
+        field { name = "WRPs";      desc = "Number of watchpoint register pairs minus 1."; sw = r; hw = na; } WRPs[31:28];
+    } DBGDIDR @ 0x000;
+
+    reg {
+        name = "Watchpoint fault address register";
+        desc = "DBGWFAR: address of the instruction that caused the last watchpoint, plus an architecture-defined offset (8 in ARM state, 4 in Thumb state). ARM-spec (generic).";
+        field { name = "WFAR"; desc = "Watchpoint fault address."; sw = r; hw = na; } WFAR[31:0];
+    } DBGWFAR @ 0x018;
+
+    reg {
+        name = "Vector catch register";
+        desc = "DBGVCR: one bit per exception vector to catch (secure and non-secure banks) when halting debug is enabled. Bit layout not modelled. ARM-spec (generic).";
+        field { name = "VCR"; desc = "Vector catch enables."; sw = rw; hw = r; } VCR[31:0];
+    } DBGVCR @ 0x01C;
+
+    reg {
+        name = "Debug data transfer register, receive (external view)";
+        desc = "DBGDTRRXext: data written by the debugger for the core to read through the DCC. ARM-spec (generic).";
+        field { name = "DTR"; desc = "DCC receive data."; sw = rw; hw = r; } DTR[31:0];
+    } DBGDTRRXext @ 0x080;
+
+    reg {
+        name = "Instruction transfer register";
+        desc = "DBGITR: write an instruction here to execute it on the halted core (only when DSCR.ITRen is 1 and the core is in debug state). ARM-spec (generic).";
+        field { name = "INSTR"; desc = "Instruction to execute."; sw = w; hw = na; } INSTR[31:0];
+    } DBGITR @ 0x084;
+
+    reg {
+        name = "Debug status and control register (external view)";
+        desc = "DBGDSCRext. HALTED [0], RESTARTED [1], MOE [5:2] (method of entry, same encoding Linux reads with ARM_DSCR_MOE), SDABORT_l [6], ADABORT_l [7], UND_l [8], FS [9] fast interrupts disabled, DBGack [10], INTdis [11], UDCCdis [12], ITRen [13] enable ITR, HDBGen [14] halting debug enable, MDBGen [15] monitor debug enable, SPIDdis [16], SPNIDdis [17], NS [18], ADAdiscard [19], ExtDCCmode [21:20], InstrCompl_l [24], PipeAdv [25], TXfull_l [26], RXfull_l [27], TXfull [29], RXfull [30]. ARM-spec (generic); only HDBGen, MDBGen and MOE are cross-checked against Linux.";
+        field { name = "HALTED";     desc = "1: the core is in debug state."; sw = r; hw = na; } HALTED[0:0];
+        field { name = "RESTARTED";  desc = "1: the core has exited debug state (sticky)."; sw = r; hw = na; } RESTARTED[1:1];
+        field { name = "MOE";        desc = "Method of entry into debug state."; sw = r; hw = na; } MOE[5:2];
+        field { name = "SDABORT_l";  desc = "Sticky synchronous data abort."; sw = r; hw = na; } SDABORT_l[6:6];
+        field { name = "ADABORT_l";  desc = "Sticky asynchronous data abort."; sw = r; hw = na; } ADABORT_l[7:7];
+        field { name = "UND_l";      desc = "Sticky undefined instruction."; sw = r; hw = na; } UND_l[8:8];
+        field { name = "FS";         desc = "Disable fast interrupts in debug state."; sw = rw; hw = r; } FS[9:9];
+        field { name = "DBGack";     desc = "Force the DBGACK output asserted."; sw = rw; hw = r; } DBGack[10:10];
+        field { name = "INTdis";     desc = "Disable interrupts in debug state."; sw = rw; hw = r; } INTdis[11:11];
+        field { name = "UDCCdis";    desc = "Disable user-mode access to the DCC."; sw = rw; hw = r; } UDCCdis[12:12];
+        field { name = "ITRen";      desc = "Enable execution of instructions written to DBGITR."; sw = rw; hw = r; } ITRen[13:13];
+        field { name = "HDBGen";     desc = "Halting debug-mode enable."; sw = rw; hw = r; } HDBGen[14:14];
+        field { name = "MDBGen";     desc = "Monitor debug-mode enable."; sw = rw; hw = r; } MDBGen[15:15];
+        field { name = "SPIDdis";    desc = "Secure privileged invasive debug disable (read-only view of the authentication)."; sw = r; hw = na; } SPIDdis[16:16];
+        field { name = "SPNIDdis";   desc = "Secure privileged non-invasive debug disable."; sw = r; hw = na; } SPNIDdis[17:17];
+        field { name = "NS";         desc = "1: the core is in Non-secure state."; sw = r; hw = na; } NS[18:18];
+        field { name = "ADAdiscard"; desc = "Discard asynchronous aborts in debug state."; sw = rw; hw = r; } ADAdiscard[19:19];
+        field { name = "ExtDCCmode"; desc = "External DCC access mode."; sw = rw; hw = r; } ExtDCCmode[21:20];
+        field { name = "InstrCompl_l"; desc = "Latched instruction-complete status."; sw = r; hw = na; } InstrCompl_l[24:24];
+        field { name = "PipeAdv";    desc = "Sticky pipeline advance."; sw = r; hw = na; } PipeAdv[25:25];
+        field { name = "TXfull_l";   desc = "Latched DBGDTRTX full."; sw = r; hw = na; } TXfull_l[26:26];
+        field { name = "RXfull_l";   desc = "Latched DBGDTRRX full."; sw = r; hw = na; } RXfull_l[27:27];
+        field { name = "TXfull";     desc = "DBGDTRTX holds data for the debugger."; sw = r; hw = na; } TXfull[29:29];
+        field { name = "RXfull";     desc = "DBGDTRRX holds data for the core."; sw = r; hw = na; } RXfull[30:30];
+    } DBGDSCRext @ 0x088;
+
+    reg {
+        name = "Debug data transfer register, transmit (external view)";
+        desc = "DBGDTRTXext: data written by the core for the debugger to read through the DCC. ARM-spec (generic).";
+        field { name = "DTR"; desc = "DCC transmit data."; sw = r; hw = na; } DTR[31:0];
+    } DBGDTRTXext @ 0x08C;
+
+    reg {
+        name = "Debug run control register";
+        desc = "DBGDRCR: write 1 to HRQ [0] (halt request), RRQ [1] (restart request), CSE [2] (clear sticky exceptions), CSPA [3] (clear sticky pipeline advance), CBRRQ [4] (cancel bus requests). ARM-spec (generic).";
+        field { name = "HRQ";   desc = "Halt request."; sw = w; hw = na; } HRQ[0:0];
+        field { name = "RRQ";   desc = "Restart request."; sw = w; hw = na; } RRQ[1:1];
+        field { name = "CSE";   desc = "Clear sticky exceptions."; sw = w; hw = na; } CSE[2:2];
+        field { name = "CSPA";  desc = "Clear sticky pipeline advance."; sw = w; hw = na; } CSPA[3:3];
+        field { name = "CBRRQ"; desc = "Cancel bus requests."; sw = w; hw = na; } CBRRQ[4:4];
+    } DBGDRCR @ 0x090;
+
+    reg {
+        name = "Program counter sample register";
+        desc = "DBGPCSR: sampled program counter (the sample is the address of an instruction that was executed, with a fixed architecture-defined offset; bit 0 is the Thumb flag in some modes). Reads 0xFFFFFFFF when sampling is prohibited. Offset 0x0A0 as used by Linux coresight-cpu-debug (EDPCSR on ARMv7). ARM-spec (generic).";
+        field { name = "PCSR"; desc = "Sampled PC."; sw = r; hw = na; } PCSR[31:0];
+    } DBGPCSR @ 0x0A0;
+
+    reg {
+        name = "Context ID sample register";
+        desc = "DBGCIDSR: CONTEXTIDR value sampled together with DBGPCSR (offset 0x0A4, Linux EDCIDSR). ARM-spec (generic).";
+        field { name = "CIDSR"; desc = "Sampled CONTEXTIDR."; sw = r; hw = na; } CIDSR[31:0];
+    } DBGCIDSR @ 0x0A4;
+
+    reg {
+        name = "Virtual context ID sample register";
+        desc = "DBGVIDSR: sampled VMID / security state with the PC sample (offset 0x0A8, Linux EDVIDSR). Present when the Virtualization or Security Extensions are implemented. ARM-spec (generic).";
+        field { name = "VMID"; desc = "Sampled VMID."; sw = r; hw = na; } VMID[7:0];
+        field { name = "HV";   desc = "Sample taken in Hyp mode."; sw = r; hw = na; } HV[28:28];
+        field { name = "E3";   desc = "EL3 sample (v8 only)."; sw = r; hw = na; } E3[29:29];
+        field { name = "E2";   desc = "EL2 sample (v8 only)."; sw = r; hw = na; } E2[30:30];
+        field { name = "NS";   desc = "Sample taken in Non-secure state."; sw = r; hw = na; } NS[31:31];
+    } DBGVIDSR @ 0x0A8;
+
+    reg {
+        name = "Breakpoint value register";
+        desc = "DBGBVR n (n = 0..5): breakpoint address or context ID to match. CP14 register number 64 + n (Linux ARM_BASE_BVR). ARM-spec (generic).";
+        field { name = "VA"; desc = "Value to match (address bits [31:2] for an address breakpoint)."; sw = rw; hw = r; } VA[31:0];
+    } DBGBVR[6] @ 0x100 += 0x4;
+
+    reg {
+        name = "Breakpoint control register";
+        desc = "DBGBCR n (n = 0..5): E [0] enable, PMC [2:1] privileged mode control, BAS [8:5] byte address select; further fields (HMC, SSC, LBN, BT) are not modelled. CP14 register number 80 + n (Linux ARM_BASE_BCR). ARM-spec (generic).";
+        field { name = "E";   desc = "Breakpoint enable."; sw = rw; hw = r; } E[0:0];
+        field { name = "PMC"; desc = "Privileged mode control."; sw = rw; hw = r; } PMC[2:1];
+        field { name = "BAS"; desc = "Byte address select."; sw = rw; hw = r; } BAS[8:5];
+    } DBGBCR[6] @ 0x140 += 0x4;
+
+    reg {
+        name = "Watchpoint value register";
+        desc = "DBGWVR n (n = 0..3): watchpoint address. CP14 register number 96 + n (Linux ARM_BASE_WVR). ARM-spec (generic).";
+        field { name = "VA"; desc = "Watched address (bits [31:2])."; sw = rw; hw = r; } VA[31:0];
+    } DBGWVR[4] @ 0x180 += 0x4;
+
+    reg {
+        name = "Watchpoint control register";
+        desc = "DBGWCR n (n = 0..3): E [0] enable, PAC [2:1] privileged access control, LSC [4:3] load/store control (1 load, 2 store, 3 both), BAS [12:5] byte address select (8 bits in v7.1; Linux ARM_BREAKPOINT_LEN_8 = 0xff), further fields not modelled. CP14 register number 112 + n (Linux ARM_BASE_WCR). ARM-spec (generic).";
+        field { name = "E";   desc = "Watchpoint enable."; sw = rw; hw = r; } E[0:0];
+        field { name = "PAC"; desc = "Privileged access control."; sw = rw; hw = r; } PAC[2:1];
+        field { name = "LSC"; desc = "Load/store access control."; sw = rw; hw = r; } LSC[4:3];
+        field { name = "BAS"; desc = "Byte address select."; sw = rw; hw = r; } BAS[12:5];
+    } DBGWCR[4] @ 0x1C0 += 0x4;
+
+    reg {
+        name = "OS lock access register";
+        desc = "DBGOSLAR: write 0xC5ACCE55 to set the OS lock, any other value to clear it. CP14 register 192 (offset 0x300, Linux EDOSLAR). ARM-spec (generic).";
+        field { name = "KEY"; desc = "Write 0xC5ACCE55 to lock the OS lock."; sw = w; hw = na; } KEY[31:0];
+    } DBGOSLAR @ 0x300;
+
+    reg {
+        name = "OS lock status register";
+        desc = "DBGOSLSR: OSLM[0] and OSLM[3] (bit 3) give the OS lock model (0b00 not implemented, 0b10 implemented), nTT [2], OSLK [1] OS lock currently set. Linux ARM_OSLSR_OSLM0 = bit 0. ARM-spec (generic).";
+        field { name = "OSLM0"; desc = "OS lock model bit 0."; sw = r; hw = na; } OSLM0[0:0];
+        field { name = "OSLK";  desc = "1: the OS lock is set."; sw = r; hw = na; } OSLK[1:1];
+        field { name = "nTT";   desc = "0: 32-bit OS lock access register."; sw = r; hw = na; } nTT[2:2];
+        field { name = "OSLM1"; desc = "OS lock model bit 1."; sw = r; hw = na; } OSLM1[3:3];
+    } DBGOSLSR @ 0x304;
+
+    reg {
+        name = "Device power-down and reset control register";
+        desc = "DBGPRCR: CORENPDRQ [0] core no-power-down request, CWRR [1] core warm reset request, HCWR [2] hold core warm reset, COREPURQ [3] core power-up request (the CORENPDRQ and COREPURQ bits are what Linux coresight-cpu-debug uses to keep the core powered while sampling). Offset 0x310 (Linux EDPRCR). ARM-spec (generic).";
+        field { name = "CORENPDRQ"; desc = "Core no-powerdown request."; sw = rw; hw = r; } CORENPDRQ[0:0];
+        field { name = "CWRR";      desc = "Core warm reset request."; sw = rw; hw = r; } CWRR[1:1];
+        field { name = "HCWR";      desc = "Hold core warm reset."; sw = rw; hw = r; } HCWR[2:2];
+        field { name = "COREPURQ";  desc = "Core power-up request."; sw = rw; hw = r; } COREPURQ[3:3];
+    } DBGPRCR @ 0x310;
+
+    reg {
+        name = "Device power-down and reset status register";
+        desc = "DBGPRSR: PU [0] core powered up (the debug registers are only accessible when 1), SPD [1] sticky power-down, R [2] core in reset, SR [3] sticky reset, bit 6 DLK (double lock, v7.1) as in Linux EDPRSR_DLK. Offset 0x314 (Linux EDPRSR). ARM-spec (generic).";
+        field { name = "PU";  desc = "1: the core is powered up."; sw = r; hw = na; } PU[0:0];
+        field { name = "SPD"; desc = "Sticky power-down status (clear on read)."; sw = r; hw = na; } SPD[1:1];
+        field { name = "R";   desc = "1: the core is in reset."; sw = r; hw = na; } R[2:2];
+        field { name = "SR";  desc = "Sticky reset status (clear on read)."; sw = r; hw = na; } SR[3:3];
+        field { name = "DLK"; desc = "1: the double lock is set (v7.1)."; sw = r; hw = na; } DLK[6:6];
+    } DBGPRSR @ 0x314;
+
+    eARM_CORESIGHT_COMPONENT MGMT @ 0xF00;
+};
+
+`endif

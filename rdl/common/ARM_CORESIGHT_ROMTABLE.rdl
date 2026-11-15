@@ -1,0 +1,36 @@
+`ifndef ARM_CORESIGHT_ROMTABLE_RDL
+`define ARM_CORESIGHT_ROMTABLE_RDL
+
+`include "ARM_CORESIGHT_COMPONENT.rdl"
+
+regfile eARM_CORESIGHT_ROMTABLE {
+    name = "CoreSight ROM table, class 0x1, 32-bit entry format (generic)";
+    desc = "
+    A CoreSight / ADIv5 class 0x1 ROM table: up to 960 32-bit entries from +0x000, the first all-zero entry ends the list, MEMTYPE at +0xFCC and the identification
+    registers at +0xFD0..+0xFFC (CIDR1 CLASS reads 0x1, so ComponentID reads 0xB105100D).
+    Source: ARM CoreSight Architecture Specification (IHI 0029) / ARM Debug Interface v5 (IHI 0031) ROM table chapter; ARM-spec (generic, not confirmed by the
+    HiSilicon data sheet). The CONTENT of the table (which components exist and their offsets) is decided by the SoC integrator and is UNVERIFIED for every HiSilicon
+    chip: the data sheets only give a memory-map row 'ARM DEBUG 1152 KB' (Hi3520D V100, Hi3516 V100, Hi3535: 0x20400000..0x2051FFFF) and no ROM table address.
+    Whether the first word of that window is a ROM table is UNVERIFIED (see docs/rdl-campaign/arm-debug-probe-plan.md in the workspace). This block is NOT instantiated in any chip root.
+    ";
+
+    reg {
+        name = "ROM table entry";
+        desc = "Entry n. [31:12] ADDRESS_OFFSET: signed offset of the component page from the ROM table base (4 KB aligned); [8:4] POWERID and [2] POWERIDVALID name the power domain control bit; [1] FORMAT (1: 32-bit format, always 1 in a valid entry); [0] PRESENT (1: the component is present). A word of 0x00000000 ends the table; a non-zero word with PRESENT = 0 is a skipped entry. ARM-spec (generic).";
+        field { name = "PRESENT";         desc = "1: the component pointed to by this entry is present."; sw = r; hw = na; } PRESENT[0:0];
+        field { name = "FORMAT";          desc = "1: 32-bit ROM table entry format."; sw = r; hw = na; } FORMAT[1:1];
+        field { name = "POWERIDVALID";    desc = "1: POWERID is valid."; sw = r; hw = na; } POWERIDVALID[2:2];
+        field { name = "POWERID";         desc = "Power domain request ID of the component."; sw = r; hw = na; } POWERID[8:4];
+        field { name = "ADDRESS_OFFSET";  desc = "Signed offset bits [31:12] of the component page from the ROM table base."; sw = r; hw = na; } ADDRESS_OFFSET[31:12];
+    } ROMENTRY[960] @ 0x000 += 0x4;
+
+    reg {
+        name = "Memory type register";
+        desc = "MEMTYPE (+0xFCC in a class 0x1 ROM table): bit 0 SYSMEM = 1 if system memory is accessible through this debug bus. ARM-spec (generic).";
+        field { name = "SYSMEM"; desc = "1: system memory is present on this bus."; sw = r; hw = na; } SYSMEM[0:0];
+    } MEMTYPE @ 0xFCC;
+
+    eARM_CORESIGHT_ID ID @ 0xFD0;
+};
+
+`endif

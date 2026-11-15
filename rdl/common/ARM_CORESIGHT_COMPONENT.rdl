@@ -1,0 +1,157 @@
+`ifndef ARM_CORESIGHT_COMPONENT_RDL
+`define ARM_CORESIGHT_COMPONENT_RDL
+
+// Identification registers, the same at +0xFD0..+0xFFC of every CoreSight component (ROM table included).
+regfile eARM_CORESIGHT_ID {
+    name = "CoreSight component identification registers (generic)";
+    desc = "
+    Peripheral ID (PIDR0-4) and Component ID (CIDR0-3) registers at the top of the 4 KB page of every CoreSight component, ROM tables included.
+    Source: ARM CoreSight Architecture Specification (IHI 0029) component identification chapter; offsets and field positions cross-checked against Linux
+    `drivers/hwtracing/coresight/coresight-priv.h` and the ARM-spec identification layout also used by the GIC-400 block on this site.
+    ARM-spec (generic, not confirmed by the HiSilicon data sheet): no HiSilicon document lists any CoreSight component of any chip, so no value read from
+    these registers on a HiSilicon SoC is known. Offsets in this regfile are relative to +0xFD0 of the component page (instantiate at page base + 0xFD0); this block is NOT instantiated in any chip root.
+    ";
+
+    reg {
+        name = "Peripheral ID 4";
+        desc = "PIDR4: [7:4] SIZE = log2 of the number of 4 KB blocks the component occupies, [3:0] DES_2 = JEP106 continuation code (ARM Limited: 0x4). ARM-spec (generic).";
+        field { name = "DES_2"; desc = "JEP106 continuation code of the designer."; sw = r; hw = na; } DES_2[3:0];
+        field { name = "SIZE";  desc = "log2 of the 4 KB blocks occupied by the component."; sw = r; hw = na; } SIZE[7:4];
+    } PIDR4 @ 0x0;
+
+    reg {
+        name = "Peripheral ID 0";
+        desc = "PIDR0: [7:0] PART_0 = bits [7:0] of the 12-bit part number. ARM-spec (generic).";
+        field { name = "PART_0"; desc = "Part number bits [7:0]."; sw = r; hw = na; } PART_0[7:0];
+    } PIDR0 @ 0x10;
+
+    reg {
+        name = "Peripheral ID 1";
+        desc = "PIDR1: [7:4] DES_0 = JEP106 identity code bits [3:0] (ARM Limited, code 0x3B: 0xB), [3:0] PART_1 = part number bits [11:8]. ARM-spec (generic).";
+        field { name = "PART_1"; desc = "Part number bits [11:8]."; sw = r; hw = na; } PART_1[3:0];
+        field { name = "DES_0";  desc = "JEP106 identity code bits [3:0]."; sw = r; hw = na; } DES_0[7:4];
+    } PIDR1 @ 0x14;
+
+    reg {
+        name = "Peripheral ID 2";
+        desc = "PIDR2: [7:4] REVISION, [3] JEDEC (always 1: JEP106 code in use), [2:0] DES_1 = JEP106 identity code bits [6:4] (ARM Limited: 0x3). ARM-spec (generic).";
+        field { name = "DES_1";    desc = "JEP106 identity code bits [6:4]."; sw = r; hw = na; } DES_1[2:0];
+        field { name = "JEDEC";    desc = "1: the designer is identified by a JEP106 code."; sw = r; hw = na; } JEDEC[3:3];
+        field { name = "REVISION"; desc = "Component revision (per component, assigned by the designer)."; sw = r; hw = na; } REVISION[7:4];
+    } PIDR2 @ 0x18;
+
+    reg {
+        name = "Peripheral ID 3";
+        desc = "PIDR3: [7:4] REVAND (revision of the integration, 0 for an unmodified component), [3:0] CMOD (customer modification). ARM-spec (generic).";
+        field { name = "CMOD";   desc = "Customer modification field."; sw = r; hw = na; } CMOD[3:0];
+        field { name = "REVAND"; desc = "Metal fix revision."; sw = r; hw = na; } REVAND[7:4];
+    } PIDR3 @ 0x1C;
+
+    reg {
+        name = "Component ID 0";
+        desc = "CIDR0: preamble byte, always 0x0D. ARM-spec (generic).";
+        field { name = "PRMBL_0"; desc = "Preamble, fixed 0x0D."; sw = r; hw = na; reset = 0x0D; } PRMBL_0[7:0];
+    } CIDR0 @ 0x20;
+
+    reg {
+        name = "Component ID 1";
+        desc = "CIDR1: [7:4] CLASS (0x1 ROM table, 0x9 CoreSight component, 0xE generic verification component, 0xF PrimeCell peripheral), [3:0] preamble, always 0x0. ARM-spec (generic).";
+        field { name = "PRMBL_1"; desc = "Preamble, fixed 0x0."; sw = r; hw = na; reset = 0x0; } PRMBL_1[3:0];
+        field { name = "CLASS";   desc = "Component class: 0x1 ROM table, 0x9 CoreSight component, 0xE generic verification, 0xF PrimeCell."; sw = r; hw = na; } CLASS[7:4];
+    } CIDR1 @ 0x24;
+
+    reg {
+        name = "Component ID 2";
+        desc = "CIDR2: preamble byte, always 0x05. ARM-spec (generic).";
+        field { name = "PRMBL_2"; desc = "Preamble, fixed 0x05."; sw = r; hw = na; reset = 0x05; } PRMBL_2[7:0];
+    } CIDR2 @ 0x28;
+
+    reg {
+        name = "Component ID 3";
+        desc = "CIDR3: preamble byte, always 0xB1. ARM-spec (generic).";
+        field { name = "PRMBL_3"; desc = "Preamble, fixed 0xB1."; sw = r; hw = na; reset = 0xB1; } PRMBL_3[7:0];
+    } CIDR3 @ 0x2C;
+};
+
+// Management registers of a CoreSight component (the page at the top, below the identification registers).
+regfile eARM_CORESIGHT_COMPONENT {
+    name = "CoreSight component management and identification registers (generic)";
+    desc = "
+    The management registers every CoreSight component (funnel, ETB/TMC, TPIU, CTI, ETM/PTM, CPU debug and PMU pages) provides at the top of its 4 KB page
+    (+0xF00 integration control, +0xFA0..+0xFCC claim, lock, authentication, device, +0xFD0..+0xFFC identification), plus the identification block of
+    `eARM_CORESIGHT_ID`. The registers below +0xF00 are specific to each component type and are NOT in this block. Offsets in this regfile are relative to +0xF00 of the component page: instantiate it at page base + 0xF00 (ITCTRL = page+0xF00, CLAIMSET = page+0xFA0, ..., ID = page+0xFD0).
+
+    Source: ARM CoreSight Architecture Specification (IHI 0029) management register chapter and the Linux CoreSight drivers (offsets ITCTRL 0xF00, CLAIMSET 0xFA0,
+    CLAIMCLR 0xFA4, LAR 0xFB0, LSR 0xFB4, AUTHSTATUS 0xFB8, DEVARCH 0xFBC, DEVID 0xFC8, DEVTYPE 0xFCC in `drivers/hwtracing/coresight/coresight-priv.h`; the lock key
+    0xC5ACCE55 in the same driver family).
+    ARM-spec (generic, not confirmed by the HiSilicon data sheet). Which of these components exist on a HiSilicon chip, and at which address inside the debug window
+    (Hi3520D V100, Hi3516 V100, Hi3535: 0x20400000..0x2051FFFF, 1152 KB), is UNVERIFIED: no data sheet or vendor source states it. This block is NOT instantiated in any chip root.
+    ";
+
+    reg {
+        name = "Integration mode control register";
+        desc = "ITCTRL: bit 0 IME enables integration mode (component-specific integration registers below +0xF00 then drive the outputs). ARM-spec (generic). Not implemented by every component.";
+        field { name = "IME"; desc = "Integration mode enable."; sw = rw; hw = r; reset = 0x0; } IME[0:0];
+    } ITCTRL @ 0x0;
+
+    reg {
+        name = "Claim tag set register";
+        desc = "CLAIMSET: writing 1 to a bit sets that claim tag bit; reading returns the bits the component implements as 1. Software convention (Linux): bit 0 external debugger, bit 1 self-hosted. ARM-spec (generic).";
+        field { name = "CLAIM"; desc = "Claim tag bits (write 1 to set)."; sw = rw; hw = na; onwrite = woset; } CLAIM[31:0];
+    } CLAIMSET @ 0xA0;
+
+    reg {
+        name = "Claim tag clear register";
+        desc = "CLAIMCLR: writing 1 to a bit clears that claim tag bit; reading returns the current claim tag value. ARM-spec (generic).";
+        field { name = "CLAIM"; desc = "Claim tag bits (write 1 to clear)."; sw = rw; hw = na; onwrite = woclr; } CLAIM[31:0];
+    } CLAIMCLR @ 0xA4;
+
+    reg {
+        name = "Lock access register";
+        desc = "LAR: writing 0xC5ACCE55 unlocks the software lock, any other value locks it. Only meaningful when LSR.SLI is 1. ARM-spec (generic).";
+        field { name = "KEY"; desc = "Write 0xC5ACCE55 to unlock, anything else to lock."; sw = w; hw = na; } KEY[31:0];
+    } LAR @ 0xB0;
+
+    reg {
+        name = "Lock status register";
+        desc = "LSR: SLI (bit 0) software lock implemented, SLK (bit 1) software lock currently locked, nTT (bit 2) 0 means 32-bit LAR accesses. ARM-spec (generic).";
+        field { name = "SLI"; desc = "1: software lock implemented."; sw = r; hw = na; } SLI[0:0];
+        field { name = "SLK"; desc = "1: the component is locked (writes ignored)."; sw = r; hw = na; } SLK[1:1];
+        field { name = "nTT"; desc = "0: 32-bit lock access register."; sw = r; hw = na; } nTT[2:2];
+    } LSR @ 0xB4;
+
+    reg {
+        name = "Authentication status register";
+        desc = "AUTHSTATUS: four 2-bit fields reporting the state of the debug authentication signals the component sees: NSID [1:0] non-secure invasive, NSNID [3:2] non-secure non-invasive, SID [5:4] secure invasive, SNID [7:6] secure non-invasive. Encoding: 0b00 not implemented, 0b10 implemented and disabled, 0b11 implemented and enabled. ARM-spec (generic). On the Hi3520D the SoC-side drivers of these signals (DBGEN, NIDEN, SPIDEN, SPNIDEN) are UNVERIFIED: only the Hi3535 data sheet names one (SYS_CTRL l2_spniden, secure privileged non-invasive debug enable).";
+        field { name = "NSID";  desc = "Non-secure invasive debug."; sw = r; hw = na; } NSID[1:0];
+        field { name = "NSNID"; desc = "Non-secure non-invasive debug."; sw = r; hw = na; } NSNID[3:2];
+        field { name = "SID";   desc = "Secure invasive debug."; sw = r; hw = na; } SID[5:4];
+        field { name = "SNID";  desc = "Secure non-invasive debug."; sw = r; hw = na; } SNID[7:6];
+    } AUTHSTATUS @ 0xB8;
+
+    reg {
+        name = "Device architecture register";
+        desc = "DEVARCH: [31:21] ARCHITECT, [20] PRESENT, [19:16] REVISION, [15:0] ARCHID. Only present in CoreSight components of architecture v2.0 and later; reads 0 or is RAZ on older components (the Cortex-A9 generation). ARM-spec (generic).";
+        field { name = "ARCHID";    desc = "Architecture ID."; sw = r; hw = na; } ARCHID[15:0];
+        field { name = "REVISION";  desc = "Architecture revision."; sw = r; hw = na; } REVISION[19:16];
+        field { name = "PRESENT";   desc = "1: DEVARCH is present."; sw = r; hw = na; } PRESENT[20:20];
+        field { name = "ARCHITECT"; desc = "JEP106 code of the architect."; sw = r; hw = na; } ARCHITECT[31:21];
+    } DEVARCH @ 0xBC;
+
+    reg {
+        name = "Device configuration register";
+        desc = "DEVID: component-specific configuration (for example the ETB/TMC memory configuration or the ETM number of resources); the meaning is defined by each component type. ARM-spec (generic).";
+        field { name = "DEVID"; desc = "Component-specific device configuration."; sw = r; hw = na; } DEVID[31:0];
+    } DEVID @ 0xC8;
+
+    reg {
+        name = "Device type identifier register";
+        desc = "DEVTYPE: MAJOR [3:0] 0 miscellaneous, 1 trace sink, 2 trace link, 3 trace source, 4 debug control, 5 debug logic, 6 performance monitor; SUB [7:4] defines the type within MAJOR (for example trace link: 1 funnel/router, 2 filter, 3 FIFO). ARM-spec (generic).";
+        field { name = "MAJOR"; desc = "Major type: 0 misc, 1 trace sink, 2 trace link, 3 trace source, 4 debug control, 5 debug logic, 6 performance monitor."; sw = r; hw = na; } MAJOR[3:0];
+        field { name = "SUB";   desc = "Sub type within the major type."; sw = r; hw = na; } SUB[7:4];
+    } DEVTYPE @ 0xCC;
+
+    eARM_CORESIGHT_ID ID @ 0xD0;
+};
+
+`endif
