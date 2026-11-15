@@ -104,7 +104,110 @@ addrmap hi3512v100 {
 
         ### Diagrams
 
+        ![Logic block diagram](assets/diagrams/hi3512v100-logic.svg)
+
         ![Register blocks by function](assets/diagrams/hi3512v100-blocks.svg)
+
+        ![Clock tree](assets/diagrams/hi3512v100-clocks.svg)
+
+        ![Boot flow](assets/diagrams/hi3512v100-boot.svg)
+
+        ![Interrupt topology](assets/diagrams/hi3512v100-irq.svg)
+
+        ![Reset tree](assets/diagrams/hi3512v100-resets.svg)
+
+        ![Power domains](assets/diagrams/hi3512v100-power.svg)
+
+        ![CRG register map](assets/diagrams/hi3512v100-crgmap.svg)
+
+        ![IP edition per chip](assets/diagrams/hi3512v100-family.svg)
+
+        ### Chip ID
+
+        | Chip | System controller ID registers (0xEE0 .. 0xEEC) | Value read as SC_SYSID |
+        |---|---|---|
+        | hi3511v100 | SYSID0..3 reset values from the RDL | 0x35110100 |
+        | hi3512v100 | SYSID0..3 reset values from the RDL | 0x35110100 |
+
+        The four 8-bit registers form the 32-bit chip ID (SYSID3 is the most significant byte). The values are the reset values of the register descriptions: one data sheet documents one ID for all chips it covers, so the chips of a shared data sheet are not distinguished here (the real value of each variant is not stated).
+
+        ### Key specifications (data sheet chapter 1 and 3; the data sheet is Chinese, translated)
+
+        One data sheet covers the Hi3511 and the Hi3512 (the Hi3512 chip root has no RTC block; the data sheet text used for this table is written for the Hi3511 and names the Hi3512 only in the title). The block sets are in the register-block table of each chip root.
+
+        | | Hi3511 V100 / Hi3512 V100 |
+        |---|---|
+        | CPU | ARM926EJ-S, up to 270 MHz, 16 KB I + 16 KB D cache, 2 KB ITCM, MMU; one VIC, 32 interrupt sources |
+        | DDR | one DDR2 controller, one chip select, 16-bit (up to 256 MB) or 32-bit (up to 512 MB) devices |
+        | Flash | 8-bit NOR on the SMI interface (up to 32 MB per chip select) |
+        | Video codec | H.264 Main/Baseline L3 and JPEG/MJPEG baseline; large stream up to 60 fps D1 or 240 fps CIF, small stream up to 60 fps CIF; single encode or decode up to 75 fps D1 or 300 fps CIF; simultaneous up to 30 fps D1 or 120 fps CIF; CBR/VBR 16 kbit/s to 20 Mbit/s |
+        | Video input (Hi3511) | 4 x BT.656 YCrCb 4:2:2 8-bit (2 of them also BT.601), each can carry 2 multiplexed BT.656 channels; one SMPTE296M 720p 16-bit input; 2 digital camera inputs |
+        | Video output | one BT.656 output |
+        | Audio | 2 I2S interfaces (SIO), 8/16/32-bit samples, 4-48 kHz, 8 audio channels in per interface |
+        | Network | one 10/100 Mbit/s Ethernet MAC (MII; 2 configurable DMAC address filters, flow control) |
+        | Other | PCI host/slave bridge (33/66 MHz, up to 5 devices), MMC/SD/SDIO, one USB 2.0 OTG and one USB 1.1 host, I2C, 3 UART, SPI/SSP, IR, up to 8 GPIO groups, 2 dual timers, watchdog, RTC, DES/3DES cipher |
+        | Package | 441-pin TFBGA, 19 x 19 mm, 0.8 mm pitch; 0.8 W typical (DVR use); 0.13 um; core 1.2 V, 1.8 V, 3.3 V; -25 to +85 C |
+
+        ### Boot (data sheet 3.3.2)
+
+        Two boot methods: from the SMI controller (asynchronous 8-bit NOR flash; the pin FUNSEL0 is pulled to 0 to select the SMI interface) or from the DDR interface. With SMI boot the NOR chip select maps to address 0 until the remap is cleared. Diagram: boot flow.
+
+        ### Memory map notes (data sheet 3.3.2, Figure 3-3)
+
+        * 32-bit address and data buses, 4 GB space. SMI boot: the NOR flash is mapped at address 0 until the remap is cleared.
+        * Peripheral registers sit in the 0x101E0000-0x101FFFFF window (system controller 0x101E0000, timers, WDG, RTC, IR, UARTs, GPIO0-7 in 0x101E4000-0x101FAFFF) and the 0x10000000-0x1013FFFF AHB window (SMI, DMAC 0x10130000, VIC, DDRC, ...); the register-block table lists every base address.
+        * The data sheet draws the address spaces as a figure; fixed windows beyond the register blocks (SMI chip selects, DDR, PCI) are in the figure only and are not repeated here.
+
+        ### DMA request lines (data sheet 3.4, Table 3-15; checked against the RDL DMAC description)
+
+        One DMAC (PL080-style, block DMAC at 0x10130000, interrupt 17 on the VIC): 8 channels, 16 request lines.
+
+        | Line | Peripheral | Line | Peripheral |
+        |---|---|---|---|
+        | 0-1 | Reserved | 8 | SSP RX |
+        | 2 | SIO0 RX | 9 | SSP TX |
+        | 3 | SIO0 TX | 10-11 | Reserved |
+        | 4 | SIO1 RX | 12 | MMC RX |
+        | 5 | printed as Reserved (probably SIO1 TX) | 13 | MMC TX |
+        | 6-7 | Reserved | 14 | UART0 RX |
+        | | | 15 | UART0 TX |
+
+        ### Power, reset and system modes (data sheet 3.1, 3.2)
+
+        * Resets: RSTN to npor, global soft reset from the system controller, per-module soft resets in the system controller (same scheme as the later chips; PCIRSTN for the PCI block).
+        * System modes (SC_CTRL): NORMAL, SLOW (crystal), DOZE, SLEEP; ARMPLL on/off by SC_PLLCTRL[0] or by the mode (SC_CTRL[2:0]); ARM frequency mode SC_PERCTRL2[7] arm_hclk_sel. Two crystal inputs: XIN (PLL) and XIN24 (USB 2.0 OTG PHY).
+        * The data sheet has no power-domain table.
+
+        ### Clock-gate map (generated from the system controller registers)
+
+        Each peripheral clock has an enable bit in PEREN (SC_PEREN, offset 0x24) and the matching disable bit in PERDIS (SC_PERDIS, offset 0x28); writing 1 to a bit in PEREN enables the clock, writing 1 to the same bit in PERDIS disables it; the state is read back in PERCLKEN (SC_PERCLKEN).
+
+        | Bit | Clock enable field | Gated module |
+        |---|---|---|
+        | 0 | veduclken | VEDU |
+        | 2 | cipherclken | CIPHER |
+        | 3 | dsuclken | DSU |
+        | 4 | smiclken | SMI |
+        | 5 | uart0clken | UART0 |
+        | 6 | uart1clken | UART1 |
+        | 7 | sspclken | SSP |
+        | 8 | irclken | IR |
+        | 9 | pciclken | PCI |
+        | 10 | mmcclken | MMC |
+        | 11 | voclken | VO |
+        | 12 | vihclken | VIH |
+        | 13 | vi0clken | VI0 |
+        | 14 | vi1clken | VI1 |
+        | 15 | vi2clken | VI2 |
+        | 16 | vi3clken | VI3 |
+        | 17 | ethclken | ETH |
+        | 18 | sio0clken | SIO0 |
+        | 19 | sio1clken | SIO1 |
+        | 20 | otgclken | OTG |
+        | 21 | usbclken | USB |
+        | 22 | uart2clken | UART2 |
+
+        Per-module soft resets and the ARM/IP clock frequency selects are in SC_PERCTRLn / PERIPHCTRLn (see the register pages and the clock tree diagram).
 
         ### Interrupts (VIC source numbers, data sheet Table 3-13; the data sheet is Chinese, names translated)
 
