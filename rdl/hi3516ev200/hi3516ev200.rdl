@@ -45,7 +45,115 @@ addrmap hi3516ev200 {
 
         ### Diagrams
 
+        ![Logic block diagram](assets/diagrams/hi3516ev200-logic.svg)
+
         ![Register blocks by function](assets/diagrams/hi3516ev200-blocks.svg)
+
+        ![Clock tree](assets/diagrams/hi3516ev200-clocks.svg)
+
+        ![Boot flow](assets/diagrams/hi3516ev200-boot.svg)
+
+        ![Video pipeline](assets/diagrams/hi3516ev200-video.svg)
+
+        ![Reset tree](assets/diagrams/hi3516ev200-resets.svg)
+
+        ![Storage, USB and Ethernet paths](assets/diagrams/hi3516ev200-io.svg)
+
+        ![DMA request lines](assets/diagrams/hi3516ev200-dma.svg)
+
+        ### Sources and what is missing
+
+        There is no Hi3516E V200 data sheet with a register chapter, memory map, interrupt table, DMA table or pin list in the workspace. The material is: the brief data sheet (Issue 03, 2019-05-15, 7 pages, key specifications and one block diagram), the Hi3518E V300 brief data sheet, the Hi3516E V300 data sheet (same SoC generation, shared blocks), and vendor-derived evidence (vendor U-Boot, OpenIPC device tree, open-source SDK modules; docs/research/hi3516ev200-blocks.md). Everything below marked VENDOR-DERIVED or INFERRED rests on those; nothing was read from an EV200. Missing: PLL and clock-select frequencies read from hardware, the pad and pin list, the boot-pin names, an interrupt table printed by the vendor, and register chapters for most blocks.
+
+        ### Variants and key specifications (brief data sheets)
+
+        Hi3516E V200 (economical HD IP camera, this folder) and Hi3518E V300 (consumer camera) have the same specifications except the microphone input. The chip ID register (SYS_CTRL 0xEE0) reads 0x3516E200 for the V200 and 0x3518E300 for the V300 in the vendor temperature-control module (INFERRED same register map). The Hi3516E V300 is the larger sibling (folder hi3516ev300).
+
+        | | Hi3516E V200 | Hi3518E V300 |
+        |---|---|---|
+        | CPU | Cortex-A7 up to 900 MHz, NEON + FPU, 32 KB I + 32 KB D L1, 128 KB L2 | same |
+        | DDR | built-in 512 Mbit DDR2, 16-bit, 1.8 V | built-in 512 Mbit DDR2, 16-bit |
+        | Video encode | H.264 BP/MP/HP, H.265 MP, MJPEG/JPEG; up to 2304 x 1296; 2048 x 1536@20 + 720 x 576@20, 2304 x 1296@20 + 720 x 576@20, 1920 x 1080@30 + 720 x 576@30; JPEG 3M@5; 8 ROIs; up to 60 Mbit/s | same |
+        | Video input | 8/10/12-bit Bayer DC timing, MIPI, LVDS / sub-LVDS, HiSPi; up to 2304 x 1296; programmable sensor clock out | same |
+        | Video output | 6/8-bit LCD, BT.656 / BT.1120 | 6/8-bit LCD, BT.656 |
+        | Audio | integrated codec 16-bit, mono MIC / line-in, mono line-out, I2S | dual MIC / line-in, mono line-out, I2S |
+        | Storage and network | SPI NOR (256 MB max), SPI NAND (1 GB max), eMMC 4.5 4-bit; 1 x SDIO 2.0 + 1 x SD 2.0; USB 2.0 host / device; FE PHY with TSO | same |
+        | Peripherals | RTC, POR, 2-channel LSADC, 3 UART, I2C, SPI, GPIO, 4 PWM | same |
+        | Security | AES, RSA, SHA1/SHA256/HMAC, 32 kbit OTP, TRNG, secure boot | same |
+        | Package and power | QFN 9 x 9 mm, 88 pins, 0.35 mm pitch; core 0.9 V, I/O 3.3 V, SDRAM 1.8 V; 700 mW typical (1080P30 / 3M20) | same |
+
+        ### Boot (brief data sheet; VENDOR-DERIVED strap bits)
+
+        The brief data sheet states: boot from SPI NOR, SPI NAND or eMMC, with secure boot. The boot-pin names, the serial / SD / USB burn modes and the strap-to-mode table of the V300 (BOOT_SEL1, BOOT_SEL0, UPDATE_MODE) are not given for the V200. The vendor U-Boot reads SYS_CTRL SC_SYSSTAT (0x8C): bit 4 selects SPI flash or eMMC, bit 7 the NOR 4-byte address mode, bit 10 SPI NAND, bit 16 the SPI pad alternate (SFC on the SDIO1 pads). The boot ROM loads stage 1 into on-chip SRAM at 0x04010500, which replays a 248-entry register table (DDR, clocks, pads) before the main U-Boot runs.
+
+        ### DMA request lines (INFERRED from the Hi3516E V300 data sheet Table 3-8)
+
+        The vendor device tree describes an EDMAC (hiedmacv310) with four channels and 32 request lines at 0x100B0000. The line assignment below is the V300 table; the vendor notes agree for UART1/2 (18-21) and SPI0/1 (26-29); the other lines (I2C, UART0) are INFERRED.
+
+        | ID | Peripheral | ID | Peripheral | ID | Peripheral |
+        |---|---|---|---|---|---|
+        | 0 | I2C0 RX | 16 | UART0 RX | 26 | SPI0 RX |
+        | 1 | I2C0 TX | 17 | UART0 TX | 27 | SPI0 TX |
+        | 2 | I2C1 RX | 18 | UART1 RX | 28 | SPI1 RX |
+        | 3 | I2C1 TX | 19 | UART1 TX | 29 | SPI1 TX |
+        | 4 | I2C2 RX | 20 | UART2 RX | 6-15, 22-25, 30-31 | reserved |
+        | 5 | I2C2 TX | 21 | UART2 TX | | |
+
+        ### Pinmux function summary (VENDOR-DERIVED)
+
+        The pad registers are in three banks (IO config ahb 0x100C0000, core 0x120C0000, vio 0x112C0000, 52 pad registers in the RDL), one 32-bit word per pad: [3:0] function, [7:4] drive, [8] pull-up, [9] pull-down, [10] slew (INFERRED from U-Boot pad code). No pin names exist in any source.
+
+        | Function | Bank and pad offsets | Note |
+        |---|---|---|
+        | VI / MIPI pads | vio 0x00 - 0x14 | function 0 = MIPI RX, 1 = BT.1120, 2 = raw |
+        | Sensor clock and reset | vio 0x28, 0x2C | function 1 |
+        | I2C0 | vio 0x30, 0x34 | function 1 |
+        | I2C2 or SPI0 | vio 0x38, 0x3C | function 1 or 7 |
+        | I2C1 | vio 0xA0, 0xA4 | |
+        | IR input | ahb 0x08 | function 2 |
+        | LSADC | core 0x00, 0x04 | function 1 |
+
+        ### Power and reset domains (VENDOR-DERIVED)
+
+        * The brief data sheet lists the integrated POR, RTC and audio codec and the supply levels (core 0.9 V, I/O 3.3 V, SDRAM 1.8 V). It has no PMC, PWR_SEQ or power-domain description; the V200 has no PMC block in the RDL (the V300 data sheet describes one at 0x120F0000).
+        * A runtime adaptive-voltage-scaling module in the vendor SDK reads the HPM word (SYS_CTRL 0x15C) and the temperature sensor (MISC 0xBC) and drives a PWM channel to set the core voltage: 992 mV for HPM up to 190, 812 mV from HPM 310, a linear value in between (vendor-code constants).
+        * Resets: the CRG holds a reset bit next to the clock-enable bit of every block (map below); the SYS_CTRL SC_SYSRES register (offset 0x04) is the vendor reboot path. The two-level scheme of the V300 data sheet is assumed (INFERRED).
+
+        ### Clock selections (VENDOR-DERIVED)
+
+        PERI_CRG32 (0x80): bit 6 selects SYSAXI (24 / 200 MHz), bit 10 SYSAPB (24 / 50 MHz); boot code writes 0x559 and polls the status register 0x1E0. FMC (0x144 [4:2]): 24 / 100 / 150 / 200 / 300 / 360 MHz. FEMAC (0x16C): bit 7 core clock 100 / 54 MHz. MMC0 (0x1F4) and MMC1 (0x22C): select [26:24] 100 kHz / 400 kHz / 25 / 50 / 90 / 112 / 150 MHz. Sensor clock (0xF0 [5:2]): 74.25 / 72 / 54 / 24 / 37.125 / 36 / 27 / 12 MHz. UART clocks (0x1BC bits 18-20): 24 or 6 MHz. PLL registers PERI_CRG_PLL0..7 are INFERRED words; the boot ROM programs the PLLs and no EV200 source reads them.
+
+        ### Bus matrix
+
+        No source describes the interconnect or the DDR QoS groups of the V200 in text. The vendor boot table programs 12 DDRC AXI QoS ports (0x120D0200 - 0x120D02B4) and the MISC bus QoS words (0x80 - 0x98); the V300 data sheet names the masters of those words (see the hi3516ev300 bus diagram); the assignment is assumed equal (INFERRED), so no separate figure is drawn.
+
+        ### Interrupts (GIC interrupt IDs; VENDOR-DERIVED, names from the Hi3516E V300 data sheet Table 3-6)
+
+        GIC INTID = SPI number + 32. Every row not marked with an asterisk was checked against the vendor device tree (OpenIPC hi3516ev200.dtsi, docs/research/hi3516ev200-blocks.md): its SPI number equals the V300 data sheet bit minus 32. Rows marked * are not in the vendor device tree and are taken from the Hi3516E V300 table (same block, INFERRED for the V200). No V200 data sheet interrupt table exists in the workspace.
+
+        | # | Source | # | Source | # | Source |
+        |---|---|---|---|---|---|
+        | 0-31 | CPU internal (SGI / PPI) | 52 | GPIO4 | 73 | Reserved |
+        | 32 | RTC | 53 | GPIO5 | 74 | AIAO |
+        | 33 | SOFTWARE | 54 | GPIO6 | 75 | VICAP (the ISP shares this line) |
+        | 34 | WDG | 55 | GPIO7 | 76 | VIPROC |
+        | 35 | Reserved | 56 | GPIO8 | 77 | MIPI_RX |
+        | 36 | LSADC | 57 | GPIO9* | 78 | VPSS |
+        | 37 | Timer0/Timer1 | 58 | Reserved | 79 | VEDU |
+        | 38 | Timer2/Timer3 | 59 | Reserved | 80 | JPGE |
+        | 39 | UART0 | 60 | Reserved | 81 | VGS |
+        | 40 | UART1 | 61 | Reserved | 82 | GZIP |
+        | 41 | UART2 | 62 | SDIO0 (MMC0) | 83 | IVE |
+        | 42 | Reserved | 63 | SDIO1 (MMC1) | 84 | Reserved |
+        | 43 | I2C0* | 64 | FMC* | 85 | DDRT* |
+        | 44 | I2C1* | 65 | ETH (FEMAC) | 86 | DDR_ERR* |
+        | 45 | I2C2* | 66 | SPACC (cipher + hash, one IRQ) | 87 | Reserved |
+        | 46 | SPI0 | 67 | Reserved | 88 | A7_COMMTX* |
+        | 47 | SPI1 | 68 | Reserved | 89 | A7_COMMRX* |
+        | 48 | GPIO0 | 69 | Reserved | 90 | A7_PMUIRQ |
+        | 49 | GPIO1 | 70 | DMA (EDMAC) | 91 | FE PHY* |
+        | 50 | GPIO2 | 71 | USB2 | 92-95 | Reserved |
+        | 51 | GPIO3* | 72 | VDP |  |  |
 
         ### Clock-gate and reset map (generated from the CRG registers)
 
