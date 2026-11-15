@@ -172,6 +172,149 @@ addrmap hi3520dv100 {
         The table names IDs 35-38 Timer0-Timer3 and has no entries for Timer4-Timer7. Section 3.6 says the two timers of a Dual-Timer module share one interrupt line, so each of IDs 35-38 is the line of one Dual-Timer module (Dual-Timer0 = Timer0+1 at 0x20000000, Dual-Timer1 = Timer2+3 at 0x20010000, Dual-Timer2 = Timer4+5 at 0x20130000, Dual-Timer3 = Timer6+7 at 0x20140000); the original data sheet (3.6.1) says each pair shares one base address and one interrupt line.
 
         &#9989; = registers described; &#9888; partial = partly described (offsets known from vendor U-Boot headers or a sibling chip, many bit meanings and all reset values unknown; the block desc starts with 'Partly described:' and registers/fields whose meaning is guessed say 'Meaning unverified'); &#9888; not described = placeholder only (the block's registers exist only in closed vendor libraries and are not documented anywhere; the map only holds an undocumented-window placeholder, the block desc starts with 'Not described:'). Registers whose desc starts with 'Undocumented:' are known to exist (seen in the vendor boot register table) but their meaning is unknown.
+
+        <!-- overview:begin -->
+
+        ### Diagrams
+
+        ![Logic block diagram](assets/diagrams/hi3520dv100-logic.svg)
+
+        ![Register blocks by function](assets/diagrams/hi3520dv100-blocks.svg)
+
+        ![Clock tree](assets/diagrams/hi3520dv100-clocks.svg)
+
+        ![Boot flow](assets/diagrams/hi3520dv100-boot.svg)
+
+        ![Video pipeline](assets/diagrams/hi3520dv100-video.svg)
+
+        ### Variants (data sheet chapter 1 and 2; the data sheet is Chinese, translated)
+
+        One data sheet covers the Hi3520D, Hi3515A and Hi3515C (all V100): one address map, one CRG/SYS_CTRL/IO-config register set and one interrupt table. The register map is documented once; the three chips differ in the figures below.
+
+        | | Hi3520D V100 | Hi3515A V100 | Hi3515C V100 |
+        |---|---|---|---|
+        | CPU | Cortex-A9, up to 660 MHz | Cortex-A9, 600 MHz | Cortex-A9, 600 MHz |
+        | Caches | 32 KB L1 I + 32 KB L1 D, 128 KB L2 | same | same |
+        | DDR | one 16-bit DDR2/DDR3 controller, up to 660 MHz, up to 512 MB | same, up to 660 MHz | same, up to 600 MHz |
+        | SATA 2.5 | 2 | 2 | 1 |
+        | H.264 decode | 8xD1@30, 4x720p@30, 2x1080p@30 | 4xD1@30, 2x720p@30, 1x1080p@30 | same as Hi3515A |
+        | H.264 encode + decode mix | 4xD1@30 + 4xCIF@30 enc + 4xD1@30 dec (and the other mixes of the data sheet) | 4xD1@30 + 4xCIF@30 enc + 1xD1@30 dec | same as Hi3515A |
+        | Video input | 2xBT.656 @ 108/144 MHz (8xCIF/D1/960H), or 2xBT.656 @ 148.5 MHz (2x720p), or 1xBT.1120 @ 148.5 MHz (1x1080p) | 1xBT.656 @ 108/144 MHz (4xCIF/D1/960H), or 1xBT.656 @ 148.5 MHz (1x720p) | same as Hi3515A |
+        | Video output | HDMI 1.3 + VGA + 2xCVBS (HDMI and VGA same source), up to 1080p@60 | same | same |
+        | Common | 1 FE Ethernet (internal FE PHY, MDI or RMII), 4 UART, 1 SPI (2 CS), IR, I2C, GPIO, 2 USB 2.0 host, 2 I2S, SPI NOR (1/2/4 bit, 2 CS), 4 KB BOOTROM + 10 KB SRAM, RTC with temperature sensor, AES/DES/3DES, IVE | | |
+        | Package | Epad-LQFP256, 28 x 28 mm, 0.4 mm pitch | same | same |
+        | Supplies | core 1.25 V, I/O 3.3 V, DDR 1.8/1.5 V; 2.5 W typical (Hi3520D) | | |
+
+        ### Boot (data sheet 1.3)
+
+        * BOOT_SEL (pin AIO_MCLK) = 1: boot from the on-chip BOOTROM. The BOOTROM starts the serial download mechanism (Fastboot tool over the UART); if the serial link times out without a response it continues with the SPI flash.
+        * BOOT_SEL = 0: boot directly from the SPI NOR flash on the SFC.
+        * Address 0x00000000 aliases the boot memory (64 MB window) until the remap is cleared, after which it points to the on-chip RAM.
+
+        ### Clocks (data sheet CRG chapter)
+
+        The crystal on XIN feeds the PLLs (APLL = PERI_CRG0/1, VPLL0 = PERI_CRG2/3, EPLL = PERI_CRG8/9, each with a bypass, level-1/level-2 post dividers and an integer/fractional multiplier). PERI_CRG10 holds the A9 frequency mode, PERI_CRG11..62 gate the peripheral clocks and hold the soft resets (generated map below). XIN also reaches the IP clock frequency controller directly; VIUn_CLK are the external video input clocks. Diagram: the data sheet CRG block diagram, redrawn.
+
+        ### Clock-gate and reset map (generated from the CRG registers)
+
+        | Offset | Register | Description | Gate / reset fields |
+        |---|---|---|---|
+        | 0x028 | PERI_CRG10 | A9 Frequency mode and reset configuration register | cpu_srst_req, cluster_dbg_srst_req, sc_wd_srst_req, cluster_peri_srst_req, cluster_scu_srst_req, cs_srst_req |
+        | 0x02C | PERI_CRG11 | VICAP Clock and Reset Configuration Register | vi_hrst_req, vi_hcken, vi1_rst_req, vi0_rst_req, vi_cken_ch[15:8] |
+        | 0x034 | PERI_CRG13 | VOU Clock and Reset Control Register | vo_hrst_req, vo_hd_srst_req, vo_sd_srst_req, hddac_cken, sddac_cken, vou_hcken, vou_hd_cken, vou_sd0_cken, vou_sd1_cken |
+        | 0x038 | PERI_CRG14 | PWM Clock and Reset Control Register | pwm_srst_req, pwm_cken |
+        | 0x03C | PERI_CRG15 | HDMI Clock and Reset Control Register | hdmi_srst_req, hdmi_hcken, hdmi_idcken |
+        | 0x040 | PERI_CRG16 | VEDU clock and soft reset control register | vedu_srst_req, vedu0_cken, sed_srst_req, sed_cken |
+        | 0x048 | PERI_CRG18 | VPSS Clock and Soft Reset Control Register | vps_srst_req, vps_cken |
+        | 0x050 | PERI_CRG20 | VDH0 clock and soft reset control register | vdh0_srst_req, vdh0_cken |
+        | 0x054 | PERI_CRG21 | VDH1 clock and soft reset control register | vdh1_srst_req, vdh1_cken |
+        | 0x058 | PERI_CRG22 | TDE Clock and Soft Reset Control Register | tde_srst_req, tde_cken |
+        | 0x060 | PERI_CRG24 | JPGE clock and soft reset control register | jpge_srst_req, jpge_cken |
+        | 0x064 | PERI_CRG25 | JPGD clock and soft reset control register | jpgd_srst_req, jpgd_cken |
+        | 0x068 | PERI_CRG26 | MDU clock and soft reset control register | mdu_srst_req, mdu_cken |
+        | 0x06C | PERI_CRG27 | VAPU clock and soft reset control register | vapu_srst_req, vapu_cken |
+        | 0x070 | PERI_CRG28 | VOIE related clock and soft reset control register | voie_srst_req, voie_cken |
+        | 0x074 | PERI_CRG29 | VCMP related clock and soft reset control register | vcmp_srst_req, vcmp_cken |
+        | 0x07C | PERI_CRG31 | CIPHER related clock and soft reset control register | cipher_srst_req, cipher_cken |
+        | 0x08C | PERI_CRG35 | AIO Bus Clock Reset Control Register | aio_hrst_req, aio_hcken |
+        | 0x090 | PERI_CRG36 | AIP related clock and soft reset control register | aip_srst_req, aip_cken |
+        | 0x094 | PERI_CRG37 | AOP0 related clock and soft reset control register | aop0_srst_req, aop0_cken |
+        | 0x098 | PERI_CRG38 | AOP1 related clock and soft reset control register | aop1_srst_req, aop1_cken |
+        | 0x0B4 | PERI_CRG45 | SATA related clock and soft reset control register | rst_sataphy_s, hrst_sata_s, rst_sata_s, rst_tx0_s, rst_tx1_s, rst_rx0_s, rst_rx1_s, rst_alive_s, sata1_cken, sata0_cken, ... |
+        | 0x0B8 | PERI_CRG46 | USB related clock and soft reset control register | usb_ahb_srst_req, usb_cken |
+        | 0x0C0 | PERI_CRG48 | SFC related clock and soft reset control register | sfc_srst_req, sfc_cken |
+        | 0x0CC | PERI_CRG51 | Clock and soft reset control registers related to ETH interface | hrst_eth_s, eth_cken, fephy_srst_req |
+        | 0x0D4 | PERI_CRG53 | SCD related clock and soft reset control register | scd_srst_req, scd_cken |
+        | 0x0D8 | PERI_CRG54 | DDRTEST and EFUSE related clock and soft reset control register | efuse_srst_req, efuse_cken, ddrtest_srst_req, ddrtest_cken |
+        | 0x0E4 | PERI_CRG57 | Other CRG Interface Module Soft Reset Control Register | test_clk_en, i2c_srst_req, t_cap_srst_req, ir_srst_req, ssp_srst_req, uart0_srst_req, uart1_srst_req, uart2_srst_req, uart3_srst_req, ir_cken, ... |
+        | 0x0F4 | PERI_CRG61 | SpeedMonitor Control Register | osc_clk_en, osc_en |
+
+        Only fields whose names contain a clock-enable or reset keyword are listed; the field descriptions in the register pages give the polarity and the clocks they gate.
+
+        ### Register blocks (generated from this description)
+
+        | Base | Instance | Block | Register space |
+        |---|---|---|---|
+        | 0x10010000 | SFC | System Flash Controller Registers | 1088 B |
+        | 0x10080000 | SATA | HiSilicon AHCI 1.2 SATA host controller | 512 B |
+        | 0x10090000 | ETH | ETH Registers | 10160 B |
+        | 0x100A0000 | OHCI | HiSilicon USB 2.0 host controller - OHCI | 92 B |
+        | 0x100B0000 | EHCI | HiSilicon USB 2.0 host controller - EHCI | 176 B |
+        | 0x100C0000 | CIPHER | CIPHER (8 channels) | 5184 B |
+        | 0x10150000 | SCD | HiSilicon SCD start-code detector / stream gatherer (vendor-derived, UNVERIFIED on hardware) | 88 B |
+        | 0x20000000 | TIMER0 | Timer Registers | 28 B |
+        | 0x20000020 | TIMER1 | Timer Registers | 28 B |
+        | 0x20010000 | TIMER2 | Timer Registers | 28 B |
+        | 0x20010020 | TIMER3 | Timer Registers | 28 B |
+        | 0x20030000 | CRG | CRG Registers | 252 B |
+        | 0x20040000 | WDG | Watchdog Registers | 4 KB |
+        | 0x20050000 | SYS_CTRL | System Controller Registers | 3821 B |
+        | 0x20060000 | RTC | HiSilicon SPI-bridged RTC (APB registers) | 164 B |
+        | 0x20070000 | IR | HiSilicon IR receiver | 56 B |
+        | 0x20080000 | UART0 | UART (ARM PrimeCell PL011) | 4 KB |
+        | 0x20090000 | UART1 | UART (ARM PrimeCell PL011) | 4 KB |
+        | 0x200A0000 | UART2 | UART (ARM PrimeCell PL011) | 4 KB |
+        | 0x200B0000 | UART3 | UART (ARM PrimeCell PL011) | 4 KB |
+        | 0x200C0000 | SPI | SPI Registers | 48 B |
+        | 0x200D0000 | I2C | HiSilicon I2C Master Controller | 32 B |
+        | 0x200F0000 | IO_CONFIG | I/O MUX Configuration Registers | 204 B |
+        | 0x20110000 | DDRC | DDRC Registers | 3052 B |
+        | 0x20120000 | PWM | HiSilicon PWM | 28 B |
+        | 0x20130000 | TIMER4 | Timer Registers | 28 B |
+        | 0x20130020 | TIMER5 | Timer Registers | 28 B |
+        | 0x20140000 | TIMER6 | Timer Registers | 28 B |
+        | 0x20140020 | TIMER7 | Timer Registers | 28 B |
+        | 0x20150000 | GPIO0 | ARM PL061 | 1053 B |
+        | 0x20160000 | GPIO1 | ARM PL061 | 1053 B |
+        | 0x20170000 | GPIO2 | ARM PL061 | 1053 B |
+        | 0x20180000 | GPIO3 | ARM PL061 | 1053 B |
+        | 0x20190000 | GPIO4 | ARM PL061 | 1053 B |
+        | 0x201A0000 | GPIO5 | ARM PL061 | 1053 B |
+        | 0x201B0000 | GPIO6 | ARM PL061 | 1053 B |
+        | 0x201C0000 | GPIO7 | ARM PL061 | 1053 B |
+        | 0x201D0000 | GPIO8 | ARM PL061 | 1053 B |
+        | 0x201F0000 | HDMI | HiSilicon HDMI transmitter (SiI9134-style) | 6180 B |
+        | 0x20300000 | A9_PRIVATE | Cortex-A9 MPCore private memory region | 8 KB |
+        | 0x20580000 | VICAP | HiSilicon video capture | 192 KB |
+        | 0x205C0000 | VDP | HiSilicon video display processor | 59524 B |
+        | 0x205E0000 | IVE | HiSilicon intelligent video engine | 28 B |
+        | 0x20600000 | VPSS | HiSilicon VPSS (Hi3520D V100 edition, vendor-derived registers) | 64 KB |
+        | 0x20610000 | TDE | HiSilicon TDE, Hi3520D / Hi3515A / Hi3515C generation (vendor-derived) | 8280 B |
+        | 0x20620000 | VEDU | HiSilicon VEDU (Hi3520D V100 edition, vendor-derived registers) | 64 KB |
+        | 0x20630000 | VDH0 | HiSilicon VDH video decoder (UNVERIFIED, vendor-derived) | 212 B |
+        | 0x20640000 | VOIE | HiSilicon voice encoder | 136 B |
+        | 0x20650000 | AIO | HiSilicon audio input/output interface | 8508 B |
+        | 0x20660000 | JPGE | HiSilicon JPEG encoder (JPGE, r004 register layout) | 4288 B |
+        | 0x20670000 | JPGD | HiSilicon JPEG decoder | 1728 B |
+        | 0x206A0000 | VDH1 | HiSilicon VDH video decoder (UNVERIFIED, vendor-derived) | 212 B |
+        | 0x206B0000 | VCMP | HiSilicon VCMP video compress unit (UNVERIFIED, vendor-derived) | 64 KB |
+        | 0x206C0000 | MOTION_DETECT | Motion Detect Unit Registers | 188 B |
+        | 0x206D0000 | DDRT | HiSilicon DDR test module | 164 B |
+        | 0x20700000 | L2CACHE | HiSilicon L2 cache controller v200 | 2060 B |
+
+        The table is generated from the elaborated root (instances at their absolute addresses; register space is the span of the block's registers, not the data sheet window).
+
+        <!-- overview:end -->
     ";
 
     eHISI_SFC_350       SFC             @ 0x10010000;
