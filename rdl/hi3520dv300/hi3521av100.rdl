@@ -117,7 +117,21 @@ addrmap hi3521av100 {
 
         ![Register blocks by function](assets/diagrams/hi3521av100-blocks.svg)
 
+        ![Clock tree](assets/diagrams/hi3521av100-clocks.svg)
+
         ![Boot flow](assets/diagrams/hi3521av100-boot.svg)
+
+        ![Video pipeline](assets/diagrams/hi3521av100-video.svg)
+
+        ![Interrupt topology](assets/diagrams/hi3521av100-irq.svg)
+
+        ![Reset tree](assets/diagrams/hi3521av100-resets.svg)
+
+        ![CRG register map](assets/diagrams/hi3521av100-crgmap.svg)
+
+        ![bus clock domains](assets/diagrams/hi3521av100-bus.svg)
+
+        ![IP edition per chip](assets/diagrams/hi3521av100-family.svg)
 
         ### Variants (data sheet chapter 1)
 
@@ -139,6 +153,119 @@ addrmap hi3521av100 {
 
         * BOOTROM_SEL (pin MDCK) = 1: boot from the BOOTROM, which starts the serial download mechanism (HiTool); if the serial link times out the chip boots from the external SPI NAND/NOR flash.
         * BOOTROM_SEL = 0: boot from the external SPI NOR/NAND flash (SFC).
+
+        ### Chip ID
+
+        | Chip | System controller ID registers (0xEE0 .. 0xEEC) | Value read as SC_SYSID |
+        |---|---|---|
+        | hi3520dv300 | SYSID0..3 reset values from the RDL | 0x3521A100 |
+        | hi3521av100 | SYSID0..3 reset values from the RDL | 0x3521A100 |
+
+        The four 8-bit registers form the 32-bit chip ID (SYSID3 is the most significant byte). The values are the reset values of the register descriptions: one data sheet documents one ID for all chips it covers, so the chips of a shared data sheet are not distinguished here (the real value of each variant is not stated).
+
+        ### Memory map notes (data sheet 1.3, Table 1-2)
+
+        * 0x00000000-0x03FFFFFF (64 MB) is the boot window: it points to the boot address space (BOOTROM or the SFC NAND/NOR memory space) while the remap is active and to the on-chip RAM after SC_CTRL remapclear (the Hi3520D V100 data sheet words the same mechanism).
+        * BOOTROM window 0x04000000 (4 KB implemented), on-chip RAM window 0x04010000 (16 KB implemented).
+        * SFC NAND/NOR memory window 0x14000000-0x14FFFFFF (16 MB); FMC registers at 0x10000000.
+        * DDR: 0x80000000-0xFFFFFFFF address space (2 GB); the Hi3521A 32-bit bus supports up to 1 GB, the Hi3520D V300 16-bit bus up to 512 MB (1.2.14).
+        * Blocks without register chapter in the data sheet but with a memory-map entry: SCD 0x10080000, DDRT0 0x12100000, HDMI 0x13010000, AVC0/AVC1 H.264 codecs 0x13040000 / 0x13100000, TDE, IVE, JPGD, VGS, VPSS, JPGE (see the register-block table: these are not modelled).
+
+        ### DMA request lines (data sheet 3.6, Table 3-10)
+
+        One DMAC (PL080-style, register block DMAC at 0x10060000, interrupt 42): 4 channels, 2 AHB masters, 16 hardware request lines; each peripheral has a burst (DMACBREQ) and a single (DMACSREQ) request, selected per channel in DMAC_Cn_CONFIG src_periph / dest_periph. Memory has no request line (always ready).
+
+        | Line | Peripheral | Line | Peripheral |
+        |---|---|---|---|
+        | 0 | UART0 RX | 8 | I2C RX |
+        | 1 | UART0 TX | 9 | I2C TX |
+        | 2 | UART1 RX | 10-15 | Reserved |
+        | 3 | UART1 TX | | |
+        | 4 | UART2 RX | | |
+        | 5 | UART2 TX | | |
+        | 6 | SSP RX | | |
+        | 7 | SSP TX | | |
+
+        Idle cycles are inserted after each bus operation on channels 2 and 3, so memory-to-memory transfers should use those two channels (data sheet recommendation).
+
+        ### Pin multiplexing summary (PINMUX at 0x120F0000)
+
+        Generated from the pin mux registers of this description (register offsets are relative to the block base; the function lists are the value-ordered choices of each register). Pads that repeat a pattern in consecutive registers are merged into one row.
+
+        | Pads | Mux register (offset from 0x120F0000) | Function choices (value 0, 1, ...) |
+        |---|---|---|
+        | VI0_CLK | muxctrl_reg0 @0x000 | 0=GPIO5_7 / 1=VI0_CLK / 2=VI_ADC_REFCLK0 |
+        | VI0_DAT7 ... VI0_DAT0 (8) | muxctrl_reg1 ... muxctrl_reg8 @0x004 ... 0x020 | 0=GPIO1_0 / 1=VI0_DAT7 (first pad; others the same pattern with the pad's own number) |
+        | VI1_CLK | muxctrl_reg9 @0x024 | 0=GPIO10_6 / 1=VI1_CLK / 2=VI0_CLK |
+        | VI1_DAT7 ... VI1_DAT0 (8) | muxctrl_reg10 ... muxctrl_reg17 @0x028 ... 0x044 | 0=GPIO2_0 / 1=VI1_DAT7 (first pad; others the same pattern with the pad's own number) |
+        | VI_ADC_REFCLK0 | muxctrl_reg18 @0x048 | 0=GPIO6_0 / 1=VI_ADC_REFCLK0 / 2=VI1_CLK |
+        | VI2_CLK | muxctrl_reg19 @0x04C | 0=GPIO11_7 / 1=VI2_CLK / 2=VI_ADC_REFCLK1 |
+        | VI2_DAT7 ... VI2_DAT0 (8) | muxctrl_reg20 ... muxctrl_reg27 @0x050 ... 0x06C | 0=GPIO3_0 / 1=VI2_DAT7 (first pad; others the same pattern with the pad's own number) |
+        | VI3_CLK | muxctrl_reg28 @0x070 | 0=GPIO10_5 / 1=VI3_CLK / 2=VI2_CLK |
+        | VI3_DAT7 ... VI3_DAT0 (8) | muxctrl_reg29 ... muxctrl_reg36 @0x074 ... 0x090 | 0=GPIO4_0 / 1=VI3_DAT7 (first pad; others the same pattern with the pad's own number) |
+        | VI_ADC_REFCLK1 | muxctrl_reg37 @0x094 | 0=GPIO6_1 / 1=VI_ADC_REFCLK1 / 2=VI3_CLK |
+        | VGA_HS | muxctrl_reg38 @0x098 | 0=GPIO11_6 / 1=VGA_HS |
+        | VGA_VS | muxctrl_reg39 @0x09C | 0=GPIO11_3 / 1=VGA_VS |
+        | I2S0_BCLK_RX | muxctrl_reg40 @0x0A0 | 0=GPIO9_0 / 1=I2S0_BCLK_RX |
+        | I2S0_WS_RX | muxctrl_reg41 @0x0A4 | 0=GPIO9_1 / 1=I2S0_WS_RX |
+        | I2S0_SD_RX | muxctrl_reg42 @0x0A8 | 0=GPIO9_2 / 1=I2S0_SD_RX |
+        | I2S1_BCLK_RX | muxctrl_reg43 @0x0AC | 0=GPIO9_3 / 1=I2S1_BCLK_RX / 2=I2S2_MCLK |
+        | I2S1_WS_RX | muxctrl_reg44 @0x0B0 | 0=GPIO9_4 / 1=I2S1_WS_RX |
+        | I2S1_SD_RX | muxctrl_reg45 @0x0B4 | 0=GPIO9_5 / 1=I2S1_SD_RX |
+        | I2S2_BCLK_TX | muxctrl_reg46 @0x0B8 | 0=GPIO9_6 / 1=I2S2_BCLK_TX |
+        | I2S2_WS_TX | muxctrl_reg47 @0x0BC | 0=GPIO9_7 / 1=I2S2_WS_TX |
+        | I2S2_SD_TX | muxctrl_reg48 @0x0C0 | 0=GPIO5_4 / 1=I2S2_SD_TX |
+        | SPI_SCLK | muxctrl_reg49 @0x0C4 | 0=TEST_CLK / 1=SPI_SCLK / 2=GPIO5_0 |
+        | SPI_SDO | muxctrl_reg50 @0x0C8 | 0=GPIO5_1 / 1=SPI_SDO |
+        | SPI_SDI | muxctrl_reg51 @0x0CC | 0=GPIO5_2 / 1=SPI_SDI |
+        | SPI_CSN0 ... SPI_CSN1 (2) | muxctrl_reg52 ... muxctrl_reg53 @0x0D0 ... 0x0D4 | 0=GPIO5_3 / 1=SPI_CSN0 (first pad; others the same pattern with the pad's own number) |
+        | PWM_OUT0 ... PWM_OUT1 (2) | muxctrl_reg54 ... muxctrl_reg55 @0x0D8 ... 0x0DC | 0=PWM_OUT0 / 1=GPIO5_5 (first pad; others the same pattern with the pad's own number) |
+        | I2C_SDA | muxctrl_reg56 @0x0E0 | 0=GPIO12_6 / 1=I2C_SDA |
+        | I2C_SCL | muxctrl_reg57 @0x0E4 | 0=GPIO12_7 / 1=I2C_SCL |
+        | UART0_RXD | muxctrl_reg58 @0x0E8 | 0=UART0_RXD / 1=GPIO10_7 |
+        | UART0_TXD | muxctrl_reg59 @0x0EC | 0=UART0_TXD / 1=GPIO12_5 |
+        | UART0_CTSN | muxctrl_reg60 @0x0F0 | 0=UART0_CTSN / 1=GPIO6_2 |
+        | UART0_RTSN | muxctrl_reg61 @0x0F4 | 0=UART0_RTSN / 1=GPIO6_3 |
+        | UART1_RXD | muxctrl_reg62 @0x0F8 | 0=GPIO6_5 / 1=UART1_RXD |
+        | UART1_TXD | muxctrl_reg63 @0x0FC | 0=GPIO6_7 / 1=UART1_TXD |
+        | UART2_RXD | muxctrl_reg64 @0x100 | 0=GPIO11_4 / 1=UART2_RXD |
+        | UART2_TXD | muxctrl_reg65 @0x104 | 0=GPIO11_5 / 1=UART2_TXD |
+        | RGMII_RXDV | muxctrl_reg66 @0x108 | 0=GPIO7_0 / 1=RGMII_RXDV |
+        | RGMII_RXD3 ... RGMII_RXD0 (4) | muxctrl_reg67 ... muxctrl_reg70 @0x10C ... 0x118 | 0=GPIO7_1 / 1=RGMII_RXD3 (first pad; others the same pattern with the pad's own number) |
+        | RGMII_RXCK | muxctrl_reg71 @0x11C | 0=GPIO7_5 / 1=RGMII_RXCK |
+        | RGMII_TXEN | muxctrl_reg72 @0x120 | 0=GPIO7_6 / 1=RGMII_TXEN |
+        | RGMII_TXD3 ... RGMII_TXD0 (4) | muxctrl_reg73 ... muxctrl_reg76 @0x124 ... 0x130 | 0=GPIO7_7 / 1=RGMII_TXD3 (first pad; others the same pattern with the pad's own number) |
+        | RGMII_TXCKOUT | muxctrl_reg77 @0x134 | 0=GPIO8_3 / 1=RGMII_TXCKOUT / 2=MII_TXCK / 3=RMII_CLK |
+        | RGMII_CRS | muxctrl_reg78 @0x138 | 0=GPIO8_4 / 1=RGMII_CRS |
+        | RGMII_COL | muxctrl_reg79 @0x13C | 0=GPIO8_5 / 1=RGMII_COL |
+        | RGMII_RXER | muxctrl_reg80 @0x140 | 0=GPIO8_6 / 1=RGMII_RXER |
+        | EPHY_CLK | muxctrl_reg81 @0x144 | 0=GPIO6_6 / 1=EPHY_CLK |
+        | EPHY_RSTN | muxctrl_reg82 @0x148 | 0=GPIO6_4 / 1=EPHY_RSTN |
+        | MDCK | muxctrl_reg83 @0x14C | 0=GPIO10_0 / 1=MDCK / 2=BOOTROM_SEL |
+        | MDIO | muxctrl_reg84 @0x150 | 0=GPIO10_1 / 1=MDIO |
+        | IR_IN | muxctrl_reg85 @0x154 | 0=GPIO10_2 / 1=IR_IN |
+        | SFC_DIO | muxctrl_reg86 @0x158 | 0=SFC_DIO / 1=GPIO11_0 |
+        | SFC_WP_IO2 | muxctrl_reg87 @0x15C | 0=SFC_WP_IO2 / 1=GPIO11_1 |
+        | SFC_DOI | muxctrl_reg88 @0x160 | 0=SFC_DOI / 1=GPIO11_2 |
+        | USB2_OVRCUR0 | muxctrl_reg89 @0x164 | 0=GPIO13_0 / 1=USB2_OVRCUR0 |
+        | USB2_PWREN0 | muxctrl_reg90 @0x168 | 0=GPIO13_1 / 1=USB2_PWREN0 |
+        | USB2_OVRCUR1 | muxctrl_reg91 @0x16C | 0=GPIO13_2 / 1=USB2_OVRCUR1 |
+        | USB2_PWREN1 | muxctrl_reg92 @0x170 | 0=GPIO13_3 / 1=USB2_PWREN1 |
+        | HDMI_HOTPLUG | muxctrl_reg93 @0x174 | 0=GPIO13_4 / 1=HDMI_HOTPLUG |
+        | HDMI_CEC | muxctrl_reg94 @0x178 | 0=GPIO13_5 / 1=HDMI_CEC |
+        | HDMI_SDA | muxctrl_reg95 @0x17C | 0=GPIO13_6 / 1=HDMI_SDA |
+        | HDMI_SCL | muxctrl_reg96 @0x180 | 0=GPIO13_7 / 1=HDMI_SCL |
+        | SATA_LED_N0 ... SATA_LED_N1 (2) | muxctrl_reg97 ... muxctrl_reg98 @0x184 ... 0x188 | 0=GPIO10_3 / 1=SATA_LED_N0 (first pad; others the same pattern with the pad's own number) |
+
+        Pad drive-strength and pull controls are in the separate pad control registers of the same description (not repeated here).
+
+        ### Power, reset and clock modes (data sheet 3.1, 3.2)
+
+        * Resets: hard reset npor from the RSTN pin or the internal POR modules (POR_CORE / POR_IP, selected by POR_SEL; the low pulse must last more than 130 ms, XIN stable); global soft reset sys_rst_n (system controller, level-1 reset control; at least 130 system clock cycles); per-module soft resets xx_rst_n (CRG PERI_CRG registers, level-2 reset control), not released automatically. Diagram: reset tree.
+        * A7/DDR/bus clocks start from the 24 MHz crystal; a PLL may be reprogrammed only while the system runs from the crystal; stable 0.1 ms after the change; the lock bits are in PERI_CRG34[4:0] (data sheet 3.2.5, as printed; INFERRED to be the PLL status register of this chip).
+        * Spread spectrum control per PLL: VPLL0 PERI_CRG37, VPLL2 PERI_CRG38, APLL PERI_CRG39, EPLL PERI_CRG40, DPLL PERI_CRG46 (bits 11:0 ssmod_cfg).
+        * Several modules use a skip-cycle clock divider (clkskipcfg 5 bits + clkloaden load strobe): VEDU0 PERI_CRG15, VEDU1 PERI_CRG16, VPSS PERI_CRG17, TDE PERI_CRG18, VGS PERI_CRG19, JPGE/VOIE PERI_CRG20, JPGD PERI_CRG21, MDU PERI_CRG22.
+        * The data sheet has no separate power-domain table or low-power chapter text in the range read for this note; PMC (0x120E0000) is the power-management register block (modelled).
 
         ### Clock-gate and reset map (generated from the CRG registers)
 
