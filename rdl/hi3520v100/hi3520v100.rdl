@@ -39,7 +39,178 @@ addrmap hi3520v100 {
 
         ### Diagrams
 
+        ![Logic block diagram](assets/diagrams/hi3520v100-logic.svg)
+
         ![Register blocks by function](assets/diagrams/hi3520v100-blocks.svg)
+
+        ![Clock tree](assets/diagrams/hi3520v100-clocks.svg)
+
+        ![Boot flow](assets/diagrams/hi3520v100-boot.svg)
+
+        ![Interrupt topology](assets/diagrams/hi3520v100-irq.svg)
+
+        ![Reset tree](assets/diagrams/hi3520v100-resets.svg)
+
+        ![Power domains](assets/diagrams/hi3520v100-power.svg)
+
+        ![CRG register map](assets/diagrams/hi3520v100-crgmap.svg)
+
+        ![IP edition per chip](assets/diagrams/hi3520v100-family.svg)
+
+        ### Chip ID
+
+        | Chip | System controller ID registers (0xEE0 .. 0xEEC) | Value read as SC_SYSID |
+        |---|---|---|
+        | hi3520v100 | SYSID0..3 reset values from the RDL | 0x35200100 |
+
+        The four 8-bit registers form the 32-bit chip ID (SYSID3 is the most significant byte). The values are the reset values of the register descriptions: one data sheet documents one ID for all chips it covers, so the chips of a shared data sheet are not distinguished here (the real value of each variant is not stated).
+
+        ### Key specifications (data sheet chapter 1 and 3.3; the data sheet is Chinese, translated; Issue 02, 2010-01-19)
+
+        | | Hi3520 V100 |
+        |---|---|
+        | CPU | dual core: ARM1176JZF-S (ARM0, master, up to 600 MHz, 16 KB I + 16 KB D cache, 2 KB ITCM, VFP, MMU) and ARM926EJ-S (ARM1, audio/video service processor, 16 KB I + 16 KB D cache, 2 KB ITCM, MMU); two VICs, 32 interrupt sources each |
+        | DDR | two DDR2 controllers up to 400 MHz: DDR0 16 bit (up to 256 MB) and DDR1 32 bit (up to 512 MB) |
+        | Flash | 8-bit NOR (SMI, 2 chip selects, 32 MB each, NOR boot), 8-bit NAND (SLC/MLC, 1/4/8 bit ECC, up to 8 GB, NAND boot) |
+        | Video codec | H.264 Main/Baseline L3 and JPEG/MJPEG baseline; up to 8 channels D1 real-time; 120 fps D1 enc + 120 fps CIF enc + 120 fps D1 dec at NTSC (100 fps at PAL); dual stream; 3 Mpixel JPEG at 10 fps; CBR/VBR/ABR 16 kbit/s to 20 Mbit/s |
+        | Video input | 4 x BT.656 YCrCb 4:2:2 (8 bit, 27/54/108 MHz), 2 x SMPTE296M/BT.1120 HD, digital camera input up to 1280x1024@30, 1600x1200@20, 2048x1536@10 |
+        | Video output | 2 digital outputs and 6 analog channels: VGA/YPbPr + 1 x CVBS, or 2 x VGA; BT.656/BT.1120/LCD digital output; up to 1920x1080p@30 / 1080i@60 |
+        | Graphics | de-interlace, color/contrast enhancement and denoise, clip/alpha/ROP/colorkey/gamma, scaling up to 16x, OSD overlay, 4 cover regions, anti-flicker, 2D copy/fill |
+        | Audio | 3 I2S interfaces (SIO), each with 16 cascaded 8/16-bit inputs, 8/16/32 bit samples, 8-48 kHz |
+        | Network | one 10/100/1000 Mbit/s Ethernet MAC (RGMII/MII, MDIO, flow control, address filter), no integrated PHY |
+        | Other | PCI 2.3 host or slave bridge (33/66 MHz, up to 5 devices), MMC/SD/SDIO, 2 USB 2.0 host (OHCI + EHCI), I2C, 4 UART (one with RTS/CTS), SPI/SSP, IR, up to 8 GPIO groups, 4 dual timers, watchdog, RTC, AES/DES/3DES with watermarking |
+        | Package | 768-pin FPBGA, 27 x 27 mm, 0.8 mm pitch; 1.6 W typical (DVR use); 90 nm; core 1.0 V, 1.8 V, 3.3 V I/O; -20 to +85 C |
+
+        ### Boot (data sheet 3.3.2.1, Table 3-17)
+
+        The boot mode applies to the ARM1176 only and is selected by pull levels on the pins EBIADR23 and EBIADR24 at reset:
+
+        | EBIADR23 | EBIADR24 | Boot mode |
+        |---|---|---|
+        | pull-down | pull-down | NOR flash (8-bit asynchronous NOR on the SMI interface) |
+        | pull-down | pull-up | DDR |
+        | pull-up | pull-down | NAND flash |
+        | pull-up | pull-up | DDR |
+
+        The ARM926 is the slave processor: it can start only after the ARM1176 has booted. The ARM1176 writes its start program to address 0xC8000000 and releases it by a system-controller register (the high 8 address bits of the boot address are programmable; data sheet 3.3.2.2). Diagram: boot flow.
+
+        ### Memory map notes (data sheet 3.3.2, Figures 3-3 and 3-4; the figures are drawn, addresses read from the text layer)
+
+        * Boot from NOR: SMI chip select 0 at 0x00000000 until the remap is cleared; afterwards 0x00000000 is the 2 KB ITCM (software must keep ITCM code and data within 2 KB and enable ITCM through CP15 first).
+        * Fixed map: NAND flash address space 0x70000000-0x73FFFFFF, SMI chip select 0 at 0x80000000 and chip select 1 at 0x84000000 (32 MB each, also aliased in the boot window), PCI address space 0xB0000000, DDR0 0xC0000000-0xDFFFFFFF, DDR1 0xE0000000-0xFFFFFFFF.
+        * Register windows: NANDC 0x10000000, SMI 0x10010000, MMC 0x10030000, SIO0-2 0x10040000-0x10060000, VIC0/VIC1 0x10070000/0x10080000, GMAC 0x10090000, USB OHCI/EHCI 0x100A0000/0x100B0000, CIPHER 0x100C0000, DMAC 0x100D0000, VDEU0/1 0x100E0000/0x100F0000, VIU 0x10100000; APB 0x20000000-0x201CFFFF (timers, WDG, system controller 0x20050000, RTC, IR, IPCM mailbox for ARM0/ARM1 0x20080000, UARTs, I2C, SPI, IO config 0x200F0000, DDRC0/1, VOU, TDE, GPIO0-7).
+
+        ### DMA request lines (data sheet 3.5, Table 3-23; checked against the RDL DMAC description)
+
+        One DMAC (PL080-style, block DMAC at 0x100D0000, interrupt 15 on the VIC): 8 channels, 16 request lines, second interrupt output for the slave ARM.
+
+        | Line | Peripheral | Line | Peripheral |
+        |---|---|---|---|
+        | 0 | SIO0 RX | 8 | SDIO read |
+        | 1 | SIO0 TX | 9 | SDIO write |
+        | 2 | SIO1 RX | 10 | UART0 RX |
+        | 3 | SIO1 TX | 11 | UART0 TX |
+        | 4 | SIO2 RX | 12 | UART1 RX |
+        | 5 | SIO2 TX | 13 | UART1 TX |
+        | 6 | SPI RX | 14 | UART2 RX |
+        | 7 | SPI TX | 15 | UART2 TX |
+
+        ### Pin multiplexing summary (IO_CONFIG at 0x200F0000)
+
+        Generated from the pin mux registers of this description (register offsets are relative to the block base; the function lists are the value-ordered choices of each register). Pads that repeat a pattern in consecutive registers are merged into one row.
+
+        | Pads | Mux register (offset from 0x200F0000) | Function choices (value 0, 1, ...) |
+        |---|---|---|
+        | VI0HS | reg0 @0x000 | 0=VI0HS / 1=URXD2 / 2=GPIO1_3 |
+        | VI0VS | reg1 @0x004 | 0=VI0VS / 1=UTXD2 / 2=GPIO1_4 |
+        | VI0DAT0 ... VI0DAT7 (8) | reg2 ... reg9 @0x008 ... 0x024 | 0=VI0DAT0 / 1=VOUDAT8 (first pad; others the same pattern with the pad's own number) |
+        | VI1DAT0 ... VI1DAT7 (8) | reg10 ... reg17 @0x028 ... 0x044 | 0=VI1DAT0 / 1=GPIO4_0 / 2=VOUDAT0 (first pad; others the same pattern with the pad's own number) |
+        | VI2HS | reg18 @0x048 | 0=VI2HS / 1=URXD3 / 2=GPIO3_4 |
+        | VI2VS | reg19 @0x04C | 0=VI2VS / 1=UTXD3 / 2=GPIO3_5 |
+        | VI2DAT0 ... VI3DAT7 (16) | reg20 ... reg35 @0x050 ... 0x08C | 0=VI2DAT0 / 1=GPIO5_0 (first pad; others the same pattern with the pad's own number) |
+        | VO0CK | reg36 @0x090 | 0=GPIO1_5 / 1=VO0CK / 2=VORDAT0 |
+        | VO0DAT0 ... VO0DAT6 (7) | reg37 ... reg43 @0x094 ... 0x0AC | 0=GPIO2_0 / 1=VO0DAT0 / 2=VORDAT1 (first pad; others the same pattern with the pad's own number) |
+        | VO0DAT7 | reg44 @0x0B0 | 0=GPIO2_7 / 1=VO0DAT7 / 2=VOGDAT0 |
+        | VO1CK | reg45 @0x0B4 | 0=GPIO7_2 / 1=VO1CK / 2=SDIOCK |
+        | VO1DAT0 | reg46 @0x0B8 | 0=VGA1HS / 1=VO1DAT0 |
+        | VO1DAT1 | reg47 @0x0BC | 0=VGA1VS / 1=VO1DAT1 |
+        | VO1DAT2 | reg48 @0x0C0 | 0=SDIOCMD / 1=VO1DAT2 / 2=VOGDAT1 |
+        | VO1DAT3 ... VO1DAT6 (4) | reg49 ... reg52 @0x0C4 ... 0x0D0 | 0=SDIODAT0 / 1=VO1DAT3 / 2=VOGDAT2 (first pad; others the same pattern with the pad's own number) |
+        | VO1DAT7 | reg53 @0x0D4 | 0=GPIO1_6 / 1=VO1DAT7 / 2=VOGDAT6 |
+        | VO1DAT8 | reg54 @0x0D8 | 0=SPICK / 1=VO1DAT8 / 2=VOGDAT7 |
+        | VO1DAT9 | reg55 @0x0DC | 0=SPIDI / 1=VO1DAT9 / 2=VOBDAT0 |
+        | VO1DAT10 | reg56 @0x0E0 | 0=SPIDO / 1=VO1DAT10 / 2=VOBDAT1 |
+        | VO1DAT11 ... VO1DAT12 (2) | reg57 ... reg58 @0x0E4 ... 0x0E8 | 0=SPICSN0 / 1=VO1DAT11 / 2=VOBDAT2 (first pad; others the same pattern with the pad's own number) |
+        | VO1DAT13 | reg59 @0x0EC | 0=GPIO7_4 / 1=VO1DAT13 / 2=VOBDAT4 / 3=VGA0HS |
+        | VO1DAT14 | reg60 @0x0F0 | 0=GPIO7_5 / 1=VO1DAT14 / 2=VOBDAT5 / 3=VGA0VS |
+        | VO1DAT15 | reg61 @0x0F4 | 0=GPIO1_7 / 1=VO1DAT15 / 2=VOBDAT6 |
+        | GPIO3_0 | reg62 @0x0F8 | 0=GPIO3_0 / 1=VOBDAT7 |
+        | SDA | reg63 @0x0FC | 0=SDA / 1=GPIO0_0 |
+        | SCL | reg64 @0x100 | 0=SCL / 1=GPIO0_1 |
+        | SIO0XFS | reg65 @0x104 | 0=SIO0XFS / 1=GPIO0_2 |
+        | SIO0XCK | reg66 @0x108 | 0=SIO0XCK / 1=GPIO0_3 |
+        | ACKOUT | reg67 @0x10C | 0=GPIO0_4 / 1=ACKOUT |
+        | SIO2DI | reg68 @0x110 | 0=GPIO0_5 / 1=SIO2DI / 2=SIO1DO |
+        | SIO2RFS | reg69 @0x114 | 0=GPIO0_6 / 1=SIO2RFS / 2=SIO1XFS |
+        | SIO2RCK | reg70 @0x118 | 0=GPIO0_7 / 1=SIO2RCK / 2=SIO1XCK |
+        | SMICS1N | reg71 @0x11C | 0=GPIO3_2 / 1=SMICS1N |
+        | NFCS1N | reg72 @0x120 | 0=GPIO3_3 / 1=NFCS1N |
+        | NFRB | reg73 @0x124 | 0=NFRB / 1=GPIO3_1 |
+        | EBIRDYN | reg74 @0x128 | 0=EBIRDYN / 1=IRRCV |
+        | GTCLKOUT | reg75 @0x12C | 0=GPIO1_0 / 1=GTCLKOUT |
+        | GCOL | reg76 @0x130 | 0=GCOL / 1=GPIO1_1 |
+        | GCRS | reg77 @0x134 | 0=GCRS / 1=GPIO1_2 |
+        | PCIREQ3N ... PCIREQ4N (2) | reg78 ... reg79 @0x138 ... 0x13C | 0=GPIO3_6 / 1=PCIREQ3N (first pad; others the same pattern with the pad's own number) |
+        | PCIGRANT3N ... PCIGRANT4N (2) | reg80 ... reg81 @0x140 ... 0x144 | 0=GPIO7_0 / 1=PCIGRANT3N (first pad; others the same pattern with the pad's own number) |
+        | VORGBDV | reg82 @0x148 | 0=GPIO7_3 / 1=VORGBDV |
+
+        Pad drive-strength and pull controls are in the separate pad control registers of the same description (not repeated here).
+
+        ### Power, reset and system modes (data sheet 3.1, 3.2, 3.3)
+
+        * Resets: npor from the RSTN pin (low pulse above 12 XIN24 cycles, crystal stable); PCIRSTN from the PCI pin resets only the PCI block while the chip is a PCI slave; global soft reset from the system controller (at least 360 system clock cycles); per-module soft resets from the system controller. USB 2.0 host PHY and controller, MMC, ETH, VI, VO and RTC are held in reset after power-on and need their reset released before use. Diagram: reset tree.
+        * System modes (SC_CTRL sysmode): NORMAL (ARMPLL on, ARM subsystem on the PLL), SLOW (PLL off, 24 MHz crystal), DOZE (PLL off, 45 kHz divided clock), SLEEP (everything stopped except the system controller and IR at 45 kHz). ARM clock mode after power-on is the crystal (sysmode 0xB).
+        * PLL changes only in SLOW mode, PLL stable 0.1 ms after the change and never switch to PLL mode before it is stable.
+        * The data sheet has no separate power-domain table.
+
+        ### Clock-gate map (generated from the system controller registers)
+
+        Each peripheral clock has an enable bit in PEREN (SC_PEREN, offset 0x24) and the matching disable bit in PERDIS (SC_PERDIS, offset 0x28); writing 1 to a bit in PEREN enables the clock, writing 1 to the same bit in PERDIS disables it; the state is read back in PERCLKEN (SC_PERCLKEN).
+
+        | Bit | Clock enable field | Gated module |
+        |---|---|---|
+        | 2 | cipherclken | CIPHER |
+        | 3 | smiclken | SMI |
+        | 4 | uart0clken | UART0 |
+        | 5 | uart1clken | UART1 |
+        | 6 | uart2clken | UART2 |
+        | 7 | uart3clken | UART3 |
+        | 8 | sio0clken | SIO0 |
+        | 9 | sio1clken | SIO1 |
+        | 10 | sio2clken | SIO2 |
+        | 11 | irclken | IR |
+        | 12 | ipcmclken | IPCM |
+        | 13 | pciclken | PCI |
+        | 14 | mmcclken | MMC |
+        | 15 | tdeclken | TDE |
+        | 16 | vibusclken | VIBUS |
+        | 17 | vi0clken | VI0 |
+        | 18 | vi1clken | VI1 |
+        | 19 | vi2clken | VI2 |
+        | 20 | vi3clken | VI3 |
+        | 21 | ethclken | ETH |
+        | 22 | usbclken | USB |
+        | 23 | vobusclken | VOBUS |
+        | 24 | vosdclken | VOSD |
+        | 25 | vohdclken | VOHD |
+        | 26 | voadclken | VOAD |
+        | 27 | nandcclken | NANDC |
+        | 28 | arm9clken | ARM9 |
+        | 29 | sspclken | SSP |
+        | 30 | vdac0clken | VDAC0 |
+        | 31 | vdac1clken | VDAC1 |
+
+        Per-module soft resets and the ARM/IP clock frequency selects are in SC_PERCTRLn / PERIPHCTRLn (see the register pages and the clock tree diagram).
 
         ### Interrupts (VIC0 source numbers, data sheet Table 3-20; the data sheet is Chinese, names translated)
 
