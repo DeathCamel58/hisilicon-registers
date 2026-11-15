@@ -119,7 +119,121 @@ addrmap hi3516ev300 {
 
         ### Diagrams
 
+        ![Logic block diagram](assets/diagrams/hi3516ev300-logic.svg)
+
         ![Register blocks by function](assets/diagrams/hi3516ev300-blocks.svg)
+
+        ![Clock tree](assets/diagrams/hi3516ev300-clocks.svg)
+
+        ![Boot flow](assets/diagrams/hi3516ev300-boot.svg)
+
+        ![Video pipeline](assets/diagrams/hi3516ev300-video.svg)
+
+        ![Reset tree](assets/diagrams/hi3516ev300-resets.svg)
+
+        ![Storage, USB and Ethernet paths](assets/diagrams/hi3516ev300-io.svg)
+
+        ![DMA request lines](assets/diagrams/hi3516ev300-dma.svg)
+
+        ![Bus masters and DDR QoS groups](assets/diagrams/hi3516ev300-busqos.svg)
+
+        ![Power domains](assets/diagrams/hi3516ev300-power.svg)
+
+        ### Variants and key specifications (data sheet chapter 1; brief data sheets for the siblings)
+
+        The register map of this folder covers the Hi3516E V300. The family siblings with brief data sheets only are the Hi3516E V200 and the Hi3518E V300 (folder hi3516ev200); the vendor SDK also names a Hi3516D V200 (INFERRED sibling, no data sheet). The chip ID register (SYS_CTRL 0xEE0) reads 0x3516E300 here (vendor module value, not hardware-read).
+
+        | | Hi3516E V300 (this chip) | Hi3516E V200 (brief sheet) | Hi3518E V300 (brief sheet) |
+        |---|---|---|---|
+        | CPU | Cortex-A7 up to 900 MHz, NEON + FPU, 32 KB I + 32 KB D L1, 128 KB L2, one core | same | same |
+        | DDR | built-in 1 Gbit DDR3L, 16-bit, 1.35 V | built-in 512 Mbit DDR2, 16-bit, 1.8 V | built-in 512 Mbit DDR2, 16-bit |
+        | Video encode | H.264 BP/MP/HP, H.265 MP, MJPEG/JPEG; up to 2688 x 1520 or 2592 x 1944; 2048 x 1536@30 + 720 x 576@30, 2688 x 1520@15 + 720 x 576@15; JPEG 4M@5 / 5M@5; 8 ROIs; up to 60 Mbit/s | same codecs; up to 2304 x 1296; 2048 x 1536@20, 1920 x 1080@30; JPEG 3M@5 | same as V200 |
+        | Video input | 8/10/12-bit Bayer DC timing, BT.1120, MIPI, LVDS / sub-LVDS, HiSPi; up to 2688 x 1520 | same interfaces; up to 2304 x 1296 | same as V200 |
+        | Video output | 6/8/16-bit LCD, BT.656 / BT.1120 | 6/8-bit LCD, BT.656 / BT.1120 | 6/8-bit LCD, BT.656 |
+        | Audio | integrated codec 16-bit, 2-channel MIC / line-in, 2-channel line-out, I2S | mono MIC / line-in, mono line-out, I2S | dual MIC / line-in, mono line-out, I2S |
+        | Storage and network | SPI NOR (256 MB max), SPI NAND (1 GB max), eMMC 5.0 4/8-bit; 2 x SDIO 2.0; USB 2.0 host / device; FE PHY with TSO | NOR, NAND, eMMC 4.5 4-bit; 1 x SDIO 2.0 + 1 x SD 2.0; USB 2.0; FE PHY with TSO | same as V200 |
+        | Peripherals | RTC, POR, 4-channel LSADC, 3 UART, I2C, SPI, GPIO, 4 PWM, PMC standby unit | RTC, POR, 2-channel LSADC, 3 UART, I2C, SPI, GPIO, 4 PWM | same as V200 |
+        | Security | AES, RSA, SHA1/SHA256/HMAC, 32 kbit OTP, TRNG, secure boot | same | same |
+        | Package | TFBGA 12 x 13.3 mm, 279 balls, 0.65 mm pitch | QFN 9 x 9 mm, 88 pins, 0.35 mm pitch | QFN 9 x 9 mm, 88 pins |
+        | Power | core 0.9 V, I/O 3.3 V, DDR3L 1.35 V; 1 W typical (3M30 / 4M15) | core 0.9 V, I/O 3.3 V, SDRAM 1.8 V; 700 mW typical (1080P30 / 3M20) | same as V200 |
+
+        Common to all three: ISP with 3A, WDR (sensor built-in, 2F line / frame), DPC, LSC, LDC, local tone mapping, BayerNR + 3DNR, DIS, 4 x 4 RGB-IR; VPSS with VGS (3DNR, scaling 1/15x to 16x, rotation, mirror, 8-region OSD); IVE; audio 3A in software. The SDK is a LiteOS / Linux 4.9 package.
+
+        ### Boot (data sheet 1.4)
+
+        The BOOTROM runs after reset release. BOOT_SEL1 (power-on latch of pin LCD_CLK) and BOOT_SEL0 (latch of pin LCD_DE) are readable in SYS_CTRL SYSSTAT[5:4]; UPDATE_MODE is the level of GPIO0_0 at start (0 = key pressed).
+
+        | UPDATE_MODE | BOOT_SEL1 | BOOT_SEL0 | Mode |
+        |---|---|---|---|
+        | 1 | 0 | 0 | boot from SPI NOR or SPI NAND |
+        | 1 | 0 | 1 | boot from eMMC |
+        | 1 | 1 | 0 | serial-port burn of SPI NOR / NAND images |
+        | 1 | 1 | 1 | serial-port burn of eMMC images |
+        | 0 | X | 0 | upgrade SPI NOR / NAND from SD card (SDIO0 only) or USB |
+        | 0 | X | 1 | upgrade eMMC from SD card (not possible when booting from eMMC) or USB |
+
+        Secure boot: SYSSTAT[31] (from the OTP secure-boot flag) selects signature verification of U-Boot.
+
+        ### DMA request lines (data sheet 3.6.3.1, Table 3-8)
+
+        One DMAC with four channels (see the DMAC block above); memory-to-memory transfers use no request line. The request line IDs are:
+
+        | ID | Peripheral | ID | Peripheral | ID | Peripheral |
+        |---|---|---|---|---|---|
+        | 0 | I2C0 RX | 16 | UART0 RX | 26 | SPI0 RX |
+        | 1 | I2C0 TX | 17 | UART0 TX | 27 | SPI0 TX |
+        | 2 | I2C1 RX | 18 | UART1 RX | 28 | SPI1 RX |
+        | 3 | I2C1 TX | 19 | UART1 TX | 29 | SPI1 TX |
+        | 4 | I2C2 RX | 20 | UART2 RX | 6-15, 22-25, 30-31 | reserved |
+        | 5 | I2C2 TX | 21 | UART2 TX | | |
+
+        ### Pinmux function summary (VENDOR-DERIVED, INFERRED)
+
+        The data sheet has no pin chapter (pins are in a separate pinout document, not in the workspace). The three pad banks (IO config ahb 0x100C0000, core 0x120C0000, vio 0x112C0000) hold one 32-bit word per pad, offset / 4 = pad index. Field layout [3:0] function, [7:4] drive, [8] pull-up, [9] pull-down, [10] slew is INFERRED from U-Boot pad code. Functions used by the vendor pinmux tables (sys_config):
+
+        | Function | Bank and pad offsets | Note |
+        |---|---|---|
+        | VI (MIPI / raw / BT.656), sensor input | vio 0x00 - 0x64 | pad function 0 = GPIO / MIPI mode, 2 / 3 = VI CMOS (vendor values) |
+        | Sensor clock and reset | vio 0x28, 0x2C | function 1 (sensor clock out) |
+        | I2C0 | vio 0x30, 0x34 | |
+        | I2C2 | vio 0x38, 0x3C | |
+        | I2C1 | ahb 0x0C, 0x10 | |
+        | SPI0 | vio 0x9C, 0xA0, 0xA4 | |
+        | SPI1 | ahb 0x84 - 0x90 | |
+        | VO: BT.1120 / BT.656 / LCD | vio 0x48 - 0x94 | |
+        | I2S | core 0x10 - 0x20 | |
+        | LSADC | core 0x00, 0x04 | |
+        | IR input | ahb 0x08 | |
+        | PWM3 / GPIO9_1 | ahb 0xA0 | |
+        | eMMC | ahb 0x14 - 0x5C | |
+        | SDIO0 | ahb 0x40 - 0x54 | |
+
+        ### Power and reset domains (data sheet 2.5.3, 3.1, 3.10)
+
+        * Always-on area: PMC (0x120F0000) and the RTC. The PMC runs from the 32.768 kHz RTC clock and needs the RTC crystal and AVDD_BAT. It controls the external supply sequencer (PWR_SEQ) that powers the rest of the chip on and off; features: wakeup polarity, power-on / off timing, RTC timed power-on, forced power-on by holding PWR_BUTTON for 10.2 s. Pins PWR_WAKEUP, PWR_STARTUP, PWR_BUTTON and PWR_RSTN; without the PMC, PWR_RSTN gets an RC reset and the others float.
+        * Supply rails (Table 2-13): AVDD33_PLL, AVDD33_USB2, AVDD33_AC, AVDD33_FE 3.3 V; AVDD_BAT 1.6 - 3.6 V; DVDD33 (JTAG / LSADC / LCD); DVDD3318_PC, DVDD3318_SENSOR, DVDD3318_FLASH (SFC / SDIO0 / PWM / UART0 / SYS), DVDD3318_VIVO (LCD) each 1.8 or 3.3 V; AVDD3318_MIPIRX 1.8 V (3.3 V when the MIPI pads are single-ended); VDDIO_DDR 1.35 V; core 0.9 V.
+        * Low-power measures: clock gating and frequency scaling, module low-power control, DDR self-refresh / low-power control, adaptive voltage scaling.
+        * Reset: POR (internal, low pulse over 12 XIN cycles), watchdog reset and the global soft reset (SC_SYSRES, protected by SC_LOCKEN) are system resets; every block has its own soft-reset bit in the CRG. After a global soft reset request the circuit stays reset at least 360 system clocks and no second request may come within that time; per-block resets are held until software clears the bit.
+
+        ### Clock selections (data sheet Table 3-2)
+
+        | Module | Default | Selectable |
+        |---|---|---|
+        | A7 | 24 MHz | 24, 600, 900 MHz |
+        | DDR | 24 MHz | 24, 300, 450 MHz |
+        | SYSAXI / SYSCFG / SYSAPB | 24 MHz | 200 / 100 / 50 MHz |
+        | VPSS, VIPROC | 257 MHz | 75, 100, 150, 200, 257 MHz |
+        | VICAP / MIPI pixel | 360 MHz | 75, 100, 150, 200, 257, 300 (offline only), 360 (offline only) MHz |
+        | IVE | 450 MHz | 100, 300, 360, 450 MHz |
+        | FMC | 24 MHz | 24, 100, 150, 200, 300 and 360 (both DDR mode only) MHz |
+        | eMMC / SDIO0 | 100 kHz | 100 kHz, 400 kHz, 25, 50 MHz; 90, 112.5, 150 MHz (eMMC mode only) |
+        | SDIO1 | 100 kHz | 100 kHz, 400 kHz, 25, 50 MHz |
+
+        PLL formula (Table 3-4): FOUTVCO = 24 MHz x (fbdiv + frac / 2^24) / refdiv, valid between 800 MHz and 3.2 GHz; FOUTPOSTDIV = FOUTVCO / (pstdiv1 x pstdiv2), pstdiv1 >= pstdiv2. Reconfigure only after switching the consumers to a non-PLL clock, then wait 0.1 ms and poll the lock bits (PERI_CRG_PLL122).
+
+        ### Bus matrix
+
+        The data sheet does not tabulate the interconnect. What exists is the DDR QoS group per master (3 bits, MISC_CTRL32-34 write and MISC_CTRL36-38 read, masters: CPU, DMAC, SPACC, FMC, USB, SDIO0, SDIO1, ETH, VDP, VICAP, VIPROC, JPGE, VEDU, VPSS, IVE / DDRT, VGS / GZIP, AIAO) and the media bus port priorities (MISC_CTRL28: VPSS port 0, VEDU port 1, JPGE port 2). See the bus diagram above. Which master sits on which DDRC AXI port is not stated.
 
         ### Clock-gate and reset map (generated from the CRG registers)
 
