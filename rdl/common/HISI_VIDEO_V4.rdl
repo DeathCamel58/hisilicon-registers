@@ -97,63 +97,283 @@ regfile eVEDU_V4 {
 `define HISI_JPGE_V4_RDL
 
 regfile eJPGE_V4 {
-    name = "JPGE (JPEG encoder) control registers, V4";
-    desc = "JPGE window 0x11420000 (0x10000), SPI 48. Hi3516E V200 / V300 (V4 generation, same SDK object set for EV200/EV300/Hi3518E V300/Hi3516D V200). Provenance: PROVEN = a load/store offset or bit operation in a named function of the disassembled vendor module (build/tmp/ev200/dis, toolchain objdump) with the module and function given per register; INFERRED = deduced from naming, the ev300 qemu-bench research or call structure; GUESS = plausible only. Subset: only registers visible in the HAL/driver control path; configuration images in DDR are not MMIO. Hardware not read. ";
+    name = "JPGE (JPEG encoder) registers, V4";
+    desc = "JPGE window 0x11420000 (0x10000; the vendor window is 3088 bytes), SPI 48 (data sheet interrupt number 80). Hi3516E V200 and V300 (same SDK object set; the E V200 and E V300 OpenIPC images carry identical code). Layout: a restructured relative of the V2 (r004) block: status 0/4/8/C and the 64-byte stream packet descriptor are shared, START 0x2C, PICFG 0x30, IMGSIZE 0x34, ECS 0x40, source addresses 0x200.., stream addresses 0x210.., PTS 0x320, quantization reciprocals 0x800.. . The registers are MMIO written directly by the vendor jpege module (no DDR configuration image: no module other than vedu.ko maps the window, vedu.ko only hands out its base, and no address register for an image exists). Provenance: PROVEN = a load/store offset, bit operation or value of the vendor code in hi3516ev200_jpege.ko (Hi3516EV200_MPP_V1.0.1.0 B050 / V1.0.1.2 B030; the OpenIPC open_jpege.ko of the EV200 and EV300 images has identical code) (jpege_drv_write_regs, jpege_update_vpu_config, jpege_drv_set_quant_table, jpege_drv_read_regs, jpege_drv_set_osd) and hi3516ev200_vedu.ko (JPGE_*), including the values produced by running the vendor writer under qemu-arm on a RAM stand-in. Emulation = the vendor function run under qemu-arm on a RAM stand-in for the window (scripts/tools/jpge-v4-static, docs/research/jpge-v4-static-analysis-2026-11-23.md). INFERRED = deduced from names, the V2 block or the call structure. No register was read from silicon; no reset values are known (no VERSION register found in the vendor code).";
 
     reg {
         name = "Interrupt status";
-        desc = "STATUS [PROVEN] hi3516ev200_vedu.ko JPGE_DRV_ReadInt / JPGE_DRV_GetIsIntOk (ldr [base+0]; bit 0 end of picture, bit 1 and bit 7 also tested). Hardware not read.";
+        desc = "[PROVEN] vedu.ko JPGE_DRV_ReadInt (ldr [base+0]), JPGE_DRV_GetIsIntOk (bits 0, 1, 7, 5 tested in that order: any set = job ended). Same position as the V2 INTSTAT. Hardware not read.";
         field { name = "end_of_pic"; desc = "End of picture. [PROVEN]"; } end_of_pic[0:0];
-        field { name = "int_bit1"; desc = "Tested by JPGE_DRV_GetIsIntOk. [PROVEN]"; } int_bit1[1:1];
-        field { name = "int_bit7"; desc = "Tested by JPGE_DRV_GetIsIntOk. [PROVEN]"; } int_bit7[7:7];
-    } STATUS @ 0x0;
+        field { name = "buf_full"; desc = "Stream buffer full (jpege.ko jpege_drv_read_regs reports bit 1 as the buffer-full flag; the V2 meaning). [PROVEN code, meaning INFERRED from the V2 block]"; } buf_full[1:1];
+        field { name = "int_bit5"; desc = "Tested by GetIsIntOk and jpege_drv_read_regs; error class (the module logs it as an error); name unknown, probably the ring/line interrupt of the low-delay mode. [INFERRED]"; } int_bit5[5:5];
+        field { name = "int_bit7"; desc = "Tested by GetIsIntOk and jpege_drv_read_regs; error class; enabled only in the low-delay mode (INT_EN 0xA1). [INFERRED]"; } int_bit7[7:7];
+    } INT_STATUS @ 0x0;
 
     reg {
         name = "Interrupt enable";
-        desc = "INT_EN [PROVEN] hi3516ev200_vedu.ko JPGE_DRV_IntEn: writes 0x3 with bit 6 cleared. Hardware not read.";
-        field { name = "en"; desc = "Driver value 0x03. [PROVEN]"; } en[6:0];
+        desc = "[PROVEN] vedu.ko JPGE_HAL_Init -> JPGE_DRV_IntEn writes 0x03 (bit 6 cleared); jpege.ko jpege_drv_write_regs writes 0x01 for every picture (emulation: 0x01), 0xA1 when the channel context flag ctx+0x1e38 is 1 (low-delay mode, INFERRED name). Hardware not read.";
+        field { name = "en"; desc = "Interrupt enables, same bit positions as INT_STATUS. [PROVEN]"; } en[7:0];
     } INT_EN @ 0x4;
 
     reg {
+        name = "Raw interrupt status";
+        desc = "[PROVEN] jpege.ko jpege_drv_read_regs (called with the register base): ldr [base+8], bits 0, 1, 5, 7 reported; JPGE_DRV_IsNeedReset reads it for the error decision. V2 position. Hardware not read.";
+        field { name = "value"; desc = "Whole register; bits as INT_STATUS."; } value[31:0];
+    } RAW_INT @ 0x8;
+
+    reg {
         name = "Interrupt clear";
-        desc = "CLEAR [PROVEN] JPGE_DRV_ClearInt / ClearErrInt: str 0xFFFFFFFF -> [base+0xc]. Hardware not read.";
+        desc = "[PROVEN] JPGE_DRV_ClearInt writes 0xFFFFFFFF, JPGE_DRV_ClearErrInt writes 0xFFFFFFFC (clears everything except bits 1:0). Write 1 to clear is INFERRED from the V2 block.";
         field { name = "value"; desc = "Whole register."; } value[31:0];
-    } CLEAR @ 0xC;
+    } INT_CLR @ 0xC;
+
+    reg {
+        name = "Clip threshold";
+        desc = "[INFERRED] jpege_drv_write_regs: [7:0] = staging +0x80, bit 8 = staging +0x7c; the staging words are not written by jpege_update_vpu_config (left from the pic parameters). Same offset as the V2 CLIP_THR. Emulation shows the register stays 0 for default jobs.";
+        field { name = "thr"; desc = "Threshold. [INFERRED]"; } thr[7:0];
+        field { name = "en"; desc = "Enable. [INFERRED]"; } en[8:8];
+    } CLIP @ 0x24;
+
+    reg {
+        name = "Constant written per picture";
+        desc = "[PROVEN write] jpege_drv_write_regs stores the constant 0x00026DAD on every picture (emulation). Meaning unknown (clock-gate / timing constant). Hardware not read.";
+        field { name = "value"; desc = "Constant 0x00026DAD."; } value[31:0];
+    } UNK_28 @ 0x28;
 
     reg {
         name = "Start";
-        desc = "START [PROVEN] JPGE_DRV_StartVpu: str -> [base+0x2c]. Hardware not read.";
-        field { name = "value"; desc = "Whole register."; } value[31:0];
+        desc = "[PROVEN] JPGE_DRV_StartVpu: str 0, str 1 (V2 START was at 0x1C, V4 moved it to 0x2C). Preceded by dmb in JPGE_StartVpu. Hardware not read.";
+        field { name = "start"; desc = "Write 0 then 1 to start the picture. [PROVEN]"; } start[0:0];
     } START @ 0x2C;
 
     reg {
-        name = "Timer mode";
-        desc = "TIMER_MODE [PROVEN] JPGE_DRV_SetTimerMode: read-modify-write [base+0x30]. Hardware not read.";
-        field { name = "value"; desc = "Whole register."; } value[31:0];
-    } TIMER_MODE @ 0x30;
+        name = "Picture configuration";
+        desc = "[PROVEN code + emulation] jpege_drv_write_regs composes it per picture (emulation matrix: format code 0/1/2/3, mode flags); JPGE_DRV_SetTimerMode read-modify-writes bit 16 (the old RDL called the whole register TIMER_MODE). Hardware not read. The per-picture write clears bits 16 and 18, i.e. it switches the hardware timer mode off again after JPGE_HAL_Init set it.";
+        field { name = "src_mode"; desc = "3 when the context flag stg+0xb4c is non-zero, else 0; meaning unknown. [PROVEN value, INFERRED meaning]"; } src_mode[1:0];
+        field { name = "osd_en"; desc = "Read-modify-write: set when an OSD region list is attached (stg+0x220 != 0), cleared otherwise. [PROVEN code, INFERRED meaning]"; } osd_en[2:2];
+        field { name = "yuv_fmt"; desc = "Input chroma code: 0 = semi-planar 4:2:0 (pixel format 26), 1 = semi-planar 4:2:2 (25); 3 (4:0:0 gray, pixel format 40) is written as 0 here with bit 19 set. [PROVEN code, format names INFERRED from the SDK pixel-format enum]"; } yuv_fmt[4:3];
+        field { name = "chn_id"; desc = "Channel id (stg+0). [PROVEN]"; } chn_id[15:8];
+        field { name = "timer_mode"; desc = "Timer mode bit: JPGE_HAL_Init sets it, every jpege_drv_write_regs clears it. [PROVEN]"; } timer_mode[16:16];
+        field { name = "bit18"; desc = "Cleared every picture (V2 PICFG bit 18 = hardware timeout enable). [PROVEN code, INFERRED meaning]"; } bit18[18:18];
+        field { name = "gray_or_mode"; desc = "Set for 4:0:0 input and when stg+0xb40 == 1 (V2 PICFG bit 19 = roundEn). [PROVEN code, INFERRED meaning]"; } gray_or_mode[19:19];
+        field { name = "const_20"; desc = "Constant 1 in every emulated job. [PROVEN]"; } const_20[27:20];
+    } PICFG @ 0x30;
+
+    reg {
+        name = "Picture size";
+        desc = "[PROVEN code + emulation] jpege_drv_write_regs: low half = width - 1, high half = height - 1 (16-bit fields; the V2 IMGSIZE has 13-bit fields at 0x20). Hardware not read.";
+        field { name = "width_m1"; desc = "Picture width - 1. [PROVEN]"; } width_m1[15:0];
+        field { name = "height_m1"; desc = "Picture height - 1. [PROVEN]"; } height_m1[31:16];
+    } IMGSIZE @ 0x34;
 
     reg {
         name = "Power mode";
-        desc = "POWER_MODE [PROVEN] JPGE_DRV_SetPowerMode: str [base+0x3c]. Hardware not read.";
+        desc = "[PROVEN] JPGE_DRV_SetPowerMode (JPGE_HAL_Init with g_jpge_power_save_en): str [base+0x3c], value = mode in [1:0] and bit 2. Hardware not read.";
+        field { name = "mode"; desc = "Power-save mode. [PROVEN]"; } mode[1:0];
+        field { name = "mode_b2"; desc = "Copy of mode bit 0. [PROVEN]"; } mode_b2[2:2];
+    } POWER @ 0x3C;
+
+    reg {
+        name = "Restart interval (entropy-coded segment)";
+        desc = "[PROVEN code + emulation] jpege_update_vpu_config (staging +0x98/+0x9c from the channel MCUs-per-ECS value ctx+0x40) and jpege_drv_write_regs; same function as the V2 ECSCFG at 0x14 but fields at other positions. Enabled only when the interval is smaller than the MCU count of the picture. The vendor module allows an interval up to 65535 MCUs (jpege_check_param). Whether the hardware writes the RSTn markers is INFERRED from the V2 board test (Hi3536D). Hardware not read.";
+        field { name = "ecs_split"; desc = "Restart interval enable. [PROVEN]"; } ecs_split[0:0];
+        field { name = "ecs_size_m1"; desc = "MCUs per segment - 1 (20 bits). [PROVEN]"; } ecs_size_m1[23:4];
+    } ECSCFG @ 0x40;
+
+    reg {
+        name = "Written 0";
+        desc = "[PROVEN write] jpege_drv_write_regs stores 0 every picture. Unknown (V2 0x44 = SRPTRADDR).";
         field { name = "value"; desc = "Whole register."; } value[31:0];
-    } POWER_MODE @ 0x3C;
+    } UNK_44 @ 0x44;
+
+    reg {
+        name = "Written 0";
+        desc = "[PROVEN write] jpege_drv_write_regs stores 0 every picture. Unknown (V2 0x48 = SWPTRADDR).";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } UNK_48 @ 0x48;
+
+    reg {
+        name = "Constant 0x000FFFFF";
+        desc = "[PROVEN write] jpege_drv_write_regs stores 0x000FFFFF every picture (V2 0x4C = STRMBUFLEN, where the real length is in 0x60 here). Hardware not read.";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } UNK_4C @ 0x4C;
 
     reg {
         name = "AXI outstanding";
-        desc = "OUTSTANDING [PROVEN] JPGE_DRV_SetOutstanding: read-modify-write [base+0x50]. Hardware not read.";
-        field { name = "value"; desc = "Whole register."; } value[31:0];
+        desc = "[PROVEN] JPGE_DRV_SetOutstanding: read-modify-write, [3:0] cleared, then bits [7:4] set to 0xF. Hardware not read.";
+        field { name = "rd_ostd"; desc = "Cleared by the vendor code. [PROVEN]"; } rd_ostd[3:0];
+        field { name = "wr_ostd"; desc = "Set to 0xF by the vendor code. [PROVEN]"; } wr_ostd[7:4];
     } OUTSTANDING @ 0x50;
 
     reg {
-        name = "Reset request";
-        desc = "RESET [PROVEN] JPGE_DRV_ResetRequest: read-modify-write [base+0x68]. Hardware not read.";
+        name = "Constant 0x5AAB249C";
+        desc = "[PROVEN write] stored every picture (emulation). Unknown.";
         field { name = "value"; desc = "Whole register."; } value[31:0];
+    } UNK_58 @ 0x58;
+
+    reg {
+        name = "Constant 0x22A2A20D";
+        desc = "[PROVEN write] stored every picture (emulation). Unknown.";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } UNK_5C @ 0x5C;
+
+    reg {
+        name = "Stream buffer length";
+        desc = "[PROVEN source, INFERRED meaning] written from the stream ring object size (ctx+0x1c4 -> +8, copied by jpege_update_vpu_config to staging +0x60; emulation). The module requires a multiple of 64 and 8-byte aligned addresses (log 'line 992').";
+        field { name = "value"; desc = "Size in bytes."; } value[31:0];
+    } STRM_LEN @ 0x60;
+
+    reg {
+        name = "Low-delay control";
+        desc = "[PROVEN code, INFERRED meaning] jpege_drv_write_regs: bit 1 set when ctx+0x1e38 == 1 and ctx+0x1e58 != 0, else 0 (emulation).";
+        field { name = "lowdly_en"; desc = "Low-delay input enable. [INFERRED]"; } lowdly_en[1:1];
+    } LOWDLY_CTRL @ 0x64;
+
+    reg {
+        name = "Reset request";
+        desc = "[PROVEN] JPGE_DRV_ResetRequest: read-modify-write, bit 0 set; JPGE_Reset then polls BUS_IDLE (100000 x udelay) and pulses the CRG soft reset through the SYS module. Hardware not read.";
+        field { name = "rst_req"; desc = "Reset request. [PROVEN]"; } rst_req[0:0];
     } RESET @ 0x68;
 
     reg {
-        name = "Bus idle";
-        desc = "BUS_IDLE [PROVEN] JPGE_DRV_ReadBusIdleFlag: ldr [base+0xc0c] polled with osal_udelay. Hardware not read.";
+        name = "Low-delay line window A";
+        desc = "[PROVEN code + emulation, INFERRED meaning] low-delay mode only: = LOWDLY_70 when ctx+0x1e5c == 0, else (lines - 48, chroma lines - 24).";
+        field { name = "luma_lines"; desc = "Luma lines. [INFERRED]"; } luma_lines[31:16];
+        field { name = "chroma_lines"; desc = "Chroma lines = luma lines / 2 for 4:2:0 and 4:2:2 formats 26/29 (emulation). [INFERRED]"; } chroma_lines[15:0];
+    } LOWDLY_6C @ 0x6C;
+
+    reg {
+        name = "Low-delay line window B";
+        desc = "[PROVEN code + emulation, INFERRED meaning] low-delay mode only: high half = ctx+0x1e58, low half = half of it for the 4:2:0 formats; written 0 outside the low-delay mode.";
+        field { name = "luma_lines"; desc = "Luma lines. [INFERRED]"; } luma_lines[31:16];
+        field { name = "chroma_lines"; desc = "Chroma lines. [INFERRED]"; } chroma_lines[15:0];
+    } LOWDLY_70 @ 0x70;
+
+    reg {
+        name = "OSD region control";
+        desc = "[INFERRED, partial] jpege_drv_set_osd (called by jpege_drv_write_regs when an OSD list is attached): read-modify-write of region enable and format bits; the full field map was not decoded. The data sheet states 8 regions, 129-level alpha and ARGB1555 / ARGB4444 / 2BPP formats (Hi3516E V300 data sheet 6.3.2).";
         field { name = "value"; desc = "Whole register."; } value[31:0];
+    } OSD_CFG @ 0x100;
+
+    reg {
+        name = "OSD per-region bytes 0";
+        desc = "[INFERRED, partial] jpege_drv_set_osd read-modify-write of three byte fields [7:0], [15:8], [23:16] taken from three consecutive region descriptors. Offsets 0x104-0x118 hold six such registers.";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } OSD_104[6] @ 0x104 += 0x4;
+
+    reg {
+        name = "OSD 16-bit pairs";
+        desc = "[INFERRED, partial] jpege_drv_set_osd: two 16-bit values per register [15:0], [31:16].";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } OSD_11C @ 0x11C;
+
+    reg {
+        name = "OSD region arrays (0x13C, 0x15C, 0x16C, 0x18C)";
+        desc = "[INFERRED, partial] jpege_drv_set_osd writes address-like and size-like per-region words at 0x13C, 0x15C, 0x16C and 0x18C (descriptor of the registers only; not decoded).";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } OSD_13C @ 0x13C;
+
+    reg {
+        name = "Source stride";
+        desc = "[PROVEN] frame stride 0 (VIDEO_FRAME_S u32Stride[0]) in [15:0], stride 1 in [31:16] (jpege_update_vpu_config + write_regs; emulation).";
+        field { name = "stride_y"; desc = "Luma stride in bytes. [PROVEN]"; } stride_y[15:0];
+        field { name = "stride_c"; desc = "Chroma stride in bytes. [PROVEN]"; } stride_c[31:16];
+    } SRC_STRIDE @ 0x164;
+
+    reg {
+        name = "Frame word +0x20 bits [1:0]";
+        desc = "[PROVEN source, INFERRED meaning] low two bits of the frame word at +0x20 (u32HeaderStride[0]; a compression header stride, always 0 for JPEG which refuses compressed input).";
+        field { name = "value"; desc = "Bits [1:0]."; } value[1:0];
+    } UNK_168 @ 0x168;
+
+    reg {
+        name = "Source luma address";
+        desc = "[PROVEN] low 32 bits of frame u64PhyAddr[0] (emulation: staging +0x20; the upper word is not written). Alignment: the SDK requires the address and the stride to be multiples of VENC_DEFAULT_ALIGN (see the analysis).";
+        field { name = "addr"; desc = "Physical address."; } addr[31:0];
+    } SRC_Y_ADDR @ 0x200;
+
+    reg {
+        name = "Source chroma address";
+        desc = "[PROVEN] low 32 bits of frame u64PhyAddr[1].";
+        field { name = "addr"; desc = "Physical address."; } addr[31:0];
+    } SRC_C_ADDR @ 0x204;
+
+    reg {
+        name = "Source luma header address";
+        desc = "[PROVEN write] low 32 bits of frame u64HeaderPhyAddr[0] (compression header; JPEG refuses compressed input).";
+        field { name = "addr"; desc = "Physical address."; } addr[31:0];
+    } SRC_YH_ADDR @ 0x208;
+
+    reg {
+        name = "Source chroma header address";
+        desc = "[PROVEN write] low 32 bits of frame u64HeaderPhyAddr[1].";
+        field { name = "addr"; desc = "Physical address."; } addr[31:0];
+    } SRC_CH_ADDR @ 0x20C;
+
+    reg {
+        name = "Stream buffer address";
+        desc = "[PROVEN source] physical address of the stream ring buffer (ring object +0xb0), low 32 bits. The module writes a 64-byte-packet stream into it (see the analysis).";
+        field { name = "addr"; desc = "Physical address."; } addr[31:0];
+    } STRM_ADDR @ 0x210;
+
+    reg {
+        name = "Stream pointer word A address";
+        desc = "[PROVEN source, INFERRED meaning] physical address of the 64-byte slot at ring object +0x40; with STRM_PTR_B the V4 replacement of the V2 SRPTRADDR/SWPTRADDR pair.";
+        field { name = "addr"; desc = "Physical address."; } addr[31:0];
+    } STRM_PTR_A @ 0x214;
+
+    reg {
+        name = "Stream pointer word B address";
+        desc = "[PROVEN source, INFERRED meaning] physical address of the 64-byte slot at ring object +0x80.";
+        field { name = "addr"; desc = "Physical address."; } addr[31:0];
+    } STRM_PTR_B @ 0x218;
+
+    reg {
+        name = "Staging word +0x88";
+        desc = "[PROVEN source] copied from staging +0x88 which jpege_update_vpu_config only touches in the low-delay path (ctx+0x1e40 area). Meaning unknown.";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } UNK_21C @ 0x21C;
+
+    reg {
+        name = "Picture time stamp low";
+        desc = "[PROVEN] frame u64PTS low word (VIDEO_FRAME_S +0xf0); the hardware copies the time stamp into the packet descriptor (bytes 16..23).";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } PTS_LO @ 0x320;
+
+    reg {
+        name = "Picture time stamp high";
+        desc = "[PROVEN] frame u64PTS high word.";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } PTS_HI @ 0x324;
+
+    reg {
+        name = "Written 0";
+        desc = "[PROVEN write] stored 0 every picture (0x328, 0x32C, 0x330, 0x334).";
+        field { name = "value"; desc = "Whole register."; } value[31:0];
+    } UNK_328[4] @ 0x328 += 0x4;
+
+    reg {
+        name = "Quantization table 0 (luma)";
+        desc = "[PROVEN code + emulation] 64 words, word i = 0x800000 / q[i] (23-bit reciprocal, integer division) with q[i] the byte i of the module table (1..255); order = the module staging order, which is the transposed (column-major) Annex K order (the vendor tables g_jpege_luma_quantizer are the Annex K luma table transposed). Write-only or read-back not known. Hardware not read.";
+        field { name = "recip"; desc = "floor(0x800000 / q)."; } recip[31:0];
+    } QPT_Y[64] @ 0x800 += 0x4;
+
+    reg {
+        name = "Quantization table 1 (Cb)";
+        desc = "[PROVEN code + emulation] as QPT_Y for table 1 (staging +0x1a0).";
+        field { name = "recip"; desc = "floor(0x800000 / q)."; } recip[31:0];
+    } QPT_CB[64] @ 0x900 += 0x4;
+
+    reg {
+        name = "Quantization table 2 (Cr)";
+        desc = "[PROVEN code + emulation] as QPT_Y for table 2 (staging +0x1e0).";
+        field { name = "recip"; desc = "floor(0x800000 / q)."; } recip[31:0];
+    } QPT_CR[64] @ 0xA00 += 0x4;
+
+    reg {
+        name = "Bus idle";
+        desc = "[PROVEN] JPGE_DRV_ReadBusIdleFlag: ldr [base+0xc0c], bit 0 polled up to 100000 x osal_udelay. Hardware not read.";
+        field { name = "bus_idle"; desc = "1 = bus idle. [PROVEN]"; } bus_idle[0:0];
     } BUS_IDLE @ 0xC0C;
 
 };
