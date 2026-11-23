@@ -3,11 +3,11 @@
 
 regfile eHI3536D_VGS {
     name = "VGS video graphics scaler, Hi3536D V100";
-    desc = "VGS window at 0x13100000 (GIC SPI 28 = interrupt bit 60). The data sheet has no VGS register table (features only: scaling, cropping, OSD overlay, cover, rotation, luma statistics; section 8.1). Everything here is from static disassembly of the vendor module hi3536dv100_vgs.ko (never executed), labeled PROVEN (offset accessed with the stated meaning from the HAL function names and access type), INFERRED or GUESS. The engine is a linked-list job engine: the driver builds a register image in memory (VGS_DRV_SetVgsReg) and VGS_HAL_Start writes the node address to NEXT, then pulses START. The hardware is also the executor of VPSS: the Hi3536D has no separate VPSS hardware (open_vpss calls VGS online tasks). Clock/reset: PERI_CRG38 (0x12040098) bit 1 clock, bit 0 reset; the module also maps 0x120400C8 (PERI_CRG50), purpose unknown (VGS_HAL_Restore ioremaps it into a HAL slot and the module never reads or writes it). Power-up sequence of the vendor driver (PROVEN, static, sys module SYS_HAL_Vgs* and VGS_DRV_AbolishReset): reset pulse on PERI_CRG38 bit 0 (assert then release), clock gate bit 1 set, bits 3:2 of PERI_CRG38 cleared (reserved in the data sheet), MISC_CTRL2 (0x12120008) bit 7 vgs_bootram_mode CLEARED (its reset value is 1 = BOOTRAM function: the VGS RAM is the boot RAM until this bit is cleared), then OUTSTANDING (0x314) = 0x03006411. The node image is 0x670 bytes (module parameter max_vgs_node, default 200 nodes), 16 byte aligned; image offset = register offset (the image is loaded into the register file). Job start: node ids, masks and next pointers are patched into the images, then NEXT_NODE (MMIO) = first node, START = 1; one interrupt after the last node (mask 0x87), INT_CLEAR = 0xFFFFFFFF in the handler.";
+    desc = "VGS window at 0x13100000 (GIC SPI 28 = interrupt bit 60). BOARD 2026-11-23 (docs/drivers/vgs-design.md section 14): the block works as the vendor sequence programs it: PERI_CRG38 (0x12040098) reads 0x0 at a Linux boot (clock gated, reset released), the sequence write 0x3 / 0x2 (reset pulse, clock on, bits 3:2 clear) leaves 0x2 and bits 3:2 read back 0, runtime suspend leaves 0x1 (reset asserted, clock off); MISC_CTRL2 reads 0x30C0 before (bit 7 set) and 0x3040 after the clear; the first VGS read after that does not hang the bus; the VGS time is about 3.5 ms per megapixel of the larger of input and output (7.3 ms for 1920 x 1080 scaled, copied, converted or turned by 180 degrees, 3.7 ms for a 90 / 270 degree turn of 1080p, 28 ms for 2048 x 4096); a V4L2 job through the driver 7.3 ms. The data sheet has no VGS register table (features only: scaling, cropping, OSD overlay, cover, rotation, luma statistics; section 8.1). Everything here is from static disassembly of the vendor module hi3536dv100_vgs.ko (never executed), labeled PROVEN (offset accessed with the stated meaning from the HAL function names and access type), INFERRED or GUESS. The engine is a linked-list job engine: the driver builds a register image in memory (VGS_DRV_SetVgsReg) and VGS_HAL_Start writes the node address to NEXT, then pulses START. The hardware is also the executor of VPSS: the Hi3536D has no separate VPSS hardware (open_vpss calls VGS online tasks). Clock/reset: PERI_CRG38 (0x12040098) bit 1 clock, bit 0 reset; the module also maps 0x120400C8 (PERI_CRG50), purpose unknown (VGS_HAL_Restore ioremaps it into a HAL slot and the module never reads or writes it). Power-up sequence of the vendor driver (PROVEN, static, sys module SYS_HAL_Vgs* and VGS_DRV_AbolishReset): reset pulse on PERI_CRG38 bit 0 (assert then release), clock gate bit 1 set, bits 3:2 of PERI_CRG38 cleared (reserved in the data sheet), MISC_CTRL2 (0x12120008) bit 7 vgs_bootram_mode CLEARED (its reset value is 1 = BOOTRAM function: the VGS RAM is the boot RAM until this bit is cleared), then OUTSTANDING (0x314) = 0x03006411. The node image is 0x670 bytes (module parameter max_vgs_node, default 200 nodes), 16 byte aligned; image offset = register offset (the image is loaded into the register file). Job start: node ids, masks and next pointers are patched into the images, then NEXT_NODE (MMIO) = first node, START = 1; one interrupt after the last node (mask 0x87), INT_CLEAR = 0xFFFFFFFF in the handler.";
 
     reg {
         name = "Current node id";
-        desc = "Node id of the list entry being processed. PROVEN (static + dynamic): the id is a word of the node image in DDR (VGS_HAL_SetNodeID is called by VGS_DrvCommStartWaitlist with the CPU address of the node image, ids count 0, 1, 2 ... along the chain of one job); the interrupt handler reads this MMIO offset (VGS_HAL_GetNodeID) and compares it with the id of the last node of the job (log text: nodeid should be N but actual M). The engine therefore loads the image into its register file and this offset reads back the loaded word. Provenance: PROVEN. Source: hi3536dv100_vgs.ko (SDK 2.0.2.0 / Hi3536D_MPP_V1.0.1.0 B040, Dec 7 2017).";
+        desc = "Node id of the list entry being processed. PROVEN (static + dynamic): the id is a word of the node image in DDR (VGS_HAL_SetNodeID is called by VGS_DrvCommStartWaitlist with the CPU address of the node image, ids count 0, 1, 2 ... along the chain of one job); the interrupt handler reads this MMIO offset (VGS_HAL_GetNodeID) and compares it with the id of the last node of the job (log text: nodeid should be N but actual M). The engine therefore loads the image into its register file and this offset reads back the loaded word. Provenance: PROVEN. Source: hi3536dv100_vgs.ko (SDK 2.0.2.0 / Hi3536D_MPP_V1.0.1.0 B040, Dec 7 2017). BOARD 2026-11-23 (NBD80XXS, Hi3536D V100, RAM boot, /dev/mem and the V4L2 driver): reads 0 at reset and after a one-node job; after a two-node job (90 / 270 degree rotation) it reads 1, the id of the last node [PROVEN].";
         field {
             name = "node_id";
             desc = "id of the node (0 = first node of a job) [PROVEN]";
@@ -29,7 +29,7 @@ regfile eHI3536D_VGS {
 
     reg {
         name = "Next node address";
-        desc = "Two uses (PROVEN): (1) MMIO: VGS_HAL_Start writes the physical address of the FIRST node here and reads it back, retrying up to 16 times and logging a mismatch, then writes START. (2) Image word: VGS_HAL_SetNext is called with the CPU address of a node image and stores the physical address of the NEXT node of the job at the same offset (0 on the last node), so the nodes of one job form a linked list that the engine follows. Provenance: PROVEN. Source: hi3536dv100_vgs.ko (SDK 2.0.2.0 / Hi3536D_MPP_V1.0.1.0 B040, Dec 7 2017).";
+        desc = "Two uses (PROVEN): (1) MMIO: VGS_HAL_Start writes the physical address of the FIRST node here and reads it back, retrying up to 16 times and logging a mismatch, then writes START. (2) Image word: VGS_HAL_SetNext is called with the CPU address of a node image and stores the physical address of the NEXT node of the job at the same offset (0 on the last node), so the nodes of one job form a linked list that the engine follows. Provenance: PROVEN. Source: hi3536dv100_vgs.ko (SDK 2.0.2.0 / Hi3536D_MPP_V1.0.1.0 B040, Dec 7 2017). BOARD 2026-11-23 (NBD80XXS, Hi3536D V100, RAM boot, /dev/mem and the V4L2 driver): all 32 bits write and read back (0x84000000 read back, 0 read back); the engine follows the next pointer of the node image; a job with the first node at an address inside DDR runs [PROVEN].";
         field {
             name = "next_node_addr";
             desc = "physical address of a node (16 byte aligned: the vendor aligns the node pool to 16 bytes), 0 ends the list [PROVEN]";
@@ -40,7 +40,7 @@ regfile eHI3536D_VGS {
 
     reg {
         name = "Start";
-        desc = "VGS_HAL_Start writes 1 after NEXT_NODE; the third argument of VGS_HAL_Start selects 3 instead of 1, VGS_DrvCommStartWaitlist always passes 0 (PROVEN: only the value 1 is used by the offline path). Meaning of bit 1 unknown. Provenance: PROVEN. Source: hi3536dv100_vgs.ko (SDK 2.0.2.0 / Hi3536D_MPP_V1.0.1.0 B040, Dec 7 2017).";
+        desc = "VGS_HAL_Start writes 1 after NEXT_NODE; the third argument of VGS_HAL_Start selects 3 instead of 1, VGS_DrvCommStartWaitlist always passes 0 (PROVEN: only the value 1 is used by the offline path). Meaning of bit 1 unknown. Provenance: PROVEN. Source: hi3536dv100_vgs.ko (SDK 2.0.2.0 / Hi3536D_MPP_V1.0.1.0 B040, Dec 7 2017). BOARD 2026-11-23 (NBD80XXS, Hi3536D V100, RAM boot, /dev/mem and the V4L2 driver): reads 0 after the job finished (the bit is self-clearing) [PROVEN]. Bit 1 not tried.";
         field {
             name = "start";
             desc = "start the list at NEXT_NODE [PROVEN]";
@@ -63,7 +63,7 @@ regfile eHI3536D_VGS {
 
     reg {
         name = "Interrupt status";
-        desc = "VGS_HAL_GetIntStatus reads (PROVEN). VGS_DRV_IsWrongInt classifies the low byte (arm-re scan, 2026-11-12): 0x01 = normal completion (no error), 0x02, 0x04, 0x80 and 0x00 each take their own error branch, any other value is logged as an unknown error (INFERRED: the three single bits are error causes, names unknown). Provenance: PROVEN. Source: hi3536dv100_vgs.ko (VGS_HAL_*, VGS_DrvInitDefaultRegs disassembly, SDK 2.0.2.0).";
+        desc = "VGS_HAL_GetIntStatus reads (PROVEN). VGS_DRV_IsWrongInt classifies the low byte (arm-re scan, 2026-11-12): 0x01 = normal completion (no error), 0x02, 0x04, 0x80 and 0x00 each take their own error branch, any other value is logged as an unknown error (INFERRED: the three single bits are error causes, names unknown). Provenance: PROVEN. Source: hi3536dv100_vgs.ko (VGS_HAL_*, VGS_DrvInitDefaultRegs disassembly, SDK 2.0.2.0). BOARD 2026-11-23 (NBD80XXS, Hi3536D V100, RAM boot, /dev/mem and the V4L2 driver): 0 after a reset and while idle; exactly 0x01 when a job (one or two nodes) completed, read from the poll loop 0.0 to 7.2 ms after START, 1080p in 7.3 ms; reads 0 after INT_CLEAR [PROVEN]. The error values 0x02, 0x04 and 0x80 were NEVER seen: an input address that is odd (accepted, the byte address is honored: the picture is read shifted by one byte), a node of 16 x 16 or 2050 x 2 (accepted, completed with 0x01) and a 1 x 1 node or a 64 x 48 -> 2 x 2 node with unchanged steps (NO interrupt in 2 s, INT_STATUS stays 0, nothing or only part of the output written, no bus hang; the next reset pulse recovers the block) show that the engine does not check a node: the driver watchdog is the only protection against a stall.";
         field {
             name = "int_status";
             desc = "interrupt status [INFERRED]";
@@ -74,7 +74,7 @@ regfile eHI3536D_VGS {
 
     reg {
         name = "Interrupt clear";
-        desc = "VGS_HAL_ClrInt writes (PROVEN). Provenance: PROVEN. Source: hi3536dv100_vgs.ko (VGS_HAL_*, VGS_DrvInitDefaultRegs disassembly, SDK 2.0.2.0).";
+        desc = "VGS_HAL_ClrInt writes (PROVEN). Provenance: PROVEN. Source: hi3536dv100_vgs.ko (VGS_HAL_*, VGS_DrvInitDefaultRegs disassembly, SDK 2.0.2.0). BOARD 2026-11-23 (NBD80XXS, Hi3536D V100, RAM boot, /dev/mem and the V4L2 driver): writing 0xFFFFFFFF clears INT_STATUS (reads 0 afterwards) [PROVEN].";
         field {
             name = "int_clear";
             desc = "write to clear [INFERRED]";
@@ -85,7 +85,7 @@ regfile eHI3536D_VGS {
 
     reg {
         name = "AXI outstanding";
-        desc = "VGS_HAL_SetOutstanding stores the value as given. VGS_DRV_AbolishReset (module init: reset pulse through the sys module, clock enable, then this write) programs 0x03006411; VGS_DrvCommRestore (resume) programs 0x6411 (PROVEN values; the difference between the two is unexplained, INFERRED vendor inconsistency). Meaning of the fields UNKNOWN. Provenance: PROVEN. Source: hi3536dv100_vgs.ko (SDK 2.0.2.0 / Hi3536D_MPP_V1.0.1.0 B040, Dec 7 2017).";
+        desc = "VGS_HAL_SetOutstanding stores the value as given. VGS_DRV_AbolishReset (module init: reset pulse through the sys module, clock enable, then this write) programs 0x03006411; VGS_DrvCommRestore (resume) programs 0x6411 (PROVEN values; the difference between the two is unexplained, INFERRED vendor inconsistency). Meaning of the fields UNKNOWN. Provenance: PROVEN. Source: hi3536dv100_vgs.ko (SDK 2.0.2.0 / Hi3536D_MPP_V1.0.1.0 B040, Dec 7 2017). BOARD 2026-11-23 (NBD80XXS, Hi3536D V100, RAM boot, /dev/mem and the V4L2 driver): RESET VALUE after the CRG reset pulse 0x00006466 (neither of the two vendor values); both 0x03006411 and 0x00006411 write and read back in all 32 bits; every job of the run (copy, scaling, rotation, 4:2:2, 2048 x 4096) ran with 0x03006411 and the driver uses the same value, no job was run with 0x6411 [PROVEN read-back, effect of the value UNKNOWN].";
         field {
             name = "outstanding";
             desc = "bus configuration word: 0x03006411 after reset (module init), 0x6411 on resume [PROVEN values, meaning UNKNOWN]";
@@ -187,7 +187,7 @@ regfile eHI3536D_VGS {
 
     reg {
         name = "Status word 0";
-        desc = "Read by VGS_HAL_PrintRegStatus (debug dump of the VGS INT STATUS / MEM REQ STATUS blocks) and by the interrupt path VGS_DRV_IsWrongInt / VGS_DrvCommIrqProc (arm-re path-sensitive scan of hi3536dv100_vgs.ko, 2026-11-12). Provenance: PROVEN offset and read-only access; content UNKNOWN (GUESS: status/statistics words of the job engine). Unverified on hardware.";
+        desc = "Read by VGS_HAL_PrintRegStatus (debug dump of the VGS INT STATUS / MEM REQ STATUS blocks) and by the interrupt path VGS_DRV_IsWrongInt / VGS_DrvCommIrqProc (arm-re path-sensitive scan of hi3536dv100_vgs.ko, 2026-11-12). Provenance: PROVEN offset and read-only access; content UNKNOWN (GUESS: status/statistics words of the job engine). Unverified on hardware. BOARD 2026-11-23 (NBD80XXS, Hi3536D V100, RAM boot, /dev/mem and the V4L2 driver): reads 0 after the reset pulse, at idle and after a finished job [PROVEN].";
         field {
             name = "status";
             desc = "status word (meaning UNKNOWN, GUESS)";
@@ -198,7 +198,7 @@ regfile eHI3536D_VGS {
 
     reg {
         name = "Status word 1";
-        desc = "Read by VGS_HAL_PrintRegStatus (debug dump of the VGS INT STATUS / MEM REQ STATUS blocks) and by the interrupt path VGS_DRV_IsWrongInt / VGS_DrvCommIrqProc (arm-re path-sensitive scan of hi3536dv100_vgs.ko, 2026-11-12). Provenance: PROVEN offset and read-only access; content UNKNOWN (GUESS: status/statistics words of the job engine). Unverified on hardware.";
+        desc = "Read by VGS_HAL_PrintRegStatus (debug dump of the VGS INT STATUS / MEM REQ STATUS blocks) and by the interrupt path VGS_DRV_IsWrongInt / VGS_DrvCommIrqProc (arm-re path-sensitive scan of hi3536dv100_vgs.ko, 2026-11-12). Provenance: PROVEN offset and read-only access; content UNKNOWN (GUESS: status/statistics words of the job engine). Unverified on hardware. BOARD 2026-11-23 (NBD80XXS, Hi3536D V100, RAM boot, /dev/mem and the V4L2 driver): reads 0 after the reset pulse, at idle and after a finished job [PROVEN].";
         field {
             name = "status";
             desc = "status word (meaning UNKNOWN, GUESS)";
@@ -209,7 +209,7 @@ regfile eHI3536D_VGS {
 
     reg {
         name = "Status word 2";
-        desc = "Read by VGS_HAL_PrintRegStatus (debug dump of the VGS INT STATUS / MEM REQ STATUS blocks) and by the interrupt path VGS_DRV_IsWrongInt / VGS_DrvCommIrqProc (arm-re path-sensitive scan of hi3536dv100_vgs.ko, 2026-11-12). Provenance: PROVEN offset and read-only access; content UNKNOWN (GUESS: status/statistics words of the job engine). Unverified on hardware.";
+        desc = "Read by VGS_HAL_PrintRegStatus (debug dump of the VGS INT STATUS / MEM REQ STATUS blocks) and by the interrupt path VGS_DRV_IsWrongInt / VGS_DrvCommIrqProc (arm-re path-sensitive scan of hi3536dv100_vgs.ko, 2026-11-12). Provenance: PROVEN offset and read-only access; content UNKNOWN (GUESS: status/statistics words of the job engine). Unverified on hardware. BOARD 2026-11-23 (NBD80XXS, Hi3536D V100, RAM boot, /dev/mem and the V4L2 driver): reads 0 after the reset pulse, at idle and after a finished job [PROVEN].";
         field {
             name = "status";
             desc = "status word (meaning UNKNOWN, GUESS)";
@@ -220,7 +220,7 @@ regfile eHI3536D_VGS {
 
     reg {
         name = "Status word 3";
-        desc = "Read by VGS_HAL_PrintRegStatus (debug dump of the VGS INT STATUS / MEM REQ STATUS blocks) and by the interrupt path VGS_DRV_IsWrongInt / VGS_DrvCommIrqProc (arm-re path-sensitive scan of hi3536dv100_vgs.ko, 2026-11-12). Provenance: PROVEN offset and read-only access; content UNKNOWN (GUESS: status/statistics words of the job engine). Unverified on hardware.";
+        desc = "Read by VGS_HAL_PrintRegStatus (debug dump of the VGS INT STATUS / MEM REQ STATUS blocks) and by the interrupt path VGS_DRV_IsWrongInt / VGS_DrvCommIrqProc (arm-re path-sensitive scan of hi3536dv100_vgs.ko, 2026-11-12). Provenance: PROVEN offset and read-only access; content UNKNOWN (GUESS: status/statistics words of the job engine). Unverified on hardware. BOARD 2026-11-23 (NBD80XXS, Hi3536D V100, RAM boot, /dev/mem and the V4L2 driver): reads 0 after the reset pulse, at idle and after a finished job [PROVEN].";
         field {
             name = "status";
             desc = "status word (meaning UNKNOWN, GUESS)";
