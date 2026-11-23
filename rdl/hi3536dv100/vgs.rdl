@@ -3,25 +3,25 @@
 
 regfile eHI3536D_VGS {
     name = "VGS video graphics scaler, Hi3536D V100";
-    desc = "VGS window at 0x13100000 (GIC SPI 28 = interrupt bit 60). The data sheet has no VGS register table (features only: scaling, cropping, OSD overlay, cover, rotation, luma statistics; section 8.1). Everything here is from static disassembly of the vendor module hi3536dv100_vgs.ko (never executed), labeled PROVEN (offset accessed with the stated meaning from the HAL function names and access type), INFERRED or GUESS. The engine is a linked-list job engine: the driver builds a register image in memory (VGS_DRV_SetVgsReg) and VGS_HAL_Start writes the node address to NEXT, then pulses START. The hardware is also the executor of VPSS: the Hi3536D has no separate VPSS hardware (open_vpss calls VGS online tasks). Clock/reset: PERI_CRG38 (0x12040098) bit 1 clock, bit 0 reset; the module also maps 0x120400C8 (PERI_CRG50), purpose unknown.";
+    desc = "VGS window at 0x13100000 (GIC SPI 28 = interrupt bit 60). The data sheet has no VGS register table (features only: scaling, cropping, OSD overlay, cover, rotation, luma statistics; section 8.1). Everything here is from static disassembly of the vendor module hi3536dv100_vgs.ko (never executed), labeled PROVEN (offset accessed with the stated meaning from the HAL function names and access type), INFERRED or GUESS. The engine is a linked-list job engine: the driver builds a register image in memory (VGS_DRV_SetVgsReg) and VGS_HAL_Start writes the node address to NEXT, then pulses START. The hardware is also the executor of VPSS: the Hi3536D has no separate VPSS hardware (open_vpss calls VGS online tasks). Clock/reset: PERI_CRG38 (0x12040098) bit 1 clock, bit 0 reset; the module also maps 0x120400C8 (PERI_CRG50), purpose unknown (VGS_HAL_Restore ioremaps it into a HAL slot and the module never reads or writes it). Power-up sequence of the vendor driver (PROVEN, static, sys module SYS_HAL_Vgs* and VGS_DRV_AbolishReset): reset pulse on PERI_CRG38 bit 0 (assert then release), clock gate bit 1 set, bits 3:2 of PERI_CRG38 cleared (reserved in the data sheet), MISC_CTRL2 (0x12120008) bit 7 vgs_bootram_mode CLEARED (its reset value is 1 = BOOTRAM function: the VGS RAM is the boot RAM until this bit is cleared), then OUTSTANDING (0x314) = 0x03006411. The node image is 0x670 bytes (module parameter max_vgs_node, default 200 nodes), 16 byte aligned; image offset = register offset (the image is loaded into the register file). Job start: node ids, masks and next pointers are patched into the images, then NEXT_NODE (MMIO) = first node, START = 1; one interrupt after the last node (mask 0x87), INT_CLEAR = 0xFFFFFFFF in the handler.";
 
     reg {
         name = "Current node id";
-        desc = "VGS_HAL_SetNodeID writes, VGS_HAL_GetNodeID reads (PROVEN offset, access). Provenance: PROVEN. Source: hi3536dv100_vgs.ko (VGS_HAL_*, VGS_DrvInitDefaultRegs disassembly, SDK 2.0.2.0).";
+        desc = "Node id of the list entry being processed. PROVEN (static + dynamic): the id is a word of the node image in DDR (VGS_HAL_SetNodeID is called by VGS_DrvCommStartWaitlist with the CPU address of the node image, ids count 0, 1, 2 ... along the chain of one job); the interrupt handler reads this MMIO offset (VGS_HAL_GetNodeID) and compares it with the id of the last node of the job (log text: nodeid should be N but actual M). The engine therefore loads the image into its register file and this offset reads back the loaded word. Provenance: PROVEN. Source: hi3536dv100_vgs.ko (SDK 2.0.2.0 / Hi3536D_MPP_V1.0.1.0 B040, Dec 7 2017).";
         field {
             name = "node_id";
-            desc = "job/node identifier of the running list entry [INFERRED]";
-            sw = rw;
+            desc = "id of the node (0 = first node of a job) [PROVEN]";
+            sw = r;
             hw = r;
         } node_id[31:0];
     } NODE_ID @ 0xF4;
 
     reg {
         name = "Interrupt mask";
-        desc = "VGS_HAL_SetMask writes (PROVEN offset, access; bit meanings unknown). Provenance: PROVEN. Source: hi3536dv100_vgs.ko (VGS_HAL_*, VGS_DrvInitDefaultRegs disassembly, SDK 2.0.2.0).";
+        desc = "Image word, NOT an MMIO write: VGS_HAL_SetMask is called by VGS_DrvCommStartWaitlist with the CPU address of the node image (PROVEN, static: the base argument is the image pointer, not the ioremap window). Value 0 for every node but the last of a job, 0x87 for the last node (PROVEN). 0x87 = bits 7, 2, 1, 0, the same four bits VGS_DRV_IsWrongInt tests in INT_STATUS (INFERRED: one enable per cause). The window offset exists as a register because the engine loads the image into its register file (INFERRED). Provenance: PROVEN offset and values. Source: hi3536dv100_vgs.ko (SDK 2.0.2.0 / Hi3536D_MPP_V1.0.1.0 B040, Dec 7 2017).";
         field {
             name = "int_mask";
-            desc = "interrupt mask [INFERRED]";
+            desc = "interrupt enables of this node: 0x87 on the last node of a job, 0 otherwise [PROVEN values, INFERRED meaning]";
             sw = rw;
             hw = r;
         } int_mask[31:0];
@@ -29,10 +29,10 @@ regfile eHI3536D_VGS {
 
     reg {
         name = "Next node address";
-        desc = "VGS_HAL_SetNext / VGS_HAL_Start write the physical address of the register-image node and read it back to verify (PROVEN). Provenance: PROVEN. Source: hi3536dv100_vgs.ko (VGS_HAL_*, VGS_DrvInitDefaultRegs disassembly, SDK 2.0.2.0).";
+        desc = "Two uses (PROVEN): (1) MMIO: VGS_HAL_Start writes the physical address of the FIRST node here and reads it back, retrying up to 16 times and logging a mismatch, then writes START. (2) Image word: VGS_HAL_SetNext is called with the CPU address of a node image and stores the physical address of the NEXT node of the job at the same offset (0 on the last node), so the nodes of one job form a linked list that the engine follows. Provenance: PROVEN. Source: hi3536dv100_vgs.ko (SDK 2.0.2.0 / Hi3536D_MPP_V1.0.1.0 B040, Dec 7 2017).";
         field {
             name = "next_node_addr";
-            desc = "physical node address [PROVEN]";
+            desc = "physical address of a node (16 byte aligned: the vendor aligns the node pool to 16 bytes), 0 ends the list [PROVEN]";
             sw = rw;
             hw = r;
         } next_node_addr[31:0];
@@ -40,16 +40,16 @@ regfile eHI3536D_VGS {
 
     reg {
         name = "Start";
-        desc = "VGS_HAL_Start writes 1 (offline) or 3 (when its third argument is nonzero) after NEXT_NODE (PROVEN offset and values; meaning of bit 1 unknown). Provenance: PROVEN. Source: hi3536dv100_vgs.ko (VGS_HAL_*, VGS_DrvInitDefaultRegs disassembly, SDK 2.0.2.0).";
+        desc = "VGS_HAL_Start writes 1 after NEXT_NODE; the third argument of VGS_HAL_Start selects 3 instead of 1, VGS_DrvCommStartWaitlist always passes 0 (PROVEN: only the value 1 is used by the offline path). Meaning of bit 1 unknown. Provenance: PROVEN. Source: hi3536dv100_vgs.ko (SDK 2.0.2.0 / Hi3536D_MPP_V1.0.1.0 B040, Dec 7 2017).";
         field {
             name = "start";
-            desc = "start [PROVEN]";
+            desc = "start the list at NEXT_NODE [PROVEN]";
             sw = rw;
             hw = r;
         } start[0:0];
         field {
             name = "mode_bit1";
-            desc = "set when the third argument of VGS_HAL_Start is nonzero (online task?) [GUESS]";
+            desc = "written 1 only when VGS_HAL_Start gets a nonzero third argument, which no caller in the module passes [PROVEN value, GUESS meaning]";
             sw = rw;
             hw = r;
         } mode_bit1[1:1];
@@ -85,10 +85,10 @@ regfile eHI3536D_VGS {
 
     reg {
         name = "AXI outstanding";
-        desc = "VGS_HAL_SetOutstanding writes a value (PROVEN offset). Provenance: PROVEN. Source: hi3536dv100_vgs.ko (VGS_HAL_*, VGS_DrvInitDefaultRegs disassembly, SDK 2.0.2.0).";
+        desc = "VGS_HAL_SetOutstanding stores the value as given. VGS_DRV_AbolishReset (module init: reset pulse through the sys module, clock enable, then this write) programs 0x03006411; VGS_DrvCommRestore (resume) programs 0x6411 (PROVEN values; the difference between the two is unexplained, INFERRED vendor inconsistency). Meaning of the fields UNKNOWN. Provenance: PROVEN. Source: hi3536dv100_vgs.ko (SDK 2.0.2.0 / Hi3536D_MPP_V1.0.1.0 B040, Dec 7 2017).";
         field {
             name = "outstanding";
-            desc = "outstanding limit [INFERRED]";
+            desc = "bus configuration word: 0x03006411 after reset (module init), 0x6411 on resume [PROVEN values, meaning UNKNOWN]";
             sw = rw;
             hw = r;
         } outstanding[31:0];
