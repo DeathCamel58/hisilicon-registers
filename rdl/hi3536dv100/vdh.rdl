@@ -664,7 +664,7 @@ regfile eHI3536D_VDH {
 
 regfile eHI3536D_VDH_TOP {
     name = "VDH top / SCD glue registers (0x1320C000 window), Hi3536D V100";
-    desc = "Four glue registers at the start of the SCD window (the SCD proper is eHISI_SCD_AV300 at 0x1320C800: the SCD of this chip is a function of the VDH IP, it shares the 64 KB window, the clock gate and the reset register PERI_CRG41 with it and has its own interrupt, SPI 23). PROVEN offsets: hi3536dv100_vfmw.ko writes 0xC000 (VDMHAL_V400R001_PrepareDec: 1 when the standard code is 6 else 0), 0xC004 (WriteScdEMARID: 0x0481A1F7; HEVC CfgVdmReg also read-modify-writes bit 16 depending on picture width <= 4096, from R004 source), 0xC008 (PrepareDec: 1, only for VDH 0), 0xC00C (StartHwDecode, VDH id > 0 only). Names AVS_FLAG / EMAR_ID / VDH_SELRST / VDH_CK_GT follow the V400R004 documentation in docs/rdl-campaign/vdh-scd.md (INFERRED).";
+    desc = "Four glue registers at the start of the SCD window (the SCD proper is eHISI_SCD_AV300 at 0x1320C800: the SCD of this chip is a function of the VDH IP, it shares the 64 KB window, the clock gate and the reset register PERI_CRG41 with it and has its own interrupt, SPI 23). PROVEN offsets: hi3536dv100_vfmw.ko writes 0xC000 (VDMHAL_V400R001_PrepareDec: 1 when the standard code is 6 else 0), 0xC004 (WriteScdEMARID: 0x0481A1F7 once at init; per picture bit 16 is read-modify-written: set when the picture width is <= 2048, cleared above, HEVC CfgVdmReg 0x411d8 PROVEN, H.264 StartDec by the macroblock width <= 128), 0xC008 (PrepareDec: 1, VDH 0, after AVS_FLAG and before the codec StartDec), 0xC00C (StartHwDecode for VDH 0: 2 for HEVC, 3 for other standards, after INT_MASK and before the START pulse; corrected 2026-11-22, the earlier text said VDH1 only). Order before START (vendor): AVS_FLAG, SELRST, picture registers, INT_STATE/INT_MASK, messages, INT_MASK, CK_GT, START 0/1/0. Names AVS_FLAG / EMAR_ID / VDH_SELRST / VDH_CK_GT follow the V400R004 documentation in docs/rdl-campaign/vdh-scd.md (INFERRED).";
     reg {
         name = "AVS flag";
         desc = "1 when the stream standard code is 6 (AVS), else 0. PROVEN offset and value. Provenance: PROVEN. Source: hi3536dv100_vfmw.ko (VDMHAL_V400R001 / HEVCHAL_V400R001 disassembly, SDK 2.0.2.0).";
@@ -678,10 +678,10 @@ regfile eHI3536D_VDH_TOP {
 
     reg {
         name = "AXI master ID / limits";
-        desc = "PROVEN: VDMHAL_V400R001_WriteScdEMARID writes 0x0481A1F7; HEVC CfgVdmReg then sets/clears bit 16 by width (R004 source). Provenance: PROVEN. Source: hi3536dv100_vfmw.ko (VDMHAL_V400R001 / HEVCHAL_V400R001 disassembly, SDK 2.0.2.0); Huawei Kirin GPL VDH V400R004 header vdm_hal_local.h (a later generation of the same VDH).";
+        desc = "PROVEN: VDMHAL_V400R001_WriteScdEMARID writes 0x0481A1F7; Per picture the bit 16 is set when the picture width is <= 2048 and cleared above (R001 module; R004 uses 4096), for HEVC (CfgVdmReg, dynamic widths 1920/2048 keep 0x0481A1F7, 2049/3072 write 0x0480A1F7) and H.264. Bit 17 is never touched by R001. R004 header comment: 0x0000FF00 no RAM on chip, 0x0001FF00 all RAM on chip, 0x0002FF00 all on-chip RAM except the DBLK RAM. R004 default value 0x161F7 differs from the R001 0x0481A1F7. Provenance: PROVEN value and bit 16 rule, INFERRED bit 16 meaning. Source: hi3536dv100_vfmw.ko (VDMHAL_V400R001 / HEVCHAL_V400R001 disassembly, SDK 2.0.2.0); Huawei Kirin GPL VDH V400R004 header vdm_hal_local.h (a later generation of the same VDH).";
         field {
             name = "emar_id";
-            desc = "AXI master configuration word (fields unknown) [INFERRED]";
+            desc = "AXI master configuration word (fields unknown); written 0x0481A1F7 at init, bit 16 per picture below [PROVEN value] [INFERRED field meanings]";
             sw = rw;
             hw = r;
         } emar_id[31:0];
@@ -692,7 +692,7 @@ regfile eHI3536D_VDH_TOP {
         desc = "PROVEN: PrepareDec writes 1 for VDH 0. Provenance: PROVEN. Source: hi3536dv100_vfmw.ko (VDMHAL_V400R001 / HEVCHAL_V400R001 disassembly, SDK 2.0.2.0).";
         field {
             name = "vdh_selrst";
-            desc = "select [INFERRED]";
+            desc = "VDH self reset enable (R004 source comment 'set VDH self reset'); written 1 and never cleared by the module, ResetVdm/ResetGlb do not touch it [PROVEN value and order, INFERRED meaning]";
             sw = rw;
             hw = r;
         } vdh_selrst[0:0];
@@ -700,10 +700,10 @@ regfile eHI3536D_VDH_TOP {
 
     reg {
         name = "VDH clock gate";
-        desc = "Written 2 or 3 depending on the standard (only on the VDH1 path, never taken on this single-VDH chip). Provenance: INFERRED. Source: hi3536dv100_vfmw.ko (VDMHAL_V400R001 / HEVCHAL_V400R001 disassembly, SDK 2.0.2.0).";
+        desc = "Written for VDH 0 by VDMHAL_V400R001_StartHwDecode (0x17ea8) before every start, after INT_MASK and before the START pulse: 2 for HEVC (standard 16), 3 for H.264 and the others (dynamic run). R004 comment: VDH clock gating, its default leaves it unwritten. Bit meanings unknown (GUESS: bit 1 common clock gating, bit 0 H.264-only path). Provenance: PROVEN value, order and path, INFERRED meaning. Source: hi3536dv100_vfmw.ko (VDMHAL_V400R001 / HEVCHAL_V400R001 disassembly, SDK 2.0.2.0).";
         field {
             name = "vdh_ck_gt";
-            desc = "clock gating [INFERRED]";
+            desc = "clock gating control: HEVC 2, H.264 3 [PROVEN values, bit meanings GUESS]";
             sw = rw;
             hw = r;
         } vdh_ck_gt[1:0];
