@@ -2142,11 +2142,11 @@ regfile eHI3536D_VDH_H264_SLICEMSG {
             hw = r;
         } chroma_qp_index_offset[9:5];
         field {
-            name = "weight_flag";
-            desc = "explicit weighted prediction in use";
+            name = "weight_mode";
+            desc = "Prediction weighting of the slice: weighted_pred_flag for P slices, weighted_bipred_idc for B slices (0 none, 1 explicit, 2 implicit), 0 for I slices; the vendor code writes the value shifted by 16 (R004 `weight_flag << 16`), so the implicit mode sets bit 17. Earlier text called bit 16 a one-bit 'explicit weighted prediction' flag [PROVEN position and value rule, INFERRED hardware reading]";
             sw = rw;
             hw = r;
-        } weight_flag[16:16];
+        } weight_mode[17:16];
     } D10 @ 0x28;
 
     reg {
@@ -2319,11 +2319,11 @@ regfile eHI3536D_VDH_H264_SLICEMSG {
 
 regfile eHI3536D_VDH_TILETAB {
     name = "VDH HEVC tile table (DDR, NOT registers), Hi3536D V100";
-    desc = "NOT A REGISTER FILE: 298 words (1192 bytes) at the address in picture message D55, written for every picture by HEVC_WriteTileInfo, 16-byte aligned. Limits of this chip: at most 16 tile columns, 11 tile rows, 256 CTB columns/rows (matches the vendor Logic limit messages). Entry point offsets are neither passed nor used (M9). Layout PROVEN (dynamic run); that the hardware uses TileId is INFERRED; the content for a picture without tiles is INFERRED from R004 HEVC_CalcTileInfo (not run).";
+    desc = "NOT A REGISTER FILE: 298 words (1192 bytes) at the address in picture message D55, written for every picture by HEVC_WriteTileInfo, 16-byte aligned. Limits of this chip: at most 16 tile columns, 11 tile rows, 256 tile-id entries per direction (matches the vendor Logic limit messages). The tile-id entries are indexed in 16-pixel units, not CTBs (HEVC_CalcTileInfo of the Hi3536D module shifts the CTB position by log2(CTB size) - 4, disassembly 0x2d348 `sub r9, r9, #4`, 2026-11-23): 256 entries cover 4096 pixels. Entry point offsets are neither passed nor used (M9). Layout PROVEN (dynamic run); that the hardware uses TileId is INFERRED; the content for a picture without tiles is INFERRED from R004 HEVC_CalcTileInfo (not run).";
 
     reg {
         name = "TILEID_COL";
-        desc = "Words 0-127: one byte per CTB column j (byte j % 4 of word j / 4) = index of the tile column containing it; only j <= 255 written. Provenance: PROVEN. Source: hi3536dv100_vfmw.ko HEVC_WriteTileInfo (0x4059c), dynamic run of the vendor code in qemu-arm user mode on 2026-11-22 (what it programs, not what silicon answers), docs/research/vdh-hi3536d-static-analysis-2026-11-22.md.";
+        desc = "Words 0-127: one byte per 16-pixel column unit j (byte j % 4 of word j / 4) = index of the tile column containing it (the CTB column position is multiplied by CTB size / 16: for a 64 pixel CTB every CTB column fills four bytes); only j <= 255 written (words 64-127 stay zero). Provenance: PROVEN. Source: hi3536dv100_vfmw.ko HEVC_WriteTileInfo (0x4059c), dynamic run of the vendor code in qemu-arm user mode on 2026-11-22 (what it programs, not what silicon answers), docs/research/vdh-hi3536d-static-analysis-2026-11-22.md.";
         field {
             name = "tileid_col_word";
             desc = "four tile column indices";
@@ -2334,7 +2334,7 @@ regfile eHI3536D_VDH_TILETAB {
 
     reg {
         name = "TILEID_ROW";
-        desc = "Words 128-255: one byte per CTB row = tile row index (same limit). Provenance: PROVEN. Source: hi3536dv100_vfmw.ko HEVC_WriteTileInfo (0x4059c), dynamic run of the vendor code in qemu-arm user mode on 2026-11-22 (what it programs, not what silicon answers), docs/research/vdh-hi3536d-static-analysis-2026-11-22.md.";
+        desc = "Words 128-255: one byte per 16-pixel row unit = tile row index (same unit and limit; words 192-255 stay zero). Provenance: PROVEN. Source: hi3536dv100_vfmw.ko HEVC_WriteTileInfo (0x4059c), dynamic run of the vendor code in qemu-arm user mode on 2026-11-22 (what it programs, not what silicon answers), docs/research/vdh-hi3536d-static-analysis-2026-11-22.md.";
         field {
             name = "tileid_row_word";
             desc = "four tile row indices";
