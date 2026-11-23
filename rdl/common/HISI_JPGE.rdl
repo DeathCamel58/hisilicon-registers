@@ -48,7 +48,7 @@ regfile eHISI_JPGE {
 
     reg {
         name = "JPGE INTMASK";
-        desc = "Interrupt mask/enable: 1 = interrupt enabled (the Linux driver writes bits 0, 1 and 3 and gets the end-of-picture interrupt: Source: Hi3520D board read-back 2026-11-10). Layout: vendor header jpge_reg(r004).h (Hi3520D U-Boot 2010.06 upload), not in the data sheet. Reset value not read. Bit 2 (time-out) enable: Source: HiSTB driver (register semantics only), confidence MEDIUM, Not verified on hardware.";
+        desc = "Interrupt mask/enable: 1 = interrupt enabled (the Linux driver writes bits 0, 1 and 3 and gets the end-of-picture interrupt: Source: Hi3520D board read-back 2026-11-10). Layout: vendor header jpge_reg(r004).h (Hi3520D U-Boot 2010.06 upload), not in the data sheet. Reset value not read. Bit 2 (time-out) enable: Source: HiSTB driver (register semantics only), confidence MEDIUM, Not verified on hardware. Hi3536D vendor module (Hi3536D V100 vendor module hi3536dv100_jpege.ko (SDK V1.0.1.0): static analysis plus execution of its register writer under qemu-arm on a RAM window, 2026-11-22 (shows what the vendor PROGRAMS, not what the silicon does)): the HAL init writes 0x3 (end of picture and buffer full; bit 2 is explicitly cleared, bit 3 never set), JPEGE_DRV_WriteRegs writes 0x3 again on every picture, JPEGU_SetIntMask writes 0. The Linux driver also enables bit 3 (configuration error).";
 
         field {
             name = "cfgErrMask";
@@ -114,7 +114,7 @@ regfile eHISI_JPGE {
 
     reg {
         name = "JPGE INTCLR";
-        desc = "Interrupt clear: write 1 to clear the matching bit. The Linux driver writes the status it read and the interrupt deasserts (Source: Hi3520D board read-back 2026-11-10, encode loops of 3000 frames). The HiSTB ISR path (jpge_hal.c Jpge_ReadReg, after reading INTSTAT) writes 0xFFFFFFFF to clear every bit (Source: HiSTB driver (register semantics only), confidence MEDIUM). Layout: vendor header jpge_reg(r004).h (Hi3520D U-Boot 2010.06 upload), not in the data sheet.";
+        desc = "Interrupt clear: write 1 to clear the matching bit. The Linux driver writes the status it read and the interrupt deasserts (Source: Hi3520D board read-back 2026-11-10, encode loops of 3000 frames). The HiSTB ISR path (jpge_hal.c Jpge_ReadReg, after reading INTSTAT) writes 0xFFFFFFFF to clear every bit (Source: HiSTB driver (register semantics only), confidence MEDIUM). Layout: vendor header jpge_reg(r004).h (Hi3520D U-Boot 2010.06 upload), not in the data sheet. Hi3536D vendor module (Hi3536D V100 vendor module hi3536dv100_jpege.ko (SDK V1.0.1.0): static analysis plus execution of its register writer under qemu-arm on a RAM window, 2026-11-22 (shows what the vendor PROGRAMS, not what the silicon does)): JPEGU_ClearInt writes 0xFFFFFFFF, JPEGU_ClearErrInt writes 0xFFFFFFFC (everything except the two normal bits); the vendor interrupt test reads INTSTAT bit 0 (end of picture) or bit 1 (buffer full).";
 
         field {
             name = "cfgErrClr";
@@ -147,11 +147,11 @@ regfile eHISI_JPGE {
 
     reg {
         name = "JPGE PICFG";
-        desc = "Picture configuration. Reset value 0x0D880000 (Source: Hi3520D board read-back 2026-11-10): roundEn = 1, packageSel = 0xD8 (YUYV), everything else 0. Layout: vendor header jpge_reg(r004).h (Hi3520D U-Boot 2010.06 upload), not in the data sheet. The Linux driver writes the whole register per job with roundEn = 0 (as the HiSTB driver does) and the encodes work on the board. Fields not covered by the encode test are marked per field.";
+        desc = "Picture configuration. Reset value 0x0D880000 (Source: Hi3520D board read-back 2026-11-10): roundEn = 1, packageSel = 0xD8 (YUYV), everything else 0. Layout: vendor header jpge_reg(r004).h (Hi3520D U-Boot 2010.06 upload), not in the data sheet. The Linux driver writes the whole register per job with roundEn = 0 (as the HiSTB driver does) and the encodes work on the board. Fields not covered by the encode test are marked per field. Vendor programming (Hi3536D V100 vendor module hi3536dv100_jpege.ko (SDK V1.0.1.0): static analysis plus execution of its register writer under qemu-arm on a RAM window, 2026-11-22 (shows what the vendor PROGRAMS, not what the silicon does)): the module writes PICFG as a read-modify-write on every picture, setting strFmt = 0, yuvFmt (4:2:0 = 0, 4:2:2 = 1; the 400 pixel format 29 gives yuvFmt 0 plus col2grayEn), chnId = channel, rotationAngle = 0, roundEn = 0, col2grayEn = (colour-to-grey flag or 400 input); the HAL init (run at reset and probe) sets timeoutEn = 1, clkGateEn = 2 and memClkGateEn = 1 (default module parameter), and nothing touches bit 17, clip_en and packageSel. The resulting value for a 640x480 4:2:0 picture on channel 0 is 0x0D858000 (reset value 0x0D880000 as read on the Hi3536D board). Confidence PROVEN for the programmed values.";
 
         field {
             name = "col2grayEn";
-            desc = "Color to gray conversion (name only). Source: HiSTB driver (register semantics only), confidence LOW. Reset 0 (Source: Hi3520D board read-back 2026-11-10). The data sheet lists no 4:0:0 encoding. Effect measured on the Hi3536D V100 board (2026-11-22, source: board, confidence HIGH): with the bit set the block still encodes all three components and the software-written header (3 components, 4:2:0) stays valid, but Cb and Cr are coded as the neutral value (the decoded picture has Cb = Cr = 128 everywhere, Y unchanged; stream 22 percent smaller for a colour-bar picture): it does NOT produce a one-component scan. Other chips (static analysis of the vendor modules, 2026-11-11): hi3518e_jpege, hi3516a_jpege, hi3516cv300_jpege and hi3519v101_jpege write this bit in every register-write call, as 1 when an input flag of the channel structure (offset 0x104 of the write argument, name unknown, probably a 4:0:0/gray pixel-format flag) equals 1, otherwise 0 (Source: vendor module, bit position HIGH, meaning LOW); the Hi3520D and Hi3518 V100 modules never touch it.";
+            desc = "Color to gray conversion (name only). Source: HiSTB driver (register semantics only), confidence LOW. Reset 0 (Source: Hi3520D board read-back 2026-11-10). The data sheet lists no 4:0:0 encoding. Effect measured on the Hi3536D V100 board (2026-11-22, source: board, confidence HIGH): with the bit set the block still encodes all three components and the software-written header (3 components, 4:2:0) stays valid, but Cb and Cr are coded as the neutral value (the decoded picture has Cb = Cr = 128 everywhere, Y unchanged; stream 22 percent smaller for a colour-bar picture): it does NOT produce a one-component scan. Other chips (static analysis of the vendor modules, 2026-11-11): hi3518e_jpege, hi3516a_jpege, hi3516cv300_jpege and hi3519v101_jpege write this bit in every register-write call, as 1 when an input flag of the channel structure (offset 0x104 of the write argument, name unknown, probably a 4:0:0/gray pixel-format flag) equals 1, otherwise 0 (Source: vendor module, bit position HIGH, meaning LOW); the Hi3520D and Hi3518 V100 modules never touch it. Hi3536D vendor module (Hi3536D V100 vendor module hi3536dv100_jpege.ko (SDK V1.0.1.0): static analysis plus execution of its register writer under qemu-arm on a RAM window, 2026-11-22 (shows what the vendor PROGRAMS, not what the silicon does)): col2grayEn is set when the colour-to-grey flag of the channel is 1 (HI_MPI_VENC_SetColor2Grey) or when the input pixel format is the 400 semi-planar one (value 29, then yuvFmt is cleared to 0), and cleared otherwise. The vendor header template is always the 3-component JFIF header (DQT x3, SOF0 with 3 components, DHT x4, DRI, SOS with 3 components; only the SOF sampling byte is patched for 4:2:2): the vendor stack has NO one-component (grey) mode, its grey output is the 3-component stream with neutral chroma that the Hi3536D board measured. No register or PICFG field other than this bit is programmed for grey. INFERRED (no other grey control is known): the block cannot emit a one-component scan. Whether the chroma plane is still read with the bit set is unknown (board experiment E-G2 in docs/research/jpge-open-questions-2026-11-22.md).";
             sw = rw;
             hw = r;
             reset = 0;
@@ -175,7 +175,7 @@ regfile eHISI_JPGE {
 
         field {
             name = "roundEn";
-            desc = "Rounding control. Reset 1 (Source: Hi3520D board read-back 2026-11-10, Hi3536D V100 board read-back 2026-11-22). Effect measured on the Hi3536D V100 board (NBD80XXS, 2026-11-22, source: board, confidence HIGH): roundEn = 0 (what the HiSTB driver and the Linux driver write) makes the quantizer truncate toward zero (output 12 to 34 percent smaller than libjpeg at the same quality, PSNR 0.2 to 2.7 dB lower, worst at quality 1 and 90); roundEn = 1 makes it round like libjpeg (size ratio 0.99 to 1.02 against libjpeg at quality 1/25/50/75/90, PSNR equal to or up to 0.85 dB above libjpeg at the same quality; no difference at quality 100 where every divisor is 1; the input is YCbCr data so the comparison is statistical, not byte-exact). The decoder side is unaffected (both streams decode). Other chips (static analysis 2026-11-11): the hi3518e, hi3516a, hi3516cv300 and hi3519v101 modules write this bit as 0 in every register-write call (like the Linux driver); the Hi3520D and Hi3518 V100 modules leave it at its reset value.";
+            desc = "Rounding control. Reset 1 (Source: Hi3520D board read-back 2026-11-10, Hi3536D V100 board read-back 2026-11-22). Effect measured on the Hi3536D V100 board (NBD80XXS, 2026-11-22, source: board, confidence HIGH): roundEn = 0 (what the HiSTB driver and the Linux driver write) makes the quantizer truncate toward zero (output 12 to 34 percent smaller than libjpeg at the same quality, PSNR 0.2 to 2.7 dB lower, worst at quality 1 and 90); roundEn = 1 makes it round like libjpeg (size ratio 0.99 to 1.02 against libjpeg at quality 1/25/50/75/90, PSNR equal to or up to 0.85 dB above libjpeg at the same quality; no difference at quality 100 where every divisor is 1; the input is YCbCr data so the comparison is statistical, not byte-exact). The decoder side is unaffected (both streams decode). Other chips (static analysis 2026-11-11): the hi3518e, hi3516a, hi3516cv300 and hi3519v101 modules write this bit as 0 in every register-write call (like the Linux driver); the Hi3520D and Hi3518 V100 modules leave it at its reset value. Hi3536D vendor module (Hi3536D V100 vendor module hi3536dv100_jpege.ko (SDK V1.0.1.0): static analysis plus execution of its register writer under qemu-arm on a RAM window, 2026-11-22 (shows what the vendor PROGRAMS, not what the silicon does)): the module writes roundEn = 0 explicitly on every picture (so vendor-encoded streams truncate like the old Linux driver did; the vendor quality scaling is the plain IJG formula, see JPGE_QPT). The Linux driver writes 1, which is what the board experiment recommends. Confidence PROVEN for the vendor value.";
             sw = rw;
             hw = r;
             reset = 1;
@@ -183,7 +183,7 @@ regfile eHISI_JPGE {
 
         field {
             name = "timeoutEn";
-            desc = "Enable the hardware encode time-out (JPGE_TIMEOUT / JPGE_TIMER). Source: HiSTB driver (register semantics only), confidence LOW. Reset 0 (Source: Hi3520D board read-back 2026-11-10). The Linux driver uses a software watchdog instead. Not verified on hardware.";
+            desc = "Enable the hardware encode time-out (JPGE_TIMEOUT / JPGE_TIMER). Source: HiSTB driver (register semantics only), confidence LOW. Reset 0 (Source: Hi3520D board read-back 2026-11-10). The Linux driver uses a software watchdog instead. Not verified on hardware. Hi3536D vendor module (Hi3536D V100 vendor module hi3536dv100_jpege.ko (SDK V1.0.1.0): static analysis plus execution of its register writer under qemu-arm on a RAM window, 2026-11-22 (shows what the vendor PROGRAMS, not what the silicon does)): the HAL init sets timeoutEn = 1 (JPEGU_HAL_SetTimerMode(1)) but the module never writes JPGE_TIMEOUT (JPEGU_SetTimeOut is an empty function) and only reads JPGE_TIMER for a debug print, so the vendor relies on the TIMEOUT reset value; the vendor interrupt mask excludes bit 2 (no time-out interrupt). Confidence PROVEN for the programming, meaning INFERRED.";
             sw = rw;
             hw = r;
             reset = 0;
@@ -199,7 +199,7 @@ regfile eHISI_JPGE {
 
         field {
             name = "memClkGateEn";
-            desc = "Memory clock gating enable; the HiSTB driver and the Linux driver write 1 (Source: Hi3520D board read-back 2026-11-10: works). Reset 0 (Source: Hi3520D board read-back 2026-11-10). Effect of 0 during encoding: Not verified on hardware.";
+            desc = "Memory clock gating enable; the HiSTB driver and the Linux driver write 1 (Source: Hi3520D board read-back 2026-11-10: works). Reset 0 (Source: Hi3520D board read-back 2026-11-10). Effect of 0 during encoding: Not verified on hardware. Hi3536D vendor module (Hi3536D V100 vendor module hi3536dv100_jpege.ko (SDK V1.0.1.0): static analysis plus execution of its register writer under qemu-arm on a RAM window, 2026-11-22 (shows what the vendor PROGRAMS, not what the silicon does)): set to 1 by JPEGU_HAL_SetPowerMode when the module parameter g_bJpgePowerSaveEn (default 1) is 1, cleared when it is 0; clkGateEn is then 2 (1) or 0 (0). Confidence PROVEN.";
             sw = rw;
             hw = r;
             reset = 0;
@@ -223,7 +223,7 @@ regfile eHISI_JPGE {
 
         field {
             name = "chnId";
-            desc = "Channel ID copied into the packet descriptor (descriptor bytes 12..15). Source: HiSTB driver (register semantics only), confidence LOW. The Linux driver writes 0. Not verified on hardware. Other chips (static analysis 2026-11-11): the hi3518, hi3518e, hi3516a, hi3516cv300 and hi3519v101 modules write the channel number into bits [11:4] too (Source: vendor module, HIGH).";
+            desc = "Channel ID copied into the packet descriptor (descriptor bytes 12..15). Source: HiSTB driver (register semantics only), confidence LOW. The Linux driver writes 0. Not verified on hardware. Other chips (static analysis 2026-11-11): the hi3518, hi3518e, hi3516a, hi3516cv300 and hi3519v101 modules write the channel number into bits [11:4] too (Source: vendor module, HIGH). Hi3536D vendor module (Hi3536D V100 vendor module hi3536dv100_jpege.ko (SDK V1.0.1.0): static analysis plus execution of its register writer under qemu-arm on a RAM window, 2026-11-22 (shows what the vendor PROGRAMS, not what the silicon does)): chnId is the channel number, and the vendor stream reader CHECKS that byte 12 of every packet descriptor equals the channel it expects (mismatch gives an error), which confirms that the field is copied into descriptor bytes 12..15. Confidence PROVEN for the check, INFERRED for the copy.";
             sw = rw;
             hw = r;
             reset = 0;
@@ -231,7 +231,7 @@ regfile eHISI_JPGE {
 
         field {
             name = "yuvFmt";
-            desc = "Chroma sampling of the picture and of the JPEG: 0 = 4:2:0, 1 = 4:2:2 (Source: Hi3520D board read-back 2026-11-10: NV21 and NV61 encodes decode correctly with SOF sampling 0x22 and 0x21), 2 = 4:4:4 (Source: HiSTB driver (register semantics only), confidence MEDIUM, Not verified on hardware). Value 3: unknown, the HiSTB JPGE driver rejects it (not verified, LOW). With 4:2:2 data and yuvFmt = 0 plus a doubled chroma stride the encoder skips every second chroma line (4:2:0 JPEG from 4:2:2 input): Source: HiSTB driver (register semantics only), confidence MEDIUM (used by the HiSTB driver for rotation and 4:2:2 semi-planar), Not verified on hardware. Other chips (static analysis 2026-11-11): the vendor modules of Hi3518, Hi3518E, Hi3516A, Hi3516CV300 and Hi3519V101 write a 2 bit value from the channel structure to [3:2] (same position, Source: vendor module, HIGH).";
+            desc = "Chroma sampling of the picture and of the JPEG: 0 = 4:2:0, 1 = 4:2:2 (Source: Hi3520D board read-back 2026-11-10: NV21 and NV61 encodes decode correctly with SOF sampling 0x22 and 0x21), 2 = 4:4:4 (Source: HiSTB driver (register semantics only), confidence MEDIUM, Not verified on hardware). Value 3: unknown, the HiSTB JPGE driver rejects it (not verified, LOW). With 4:2:2 data and yuvFmt = 0 plus a doubled chroma stride the encoder skips every second chroma line (4:2:0 JPEG from 4:2:2 input): Source: HiSTB driver (register semantics only), confidence MEDIUM (used by the HiSTB driver for rotation and 4:2:2 semi-planar), Not verified on hardware. Other chips (static analysis 2026-11-11): the vendor modules of Hi3518, Hi3518E, Hi3516A, Hi3516CV300 and Hi3519V101 write a 2 bit value from the channel structure to [3:2] (same position, Source: vendor module, HIGH). Hi3536D vendor module (Hi3536D V100 vendor module hi3536dv100_jpege.ko (SDK V1.0.1.0): static analysis plus execution of its register writer under qemu-arm on a RAM window, 2026-11-22 (shows what the vendor PROGRAMS, not what the silicon does)): the module writes 0 for 4:2:0 and 1 for 4:2:2 (pixel formats 23 and 22); for the 400 format (29) it writes 0 and sets col2grayEn; it never writes 2 or 3. Confidence PROVEN.";
             sw = rw;
             hw = r;
             reset = 0;
@@ -252,7 +252,7 @@ regfile eHISI_JPGE {
 
         field {
             name = "ecsSize";
-            desc = "Segment size in MCUs minus 1 (the DRI interval minus 1). Source: HiSTB driver (register semantics only), confidence LOW. Not verified on hardware.";
+            desc = "Segment size in MCUs minus 1 (the DRI interval minus 1). Source: HiSTB driver (register semantics only), confidence LOW. Not verified on hardware. Hi3536D vendor module (Hi3536D V100 vendor module hi3536dv100_jpege.ko (SDK V1.0.1.0): static analysis plus execution of its register writer under qemu-arm on a RAM window, 2026-11-22 (shows what the vendor PROGRAMS, not what the silicon does)): ecsSize = u32MCUPerECS - 1 (example: 100 MCUs gives ECSCFG 0x000000C7, 1199 gives 0x0000095D, interval >= total gives 0). The 20-bit field is wider than the vendor 16-bit DRI limit. Confidence PROVEN.";
             sw = rw;
             hw = r;
             reset = 0;
@@ -260,7 +260,7 @@ regfile eHISI_JPGE {
 
         field {
             name = "ecsSplit";
-            desc = "Enable the split into entropy-coded segments (restart intervals). Source: HiSTB driver (register semantics only), confidence LOW. Not verified on hardware.";
+            desc = "Enable the split into entropy-coded segments (restart intervals). Source: HiSTB driver (register semantics only), confidence LOW. Not verified on hardware. Hi3536D vendor module (Hi3536D V100 vendor module hi3536dv100_jpege.ko (SDK V1.0.1.0): static analysis plus execution of its register writer under qemu-arm on a RAM window, 2026-11-22 (shows what the vendor PROGRAMS, not what the silicon does)): set to 1 only when 0 < u32MCUPerECS < total MCU count of the picture (total = ((w+15)>>4) * ((h+15)>>4), doubled for 4:2:2), cleared otherwise; the vendor checks u32MCUPerECS < 65536 and <= twice the 4:2:0 MCU count and puts a DRI marker with the same interval into the software-written header (the vendor header always carries a DRI segment, interval 0 when unused). The vendor module contains no RSTn insertion code, so a DRI-compliant stream means the hardware inserts the markers. Confidence PROVEN for the programming, hardware behavior still unverified (the Hi3520D stopped after the first segment, docs/research/jpge-open-questions-2026-11-22.md).";
             sw = rw;
             hw = r;
             reset = 0;
@@ -269,7 +269,7 @@ regfile eHISI_JPGE {
 
     reg {
         name = "JPGE START";
-        desc = "Start one picture: the driver writes 0 and then 1 (HiSTB sequence; Source: Hi3520D board read-back 2026-11-10: every encode starts this way, 3000 back-to-back frames). Whether the bit self-clears: Not verified on hardware. Layout: vendor header jpge_reg(r004).h (Hi3520D U-Boot 2010.06 upload), not in the data sheet.";
+        desc = "Start one picture: the driver writes 0 and then 1 (HiSTB sequence; Source: Hi3520D board read-back 2026-11-10: every encode starts this way, 3000 back-to-back frames). Whether the bit self-clears: Not verified on hardware. Layout: vendor header jpge_reg(r004).h (Hi3520D U-Boot 2010.06 upload), not in the data sheet. Hi3536D vendor module (Hi3536D V100 vendor module hi3536dv100_jpege.ko (SDK V1.0.1.0): static analysis plus execution of its register writer under qemu-arm on a RAM window, 2026-11-22 (shows what the vendor PROGRAMS, not what the silicon does)): JPEGU_StartVpu writes 0 and then 1, as the Linux driver does.";
 
         field {
             name = "VStart";
@@ -281,7 +281,7 @@ regfile eHISI_JPGE {
 
     reg {
         name = "JPGE VEDIMGSIZE";
-        desc = "Picture size minus 1, 13 bits each (maximum 8192). Layout: vendor header jpge_reg(r004).h (Hi3520D U-Boot 2010.06 upload), not in the data sheet. Sizes 64x64, 640x480, 644x484, 1280x720 and 1920x1080 encode with these values (Source: Hi3520D board read-back 2026-11-10). Size limits 64x64 to 8192x8192 in steps of 4: Source: data sheet 6.3.2. Whether sizes that are not a multiple of the MCU are padded correctly by the hardware: Not verified on hardware (the encode completes; the picture content at the edge was not compared).";
+        desc = "Picture size minus 1, 13 bits each (maximum 8192). Layout: vendor header jpge_reg(r004).h (Hi3520D U-Boot 2010.06 upload), not in the data sheet. Sizes 64x64, 640x480, 644x484, 1280x720 and 1920x1080 encode with these values (Source: Hi3520D board read-back 2026-11-10). Size limits 64x64 to 8192x8192 in steps of 4: Source: data sheet 6.3.2. Whether sizes that are not a multiple of the MCU are padded correctly by the hardware: Not verified on hardware (the encode completes; the picture content at the edge was not compared). Hi3536D vendor module (Hi3536D V100 vendor module hi3536dv100_jpege.ko (SDK V1.0.1.0): static analysis plus execution of its register writer under qemu-arm on a RAM window, 2026-11-22 (shows what the vendor PROGRAMS, not what the silicon does)): width - 1 in [12:0] and height - 1 in [28:16]; the module accepts widths and heights that are multiples of 4 in 32..8192 (picture size at most the maximum size of the channel), strides and source addresses multiples of 16.";
 
         field {
             name = "ImgHeightInPixelsMinus1";
@@ -300,7 +300,7 @@ regfile eHISI_JPGE {
 
     reg {
         name = "JPGE clip THR";
-        desc = "[inferred] JPGE clip THR. Not in the data sheet. Source: vendor U-Boot 2010.06 upload `product/hiosd/dec/jpeg_reg.h` = `jpge_reg(r004).h` (GPL-2.0 U-Boot tree, Huawei copyright 2012; github.com/Axl-zhang/hisilicon-hi3520d-uboot), union `U_JPGE_CLIP_THR`, struct offset 0x24 (GPL-2.0; same SDK generation as the Hi3520D, chip not named in the file). Reset value and access type unknown (modelled RW, no reset). Confidence: medium (vendor header for this chip family, not hardware verified).";
+        desc = "[inferred] JPGE clip THR. Not in the data sheet. Source: vendor U-Boot 2010.06 upload `product/hiosd/dec/jpeg_reg.h` = `jpge_reg(r004).h` (GPL-2.0 U-Boot tree, Huawei copyright 2012; github.com/Axl-zhang/hisilicon-hi3520d-uboot), union `U_JPGE_CLIP_THR`, struct offset 0x24 (GPL-2.0; same SDK generation as the Hi3520D, chip not named in the file). Reset value and access type unknown (modelled RW, no reset). Confidence: medium (vendor header for this chip family, not hardware verified). Hi3536D vendor module (Hi3536D V100 vendor module hi3536dv100_jpege.ko (SDK V1.0.1.0): static analysis plus execution of its register writer under qemu-arm on a RAM window, 2026-11-22 (shows what the vendor PROGRAMS, not what the silicon does)): never written (nor read); clip_en stays at its reset value.";
 
         field {
             name = "jcpi_chr_max";
@@ -357,7 +357,7 @@ regfile eHISI_JPGE {
 
     reg {
         name = "JPGE SRCVADDR";
-        desc = "Source Cr plane address for planar input (Source: HiSTB driver (register semantics only), confidence MEDIUM, Not verified on hardware). Unused for semi-planar input: the Linux driver writes 0 and encodes correctly (Source: Hi3520D board read-back 2026-11-10).";
+        desc = "Source Cr plane address for planar input (Source: HiSTB driver (register semantics only), confidence MEDIUM, Not verified on hardware). Unused for semi-planar input: the Linux driver writes 0 and encodes correctly (Source: Hi3520D board read-back 2026-11-10). Hi3536D vendor module (Hi3536D V100 vendor module hi3536dv100_jpege.ko (SDK V1.0.1.0): static analysis plus execution of its register writer under qemu-arm on a RAM window, 2026-11-22 (shows what the vendor PROGRAMS, not what the silicon does)): never written (the module supports semi-planar input only).";
 
         field {
             name = "value";
@@ -369,7 +369,7 @@ regfile eHISI_JPGE {
 
     reg {
         name = "JPGE SSTRIDE";
-        desc = "Source line strides in bytes: luma/packed in [15:0], chroma in [31:16] (one chroma stride for Cb and Cr in planar mode). 16-byte multiples: Source: HiSTB driver (register semantics only), confidence MEDIUM. Semi-planar strides equal to bytesperline for both fields work (Source: Hi3520D board read-back 2026-11-10, 640 to 1920 wide). Doubling the chroma stride to read every second chroma line: Source: HiSTB driver (register semantics only), confidence MEDIUM, Not verified on hardware. Layout: vendor header jpge_reg(r004).h (Hi3520D U-Boot 2010.06 upload), not in the data sheet.";
+        desc = "Source line strides in bytes: luma/packed in [15:0], chroma in [31:16] (one chroma stride for Cb and Cr in planar mode). 16-byte multiples: Source: HiSTB driver (register semantics only), confidence MEDIUM. Semi-planar strides equal to bytesperline for both fields work (Source: Hi3520D board read-back 2026-11-10, 640 to 1920 wide). Doubling the chroma stride to read every second chroma line: Source: HiSTB driver (register semantics only), confidence MEDIUM, Not verified on hardware. Layout: vendor header jpge_reg(r004).h (Hi3520D U-Boot 2010.06 upload), not in the data sheet. Hi3536D vendor module (Hi3536D V100 vendor module hi3536dv100_jpege.ko (SDK V1.0.1.0): static analysis plus execution of its register writer under qemu-arm on a RAM window, 2026-11-22 (shows what the vendor PROGRAMS, not what the silicon does)): the module checks that both strides and the source addresses are multiples of 16; it writes the luma stride to [15:0] and the chroma stride to [31:16].";
 
         field {
             name = "SrcCStride";
@@ -388,7 +388,7 @@ regfile eHISI_JPGE {
 
     reg {
         name = "JPGE STRMADDR";
-        desc = "Stream buffer start address (64-byte aligned in the Linux driver). The hardware writes a 64-byte packet descriptor here (dword 0 PacketLen including the descriptor, a multiple of 64; dword 1 InvalidBytes = padding at the end of the packet; byte 11 last-slice flag, dwords 3 channel id: Source: HiSTB driver (register semantics only), confidence MEDIUM for the layout) followed by the entropy-coded scan data and the EOI marker FF D9 (Source: Hi3520D board read-back 2026-11-10: every encode ends with ff d9, the PacketLen/InvalidBytes semantics gave correct file sizes). Layout: vendor header jpge_reg(r004).h (Hi3520D U-Boot 2010.06 upload), not in the data sheet.";
+        desc = "Stream buffer start address (64-byte aligned in the Linux driver). The hardware writes a 64-byte packet descriptor here (dword 0 PacketLen including the descriptor, a multiple of 64; dword 1 InvalidBytes = padding at the end of the packet; byte 11 last-slice flag, dwords 3 channel id: Source: HiSTB driver (register semantics only), confidence MEDIUM for the layout) followed by the entropy-coded scan data and the EOI marker FF D9 (Source: Hi3520D board read-back 2026-11-10: every encode ends with ff d9, the PacketLen/InvalidBytes semantics gave correct file sizes). Layout: vendor header jpge_reg(r004).h (Hi3520D U-Boot 2010.06 upload), not in the data sheet. Hi3536D vendor module (Hi3536D V100 vendor module hi3536dv100_jpege.ko (SDK V1.0.1.0): static analysis plus execution of its register writer under qemu-arm on a RAM window, 2026-11-22 (shows what the vendor PROGRAMS, not what the silicon does)): descriptor layout as the vendor reader uses it: dword 0 PacketLen, dword 1 InvalidBytes (checked <= 63), byte 8 pack type (JPEGE_PACK_TYPE: ECS 5, APP 6, VDO 7, PIC 8; the software header pack uses 8), bytes 9 and 11 flags (checked to be 0 or 1; byte 11 is copied to the frame-end flag of the stream pack), dword 3 channel id (checked), bytes 16..23 PTS. The vendor reader gathers up to four consecutive packets per call. Confidence PROVEN for the reader, INFERRED for what the hardware writes.";
 
         field {
             name = "value";
@@ -400,7 +400,7 @@ regfile eHISI_JPGE {
 
     reg {
         name = "JPGE SRPTRADDR";
-        desc = "Stream read/write pointer address (not used by the encoder as a pointer in single-picture mode). The Linux driver points it 16 bytes (SRPTR) or 32 bytes (SWPTR) below the stream address, as the HiSTB driver does. Board finding (Source: Hi3520D board read-back 2026-11-10, functional test): the 32 bytes below the stream address must not hold stale data; with a reused buffer that still held the previous JFIF header the second and later pictures lost their packet descriptor and the scan data started early; clearing those bytes (and the descriptor area) before every job fixed it, a per-job hardware reset did not. What the block reads there is Not verified on hardware. Layout: vendor header jpge_reg(r004).h (Hi3520D U-Boot 2010.06 upload), not in the data sheet.";
+        desc = "Stream read/write pointer address (not used by the encoder as a pointer in single-picture mode). The Linux driver points it 16 bytes (SRPTR) or 32 bytes (SWPTR) below the stream address, as the HiSTB driver does. Board finding (Source: Hi3520D board read-back 2026-11-10, functional test): the 32 bytes below the stream address must not hold stale data; with a reused buffer that still held the previous JFIF header the second and later pictures lost their packet descriptor and the scan data started early; clearing those bytes (and the descriptor area) before every job fixed it, a per-job hardware reset did not. What the block reads there is Not verified on hardware. Layout: vendor header jpge_reg(r004).h (Hi3520D U-Boot 2010.06 upload), not in the data sheet. Hi3536D vendor module (Hi3536D V100 vendor module hi3536dv100_jpege.ko (SDK V1.0.1.0): static analysis plus execution of its register writer under qemu-arm on a RAM window, 2026-11-22 (shows what the vendor PROGRAMS, not what the silicon does)): the vendor ring buffer keeps the two pointer cells in a separate 128-byte structure (read-pointer cell at +0x40, write-pointer cell at +0x80, both 64-byte aligned: the module panics otherwise, as it does for a stream address or length that is not a multiple of 64); SRPTR points at the first, SWPTR at the second. The write-pointer cell holds a byte offset into the ring and wraps at STRMBUFLEN; the vendor derives the size of a frame as (write cell after the frame - write cell before the frame) mod length, and updates the read cell only when the application releases a stream. Confidence PROVEN for the allocation and use, INFERRED for the hardware semantics (initial write offset = the cell value; flow control against the read cell).";
 
         field {
             name = "value";
@@ -412,7 +412,7 @@ regfile eHISI_JPGE {
 
     reg {
         name = "JPGE SWPTRADDR";
-        desc = "Stream read/write pointer address (not used by the encoder as a pointer in single-picture mode). The Linux driver points it 16 bytes (SRPTR) or 32 bytes (SWPTR) below the stream address, as the HiSTB driver does. Board finding (Source: Hi3520D board read-back 2026-11-10, functional test): the 32 bytes below the stream address must not hold stale data; with a reused buffer that still held the previous JFIF header the second and later pictures lost their packet descriptor and the scan data started early; clearing those bytes (and the descriptor area) before every job fixed it, a per-job hardware reset did not. What the block reads there is Not verified on hardware. Layout: vendor header jpge_reg(r004).h (Hi3520D U-Boot 2010.06 upload), not in the data sheet.";
+        desc = "Stream read/write pointer address (not used by the encoder as a pointer in single-picture mode). The Linux driver points it 16 bytes (SRPTR) or 32 bytes (SWPTR) below the stream address, as the HiSTB driver does. Board finding (Source: Hi3520D board read-back 2026-11-10, functional test): the 32 bytes below the stream address must not hold stale data; with a reused buffer that still held the previous JFIF header the second and later pictures lost their packet descriptor and the scan data started early; clearing those bytes (and the descriptor area) before every job fixed it, a per-job hardware reset did not. What the block reads there is Not verified on hardware. Layout: vendor header jpge_reg(r004).h (Hi3520D U-Boot 2010.06 upload), not in the data sheet. Hi3536D vendor module (Hi3536D V100 vendor module hi3536dv100_jpege.ko (SDK V1.0.1.0): static analysis plus execution of its register writer under qemu-arm on a RAM window, 2026-11-22 (shows what the vendor PROGRAMS, not what the silicon does)): the vendor ring buffer keeps the two pointer cells in a separate 128-byte structure (read-pointer cell at +0x40, write-pointer cell at +0x80, both 64-byte aligned: the module panics otherwise, as it does for a stream address or length that is not a multiple of 64); SRPTR points at the first, SWPTR at the second. The write-pointer cell holds a byte offset into the ring and wraps at STRMBUFLEN; the vendor derives the size of a frame as (write cell after the frame - write cell before the frame) mod length, and updates the read cell only when the application releases a stream. Confidence PROVEN for the allocation and use, INFERRED for the hardware semantics (initial write offset = the cell value; flow control against the read cell).";
 
         field {
             name = "value";
@@ -424,7 +424,7 @@ regfile eHISI_JPGE {
 
     reg {
         name = "JPGE STRMBUFLEN";
-        desc = "Stream buffer length in bytes, low 6 bits not stored (the Linux driver writes the length with bits [5:0] clear). Source: HiSTB driver (register semantics only), confidence MEDIUM; Source: Hi3520D board read-back 2026-11-10: values up to a few MiB accept full pictures. The buffer-full interrupt behavior is Not verified on hardware (never reached in the test). Previously: described as 64-byte units; the register value is the byte count with the low bits cleared. Layout: vendor header jpge_reg(r004).h (Hi3520D U-Boot 2010.06 upload), not in the data sheet.";
+        desc = "Stream buffer length in bytes, low 6 bits not stored (the Linux driver writes the length with bits [5:0] clear). Source: HiSTB driver (register semantics only), confidence MEDIUM; Source: Hi3520D board read-back 2026-11-10: values up to a few MiB accept full pictures. The buffer-full interrupt behavior is Not verified on hardware (never reached in the test). Previously: described as 64-byte units; the register value is the byte count with the low bits cleared. Layout: vendor header jpge_reg(r004).h (Hi3520D U-Boot 2010.06 upload), not in the data sheet. Hi3536D vendor module (Hi3536D V100 vendor module hi3536dv100_jpege.ko (SDK V1.0.1.0): static analysis plus execution of its register writer under qemu-arm on a RAM window, 2026-11-22 (shows what the vendor PROGRAMS, not what the silicon does)): the length is the size of the whole ring (multiple of 64, checked); the vendor starts a picture only when the free ring space is at least max(4096, aligned(w,16) * aligned(h,16) / 2) bytes (about 0.5 byte per pixel, plus the pending header), in the memory-reduction mode (module parameter JpegeMiniBufMode) half the ring, and the interrupt-mask bit 1 (buffer full) is enabled. The documented VENC stream buffer size for a channel is at least 1/2 and recommended 1x of w*h*1.5 bytes.";
 
         field {
             name = "BufferLength";
@@ -436,7 +436,7 @@ regfile eHISI_JPGE {
 
     reg {
         name = "JPGE PTS0";
-        desc = "Frame time stamp word. Observed in the HiSTB driver: written (never read) with the caller's frame PTS in jpge_set_register(), just before OUTSTD and START; its purpose in the hardware (copied into the packet descriptor?) is unknown. The Linux driver does not write it. Source: HiSTB driver (register semantics only), confidence LOW. Not verified on hardware. Layout: vendor header jpge_reg(r004).h (Hi3520D U-Boot 2010.06 upload), not in the data sheet.";
+        desc = "Frame time stamp word. Observed in the HiSTB driver: written (never read) with the caller's frame PTS in jpge_set_register(), just before OUTSTD and START; its purpose in the hardware (copied into the packet descriptor?) is unknown. The Linux driver does not write it. Source: HiSTB driver (register semantics only), confidence LOW. Not verified on hardware. Layout: vendor header jpge_reg(r004).h (Hi3520D U-Boot 2010.06 upload), not in the data sheet. Hi3536D vendor module (Hi3536D V100 vendor module hi3536dv100_jpege.ko (SDK V1.0.1.0): static analysis plus execution of its register writer under qemu-arm on a RAM window, 2026-11-22 (shows what the vendor PROGRAMS, not what the silicon does)): written on every picture with the low 32 bits of the frame PTS; the vendor stream reader copies descriptor bytes 16..23 into the 64-bit PTS of the stream pack, so the hardware most likely copies PTS0/PTS1 there (INFERRED; board experiment E-PTS). PTS2 and PTS3 are written 0. Confidence PROVEN for the writes.";
 
         field {
             name = "value";
@@ -448,7 +448,7 @@ regfile eHISI_JPGE {
 
     reg {
         name = "JPGE PTS1";
-        desc = "Time stamp word 1 (name only). Not accessed by the HiSTB JPGE driver; purpose unknown. Source: HiSTB driver (register semantics only), confidence LOW. Not verified on hardware. Layout: vendor header jpge_reg(r004).h (Hi3520D U-Boot 2010.06 upload), not in the data sheet.";
+        desc = "Time stamp word 1 (name only). Not accessed by the HiSTB JPGE driver; purpose unknown. Source: HiSTB driver (register semantics only), confidence LOW. Not verified on hardware. Layout: vendor header jpge_reg(r004).h (Hi3520D U-Boot 2010.06 upload), not in the data sheet. Hi3536D vendor module (Hi3536D V100 vendor module hi3536dv100_jpege.ko (SDK V1.0.1.0): static analysis plus execution of its register writer under qemu-arm on a RAM window, 2026-11-22 (shows what the vendor PROGRAMS, not what the silicon does)): written on every picture with the high 32 bits of the frame PTS (see PTS0).";
 
         field {
             name = "value";
@@ -460,7 +460,7 @@ regfile eHISI_JPGE {
 
     reg {
         name = "JPGE PTS2";
-        desc = "Time stamp word 2 (name only). Not accessed by the HiSTB JPGE driver; purpose unknown. Source: HiSTB driver (register semantics only), confidence LOW. Not verified on hardware. Layout: vendor header jpge_reg(r004).h (Hi3520D U-Boot 2010.06 upload), not in the data sheet.";
+        desc = "Time stamp word 2 (name only). Not accessed by the HiSTB JPGE driver; purpose unknown. Source: HiSTB driver (register semantics only), confidence LOW. Not verified on hardware. Layout: vendor header jpge_reg(r004).h (Hi3520D U-Boot 2010.06 upload), not in the data sheet. Hi3536D vendor module (Hi3536D V100 vendor module hi3536dv100_jpege.ko (SDK V1.0.1.0): static analysis plus execution of its register writer under qemu-arm on a RAM window, 2026-11-22 (shows what the vendor PROGRAMS, not what the silicon does)): written 0 on every picture.";
 
         field {
             name = "value";
@@ -472,7 +472,7 @@ regfile eHISI_JPGE {
 
     reg {
         name = "JPGE PTS3";
-        desc = "Time stamp word 3 (name only). Not accessed by the HiSTB JPGE driver; purpose unknown. Source: HiSTB driver (register semantics only), confidence LOW. Not verified on hardware. Layout: vendor header jpge_reg(r004).h (Hi3520D U-Boot 2010.06 upload), not in the data sheet.";
+        desc = "Time stamp word 3 (name only). Not accessed by the HiSTB JPGE driver; purpose unknown. Source: HiSTB driver (register semantics only), confidence LOW. Not verified on hardware. Layout: vendor header jpge_reg(r004).h (Hi3520D U-Boot 2010.06 upload), not in the data sheet. Hi3536D vendor module (Hi3536D V100 vendor module hi3536dv100_jpege.ko (SDK V1.0.1.0): static analysis plus execution of its register writer under qemu-arm on a RAM window, 2026-11-22 (shows what the vendor PROGRAMS, not what the silicon does)): written 0 on every picture.";
 
         field {
             name = "value";
@@ -484,7 +484,7 @@ regfile eHISI_JPGE {
 
     reg {
         name = "JPGE TIMEOUT";
-        desc = "Hardware encode time-out threshold (name only). Not accessed by the HiSTB driver (PICFG timeoutEn is never set there) and not by the Linux driver, which uses a software watchdog; unit and purpose unknown. Source: HiSTB driver (register semantics only), confidence LOW. Not verified on hardware. Layout: vendor header jpge_reg(r004).h (Hi3520D U-Boot 2010.06 upload), not in the data sheet.";
+        desc = "Hardware encode time-out threshold (name only). Not accessed by the HiSTB driver (PICFG timeoutEn is never set there) and not by the Linux driver, which uses a software watchdog; unit and purpose unknown. Source: HiSTB driver (register semantics only), confidence LOW. Not verified on hardware. Layout: vendor header jpge_reg(r004).h (Hi3520D U-Boot 2010.06 upload), not in the data sheet. Hi3536D vendor module (Hi3536D V100 vendor module hi3536dv100_jpege.ko (SDK V1.0.1.0): static analysis plus execution of its register writer under qemu-arm on a RAM window, 2026-11-22 (shows what the vendor PROGRAMS, not what the silicon does)): never written (JPEGU_SetTimeOut and JPEGU_GetTimeOut are empty functions); PICFG timeoutEn is still set to 1.";
 
         field {
             name = "value";
@@ -496,7 +496,7 @@ regfile eHISI_JPGE {
 
     reg {
         name = "JPGE TIMER";
-        desc = "Hardware encode timer (name only). Not accessed by the HiSTB driver or the Linux driver; unit and purpose unknown. Source: HiSTB driver (register semantics only), confidence LOW. Not verified on hardware. Layout: vendor header jpge_reg(r004).h (Hi3520D U-Boot 2010.06 upload), not in the data sheet.";
+        desc = "Hardware encode timer (name only). Not accessed by the HiSTB driver or the Linux driver; unit and purpose unknown. Source: HiSTB driver (register semantics only), confidence LOW. Not verified on hardware. Layout: vendor header jpge_reg(r004).h (Hi3520D U-Boot 2010.06 upload), not in the data sheet. Hi3536D vendor module (Hi3536D V100 vendor module hi3536dv100_jpege.ko (SDK V1.0.1.0): static analysis plus execution of its register writer under qemu-arm on a RAM window, 2026-11-22 (shows what the vendor PROGRAMS, not what the silicon does)): read once, for a debug print (JPEGU_OutputDebugInfo); never written.";
 
         field {
             name = "value";
@@ -508,7 +508,7 @@ regfile eHISI_JPGE {
 
     reg {
         name = "JPGE OUTSTD";
-        desc = "AXI outstanding request count. Reset 0 (Source: Hi3520D board read-back 2026-11-10); the HiSTB driver and the Linux driver write 2 and the encodes work. Other values: Not verified on hardware. Layout: vendor header jpge_reg(r004).h (Hi3520D U-Boot 2010.06 upload), not in the data sheet.";
+        desc = "AXI outstanding request count. Reset 0 (Source: Hi3520D board read-back 2026-11-10); the HiSTB driver and the Linux driver write 2 and the encodes work. Other values: Not verified on hardware. Layout: vendor header jpge_reg(r004).h (Hi3520D U-Boot 2010.06 upload), not in the data sheet. Hi3536D vendor module (Hi3536D V100 vendor module hi3536dv100_jpege.ko (SDK V1.0.1.0): static analysis plus execution of its register writer under qemu-arm on a RAM window, 2026-11-22 (shows what the vendor PROGRAMS, not what the silicon does)): the HAL init writes outstdNum = 1 (read-modify-write of bits [3:0]); the value is never changed afterwards.";
 
         field {
             name = "outstdNum";
@@ -521,7 +521,7 @@ regfile eHISI_JPGE {
 
     reg {
         name = "JPGE VERSION";
-        desc = "Version word. Reads 0x56325234 (ASCII 'V2R4') on the Hi3520D (Source: Hi3520D board read-back 2026-11-10); also 0x56325234 on the Hi3518E V200 (Night Owl camera, 2026-11-11, PERI_CRG24 clock on, CRG restored; +0x010 reads 0x0D880000, +0x030..+0x048 0xFFFFFFFF, all else 0); matches the r004 layout name of the vendor header. Read-only is assumed from the name (Not verified on hardware). Layout: vendor header jpge_reg(r004).h (Hi3520D U-Boot 2010.06 upload), not in the data sheet.";
+        desc = "Version word. Reads 0x56325234 (ASCII 'V2R4') on the Hi3520D (Source: Hi3520D board read-back 2026-11-10); also 0x56325234 on the Hi3518E V200 (Night Owl camera, 2026-11-11, PERI_CRG24 clock on, CRG restored; +0x010 reads 0x0D880000, +0x030..+0x048 0xFFFFFFFF, all else 0); matches the r004 layout name of the vendor header. Read-only is assumed from the name (Not verified on hardware). Layout: vendor header jpge_reg(r004).h (Hi3520D U-Boot 2010.06 upload), not in the data sheet. Hi3536D vendor module (Hi3536D V100 vendor module hi3536dv100_jpege.ko (SDK V1.0.1.0): static analysis plus execution of its register writer under qemu-arm on a RAM window, 2026-11-22 (shows what the vendor PROGRAMS, not what the silicon does)): the module never reads this register and has no code path that depends on it (its chip-version variable is not used); the Linux driver is the only reader.";
 
         field {
             name = "value";
@@ -534,7 +534,7 @@ regfile eHISI_JPGE {
 
     reg {
         name = "VPP configuration";
-        desc = "[inferred] VPP configuration. Not in the data sheet. Source: vendor U-Boot 2010.06 upload `product/hiosd/dec/jpeg_reg.h` = `jpge_reg(r004).h` (GPL-2.0 U-Boot tree, Huawei copyright 2012; github.com/Axl-zhang/hisilicon-hi3520d-uboot), union `U_JPGE_CFG`, struct offset 0x500 (GPL-2.0; same SDK generation as the Hi3520D, chip not named in the file). Reset value and access type unknown (modelled RW, no reset). Confidence: medium (vendor header for this chip family, not hardware verified).";
+        desc = "[inferred] VPP configuration. Not in the data sheet. Source: vendor U-Boot 2010.06 upload `product/hiosd/dec/jpeg_reg.h` = `jpge_reg(r004).h` (GPL-2.0 U-Boot tree, Huawei copyright 2012; github.com/Axl-zhang/hisilicon-hi3520d-uboot), union `U_JPGE_CFG`, struct offset 0x500 (GPL-2.0; same SDK generation as the Hi3520D, chip not named in the file). Reset value and access type unknown (modelled RW, no reset). Confidence: medium (vendor header for this chip family, not hardware verified). Hi3536D vendor module (Hi3536D V100 vendor module hi3536dv100_jpege.ko (SDK V1.0.1.0): static analysis plus execution of its register writer under qemu-arm on a RAM window, 2026-11-22 (shows what the vendor PROGRAMS, not what the silicon does)): for a plain encode (no overlay) the module does a read-modify-write of this register that CLEARS osdEn (bit 5) on every picture and writes nothing else of the VPP window; with an overlay it sets osdEn and programs 0x510-0x5C0 as described there. Board read 2026-11-22 (Hi3536D NBD80XXS, before and after the first encode): reads 0. Confidence PROVEN.";
 
         field {
             name = "osdEn";
@@ -546,7 +546,7 @@ regfile eHISI_JPGE {
 
     reg {
         name = "VPP OSD configuration";
-        desc = "[inferred] VPP OSD configuration. Not in the data sheet. Source: vendor U-Boot 2010.06 upload `product/hiosd/dec/jpeg_reg.h` = `jpge_reg(r004).h` (GPL-2.0 U-Boot tree, Huawei copyright 2012; github.com/Axl-zhang/hisilicon-hi3520d-uboot), union `U_JPGE_OSD_CFG`, struct offset 0x510 (GPL-2.0; same SDK generation as the Hi3520D, chip not named in the file). Reset value and access type unknown (modelled RW, no reset). Confidence: medium (vendor header for this chip family, not hardware verified).";
+        desc = "[inferred] VPP OSD configuration. Not in the data sheet. Source: vendor U-Boot 2010.06 upload `product/hiosd/dec/jpeg_reg.h` = `jpge_reg(r004).h` (GPL-2.0 U-Boot tree, Huawei copyright 2012; github.com/Axl-zhang/hisilicon-hi3520d-uboot), union `U_JPGE_OSD_CFG`, struct offset 0x510 (GPL-2.0; same SDK generation as the Hi3520D, chip not named in the file). Reset value and access type unknown (modelled RW, no reset). Confidence: medium (vendor header for this chip family, not hardware verified). Hi3536D vendor module (Hi3536D V100 vendor module hi3536dv100_jpege.ko (SDK V1.0.1.0): static analysis plus execution of its register writer under qemu-arm on a RAM window, 2026-11-22 (shows what the vendor PROGRAMS, not what the silicon does)): with overlays the module writes osdRgbfmt = 1 when the region format code is 5 (otherwise 0), osdNEn (bits [31:24]) = 1 for every region index below the region count, and osdNGlobalEn (bits [23:16]) = 0 always; for a plain encode it does not touch this register. Board read 2026-11-22 (Hi3536D, 0x510 reads 0 before and after the first encode). Bit positions PROVEN against the vendor code.";
 
         field {
             name = "osd7En";
@@ -670,7 +670,7 @@ regfile eHISI_JPGE {
 
     reg {
         name = "VPP OSD01 alpha";
-        desc = "[inferred] VPP OSD01 alpha. Not in the data sheet. Source: vendor U-Boot 2010.06 upload `product/hiosd/dec/jpeg_reg.h` = `jpge_reg(r004).h` (GPL-2.0 U-Boot tree, Huawei copyright 2012; github.com/Axl-zhang/hisilicon-hi3520d-uboot), union `U_JPGE_OSD01_ALPHA`, struct offset 0x514 (GPL-2.0; same SDK generation as the Hi3520D, chip not named in the file). Reset value and access type unknown (modelled RW, no reset). Confidence: medium (vendor header for this chip family, not hardware verified).";
+        desc = "[inferred] VPP OSD01 alpha. Not in the data sheet. Source: vendor U-Boot 2010.06 upload `product/hiosd/dec/jpeg_reg.h` = `jpge_reg(r004).h` (GPL-2.0 U-Boot tree, Huawei copyright 2012; github.com/Axl-zhang/hisilicon-hi3520d-uboot), union `U_JPGE_OSD01_ALPHA`, struct offset 0x514 (GPL-2.0; same SDK generation as the Hi3520D, chip not named in the file). Reset value and access type unknown (modelled RW, no reset). Confidence: medium (vendor header for this chip family, not hardware verified). Hi3536D vendor module (Hi3536D V100 vendor module hi3536dv100_jpege.ko (SDK V1.0.1.0): static analysis plus execution of its register writer under qemu-arm on a RAM window, 2026-11-22 (shows what the vendor PROGRAMS, not what the silicon does)): per region the module writes byte 0 = alpha0 and byte 1 = alpha1 of the first region and byte 2/3 of the second (positions match this layout). Region descriptor stride in the vendor structure 0x54 bytes: x +0x0C, y +0x10, w +0x14, h +0x18, layer +0x1C, global alpha +0x20, alpha1 +0x24, alpha0 +0x28, DMA address +0x2C, stride +0x30.";
 
         field {
             name = "osd1Alpha1";
@@ -868,7 +868,7 @@ regfile eHISI_JPGE {
 
     reg {
         name = "VPP OSD position";
-        desc = "[inferred] VPP OSD position. Array of 8 consecutive 32-bit words (header `VPP_OSD_POS[8]`). Not in the data sheet. Source: vendor U-Boot 2010.06 upload `product/hiosd/dec/jpeg_reg.h` = `jpge_reg(r004).h` (GPL-2.0 U-Boot tree, Huawei copyright 2012; github.com/Axl-zhang/hisilicon-hi3520d-uboot), union `U_JPGE_OSD_POS`, struct offset 0x530 (GPL-2.0; same SDK generation as the Hi3520D, chip not named in the file). Reset value and access type unknown (modelled RW, no reset). Confidence: medium (vendor header for this chip family, not hardware verified).";
+        desc = "[inferred] VPP OSD position. Array of 8 consecutive 32-bit words (header `VPP_OSD_POS[8]`). Not in the data sheet. Source: vendor U-Boot 2010.06 upload `product/hiosd/dec/jpeg_reg.h` = `jpge_reg(r004).h` (GPL-2.0 U-Boot tree, Huawei copyright 2012; github.com/Axl-zhang/hisilicon-hi3520d-uboot), union `U_JPGE_OSD_POS`, struct offset 0x530 (GPL-2.0; same SDK generation as the Hi3520D, chip not named in the file). Reset value and access type unknown (modelled RW, no reset). Confidence: medium (vendor header for this chip family, not hardware verified). Hi3536D vendor module (Hi3536D V100 vendor module hi3536dv100_jpege.ko (SDK V1.0.1.0): static analysis plus execution of its register writer under qemu-arm on a RAM window, 2026-11-22 (shows what the vendor PROGRAMS, not what the silicon does)): word i = x in [12:0], y in [28:16] of region i, written only when an overlay is active.";
 
         field {
             name = "osdStartY";
@@ -887,7 +887,7 @@ regfile eHISI_JPGE {
 
     reg {
         name = "VPP OSD SIZE";
-        desc = "[inferred] VPP OSD SIZE. Array of 8 consecutive 32-bit words (header `VPP_OSD_SIZE[8]`). Not in the data sheet. Source: vendor U-Boot 2010.06 upload `product/hiosd/dec/jpeg_reg.h` = `jpge_reg(r004).h` (GPL-2.0 U-Boot tree, Huawei copyright 2012; github.com/Axl-zhang/hisilicon-hi3520d-uboot), union `U_JPGE_OSD_SIZE`, struct offset 0x550 (GPL-2.0; same SDK generation as the Hi3520D, chip not named in the file). Reset value and access type unknown (modelled RW, no reset). Confidence: medium (vendor header for this chip family, not hardware verified).";
+        desc = "[inferred] VPP OSD SIZE. Array of 8 consecutive 32-bit words (header `VPP_OSD_SIZE[8]`). Not in the data sheet. Source: vendor U-Boot 2010.06 upload `product/hiosd/dec/jpeg_reg.h` = `jpge_reg(r004).h` (GPL-2.0 U-Boot tree, Huawei copyright 2012; github.com/Axl-zhang/hisilicon-hi3520d-uboot), union `U_JPGE_OSD_SIZE`, struct offset 0x550 (GPL-2.0; same SDK generation as the Hi3520D, chip not named in the file). Reset value and access type unknown (modelled RW, no reset). Confidence: medium (vendor header for this chip family, not hardware verified). Hi3536D vendor module (Hi3536D V100 vendor module hi3536dv100_jpege.ko (SDK V1.0.1.0): static analysis plus execution of its register writer under qemu-arm on a RAM window, 2026-11-22 (shows what the vendor PROGRAMS, not what the silicon does)): word i = (w - 1) in [12:0], (h - 1) in [28:16] of region i, written only when an overlay is active.";
 
         field {
             name = "osdH";
@@ -906,7 +906,7 @@ regfile eHISI_JPGE {
 
     reg {
         name = "VPP OSD address";
-        desc = "[inferred] VPP OSD address. Array of 8 consecutive 32-bit words (header `VPP_OSD_ADDR[8]`). Not in the data sheet. Source: vendor U-Boot 2010.06 upload `product/hiosd/dec/jpeg_reg.h` = `jpge_reg(r004).h` (GPL-2.0 U-Boot tree, Huawei copyright 2012; github.com/Axl-zhang/hisilicon-hi3520d-uboot), union `None`, struct offset 0x570 (GPL-2.0; same SDK generation as the Hi3520D, chip not named in the file). Reset value and access type unknown (modelled RW, no reset). Confidence: medium (vendor header for this chip family, not hardware verified).";
+        desc = "[inferred] VPP OSD address. Array of 8 consecutive 32-bit words (header `VPP_OSD_ADDR[8]`). Not in the data sheet. Source: vendor U-Boot 2010.06 upload `product/hiosd/dec/jpeg_reg.h` = `jpge_reg(r004).h` (GPL-2.0 U-Boot tree, Huawei copyright 2012; github.com/Axl-zhang/hisilicon-hi3520d-uboot), union `None`, struct offset 0x570 (GPL-2.0; same SDK generation as the Hi3520D, chip not named in the file). Reset value and access type unknown (modelled RW, no reset). Confidence: medium (vendor header for this chip family, not hardware verified). Hi3536D vendor module (Hi3536D V100 vendor module hi3536dv100_jpege.ko (SDK V1.0.1.0): static analysis plus execution of its register writer under qemu-arm on a RAM window, 2026-11-22 (shows what the vendor PROGRAMS, not what the silicon does)): word i = DMA address of the overlay bitmap of region i, written only when an overlay is active.";
 
         field {
             name = "value";
@@ -918,7 +918,7 @@ regfile eHISI_JPGE {
 
     reg {
         name = "VPP OSD stride";
-        desc = "[inferred] VPP OSD stride. Array of 8 consecutive 32-bit words (header `VPP_OSD_STRIDE[8]`). Not in the data sheet. Source: vendor U-Boot 2010.06 upload `product/hiosd/dec/jpeg_reg.h` = `jpge_reg(r004).h` (GPL-2.0 U-Boot tree, Huawei copyright 2012; github.com/Axl-zhang/hisilicon-hi3520d-uboot), union `U_JPGE_OSD_STRIDE`, struct offset 0x590 (GPL-2.0; same SDK generation as the Hi3520D, chip not named in the file). Reset value and access type unknown (modelled RW, no reset). Confidence: medium (vendor header for this chip family, not hardware verified).";
+        desc = "[inferred] VPP OSD stride. Array of 8 consecutive 32-bit words (header `VPP_OSD_STRIDE[8]`). Not in the data sheet. Source: vendor U-Boot 2010.06 upload `product/hiosd/dec/jpeg_reg.h` = `jpge_reg(r004).h` (GPL-2.0 U-Boot tree, Huawei copyright 2012; github.com/Axl-zhang/hisilicon-hi3520d-uboot), union `U_JPGE_OSD_STRIDE`, struct offset 0x590 (GPL-2.0; same SDK generation as the Hi3520D, chip not named in the file). Reset value and access type unknown (modelled RW, no reset). Confidence: medium (vendor header for this chip family, not hardware verified). Hi3536D vendor module (Hi3536D V100 vendor module hi3536dv100_jpege.ko (SDK V1.0.1.0): static analysis plus execution of its register writer under qemu-arm on a RAM window, 2026-11-22 (shows what the vendor PROGRAMS, not what the silicon does)): word i = stride in bytes of region i in [15:0], written only when an overlay is active.";
 
         field {
             name = "osdStride";
@@ -930,7 +930,7 @@ regfile eHISI_JPGE {
 
     reg {
         name = "VPP OSD LAYERID";
-        desc = "[inferred] VPP OSD LAYERID. Not in the data sheet. Source: vendor U-Boot 2010.06 upload `product/hiosd/dec/jpeg_reg.h` = `jpge_reg(r004).h` (GPL-2.0 U-Boot tree, Huawei copyright 2012; github.com/Axl-zhang/hisilicon-hi3520d-uboot), union `U_JPGE_OSD_LAYERID`, struct offset 0x5C0 (GPL-2.0; same SDK generation as the Hi3520D, chip not named in the file). Reset value and access type unknown (modelled RW, no reset). Confidence: medium (vendor header for this chip family, not hardware verified).";
+        desc = "[inferred] VPP OSD LAYERID. Not in the data sheet. Source: vendor U-Boot 2010.06 upload `product/hiosd/dec/jpeg_reg.h` = `jpge_reg(r004).h` (GPL-2.0 U-Boot tree, Huawei copyright 2012; github.com/Axl-zhang/hisilicon-hi3520d-uboot), union `U_JPGE_OSD_LAYERID`, struct offset 0x5C0 (GPL-2.0; same SDK generation as the Hi3520D, chip not named in the file). Reset value and access type unknown (modelled RW, no reset). Confidence: medium (vendor header for this chip family, not hardware verified). Hi3536D vendor module (Hi3536D V100 vendor module hi3536dv100_jpege.ko (SDK V1.0.1.0): static analysis plus execution of its register writer under qemu-arm on a RAM window, 2026-11-22 (shows what the vendor PROGRAMS, not what the silicon does)): layer ids written 3 bits per region at bit 4*i; written only when an overlay is active. The vendor module never writes VPP OSD CINVCFG (0x5D0).";
 
         field {
             name = "osd7LayerId";
@@ -1080,7 +1080,7 @@ regfile eHISI_JPGE {
 
     reg {
         name = "JPGE QPT";
-        desc = "Quantization tables, 48 words: Y at words 0..15, Cb at 16..31, Cr at 32..47 (Source: HiSTB driver (register semantics only), confidence MEDIUM; the Linux driver writes Y, then the chroma table twice). Packing (HiSTB driver, MEDIUM): word n holds the 8-bit divisors of the natural-order (raster) entries s, s+8, s+16, s+24 in QP0..QP3 with s = (n & 1) * 32 + n / 2. Previously: 'entry 4n+k' (a guess from the field names); the vendor driver does not store the table that way. Board facts (Source: Hi3520D board read-back 2026-11-10): the window reads back 0 after a write (devmem write 0x12345678, read 0), so it is write-only or its read port is not wired (inferred, Not verified on hardware); the encoded size follows the quality setting (5812/6429/9075/11917 bytes at quality 10/50/95/100), so the writes take effect. Only entry 0 and the overall scale are confirmed by those pictures (flat color bars): the position of the other 63 entries is Not verified on hardware until a textured picture is compared with libjpeg at the same quality. Layout: vendor header jpge_reg(r004).h (Hi3520D U-Boot 2010.06 upload), not in the data sheet.";
+        desc = "Quantization tables, 48 words: Y at words 0..15, Cb at 16..31, Cr at 32..47 (Source: HiSTB driver (register semantics only), confidence MEDIUM; the Linux driver writes Y, then the chroma table twice). Packing (HiSTB driver, MEDIUM): word n holds the 8-bit divisors of the natural-order (raster) entries s, s+8, s+16, s+24 in QP0..QP3 with s = (n & 1) * 32 + n / 2. Previously: 'entry 4n+k' (a guess from the field names); the vendor driver does not store the table that way. Board facts (Source: Hi3520D board read-back 2026-11-10): the window reads back 0 after a write (devmem write 0x12345678, read 0), so it is write-only or its read port is not wired (inferred, Not verified on hardware); the encoded size follows the quality setting (5812/6429/9075/11917 bytes at quality 10/50/95/100), so the writes take effect. Only entry 0 and the overall scale are confirmed by those pictures (flat color bars): the position of the other 63 entries is Not verified on hardware until a textured picture is compared with libjpeg at the same quality. Layout: vendor header jpge_reg(r004).h (Hi3520D U-Boot 2010.06 upload), not in the data sheet. Hi3536D vendor module (Hi3536D V100 vendor module hi3536dv100_jpege.ko (SDK V1.0.1.0): static analysis plus execution of its register writer under qemu-arm on a RAM window, 2026-11-22 (shows what the vendor PROGRAMS, not what the silicon does)): the module scales three 64-byte tables (Y, Cb, Cr) from its base tables (the T.81 example tables by default; user tables are used unchanged at quality 50) with the plain IJG formula, factor = 5000 / q for q < 50 else 200 - 2q, entry = clamp((base * factor + 50) / 100, 1, 255), for every quality 1..99 (the vendor interface limits Qfactor to 1..99; at 100 and above the module would use factor 2, which is unreachable). The three tables are written as 16 words each at words 0..15 (Y), 16..31 (Cb), 32..47 (Cr), each word = four consecutive bytes of the table kept in COLUMN-major (transposed natural) order, low byte first. This packing is algebraically and numerically identical to the packing of this description (word n = natural entries s, s+8, s+16, s+24 with s = (n & 1) * 32 + n / 2): verified for q = 0..101 against the module output, zero differences. No dead-zone tables or other quantization registers are programmed. Confidence PROVEN for the programmed words.";
 
         field {
             name = "QP3";
