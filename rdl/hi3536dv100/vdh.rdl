@@ -3,7 +3,7 @@
 
 regfile eHI3536D_VDH {
     name = "VDH video decoder, V400R001 generation (H.264 / H.265), Hi3536D V100";
-    desc = "VDH register window at 0x13200000 (GIC SPI 21 = interrupt bit 53 in the data sheet table 3-8). The data sheet has NO register table for the VDH (feature text only: H.265 Main@L4.1 and H.264 High@L4.2 up to 3072 x 3072, 4 x 1080p@20). Evidence: static disassembly of hi3536dv100_vfmw.ko (the HAL functions VDMHAL_V400R001_*, H264HAL_V400R001_*, HEVCHAL_V400R001_*) plus the GPL source of the later generation V400R004 for names and bit layouts. Every register and field carries PROVEN (offset and value seen in the Hi3536D vendor module), INFERRED (taken from V400R004 or from register semantics) or GUESS. Nothing was verified on hardware. The H.264 and HEVC paths use the same register set; HEVC differs only in the message words (see eHI3536D_VDH_PICMSG / SLICEMSG) and in BASIC_CFG0/1 values. Clock and reset: PERI_CRG41 (0x120400A4) bit 0 clock, bits 4/5/6 reset requests (MFD/SCD/ALL), status in PERI_CRG_PLL61 (0x120400F4) bits 1/2; VDM_OpenHardware writes 1 to CRG41 and, when the chip-revision byte at 0x12060024 equals 2, ORs 0xC. Documented in docs/research/hi3536dv100-blocks.md.";
+    desc = "VDH register window at 0x13200000 (GIC SPI 21 = interrupt bit 53 in the data sheet table 3-8). The data sheet has NO register table for the VDH (feature text only: H.265 Main@L4.1 and H.264 High@L4.2 up to 3072 x 3072, 4 x 1080p@20). Evidence: static disassembly of hi3536dv100_vfmw.ko (the HAL functions VDMHAL_V400R001_*, H264HAL_V400R001_*, HEVCHAL_V400R001_*) plus the GPL source of the later generation V400R004 for names and bit layouts. Every register and field carries PROVEN (offset and value seen in the Hi3536D vendor module), INFERRED (taken from V400R004 or from register semantics) or GUESS. Nothing was verified on hardware. The H.264 and HEVC paths use the same register set; HEVC differs only in the message words (see eHI3536D_VDH_PICMSG / SLICEMSG) and in BASIC_CFG0/1 values. Clock and reset: PERI_CRG41 (0x120400A4) bit 0 clock, bits 4/5/6 reset requests (MFD/SCD/ALL), status in PERI_CRG_PLL61 (0x120400F4) bits 1/2; VDM_OpenHardware writes 1 to CRG41 (one whole-register write, no PLL61 wait afterwards) and, when the chip-revision byte at 0x12060024 equals 2, ORs 0xC. ResetVdm/ResetGlb (0x16ddc/0x16ed8) set CRG41 bit 4 / 6, poll PLL61 bit 1 / 2 up to 1000 x 30 us, only log on timeout, clear the bit and restore INT_MASK. The vendor software watchdog is 5000 ms (VDMDRV_CheckDevice 0x113a4). No VDH clock select exists in vfmw/vdec or the data sheet: the rate is open. Documented in docs/research/hi3536dv100-blocks.md.";
 
     reg {
         name = "Decode start";
@@ -29,7 +29,7 @@ regfile eHI3536D_VDH {
 
     reg {
         name = "Basic configuration 0";
-        desc = "HEVC path value: mbamt_to_dec = CTB count - 1, bit 24 set, bit 30 = scaling_list_enabled_flag, bit 28 also set by R001 (named luma_sum_en in R004, which the R004 source leaves 0: unexplained, may be a different bit in R001), bit 23 = 0. Provenance: PROVEN for offset, mbamt, bits 24/30. Source: hi3536dv100_vfmw.ko (VDMHAL_V400R001 / HEVCHAL_V400R001 disassembly, SDK 2.0.2.0); field names Huawei Kirin GPL VDH V400R004 header vdm_hal_local.h (a later generation of the same VDH).";
+        desc = "HEVC path value: mbamt_to_dec = CTB count - 1, bit 24 set, bit 30 = scaling_list_enabled_flag, bit 28 is set by R001 for BOTH codecs, unconditionally (PROVEN: HEVC byte 3 = 0x11 | scaling_list_enabled_flag << 6, H.264 byte 3 = 0x51: bits 24, 28, 30 always set; the R004 name luma_sum_en is INFERRED from BackupInfo always reading the luma sum and histogram registers), bit 23 = 0. Not a codec difference. Provenance: PROVEN for offset, mbamt, bits 24/28/30 (2026-11-22 dynamic: mbamt 509 gives 0x110001FD, with a scaling list 0x510001FD). Source: hi3536dv100_vfmw.ko (VDMHAL_V400R001 / HEVCHAL_V400R001 disassembly, SDK 2.0.2.0); field names Huawei Kirin GPL VDH V400R004 header vdm_hal_local.h (a later generation of the same VDH).";
         field {
             name = "mbamt_to_dec";
             desc = "Macroblock/CTB count to decode minus 1 [PROVEN]";
@@ -80,7 +80,7 @@ regfile eHI3536D_VDH {
         } work_mode[27:26];
         field {
             name = "luma_sum_en";
-            desc = "R004 name; R001 writes 1 here (see register text) [INFERRED]";
+            desc = "R001 writes 1 for both codecs, unconditionally; name from R004 (luma sum statistics enable) [PROVEN value, INFERRED meaning]";
             sw = rw;
             hw = r;
         } luma_sum_en[28:28];
@@ -92,7 +92,7 @@ regfile eHI3536D_VDH {
         } luma_histogram_en[29:29];
         field {
             name = "load_qmatrix_flag";
-            desc = "Load scaling list (HEVC: scaling_list_enabled_flag; R001 inserts it at bit 30) [PROVEN]";
+            desc = "Load scaling list (HEVC: scaling_list_enabled_flag; H.264: hard 1, the scaling matrix is always loaded) [PROVEN]";
             sw = rw;
             hw = r;
         } load_qmatrix_flag[30:30];
@@ -106,7 +106,7 @@ regfile eHI3536D_VDH {
 
     reg {
         name = "Basic configuration 1";
-        desc = "HEVC: video_standard 0xD, fst_slc_grp = NewPicFlag, mv_output_en 1, vdh_2d_en 1, max_slcgrp_num 3, frm_cmp_en = Compress_en, ppfd_en 0 (R004 source values; R001 writes video_standard 13 and max_slcgrp_num 3, PROVEN from the stores). H.264 uses video_standard 0. Provenance: PROVEN for video_standard, max_slcgrp_num; others INFERRED. Source: hi3536dv100_vfmw.ko (VDMHAL_V400R001 / HEVCHAL_V400R001 disassembly, SDK 2.0.2.0); names Huawei Kirin GPL VDH V400R004 header vdm_hal_local.h (a later generation of the same VDH).";
+        desc = "HEVC value built by HEVCHAL_V400R001_CfgVdmReg: [3:0] video_standard 0xD, bit 15 mv_output_en 1, bit 14 fst_slc_grp = NewPicFlag, bit 13 uv_order_en 0 (hard), [27:16] max_slcgrp_num 3, bit 28 0, bit 29 = output format select (below), bit 30 frm_cmp_en = Compress_en, bit 31 0; example 0x2003C00D (1080p, linear, no compression) or 0x0003C00D (TILE64). H.264 (H264HAL_V400R001_StartDec): video_standard 0, [12:4] ddr_stride = stride >> 6, bit 14 NewPicFlag, [27:16] max_slcgrp_num 4, bit 29 = the same format select, bits 13/15/28/30/31 0. OUTPUT FORMAT (M1, 2026-11-22): bit 29 is NOT the constant 1 of the R004 source. It is a per-channel software choice: vdec.ko VdecGenChanCfg (0x6f88) sets channel-config word +0x64 = (enVideoFormat == VIDEO_FORMAT_LINEAR), VCTRL_ConfigChan (0xad5c) copies it to chan+0x5d8 and both StartDec paths insert that byte at bit 29. Dynamic: LINEAR gives 1, TILE64 gives 0. So bit 29 = 1: raster (linear, semi-planar) output; bit 29 = 0: TILE64 (64 x 16 tiles, the HiMPP default). R004 hard-sets it to 1 (its platform outputs linear). Compression (bit 30) is only allowed with TILE64 (vdec rejects LINEAR + compress: only LINEAR/NONE, TILE64/NONE, TILE64/SEG128 are valid). Provenance: PROVEN for video_standard, max_slcgrp_num; others INFERRED. Source: hi3536dv100_vfmw.ko (VDMHAL_V400R001 / HEVCHAL_V400R001 disassembly, SDK 2.0.2.0); names Huawei Kirin GPL VDH V400R004 header vdm_hal_local.h (a later generation of the same VDH).";
         field {
             name = "video_standard";
             desc = "0 = H.264, 0xD = HEVC (the module dispatches on standard code 0 / 16 = H.264 / HEVC) [PROVEN]";
@@ -115,13 +115,13 @@ regfile eHI3536D_VDH {
         } video_standard[3:0];
         field {
             name = "reserved_12_4";
-            desc = "reserved (ddr_stride in the H.264 struct) [INFERRED]";
+            desc = "reserved for HEVC (0); H.264: ddr_stride = YSTRIDE_1D >> 6 in [12:4] [PROVEN for H.264 R001, dynamic StartDec run]";
             sw = r;
             hw = r;
         } reserved_12_4[12:4];
         field {
             name = "uv_order_en";
-            desc = "UV order swap for CRC on NV12 [INFERRED]";
+            desc = "Chroma order swap: R004 sets it from the channel option u8UVOrder (0: uv, 1: vu), because the HEVC CRC check is NV12; R001 HEVC writes 0 (hard) [PROVEN value, INFERRED meaning; 0 = UV order = NV12 per the vfmw comment, to be confirmed by a colored test frame]";
             sw = rw;
             hw = r;
         } uv_order_en[13:13];
@@ -133,13 +133,13 @@ regfile eHI3536D_VDH {
         } fst_slc_grp[14:14];
         field {
             name = "mv_output_en";
-            desc = "write motion vectors to DDR (1) [INFERRED]";
+            desc = "write motion vectors to DDR (HEVC: 1 [PROVEN]; H.264: 0) [INFERRED meaning]";
             sw = rw;
             hw = r;
         } mv_output_en[15:15];
         field {
             name = "max_slcgrp_num";
-            desc = "max slice groups per batch (3) [PROVEN]";
+            desc = "max slice groups per batch (HEVC 3, H.264 4) [PROVEN]";
             sw = rw;
             hw = r;
         } max_slcgrp_num[27:16];
@@ -151,13 +151,13 @@ regfile eHI3536D_VDH {
         } line_num_output_en[28:28];
         field {
             name = "vdh_2d_en";
-            desc = "2D (tiled) output enable (1) [INFERRED]";
+            desc = "Output format select, 2026-11-22: 1 = linear raster output (VIDEO_FORMAT_LINEAR), 0 = TILE64 (default of the vendor stack). Per-channel option, see the register text. Name from R004 (hard 1 there). [PROVEN source and polarity of the vendor value, INFERRED hardware meaning]";
             sw = rw;
             hw = r;
         } vdh_2d_en[29:29];
         field {
             name = "frm_cmp_en";
-            desc = "frame compression (Compress_en) [INFERRED]";
+            desc = "frame compression (Compress_en): only with TILE64 + COMPRESS_MODE_SEG128 in the vendor stack; needs the compression header (HEAD_INF_OFFSET, UVOFFSET_1D includes the header) [INFERRED]";
             sw = rw;
             hw = r;
         } frm_cmp_en[30:30];
@@ -204,28 +204,28 @@ regfile eHI3536D_VDH {
 
     reg {
         name = "VDH state";
-        desc = "Decoded slice count, over/error status and version id. R004 layout; offset 0x1C INFERRED. A version_id read would identify the die (hardware needed). Provenance: INFERRED. Source: Huawei Kirin GPL VDH V400R004 header vdm_hal_local.h (a later generation of the same VDH).";
+        desc = "Decoded slice count, over/error status and version id. R004 layout; offset 0x1C INFERRED. [18:17] == 01 is the only success value the vendor accepts (anything else = failed picture; MPEG-2 tests bit 17 only): PROVEN, VDMHAL_V400R001_MakeDecReport (0x17a80), dynamic with injected values. [16:0] = decoded slice count, forced to 0 when above 300 (R004: 200). version_id [26:19] is NEVER read or extracted by hi3536dv100_vfmw.ko (PROVEN absence); in the R004 low-delay code bit 19 acts as a class bit next to bit 17, which does not fit a plain 8-bit version id: the field is unverified, the Hi3536D value needs a board read. Provenance: PROVEN for [18:0], INFERRED for the rest. Source: Huawei Kirin GPL VDH V400R004 header vdm_hal_local.h (a later generation of the same VDH).";
         field {
             name = "decoded_slice_num";
-            desc = "decoded slice count [INFERRED]";
+            desc = "decoded slice count (MakeDecReport: ubfx 0,17; > 300 is an error) [PROVEN]";
             sw = r;
             hw = r;
         } decoded_slice_num[16:0];
         field {
             name = "intrs_vdh_dec_over";
-            desc = "decode over [INFERRED]";
+            desc = "decode over; with bit 18 clear = success [PROVEN]";
             sw = r;
             hw = r;
         } intrs_vdh_dec_over[17:17];
         field {
             name = "intrs_vdh_dec_err";
-            desc = "decode error [INFERRED]";
+            desc = "decode error; the vendor treats [18:17] != 01 as a failed picture [PROVEN]";
             sw = r;
             hw = r;
         } intrs_vdh_dec_err[18:18];
         field {
             name = "version_id";
-            desc = "hardware version [INFERRED]";
+            desc = "R004 name hardware version; never read by the R001 module; unverified (board read) [INFERRED, unused]";
             sw = r;
             hw = r;
         } version_id[26:19];
@@ -239,16 +239,16 @@ regfile eHI3536D_VDH {
 
     reg {
         name = "Interrupt status";
-        desc = "PROVEN: ClearIntState writes 0xFFFFFFFF (write-1-to-clear assumed). bit 0 dec over, bit 1 dec error (R004 names). Provenance: PROVEN offset/clear. Source: hi3536dv100_vfmw.ko (VDMHAL_V400R001 / HEVCHAL_V400R001 disassembly, SDK 2.0.2.0); names Huawei Kirin GPL VDH V400R004 header vdm_hal_local.h (a later generation of the same VDH).";
+        desc = "PROVEN: ClearIntState writes 0xFFFFFFFF (write-1-to-clear: R004 clears single bits with 0xFFFFFFF4 / 0xFFFFFFF1 in its low-delay path). The ISR (VDMDRV_VdmIntServProc 0x116f0) examines ONLY bit 0: a picture is finished when INT_STATE[0] is set; failure is then read from VDH_STATE[18:17]. Bit 1 (R004 name dec_err) is never read by the R001 module. Bit 2 is the R004 low-delay line-number interrupt, unused by R001. Provenance: PROVEN (offset, clear, bit 0 use); bit 1 meaning INFERRED. Source: hi3536dv100_vfmw.ko (VDMHAL_V400R001 / HEVCHAL_V400R001 disassembly, SDK 2.0.2.0); names Huawei Kirin GPL VDH V400R004 header vdm_hal_local.h (a later generation of the same VDH).";
         field {
             name = "intrs_vdm_dec_over";
-            desc = "decode finished [INFERRED]";
+            desc = "decode finished (the only bit the vendor ISR tests; whether it also fires on a failed picture is INFERRED, board test) [PROVEN use]";
             sw = rw;
             hw = r;
         } intrs_vdm_dec_over[0:0];
         field {
             name = "intrs_vdm_dec_err";
-            desc = "decode error [INFERRED]";
+            desc = "decode error (R004 name); never examined by the R001 module [INFERRED]";
             sw = rw;
             hw = r;
         } intrs_vdm_dec_err[1:1];
@@ -262,7 +262,7 @@ regfile eHI3536D_VDH {
 
     reg {
         name = "Interrupt mask";
-        desc = "PROVEN: EnableInt/StartHwDecode write 0xFFFFFFFE (bit 0 unmasked, 1 = masked); the busy-wait build writes 0xFFFFFFFF. Provenance: PROVEN. Source: hi3536dv100_vfmw.ko (VDMHAL_V400R001 / HEVCHAL_V400R001 disassembly, SDK 2.0.2.0).";
+        desc = "PROVEN: EnableInt/StartHwDecode write 0xFFFFFFFE (bit 0 unmasked, 1 = masked); the low-delay build 0xFFFFFFFA (bits 0 and 2 enabled), the busy-wait build 0xFFFFFFFF (all masked, status polled; polarity from the three R004 values). ResetVdm/ResetGlb save and restore it around the reset. Provenance: PROVEN. Source: hi3536dv100_vfmw.ko (VDMHAL_V400R001 / HEVCHAL_V400R001 disassembly, SDK 2.0.2.0).";
         field {
             name = "mask_dec_over";
             desc = "0 = interrupt enabled [PROVEN]";
@@ -395,10 +395,10 @@ regfile eHI3536D_VDH {
 
     reg {
         name = "Luma stride";
-        desc = "PROVEN: imgstride. Provenance: PROVEN. Source: hi3536dv100_vfmw.ko (VDMHAL_V400R001 / HEVCHAL_V400R001 disassembly, SDK 2.0.2.0).";
+        desc = "PROVEN: imgstride = fs_image.image_stride = ArrangeMem VahbStride = 16 x the line stride in bytes (R004 comment: ystride x 16; vdec VDEC_PackFrameInfo reports u32Stride = image_stride >> 4). The line stride is ALIGN64(width) (VDMHAL_V400R001_ArrangeMem, 80 dynamic points). The same register value is programmed for TILE64 and linear output (INFERRED: the hardware takes the distance of 16 lines in both layouts). Provenance: PROVEN. Source: hi3536dv100_vfmw.ko (VDMHAL_V400R001 / HEVCHAL_V400R001 disassembly, SDK 2.0.2.0).";
         field {
             name = "ystride_1d";
-            desc = "line stride in bytes [PROVEN]";
+            desc = "16 x line stride in bytes (= bytes between 16-line groups) [PROVEN value rule, INFERRED hardware reading]";
             sw = rw;
             hw = r;
         } ystride_1d[31:0];
@@ -406,10 +406,10 @@ regfile eHI3536D_VDH {
 
     reg {
         name = "Chroma offset";
-        desc = "PROVEN: UVOffset, chroma plane offset from the luma base. Provenance: PROVEN. Source: hi3536dv100_vfmw.ko (VDMHAL_V400R001 / HEVCHAL_V400R001 disassembly, SDK 2.0.2.0).";
+        desc = "PROVEN: UVOffset = chrom_phy_addr - luma_phy_addr in bytes = line stride x aligned height (+ compression header when frm_cmp_en): the height is ALIGN16(H) rounded up to 64 for HEVC (to 16 for H.264), ArrangeMem +0x110. Same rule for TILE64 and linear. Provenance: PROVEN. Source: hi3536dv100_vfmw.ko (VDMHAL_V400R001 / HEVCHAL_V400R001 disassembly, SDK 2.0.2.0).";
         field {
             name = "uvoffset_1d";
-            desc = "chroma offset [PROVEN]";
+            desc = "chroma plane offset in bytes from the luma base [PROVEN]";
             sw = rw;
             hw = r;
         } uvoffset_1d[31:0];
@@ -417,7 +417,7 @@ regfile eHI3536D_VDH {
 
     reg {
         name = "Header info offset (compression)";
-        desc = "PROVEN: written 0. Provenance: PROVEN. Source: hi3536dv100_vfmw.ko (VDMHAL_V400R001 / HEVCHAL_V400R001 disassembly, SDK 2.0.2.0).";
+        desc = "PROVEN: written 0 without compression; with frm_cmp_en = 1 HEVCHAL_V400R001_CfgVdmReg writes ((H + 63) >> 6) << 5 times (((W + 2047) >> 7) & ~0xF) (1080p: 0x2200; H = ctx+0xb8, W = ctx+0xbc). Provenance: PROVEN. Source: hi3536dv100_vfmw.ko (VDMHAL_V400R001 / HEVCHAL_V400R001 disassembly, SDK 2.0.2.0).";
         field {
             name = "head_inf_offset";
             desc = "compression header offset [PROVEN]";
@@ -568,10 +568,10 @@ regfile eHI3536D_VDH {
 
     reg {
         name = "Frame-flush / adaptive enable";
-        desc = "PROVEN offset (HEVC CfgVdmReg stores to 0x98); R004 writes 2. Provenance: PROVEN. Source: hi3536dv100_vfmw.ko (VDMHAL_V400R001 / HEVCHAL_V400R001 disassembly, SDK 2.0.2.0).";
+        desc = "PROVEN offset and value: HEVC CfgVdmReg writes 0 (R004 writes 2); H264HAL_V400R001_StartDec writes 2 for a progressive frame picture and 0 for field pictures or MBAFF (dynamic run). Provenance: PROVEN. Source: hi3536dv100_vfmw.ko (VDMHAL_V400R001 / HEVCHAL_V400R001 disassembly, SDK 2.0.2.0).";
         field {
             name = "ff_apt_en";
-            desc = "enable (R004 writes the value 2: bit 1) [INFERRED]";
+            desc = "enable: H.264 progressive frame writes 2 (bit 1 of the value, not this bit 0), HEVC 0 [PROVEN values, INFERRED meaning]";
             sw = rw;
             hw = r;
         } ff_apt_en[0:0];
